@@ -108,8 +108,13 @@ export class CloudTable<T extends { id: string }> {
       this.loaded = true;
     } catch (e) {
       console.error(`[CloudDB] Failed to hydrate "${this.name}":`, e);
-      // If we get a 400/404, it might mean the table doesn't exist
     }
+  }
+
+  /** Force refetch from cloud */
+  async reload(): Promise<void> {
+    this.loaded = false;
+    await this.hydrate();
   }
 
   private async ensure(): Promise<void> {
