@@ -13,6 +13,7 @@ export interface Business {
   id: string;
   name: string;
   code: string;
+  isActive?: number;
   updated_at?: number;
 }
 

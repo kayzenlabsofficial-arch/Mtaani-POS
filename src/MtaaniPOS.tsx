@@ -34,6 +34,82 @@ import AdminPanel from './components/tabs/AdminPanel';
 import AdminVerificationModal from './components/modals/AdminVerificationModal';
 import ExpenseModal from './components/modals/ExpenseModal';
 
+function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
+  const businesses = useLiveQuery(() => db.businesses.toArray(), []);
+  const [form, setForm] = useState({ name: '', code: '' });
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name || !form.code) return;
+    try {
+      await db.businesses.add({
+        id: crypto.randomUUID(),
+        name: form.name,
+        code: form.code.toUpperCase(),
+        isActive: 1,
+        updated_at: Date.now()
+      } as any);
+      setForm({ name: '', code: '' });
+    } catch(err) {
+      console.error(err);
+      alert("Failed to create business. Code must be unique.");
+    }
+  };
+
+  const toggleStatus = async (id: string, currentStatus: number) => {
+    await db.businesses.update(id, { isActive: currentStatus === 1 ? 0 : 1 });
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-8">
+      <div className="max-w-4xl mx-auto bg-white rounded-3xl shadow-xl p-8">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-black text-slate-900">System Manager</h1>
+          <button onClick={onLogout} className="px-4 py-2 bg-red-100 text-red-600 rounded-lg font-bold hover:bg-red-200 transition-colors">Logout</button>
+        </div>
+        
+        <form onSubmit={handleCreate} className="flex gap-4 mb-8 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+           <input type="text" placeholder="Business Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="flex-1 px-4 py-3 rounded-xl border border-slate-200" required />
+           <input type="text" placeholder="Business Code (e.g. MTAANI02)" value={form.code} onChange={e => setForm({...form, code: e.target.value})} className="flex-1 px-4 py-3 rounded-xl border border-slate-200 uppercase" required />
+           <button type="submit" className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 transition-colors">Add Business</button>
+        </form>
+
+        <div className="overflow-hidden border border-slate-200 rounded-2xl">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-100">
+                <th className="p-4 font-bold text-slate-600">Business Name</th>
+                <th className="p-4 font-bold text-slate-600">Code</th>
+                <th className="p-4 font-bold text-slate-600">Status</th>
+                <th className="p-4 font-bold text-slate-600 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {businesses?.map(b => (
+                <tr key={b.id} className="border-t border-slate-100">
+                  <td className="p-4 font-bold">{b.name}</td>
+                  <td className="p-4 text-slate-500 font-mono">{b.code}</td>
+                  <td className="p-4">
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${b.isActive !== 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {b.isActive !== 0 ? 'Active' : 'Suspended'}
+                    </span>
+                  </td>
+                  <td className="p-4 text-right">
+                    <button onClick={() => toggleStatus(b.id, b.isActive ?? 1)} className={`px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors ${b.isActive !== 0 ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`}>
+                      {b.isActive !== 0 ? 'Suspend' : 'Activate'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {businesses?.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-500">No businesses found.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MtaaniPOS() {
   const {
     offlineReady: [offlineReady, setOfflineReady],
@@ -67,6 +143,7 @@ export default function MtaaniPOS() {
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [availableBranches, setAvailableBranches] = useState<Branch[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string>('');
+  const [isSystemManager, setIsSystemManager] = useState(false);
 
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isCashModalOpen, setIsCashModalOpen] = useState(false);
@@ -211,6 +288,13 @@ export default function MtaaniPOS() {
     e.preventDefault();
     if (!loginForm.businessCode || !loginForm.username || !loginForm.password) return;
     
+    // System Manager Intercept
+    if (loginForm.businessCode.toUpperCase() === 'SYSTEM' && loginForm.username === 'admin' && loginForm.password === 'kayzen2026') {
+       setIsSystemManager(true);
+       setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
+       return;
+    }
+
     try {
       setIsSyncing(true);
       
@@ -220,6 +304,12 @@ export default function MtaaniPOS() {
       
       if (!business) {
         error("Invalid Business Code.");
+        setIsSyncing(false);
+        return;
+      }
+
+      if (business.isActive === 0) {
+        error("Account suspended. Please contact Kayzen Labs.");
         setIsSyncing(false);
         return;
       }
@@ -408,6 +498,10 @@ export default function MtaaniPOS() {
       setIsSyncing(false);
     }
   };
+
+  if (isSystemManager) {
+    return <SystemManagerDashboard onLogout={() => setIsSystemManager(false)} />;
+  }
 
   if (!currentUser) {
     return (

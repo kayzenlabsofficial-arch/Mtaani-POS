@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS businesses (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     code TEXT NOT NULL UNIQUE,
+    isActive INTEGER DEFAULT 1,
     updated_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS users (
