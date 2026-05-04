@@ -360,6 +360,7 @@ export default function MtaaniPOS() {
           // Auto-select the only branch — skip branch step
           setSelectedBranchId(active[0].id);
           setActiveBranchId(active[0].id);
+          await db.sync(); // Sync branch-specific data now that branchId is set
           if (user.role === 'CASHIER') {
             setLoginStep('FLOAT');
           } else {
@@ -387,15 +388,24 @@ export default function MtaaniPOS() {
   const handleBranchSelect = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBranchId || !pendingUser) return;
-    setActiveBranchId(selectedBranchId);
-    if (pendingUser.role === 'CASHIER') {
-      setLoginStep('FLOAT');
-    } else {
-      setCurrentUser(pendingUser);
-      setPendingUser(null);
-      setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
-      setLoginStep('LOGIN');
-      success(`Welcome back, ${pendingUser.name}!`);
+    try {
+      setIsSyncing(true);
+      setActiveBranchId(selectedBranchId);
+      await db.sync(); // Sync branch-specific data now that branchId is set
+      
+      if (pendingUser.role === 'CASHIER') {
+        setLoginStep('FLOAT');
+      } else {
+        setCurrentUser(pendingUser);
+        setPendingUser(null);
+        setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
+        setLoginStep('LOGIN');
+        success(`Welcome back, ${pendingUser.name}!`);
+      }
+    } catch (err) {
+      error("Failed to sync branch data.");
+    } finally {
+      setIsSyncing(false);
     }
   };
 

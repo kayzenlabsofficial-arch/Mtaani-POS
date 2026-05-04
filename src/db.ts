@@ -37,6 +37,7 @@ export interface Product {
   barcode: string;
   imageUrl?: string;
   businessId: string;
+  branchId: string;
   updated_at?: number;
 }
 
@@ -259,6 +260,7 @@ export interface Category {
   iconName: string;
   color: string;
   businessId: string;
+  branchId: string;
   updated_at?: number;
 }
 
@@ -349,27 +351,35 @@ class MtaaniCloudDB {
 
   /** Force reload all data from cloud. Use for 'Hard Sync' buttons. */
   async sync(): Promise<void> {
-    await Promise.all([
+    const state = useStore.getState();
+    const promises = [
       this.businesses.reload(),
-      this.products.reload(),
-      this.transactions.reload(),
-      this.cashPicks.reload(),
-      this.endOfDayReports.reload(),
-      this.stockMovements.reload(),
-      this.customers.reload(),
-      this.suppliers.reload(),
-      this.supplierPayments.reload(),
-      this.expenses.reload(),
-      this.settings.reload(),
-      this.purchaseOrders.reload(),
-      this.stockAdjustmentRequests.reload(),
-      this.shifts.reload(),
-      this.dailySummaries.reload(),
       this.users.reload(),
-      this.creditNotes.reload(),
-      this.categories.reload(),
       this.branches.reload(),
-    ]);
+      this.settings.reload(),
+    ];
+
+    if (state.activeBranchId) {
+      promises.push(
+        this.products.reload(),
+        this.transactions.reload(),
+        this.cashPicks.reload(),
+        this.endOfDayReports.reload(),
+        this.stockMovements.reload(),
+        this.customers.reload(),
+        this.suppliers.reload(),
+        this.supplierPayments.reload(),
+        this.expenses.reload(),
+        this.purchaseOrders.reload(),
+        this.stockAdjustmentRequests.reload(),
+        this.shifts.reload(),
+        this.dailySummaries.reload(),
+        this.creditNotes.reload(),
+        this.categories.reload()
+      );
+    }
+
+    await Promise.all(promises);
   }
 
   /** Alias used by legacy components */
@@ -419,90 +429,6 @@ export const seedInitialData = async () => {
       await db.branches.bulkAdd([
         { id: 'branch_main', name: 'Main Branch', location: 'Nairobi', isActive: true, businessId },
       ]);
-    }
-
-    // ── Categories ────────────────────────────────────────────────────────────
-    const catCount = await db.categories.count();
-    if (catCount === 0) {
-      await db.categories.bulkAdd([
-        { id: 'cat1', name: 'Food Stuffs', iconName: 'Utensils',    color: 'orange', businessId },
-        { id: 'cat2', name: 'Beverages',   iconName: 'GlassWater',  color: 'blue',   businessId },
-        { id: 'cat3', name: 'Supplies',    iconName: 'ShoppingBag', color: 'purple', businessId },
-        { id: 'cat4', name: 'Utilities',   iconName: 'Lightbulb',   color: 'yellow', businessId },
-        { id: 'cat5', name: 'Other',       iconName: 'Package',     color: 'slate',  businessId },
-      ]);
-    }
-
-    // ── Products ──────────────────────────────────────────────────────────────
-    const productCount = await db.products.count();
-    if (productCount === 0) {
-      await db.products.bulkAdd([
-        { id: '1', name: 'Premium Coffee 500g', category: 'Beverages',  sellingPrice: 1200, taxCategory: 'A', stockQuantity: 45,  barcode: '600123', businessId },
-        { id: '2', name: 'Maize Flour 2kg',     category: 'Food Stuffs', sellingPrice: 180,  taxCategory: 'C', stockQuantity: 120, barcode: '600456', businessId },
-        { id: '3', name: 'Cooking Oil 1L',      category: 'Food Stuffs', sellingPrice: 350,  taxCategory: 'A', stockQuantity: 12,  barcode: '600789', businessId },
-        { id: '4', name: 'Sugar 1kg',           category: 'Food Stuffs', sellingPrice: 150,  taxCategory: 'A', stockQuantity: 200, barcode: '600111', businessId },
-        { id: '5', name: 'Tea Leaves 250g',     category: 'Beverages',  sellingPrice: 200,  taxCategory: 'A', stockQuantity: 80,  barcode: '600222', businessId },
-        { id: '6', name: 'Salt 500g',           category: 'Food Stuffs', sellingPrice: 30,   taxCategory: 'C', stockQuantity: 300, barcode: '600333', businessId },
-        { id: '7', name: 'Milk 1L',             category: 'Beverages',  sellingPrice: 100,  taxCategory: 'A', stockQuantity: 50,  barcode: '600444', businessId },
-      ]);
-    }
-
-    // ── Suppliers ─────────────────────────────────────────────────────────────
-    const supplierCount = await db.suppliers.count();
-    if (supplierCount === 0) {
-      await db.suppliers.bulkAdd([
-        { id: 's1', name: 'John Kamau', company: 'Nairobi Wholesale',  phone: '0711222333', email: 'sales@nairobiwholesale.com', balance: 15000, branchId: 'branch_main', businessId },
-        { id: 's2', name: 'Mary Atieno', company: 'Fresh Produce Hub', phone: '0722333444', email: 'mary@freshproduce.com', balance: 5400, branchId: 'branch_main', businessId },
-      ]);
-    }
-
-    // ── Customers ─────────────────────────────────────────────────────────────
-    const customerCount = await db.customers.count();
-    if (customerCount === 0) {
-      await db.customers.bulkAdd([
-        { id: 'c1', name: 'Alice Wambui', phone: '0700111222', email: 'alice@gmail.com', totalSpent: 4500, balance: 0, branchId: 'branch_main', businessId },
-        { id: 'c2', name: 'Bob Otieno',   phone: '0711999888', email: 'bob@yahoo.com',   totalSpent: 1200, balance: 0, branchId: 'branch_main', businessId },
-      ]);
-    }
-
-    // ── Expenses ──────────────────────────────────────────────────────────────
-    const expenseCount = await db.expenses.count();
-    if (expenseCount === 0) {
-      const now = Date.now();
-      await db.expenses.bulkAdd([
-        { id: 'e1', amount: 3500, category: 'Utilities', description: 'Electricity Bill - April', timestamp: now - 86400000 * 2, status: 'APPROVED', branchId: 'branch_main', businessId },
-        { id: 'e2', amount: 1200, category: 'Supplies',  description: 'Cleaning Detergents',      timestamp: now - 86400000 * 1, status: 'APPROVED', branchId: 'branch_main', businessId },
-      ]);
-    }
-
-    // ── Sample Transactions ────────────────────────────────────────────────────
-    const txCount = await db.transactions.count();
-    if (txCount === 0) {
-      const now = Date.now();
-      await db.transactions.bulkAdd([
-        {
-          id: 't1', subtotal: 2400, tax: 384, discountAmount: 200, total: 2584,
-          timestamp: now - 3600000 * 5, status: 'PAID', paymentMethod: 'MPESA',
-          cashierName: 'Admin', branchId: 'branch_main', businessId,
-          items: [{ productId: '1', name: 'Premium Coffee 500g', snapshotPrice: 1200, quantity: 2, taxCategory: 'A' }]
-        },
-        {
-          id: 't2', subtotal: 350, tax: 56, total: 406,
-          timestamp: now - 3600000 * 2, status: 'PAID', paymentMethod: 'CASH',
-          cashierName: 'Admin', branchId: 'branch_main', businessId,
-          items: [{ productId: '3', name: 'Cooking Oil 1L', snapshotPrice: 350, quantity: 1, taxCategory: 'A' }]
-        },
-      ]);
-    }
-
-    // ── Credit Notes ──────────────────────────────────────────────────────────
-    const cnCount = await db.creditNotes.count();
-    if (cnCount === 0) {
-      await db.creditNotes.add({
-        id: 'cn1', supplierId: 's1', amount: 2500,
-        reference: 'CRN-001', timestamp: Date.now() - 86400000, reason: 'Damaged goods return',
-        businessId
-      });
     }
 
   } catch (err) {

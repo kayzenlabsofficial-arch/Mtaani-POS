@@ -103,25 +103,39 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       
       return new Response(JSON.stringify({ success: true, message: 'Database initialized.' }), { headers: jsonHeaders() });
     }
+    const GLOBAL_TABLES = new Set(['businesses', 'users', 'branches', 'settings']);
+    const branchId = request.headers.get('X-Branch-ID');
+
     if (request.method === 'GET') {
       if (table === 'businesses') {
         const { results } = await env.DB.prepare(`SELECT * FROM ${table}`).all();
         return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
-      } else {
+      } else if (GLOBAL_TABLES.has(table)) {
         if (!businessId) return new Response(JSON.stringify({ error: 'X-Business-ID header required' }), { status: 400, headers: jsonHeaders() });
         const { results } = await env.DB.prepare(`SELECT * FROM ${table} WHERE businessId = ?`).bind(businessId).all();
         return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
+      } else {
+        // Branch-specific tables
+        if (!businessId) return new Response(JSON.stringify({ error: 'X-Business-ID header required' }), { status: 400, headers: jsonHeaders() });
+        if (!branchId) return new Response(JSON.stringify({ error: 'X-Branch-ID header required for this table' }), { status: 400, headers: jsonHeaders() });
+        const { results } = await env.DB.prepare(`SELECT * FROM ${table} WHERE businessId = ? AND branchId = ?`).bind(businessId, branchId).all();
+        return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
       }
     }
+    
     if (request.method === 'POST') {
       const body = await request.json() as any;
       const items = Array.isArray(body) ? body : [body];
       if (items.length === 0) return new Response(JSON.stringify({ success: true, count: 0 }), { headers: jsonHeaders() });
       
-      // Inject businessId into payload for all non-business tables
       if (table !== 'businesses') {
         if (!businessId) return new Response(JSON.stringify({ error: 'X-Business-ID header required for POST' }), { status: 400, headers: jsonHeaders() });
         items.forEach(item => { item.businessId = businessId; });
+        
+        if (!GLOBAL_TABLES.has(table)) {
+          if (!branchId) return new Response(JSON.stringify({ error: 'X-Branch-ID header required for POST to this table' }), { status: 400, headers: jsonHeaders() });
+          items.forEach(item => { item.branchId = branchId; });
+        }
       }
 
       const { results: pragma } = await env.DB.prepare(`PRAGMA table_info('${table}')`).all();
@@ -133,13 +147,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       await env.DB.batch(batch);
       return new Response(JSON.stringify({ success: true, count: items.length }), { headers: jsonHeaders() });
     }
+    
     if (request.method === 'DELETE') {
       const id = recordId ?? (await request.json() as any)?.id;
       if (table === 'businesses') {
         await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
-      } else {
+      } else if (GLOBAL_TABLES.has(table)) {
         if (!businessId) return new Response(JSON.stringify({ error: 'X-Business-ID header required for DELETE' }), { status: 400, headers: jsonHeaders() });
         await env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ?`).bind(id, businessId).run();
+      } else {
+        if (!businessId || !branchId) return new Response(JSON.stringify({ error: 'X-Business-ID and X-Branch-ID headers required for DELETE' }), { status: 400, headers: jsonHeaders() });
+        await env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ? AND branchId = ?`).bind(id, businessId, branchId).run();
       }
       return new Response(JSON.stringify({ success: true }), { headers: jsonHeaders() });
     }

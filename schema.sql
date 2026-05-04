@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS products (
     barcode TEXT NOT NULL,
     imageUrl TEXT,
     businessId TEXT,
+    branchId TEXT,
     updated_at INTEGER
 );
 
@@ -244,6 +245,7 @@ CREATE TABLE IF NOT EXISTS categories (
     iconName TEXT NOT NULL,
     color TEXT NOT NULL,
     businessId TEXT,
+    branchId TEXT,
     updated_at INTEGER
 );
 
