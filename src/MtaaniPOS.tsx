@@ -42,14 +42,38 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
     e.preventDefault();
     if (!form.name || !form.code) return;
     try {
+      const newBusinessId = crypto.randomUUID();
+      
+      // 1. Create Business
       await db.businesses.add({
-        id: crypto.randomUUID(),
+        id: newBusinessId,
         name: form.name,
         code: form.code.toUpperCase(),
         isActive: 1,
         updated_at: Date.now()
       } as any);
+
+      // 2. Create Default Admin User
+      await db.users.add({
+        id: crypto.randomUUID(),
+        name: 'admin',
+        password: '123', // Default password
+        role: 'ADMIN',
+        businessId: newBusinessId,
+        updated_at: Date.now()
+      });
+
+      // 3. Create Default Branch (Required for login flow)
+      await db.branches.add({
+        id: crypto.randomUUID(),
+        name: 'Main Branch',
+        isActive: true,
+        businessId: newBusinessId,
+        updated_at: Date.now()
+      });
+
       setForm({ name: '', code: '' });
+      alert(`Business created! Default login -> User: admin | Pass: 123`);
     } catch(err) {
       console.error(err);
       alert("Failed to create business. Code must be unique.");
