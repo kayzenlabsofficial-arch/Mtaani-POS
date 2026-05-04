@@ -399,10 +399,10 @@ export default function MtaaniPOS() {
     }
 
     // ── System Manager Intercept (hashed check) ────────────────────────────
-    // Hash: SHA-256 of 'kayzen2026' + salt = compared here so plaintext never sits in code
     if (rawCode === 'SYSTEM' && rawUser === 'admin') {
       const enteredHash = await hashPassword(loginForm.password);
-      const masterHash = await hashPassword('kayzen2026');
+      // Hardcoded strong master password: Kayzen@Secure#POS2026
+      const masterHash = await hashPassword('Kayzen@Secure#POS2026');
       if (enteredHash === masterHash) {
         setIsSystemManager(true);
         setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
@@ -791,9 +791,34 @@ export default function MtaaniPOS() {
           <div>
             <h1 className="text-base font-black tracking-tight text-slate-900 leading-none">{storeName}</h1>
             {activeBranchName && (
-              <p className="text-[9px] font-bold text-slate-400 flex items-center gap-1 mt-0.5">
-                <MapPin size={8} className="text-blue-400" />{activeBranchName}
-              </p>
+              <div className="flex items-center gap-1 mt-0.5">
+                <MapPin size={8} className="text-blue-400" />
+                {currentUser?.role === 'ADMIN' ? (
+                  <select 
+                    value={activeBranchId || ''} 
+                    onChange={async (e) => {
+                      const bid = e.target.value;
+                      if (bid) {
+                        setActiveBranchId(bid);
+                        setIsSyncing(true);
+                        try {
+                          await db.sync();
+                          success(`Switched to ${activeBranchName || 'branch'}`);
+                        } finally {
+                          setIsSyncing(false);
+                        }
+                      }
+                    }}
+                    className="bg-transparent text-[9px] font-bold text-slate-400 border-none p-0 focus:ring-0 cursor-pointer hover:text-blue-600 transition-colors"
+                  >
+                    <option value={activeBranchId || ''}>{activeBranchName}</option>
+                    {/* The actual branch list will be populated below */}
+                    <BranchOptions activeBranchId={activeBranchId} />
+                  </select>
+                ) : (
+                  <p className="text-[9px] font-bold text-slate-400">{activeBranchName}</p>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -1364,5 +1389,16 @@ export default function MtaaniPOS() {
 
 
     </div>
+  );
+}
+
+function BranchOptions({ activeBranchId }: { activeBranchId: string | null }) {
+  const branches = useLiveQuery(() => db.branches.where('isActive').equals(1).toArray(), []);
+  return (
+    <>
+      {branches?.filter(b => b.id !== activeBranchId).map(b => (
+        <option key={b.id} value={b.id}>{b.name}</option>
+      ))}
+    </>
   );
 }

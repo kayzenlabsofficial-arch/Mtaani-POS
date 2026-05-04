@@ -18,6 +18,8 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   const activeShifts = useLiveQuery(() => db.shifts.where('status').equals('OPEN').toArray(), [], []);
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', password: '', role: 'CASHIER' as 'CASHIER' | 'ADMIN' });
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editingPassword, setEditingPassword] = useState('');
 
   const handleAddUser = async () => {
     if (!newUser.name || !newUser.password) return;
@@ -39,6 +41,16 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     if (confirm("Are you sure you want to delete this user?")) {
       await db.users.delete(id);
     }
+  };
+
+  const handlePasswordUpdate = async (id: string) => {
+    if (!editingPassword || editingPassword.length < 4) return;
+    const hashedPassword = await hashPassword(editingPassword);
+    await db.users.update(id, { password: hashedPassword, updated_at: Date.now() });
+    setEditingUserId(null);
+    setEditingPassword('');
+    await db.sync();
+    alert("Password updated successfully.");
   };
 
   return (
@@ -138,25 +150,62 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {users?.map(user => (
-                   <div key={user.id} className="bg-white p-4 rounded-2xl border border-slate-200 flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                         <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-700'}`}>
-                            {user.name.charAt(0).toUpperCase()}
-                         </div>
-                         <div>
-                            <p className="font-bold text-sm text-slate-900">{user.name}</p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded tracking-widest ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-500'}`}>
-                                  {user.role}
-                               </span>
-                               <span className="text-xs text-slate-400 font-mono flex items-center gap-1"><KeyRound size={10}/> ****</span>
-                            </div>
-                         </div>
+                    <React.Fragment key={user.id}>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 flex justify-between items-center">
+                       <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-700'}`}>
+                             {user.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                             <p className="font-bold text-sm text-slate-900">{user.name}</p>
+                             <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded tracking-widest ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-500'}`}>
+                                   {user.role}
+                                </span>
+                                <span className="text-xs text-slate-400 font-mono flex items-center gap-1"><KeyRound size={10}/> ****</span>
+                             </div>
+                          </div>
+                       </div>
+                       <div className="flex items-center gap-1">
+                          <button 
+                            onClick={() => {
+                              if (editingUserId === user.id) {
+                                setEditingUserId(null);
+                                setEditingPassword('');
+                              } else {
+                                setEditingUserId(user.id);
+                                setEditingPassword('');
+                              }
+                            }} 
+                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                          >
+                             <KeyRound size={16} />
+                          </button>
+                          <button onClick={() => handleDeleteUser(user.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors">
+                             <Trash2 size={16} />
+                          </button>
+                       </div>
+                    </div>
+                    {editingUserId === user.id && (
+                      <div className="mt-[-8px] mb-2 bg-blue-50/50 p-3 rounded-xl border border-blue-100 flex gap-2 animate-in slide-in-from-top-2">
+                        <input 
+                          type="password" 
+                          autoFocus
+                          className="flex-1 bg-white border border-blue-200 rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-blue-500" 
+                          placeholder="New password (min 4 chars)"
+                          value={editingPassword}
+                          onChange={e => setEditingPassword(e.target.value)}
+                        />
+                        <button 
+                          onClick={() => handlePasswordUpdate(user.id)}
+                          disabled={editingPassword.length < 4}
+                          className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-50"
+                        >
+                          Save
+                        </button>
                       </div>
-                      <button onClick={() => handleDeleteUser(user.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors">
-                         <Trash2 size={16} />
-                      </button>
-                   </div>
+                    )}
+                    </React.Fragment>
                 ))}
              </div>
 
@@ -177,10 +226,10 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                         <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 ml-1">Role</label>
                         <div className="flex gap-2">
                            <button onClick={() => setNewUser({...newUser, role: 'CASHIER'})} className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-colors ${newUser.role === 'CASHIER' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                              Cashier
+                               Cashier
                            </button>
                            <button onClick={() => setNewUser({...newUser, role: 'ADMIN'})} className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-colors ${newUser.role === 'ADMIN' ? 'bg-purple-50 border-purple-500 text-purple-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                              Administrator
+                               Administrator
                            </button>
                         </div>
                       </div>
