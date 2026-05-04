@@ -111,12 +111,6 @@ export class CloudTable<T extends { id: string }> {
     }
   }
 
-  /** Force refetch from cloud */
-  async reload(): Promise<void> {
-    this.loaded = false;
-    await this.hydrate();
-  }
-
   private async ensure(): Promise<void> {
     if (!this.loaded) await this.hydrate();
   }
