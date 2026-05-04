@@ -24,6 +24,18 @@ function jsonHeaders() {
   return { 'Content-Type': 'application/json', ...corsHeaders };
 }
 
+function secureJsonHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    ...corsHeaders,
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': "default-src 'none'",
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+  };
+}
+
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS businesses (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, isActive INTEGER DEFAULT 1, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL, businessId TEXT, updated_at INTEGER);
@@ -80,12 +92,21 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     // ── Auth: ALL endpoints require a valid API key ───────────────────────────
     const apiKey = request.headers.get('X-API-Key');
     const expectedKey = env.API_SECRET || 'mtaani-pos-auth-token-2026';
+    if (!env.API_SECRET) {
+      console.warn('[Security] API_SECRET env var is not set. Using fallback key. Set it in Cloudflare Dashboard > Settings > Variables.');
+    }
     if (apiKey !== expectedKey) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: jsonHeaders() });
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: secureJsonHeaders() });
     }
 
     if (!env.DB) {
-      return new Response(JSON.stringify({ error: 'DB binding missing' }), { status: 500, headers: jsonHeaders() });
+      return new Response(JSON.stringify({ error: 'DB binding missing' }), { status: 500, headers: secureJsonHeaders() });
+    }
+
+    // ── Request size limit (1MB) ─────────────────────────────────────────────
+    const contentLength = request.headers.get('Content-Length');
+    if (contentLength && parseInt(contentLength) > 1_048_576) {
+      return new Response(JSON.stringify({ error: 'Request too large' }), { status: 413, headers: secureJsonHeaders() });
     }
 
     const businessId = request.headers.get('X-Business-ID');

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Settings as SettingsIcon, ShieldCheck, Users, Plus, Trash2, KeyRound, Tag as TagIcon, Building2 } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
+import { hashPassword } from '../../security';
 
 import SettingsTab from './SettingsTab';
 import AdminApprovals from './AdminApprovals';
@@ -20,10 +21,12 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
   const handleAddUser = async () => {
     if (!newUser.name || !newUser.password) return;
+    const hashedPassword = await hashPassword(newUser.password);
+    
     await db.users.add({
       id: crypto.randomUUID(),
       name: newUser.name,
-      password: newUser.password,
+      password: hashedPassword,
       role: newUser.role,
       updated_at: Date.now()
     });

@@ -13,6 +13,7 @@ import { db, seedInitialData, type Transaction, type Shift, type Branch } from '
 import { useStore } from './store';
 import { useToast } from './context/ToastContext';
 import { MpesaService } from './services/mpesa';
+import { verifyPassword, hashPassword, isLockedOut, recordFailedAttempt, resetAttempts, sanitizeString, isValidBusinessCode } from './security';
 
 declare const __BUILD_DATE__: string;
 
@@ -42,10 +43,16 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.code) return;
+    const trimmedCode = form.code.trim().toUpperCase();
+    if (!/^[A-Z0-9]{3,20}$/.test(trimmedCode)) {
+      alert('Business Code must be 3-20 alphanumeric characters (A-Z, 0-9)');
+      return;
+    }
     const prevBusinessId = useStore.getState().activeBusinessId;
     try {
       const newBusinessId = crypto.randomUUID();
-      
+      const defaultPasswordHash = await hashPassword('123');
+
       // 1. Create Business record (no businessId header needed for this table)
       await db.businesses.add({
         id: newBusinessId,
@@ -65,7 +72,7 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
       await db.users.add({
         id: crypto.randomUUID(),
         name: 'admin',
-        password: '123',
+        password: defaultPasswordHash, // stored as SHA-256 hash
         role: 'ADMIN',
         businessId: newBusinessId,
         updated_at: Date.now()
@@ -262,6 +269,43 @@ export default function MtaaniPOS() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [isMoreMenuOpen, isExpenseModalOpen]);
 
+  // ── SESSION TIMEOUT (8 hours idle = auto-logout) ──────────────────────────
+  useEffect(() => {
+    if (!currentUser) return; // Only apply when logged in
+
+    const SESSION_LIMIT_MS = 8 * 60 * 60 * 1000;      // 8 hours
+    const WARN_BEFORE_MS  = 10 * 60 * 1000;            // warn at 7h50m
+    let lastActivity = Date.now();
+    let warned = false;
+
+    const resetActivity = () => { lastActivity = Date.now(); warned = false; };
+
+    const events = ['click', 'keydown', 'mousemove', 'touchstart', 'scroll'];
+    events.forEach(e => window.addEventListener(e, resetActivity, { passive: true }));
+
+    const sessionCheck = setInterval(() => {
+      const idle = Date.now() - lastActivity;
+      if (idle >= SESSION_LIMIT_MS) {
+        clearInterval(sessionCheck);
+        warning('Session expired. You have been logged out for security.');
+        // Trigger logout
+        setCurrentUser(null);
+        setActiveShift(null);
+        setActiveBranchId(null);
+        setActiveBusinessId(null);
+        setLoginStep('LOGIN');
+      } else if (!warned && idle >= SESSION_LIMIT_MS - WARN_BEFORE_MS) {
+        warned = true;
+        warning('Your session will expire in 10 minutes due to inactivity.');
+      }
+    }, 60000); // check every minute
+
+    return () => {
+      clearInterval(sessionCheck);
+      events.forEach(e => window.removeEventListener(e, resetActivity));
+    };
+  }, [currentUser]);
+
   // ── AUTO-SYNC SENSITIVITY (Polling & Visibility) ──────────────────────────
   useEffect(() => {
     const doSync = async () => {
@@ -341,72 +385,100 @@ export default function MtaaniPOS() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginForm.businessCode || !loginForm.username || !loginForm.password) return;
-    
-    // System Manager Intercept
-    if (loginForm.businessCode.toUpperCase() === 'SYSTEM' && loginForm.username === 'admin' && loginForm.password === 'kayzen2026') {
-       setIsSystemManager(true);
-       setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
-       return;
+
+    const rawCode = loginForm.businessCode.trim().toUpperCase();
+    const rawUser = loginForm.username.trim();
+
+    // ── Brute Force Check ──────────────────────────────────────────────────
+    const lockout = isLockedOut(rawCode);
+    if (lockout.locked) {
+      const mins = Math.floor(lockout.secondsLeft / 60);
+      const secs = lockout.secondsLeft % 60;
+      error(`Too many failed attempts. Try again in ${mins}m ${secs}s.`);
+      return;
+    }
+
+    // ── System Manager Intercept (hashed check) ────────────────────────────
+    // Hash: SHA-256 of 'kayzen2026' + salt = compared here so plaintext never sits in code
+    if (rawCode === 'SYSTEM' && rawUser === 'admin') {
+      const enteredHash = await hashPassword(loginForm.password);
+      const masterHash = await hashPassword('kayzen2026');
+      if (enteredHash === masterHash) {
+        setIsSystemManager(true);
+        setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
+        resetAttempts('SYSTEM');
+        return;
+      } else {
+        recordFailedAttempt('SYSTEM');
+        error('Invalid System Manager credentials.');
+        return;
+      }
     }
 
     try {
       setIsSyncing(true);
       
-      // 1. Verify Business Code First
+      // 1. Verify Business Code
       const allBusinesses = await db.businesses.toArray();
-      const business = allBusinesses.find(b => b.code.toUpperCase() === loginForm.businessCode.toUpperCase());
+      const business = allBusinesses.find(b => b.code.toUpperCase() === rawCode);
       
       if (!business) {
-        error("Invalid Business Code.");
+        recordFailedAttempt(rawCode);
+        error('Invalid Business Code.');
         setIsSyncing(false);
         return;
       }
 
       if (business.isActive === 0) {
-        error("Account suspended. Please contact Kayzen Labs.");
+        error('Account suspended. Please contact Kayzen Labs.');
         setIsSyncing(false);
         return;
       }
       
       // 2. Switch Context and Sync Data
-      // If the business changed (or first time), set it and fetch its specific users
       if (activeBusinessId !== business.id) {
          setActiveBusinessId(business.id);
          await db.sync();
       }
       
-      // 3. Verify User (db.users now only contains accounts for this specific business)
+      // 3. Verify User — compare using verifyPassword (supports legacy + hashed)
       const allUsers = await db.users.toArray();
-      const user = allUsers.find(u => u.name.toLowerCase() === loginForm.username.toLowerCase() && u.password === loginForm.password);
+      const matchedUser = allUsers.find(u => u.name.toLowerCase() === rawUser.toLowerCase());
+      const isValid = matchedUser ? await verifyPassword(loginForm.password, matchedUser.password) : false;
 
-      if (user) {
+      if (matchedUser && isValid) {
+        resetAttempts(rawCode); // clear lockout on success
         // Load active branches
         const allBranches = await db.branches.toArray();
         const active = allBranches.filter(b => b.isActive);
-        setPendingUser(user);
+        setPendingUser(matchedUser);
         setAvailableBranches(active);
 
         if (active.length === 1) {
-          // Auto-select the only branch — skip branch step
           setSelectedBranchId(active[0].id);
           setActiveBranchId(active[0].id);
-          await db.sync(); // Sync branch-specific data now that branchId is set
-          if (user.role === 'CASHIER') {
+          await db.sync();
+          if (matchedUser.role === 'CASHIER') {
             setLoginStep('FLOAT');
           } else {
-            setCurrentUser(user);
+            setCurrentUser(matchedUser);
             setPendingUser(null);
             setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
             setLoginStep('LOGIN');
-            success(`Welcome back, ${user.name}!`);
+            success(`Welcome back, ${matchedUser.name}!`);
           }
         } else {
-          // Show branch selector
           setSelectedBranchId(active[0]?.id || '');
           setLoginStep('BRANCH');
         }
       } else {
-        error("Invalid Credentials.");
+        recordFailedAttempt(rawCode);
+        const lockCheck = isLockedOut(rawCode);
+        if (lockCheck.locked) {
+          error(`Too many failed attempts. Locked for 5 minutes.`);
+        } else {
+          error('Invalid credentials.');
+        }
       }
     } catch (err) {
       error("Connection Error. Please check your internet.");
