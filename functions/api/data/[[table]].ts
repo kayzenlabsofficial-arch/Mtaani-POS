@@ -127,7 +127,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       const { results: pragma } = await env.DB.prepare(`PRAGMA table_info('${table}')`).all();
       const validCols = new Set(pragma.map((r: any) => r.name));
       const cols = Object.keys(items[0]).filter(k => validCols.has(k));
-      const sql = \`INSERT OR REPLACE INTO \${table} (\${cols.map(c => '"'+c+'"').join(', ')}) VALUES (\${cols.map(() => '?').join(', ')})\`;
+      const sql = `INSERT OR REPLACE INTO ${table} (${cols.map(c => '"'+c+'"').join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
       const stmt = env.DB.prepare(sql);
       const batch = items.map(item => stmt.bind(...cols.map(col => serializeValue(item[col]))));
       await env.DB.batch(batch);
@@ -136,10 +136,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     if (request.method === 'DELETE') {
       const id = recordId ?? (await request.json() as any)?.id;
       if (table === 'businesses') {
-        await env.DB.prepare(\`DELETE FROM \${table} WHERE id = ?\`).bind(id).run();
+        await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
       } else {
         if (!businessId) return new Response(JSON.stringify({ error: 'X-Business-ID header required for DELETE' }), { status: 400, headers: jsonHeaders() });
-        await env.DB.prepare(\`DELETE FROM \${table} WHERE id = ? AND businessId = ?\`).bind(id, businessId).run();
+        await env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ?`).bind(id, businessId).run();
       }
       return new Response(JSON.stringify({ success: true }), { headers: jsonHeaders() });
     }
