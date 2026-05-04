@@ -1,13 +1,17 @@
 import React, { useState } from 'react';
-import { Search, Plus, Users, Phone, Mail, ChevronRight, X, User } from 'lucide-react';
+import { Search, Plus, Users, Phone, Mail, ChevronRight, X, User, Trash2 } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Customer } from '../../db';
+import { useStore } from '../../store';
+import { useToast } from '../../context/ToastContext';
 
 export default function CustomersTab() {
   const [customerSearch, setCustomerSearch] = useState("");
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
+  const isAdmin = useStore(state => state.isAdmin);
+  const { success, error } = useToast();
 
   const allCustomers = useLiveQuery(() => db.customers.toArray(), [], []) ;
 
@@ -42,10 +46,20 @@ export default function CustomersTab() {
   const handleSaveCustomer = async () => {
       if (editingCustomer) {
           await db.customers.update(editingCustomer.id, { ...customerForm });
+          success("Customer updated.");
       } else {
           await db.customers.add({ id: crypto.randomUUID(), ...customerForm, totalSpent: 0, balance: 0 } as any);
+          success("Customer added.");
       }
       setIsCustomerModalOpen(false);
+  }
+
+  const handleDeleteCustomer = async () => {
+    if (editingCustomer && confirm(`Are you sure you want to delete ${editingCustomer.name}?`)) {
+      await db.customers.delete(editingCustomer.id);
+      setIsCustomerModalOpen(false);
+      success("Customer removed.");
+    }
   }
 
   return (
@@ -125,6 +139,11 @@ export default function CustomersTab() {
                    <h2 className="text-xl font-black text-slate-900">{editingCustomer ? 'Client Profile' : 'New Client'}</h2>
                    <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">CRM Management</p>
                  </div>
+                 {editingCustomer && isAdmin && (
+                    <button onClick={handleDeleteCustomer} className="ml-auto w-10 h-10 flex items-center justify-center rounded-2xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors press">
+                      <Trash2 size={20} />
+                    </button>
+                  )}
               </div>
 
               <div className="space-y-5 mb-8">

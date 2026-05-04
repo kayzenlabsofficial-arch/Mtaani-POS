@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Search, Plus, Truck, DollarSign, User, Phone, Mail, ChevronRight, X, Briefcase } from 'lucide-react';
+import { Search, Plus, Truck, DollarSign, User, Phone, Mail, ChevronRight, X, Briefcase, Trash2 } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Supplier } from '../../db';
+import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 import SupplierLedgerModal from '../modals/SupplierLedgerModal';
@@ -15,6 +16,7 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
   const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<Supplier | null>(null);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [supplierForm, setSupplierForm] = useState({ name: '', company: '', phone: '', email: '', address: '', kraPin: '' });
+  const isAdmin = useStore(state => state.isAdmin);
   const { success, error } = useToast();
 
   const allSuppliers = useLiveQuery(() => db.suppliers.toArray(), [], []) ;
@@ -56,11 +58,20 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
   const handleSaveSupplier = async () => {
       if (editingSupplier) {
           await db.suppliers.update(editingSupplier.id, { ...supplierForm });
+          success("Supplier information updated.");
       } else {
           await db.suppliers.add({ id: crypto.randomUUID(), ...supplierForm, balance: 0 } as any);
+          success("Supplier added.");
       }
       setIsSupplierModalOpen(false);
-      success("Supplier information saved.");
+  }
+
+  const handleDeleteSupplier = async () => {
+    if (editingSupplier && confirm(`Are you sure you want to delete ${editingSupplier.company}?`)) {
+      await db.suppliers.delete(editingSupplier.id);
+      setIsSupplierModalOpen(false);
+      success("Supplier removed.");
+    }
   }
 
   const handleSavePayment = async (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, transactionCode?: string, purchaseOrderId?: string, purchaseOrderIds?: string[], creditNoteIds?: string[] }) => {
@@ -241,6 +252,11 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
                    <h2 className="text-xl font-black text-slate-900">{editingSupplier ? 'Vendor Profile' : 'New Vendor'}</h2>
                    <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Procurement Registry</p>
                  </div>
+                 {editingSupplier && isAdmin && (
+                    <button onClick={handleDeleteSupplier} className="ml-auto w-10 h-10 flex items-center justify-center rounded-2xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors press">
+                      <Trash2 size={20} />
+                    </button>
+                  )}
               </div>
 
               <div className="space-y-5 mb-8">

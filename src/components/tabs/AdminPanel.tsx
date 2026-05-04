@@ -38,8 +38,17 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   };
 
   const handleDeleteUser = async (id: string) => {
-    if (confirm("Are you sure you want to delete this user?")) {
+    const adminCount = users?.filter(u => u.role === 'ADMIN').length || 0;
+    const userToDelete = users?.find(u => u.id === id);
+    
+    if (userToDelete?.role === 'ADMIN' && adminCount <= 1) {
+      alert("Security Alert: Cannot delete the last administrator. Please promote another staff member to Admin first.");
+      return;
+    }
+
+    if (confirm(`Are you sure you want to delete staff member "${userToDelete?.name}"? This action is permanent.`)) {
       await db.users.delete(id);
+      await db.sync();
     }
   };
 

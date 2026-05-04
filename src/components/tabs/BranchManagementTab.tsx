@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
-import { MapPin, Plus, Pencil, Power, Phone, Hash, Building2, CheckCircle2, XCircle } from 'lucide-react';
+import { MapPin, Plus, Pencil, Power, Phone, Hash, Building2, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Branch } from '../../db';
+import { useStore } from '../../store';
+import { useToast } from '../../context/ToastContext';
 
 export default function BranchManagementTab() {
   const branches = useLiveQuery(() => db.branches.toArray(), [], []);
+  const isAdmin = useStore(state => state.isAdmin);
+  const { success, error, warning } = useToast();
 
   const BLANK: Omit<Branch, 'id' | 'updated_at'> = {
     name: '', location: '', phone: '', tillNumber: '', kraPin: '', isActive: true,
@@ -40,6 +44,7 @@ export default function BranchManagementTab() {
           kraPin: form.kraPin.trim() || undefined,
           isActive: form.isActive,
         });
+        success("Branch updated.");
       } else {
         await db.branches.add({
           id: 'branch_' + crypto.randomUUID().split('-')[0],
@@ -50,10 +55,13 @@ export default function BranchManagementTab() {
           kraPin: form.kraPin.trim() || undefined,
           isActive: true,
         });
+        success("Branch created.");
       }
       setIsFormOpen(false);
       setEditingId(null);
       setForm(BLANK);
+    } catch (err) {
+      error("Failed to save branch.");
     } finally {
       setSaving(false);
     }
@@ -65,10 +73,27 @@ export default function BranchManagementTab() {
     } else {
       const activeBranches = (branches || []).filter(br => br.isActive);
       if (activeBranches.length <= 1) {
-        alert('At least one branch must remain active.');
+        warning('At least one branch must remain active.');
         return;
       }
       await db.branches.update(b.id, { isActive: false });
+    }
+  };
+
+  const handleDelete = async (b: Branch) => {
+    const activeBranches = (branches || []).length;
+    if (activeBranches <= 1) {
+      warning('Cannot delete the only remaining branch.');
+      return;
+    }
+
+    if (confirm(`CRITICAL: Deleting branch "${b.name}" will permanently erase its specific records. Are you absolutely sure?`)) {
+      try {
+        await db.branches.delete(b.id);
+        success("Branch permanently removed.");
+      } catch (err) {
+        error("Deletion failed. Branch may have associated data.");
+      }
     }
   };
 
@@ -98,7 +123,7 @@ export default function BranchManagementTab() {
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${branch.isActive ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
-                  <Building2 size={20} />
+                   <Building2 size={20} />
                 </div>
                 <div>
                   <p className="font-black text-sm text-slate-900 leading-tight">{branch.name}</p>
@@ -123,6 +148,15 @@ export default function BranchManagementTab() {
                 >
                   <Power size={14} />
                 </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => handleDelete(branch)}
+                    className="w-8 h-8 rounded-xl bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all"
+                    title="Delete branch"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             </div>
 

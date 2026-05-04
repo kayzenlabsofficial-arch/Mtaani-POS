@@ -71,9 +71,19 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
 }
 
 async function d1Delete(table: string, id: string): Promise<void> {
+  const businessId = useStore.getState().activeBusinessId;
+  const branchId = useStore.getState().activeBranchId;
+  const headers: Record<string, string> = { 
+    'X-API-Key': API_KEY 
+  };
+  
+  if (businessId) headers['X-Business-ID'] = businessId;
+  if (branchId) headers['X-Branch-ID'] = branchId;
+
   const res = await fetch(`${API}/${table}/${id}`, { 
     method: 'DELETE',
-    headers: { 'X-API-Key': API_KEY }
+    headers,
+    cache: 'no-store'
   });
   if (!res.ok) throw new Error(`DELETE /api/data/${table}/${id} → ${res.status}`);
 }
