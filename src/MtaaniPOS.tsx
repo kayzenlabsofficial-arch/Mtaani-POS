@@ -74,14 +74,24 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
 
       setForm({ name: '', code: '' });
       alert(`Business created! Default login -> User: admin | Pass: 123`);
-    } catch(err) {
+    } catch(err: any) {
       console.error(err);
-      alert("Failed to create business. Code must be unique.");
+      alert(`Failed to create business: ${err.message || 'Code must be unique'}`);
     }
   };
 
   const toggleStatus = async (id: string, currentStatus: number) => {
     await db.businesses.update(id, { isActive: currentStatus === 1 ? 0 : 1 });
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`ARE YOU SURE? This will permanently DELETE ${name} and ALL its products, branches, sales, and users. This cannot be undone.`)) return;
+    try {
+      await db.businesses.delete(id);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete business.");
+    }
   };
 
   return (
@@ -118,9 +128,12 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
                       {b.isActive !== 0 ? 'Active' : 'Suspended'}
                     </span>
                   </td>
-                  <td className="p-4 text-right">
-                    <button onClick={() => toggleStatus(b.id, b.isActive ?? 1)} className={`px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors ${b.isActive !== 0 ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`}>
+                  <td className="p-4 text-right flex items-center justify-end gap-2">
+                    <button onClick={() => toggleStatus(b.id, b.isActive ?? 1)} className={`px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors ${b.isActive !== 0 ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-500 hover:bg-green-600'}`}>
                       {b.isActive !== 0 ? 'Suspend' : 'Activate'}
+                    </button>
+                    <button onClick={() => handleDelete(b.id, b.name)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                      <Trash2 size={20} />
                     </button>
                   </td>
                 </tr>

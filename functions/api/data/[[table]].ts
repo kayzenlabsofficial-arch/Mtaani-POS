@@ -151,7 +151,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     if (request.method === 'DELETE') {
       const id = recordId ?? (await request.json() as any)?.id;
       if (table === 'businesses') {
-        await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
+        const tables = ['users', 'products', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches'];
+        const batch = tables.map(t => env.DB.prepare(`DELETE FROM ${t} WHERE businessId = ?`).bind(id));
+        batch.push(env.DB.prepare(`DELETE FROM businesses WHERE id = ?`).bind(id));
+        await env.DB.batch(batch);
       } else if (GLOBAL_TABLES.has(table)) {
         if (!businessId) return new Response(JSON.stringify({ error: 'X-Business-ID header required for DELETE' }), { status: 400, headers: jsonHeaders() });
         await env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ?`).bind(id, businessId).run();
