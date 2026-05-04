@@ -53,6 +53,10 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
         updated_at: Date.now()
       } as any);
 
+      // CRITICAL FIX: Temporarily set the business context so that the 
+      // following POST requests to 'users' and 'branches' include the correct X-Business-ID header.
+      setActiveBusinessId(newBusinessId);
+
       // 2. Create Default Admin User
       await db.users.add({
         id: crypto.randomUUID(),
@@ -72,6 +76,9 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
         businessId: newBusinessId,
         updated_at: Date.now()
       });
+
+      // Restore context (SYSTEM login has no active business ID)
+      setActiveBusinessId(null);
 
       setForm({ name: '', code: '' });
       alert(`Business created! Default login -> User: admin | Pass: 123`);
