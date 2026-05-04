@@ -1,0 +1,250 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+:root {
+  --brand-primary: #2563eb;
+  --brand-primary-glow: rgba(37, 99, 235, 0.25);
+  --brand-dark: #0f172a;
+  --brand-surface: #f8fafc;
+  --brand-card: #ffffff;
+  --radius-card: 20px;
+  --radius-xl: 28px;
+  --shadow-card: 0 2px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-elevated: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* We handle scrolling in the main component */
+}
+
+body {
+  font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--brand-surface);
+}
+
+@layer utilities {
+
+  /* ── Animations ─────────────────────────────────────── */
+  .animate-in {
+    animation: animate-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes animate-in {
+    from { opacity: 0; transform: translateX(100%); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  .fade-in { animation: fade-in 0.2s ease-out; }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .slide-up { animation: slide-up 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(20px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .zoom-in-95 { animation: zoom-in 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes zoom-in {
+    from { opacity: 0; transform: scale(0.93); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  .bounce-in, .animate-bounce-in { animation: bounce-in 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+  @keyframes bounce-in {
+    0%  { transform: scale(0.9); opacity: 0; }
+    60% { transform: scale(1.04); opacity: 1; }
+    100%{ transform: scale(1); }
+  }
+
+  .slide-in-from-bottom { animation: slide-from-bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes slide-from-bottom {
+    from { opacity: 0; transform: translateY(40px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .slide-in-from-right { animation: slide-from-right 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes slide-from-right {
+    from { opacity: 0; transform: translateX(100%); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  .slide-in-from-left { animation: slide-from-left 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes slide-from-left {
+    from { opacity: 0; transform: translateX(-100%); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  .slide-in-from-top-4 { animation: slide-from-top 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes slide-from-top {
+    from { opacity: 0; transform: translateY(-12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .slide-in-from-bottom-4 { animation: slide-from-bottom-4 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes slide-from-bottom-4 {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 var(--brand-primary-glow); }
+    50%       { box-shadow: 0 0 0 12px transparent; }
+  }
+
+  .spin-slow { animation: spin 3s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Cart item add flash ────────────────────────────── */
+  .add-flash { animation: add-flash 0.35s ease-out; }
+  @keyframes add-flash {
+    0%   { transform: scale(1); background-color: #dbeafe; }
+    50%  { transform: scale(0.95); }
+    100% { transform: scale(1); background-color: inherit; }
+  }
+
+  /* ── Glassmorphism ───────────────────────────────────── */
+  .glass {
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+  }
+
+  .glass-dark {
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  /* ── Scrollbars ─────────────────────────────────────── */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+
+  /* ── Gradient text ─────────────────────────────────── */
+  .text-gradient {
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .text-gradient-gold {
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ── Premium shadows ─────────────────────────────────  */
+  .shadow-card { box-shadow: var(--shadow-card); }
+  .shadow-elevated { box-shadow: var(--shadow-elevated); }
+  .shadow-blue  { box-shadow: 0 8px 24px rgba(37, 99, 235, 0.25); }
+  .shadow-green { box-shadow: 0 8px 24px rgba(16, 185, 129, 0.25); }
+  .shadow-purple{ box-shadow: 0 8px 24px rgba(124, 58, 237, 0.25); }
+  .shadow-orange{ box-shadow: 0 8px 24px rgba(234, 88, 12, 0.25); }
+
+  /* ── Stat card gradients ───────────────────────────── */
+  .grad-blue   { background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 60%, #3b82f6 100%); }
+  .grad-green  { background: linear-gradient(135deg, #059669 0%, #10b981 100%); }
+  .grad-purple { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 60%, #8b5cf6 100%); }
+  .grad-orange { background: linear-gradient(135deg, #c2410c 0%, #ea580c 60%, #f97316 100%); }
+  .grad-rose   { background: linear-gradient(135deg, #be123c 0%, #e11d48 60%, #f43f5e 100%); }
+  .grad-slate  { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); }
+
+  /* ── Input focus glow ────────────────────────────────  */
+  .input-focus:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  }
+
+  /* ── Active press effect ─────────────────────────────  */
+  .press:active { transform: scale(0.96); transition: transform 0.1s; }
+
+  /* ── Status chips ────────────────────────────────────  */
+  .chip-green  { background: #dcfce7; color: #15803d; }
+  .chip-blue   { background: #dbeafe; color: #1d4ed8; }
+  .chip-orange { background: #ffedd5; color: #c2410c; }
+  .chip-red    { background: #fee2e2; color: #b91c1c; }
+  .chip-purple { background: #ede9fe; color: #6d28d9; }
+  .chip-slate  { background: #f1f5f9; color: #475569; }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   ── PRINT ENGINE (80mm & A4 Support) ───────────────────────────────────
+   ────────────────────────────────────────────────────────────────────────── */
+
+@media print {
+  body {
+    background: white !important;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+
+  /* Force white background and hide UI chrome */
+  #printable-content {
+    background: white !important;
+    width: 100% !important;
+    position: static !important;
+    margin: 0 !important;
+  }
+
+  /* Support for thermal rolls (80mm) */
+  .print-receipt-80mm {
+    width: 80mm !important;
+    max-width: 80mm !important;
+    font-size: 10pt !important;
+    margin: 0 auto !important;
+  }
+
+  /* Support for formal A4 documents */
+  .print-document-a4 {
+    width: 210mm !important;
+    margin: 0 auto !important;
+    font-size: 11pt !important;
+  }
+
+  /* Ensure colors and backgrounds print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+/* ─── Barcode scanner scanning line ───────────────────────────── */
+@keyframes scanLine {
+  0%   { top: 8%; opacity: 1; }
+  45%  { top: 85%; opacity: 1; }
+  50%  { top: 85%; opacity: 0; }
+  55%  { top: 8%;  opacity: 0; }
+  60%  { top: 8%;  opacity: 1; }
+  100% { top: 8%;  opacity: 1; }
+}
+
+.scan-line-animate {
+  position: absolute;
+  animation: scanLine 2s ease-in-out infinite;
+}
+
