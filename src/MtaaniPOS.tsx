@@ -37,14 +37,16 @@ import ExpenseModal from './components/modals/ExpenseModal';
 function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
   const businesses = useLiveQuery(() => db.businesses.toArray(), []);
   const [form, setForm] = useState({ name: '', code: '' });
+  const { setActiveBusinessId } = useStore();
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.code) return;
+    const prevBusinessId = useStore.getState().activeBusinessId;
     try {
       const newBusinessId = crypto.randomUUID();
       
-      // 1. Create Business
+      // 1. Create Business record (no businessId header needed for this table)
       await db.businesses.add({
         id: newBusinessId,
         name: form.name,
@@ -53,21 +55,23 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
         updated_at: Date.now()
       } as any);
 
-      // CRITICAL FIX: Temporarily set the business context so that the 
-      // following POST requests to 'users' and 'branches' include the correct X-Business-ID header.
+      // CRITICAL: Set the active business ID so the next requests
+      // include the correct X-Business-ID header
       setActiveBusinessId(newBusinessId);
+      // Small delay to ensure the store state is updated before next fetch
+      await new Promise(r => setTimeout(r, 50));
 
-      // 2. Create Default Admin User
+      // 2. Create Default Admin User for this business
       await db.users.add({
         id: crypto.randomUUID(),
         name: 'admin',
-        password: '123', // Default password
+        password: '123',
         role: 'ADMIN',
         businessId: newBusinessId,
         updated_at: Date.now()
       });
 
-      // 3. Create Default Branch (Required for login flow)
+      // 3. Create Default 'Main Branch' for this business
       await db.branches.add({
         id: crypto.randomUUID(),
         name: 'Main Branch',
@@ -77,23 +81,28 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
         updated_at: Date.now()
       });
 
-      // Restore context (SYSTEM login has no active business ID)
-      setActiveBusinessId(null);
-
       setForm({ name: '', code: '' });
-      alert(`Business created! Default login -> User: admin | Pass: 123`);
+      alert(`✅ Business created!\nDefault login:\n  Username: admin\n  Password: 123`);
     } catch(err: any) {
       console.error(err);
-      alert(`Failed to create business: ${err.message || 'Code must be unique'}`);
+      alert(`Failed to create business: ${err.message || 'Unknown error'}`);
+    } finally {
+      // Always restore the context to null (system manager has no business)
+      setActiveBusinessId(prevBusinessId);
     }
   };
 
   const toggleStatus = async (id: string, currentStatus: number) => {
-    await db.businesses.update(id, { isActive: currentStatus === 1 ? 0 : 1 });
+    try {
+      await db.businesses.update(id, { isActive: currentStatus === 1 ? 0 : 1 });
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update status.");
+    }
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`ARE YOU SURE? This will permanently DELETE ${name} and ALL its products, branches, sales, and users. This cannot be undone.`)) return;
+    if (!confirm(`ARE YOU SURE?\n\nThis will permanently DELETE "${name}" and ALL its products, branches, sales, and users.\n\nThis cannot be undone.`)) return;
     try {
       await db.businesses.delete(id);
     } catch (err) {
