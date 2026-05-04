@@ -67,6 +67,7 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
       await db.branches.add({
         id: crypto.randomUUID(),
         name: 'Main Branch',
+        location: 'Default',
         isActive: true,
         businessId: newBusinessId,
         updated_at: Date.now()
