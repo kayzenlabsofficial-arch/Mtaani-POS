@@ -250,6 +250,8 @@ export default function MtaaniPOS() {
   const [amountTendered, setAmountTendered] = useState("");
 
   // M-Pesa State
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isMpesaModalOpen, setIsMpesaModalOpen] = useState(false);
   const [mpesaPhone, setMpesaPhone] = useState('');
   const [mpesaState, setMpesaState] = useState<'IDLE' | 'PUSHING' | 'POLLING' | 'SUCCESS' | 'FAILED'>('IDLE');
