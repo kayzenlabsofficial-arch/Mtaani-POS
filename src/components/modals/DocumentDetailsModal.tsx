@@ -89,7 +89,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const onInitiateRefund = () => {
       const itemsToReturn = Object.entries(returnQuantities).filter(([_, qty]) => (qty as number) > 0);
       if (itemsToReturn.length === 0 && isReturnMode) return;
-      setIsAdminVerifying(true);
+      onConfirmRefund();
   };
 
   const onConfirmRefund = () => {

@@ -41,35 +41,16 @@ export default function DocumentsTab() {
   const handleRefund = async (t: Transaction, itemsToReturn?: { productId: string, quantity: number }[]) => {
     if (t.status !== 'PAID' && t.status !== 'PARTIAL_REFUND') return;
 
-    const items = itemsToReturn || t.items.map(i => ({ productId: i.productId, quantity: i.quantity - (i.returnedQuantity || 0) }));
-
-    for (const item of items) {
-       if (item.quantity <= 0) continue;
-       const product = await db.products.get(item.productId);
-       if (product) {
-          await db.products.update(item.productId, {
-             stockQuantity: product.stockQuantity + item.quantity
-          });
-          await db.stockMovements.add({
-             id: crypto.randomUUID(),
-             productId: item.productId,
-             type: 'RETURN',
-             quantity: item.quantity,
-             timestamp: Date.now(),
-             reference: `Return #${t.id.split('-')[0].toUpperCase()}`,
-             branchId: activeBranchId!
-          });
-          const txItem = t.items.find(i => i.productId === item.productId);
-          if (txItem) txItem.returnedQuantity = (txItem.returnedQuantity || 0) + item.quantity;
-       }
-    }
-
-    const allReturned = t.items.every(i => (i.returnedQuantity || 0) >= i.quantity);
+    // For accountability, we still need to know which items are being requested for refund
+    // For now, let's update the transaction status to PENDING_REFUND
+    // The admin will process the actual stock return during approval
+    
     await db.transactions.update(t.id, { 
-        status: allReturned ? 'REFUNDED' : 'PARTIAL_REFUND',
-        items: t.items
+        status: 'PENDING_REFUND'
     });
+    
     setSelectedRecord(null);
+    alert("Refund request sent to Admin for approval.");
   };
 
   const filteredDocs = unifiedRecords.filter(r => {

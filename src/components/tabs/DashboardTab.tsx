@@ -24,6 +24,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const activeShift = useStore(state => state.activeShift);
   const setActiveShift = useStore(state => state.setActiveShift);
   const activeBranchId = useStore(state => state.activeBranchId);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
   const { success, error } = useToast();
 
   // Live Queries - Filtered by Active Branch
@@ -132,11 +133,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   }
 
   const handlePickCash = async () => {
+    const amount = Number(pickAmount);
     if (amount <= 0 || amount > expectedCashDrawer || !currentUser || !activeBranchId) {
         error("Invalid pickup request.");
         return;
     }
-    await db.cashPicks.add({ id: crypto.randomUUID(), amount, timestamp: Date.now(), status: 'PENDING', userName: currentUser.name, branchId: activeBranchId });
+    await db.cashPicks.add({ id: crypto.randomUUID(), amount, timestamp: Date.now(), status: 'PENDING', userName: currentUser.name, branchId: activeBranchId, businessId: activeBusinessId! });
     setPickAmount("");
     setIsPickCashOpen(false);
     success("Cash pickup awaiting admin approval.");

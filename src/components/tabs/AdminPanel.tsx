@@ -3,6 +3,7 @@ import { Settings as SettingsIcon, ShieldCheck, Users, Plus, Trash2, KeyRound, T
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { hashPassword } from '../../security';
+import { useStore } from '../../store';
 
 import SettingsTab from './SettingsTab';
 import AdminApprovals from './AdminApprovals';
@@ -12,6 +13,7 @@ import BranchManagementTab from './BranchManagementTab';
 export default function AdminPanel({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
   const [activeAdminTab, setActiveAdminTab] = useState<'SETTINGS' | 'APPROVALS' | 'USERS' | 'CATEGORIES' | 'BRANCHES'>('USERS');
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
   
   // User Management State
   const users = useLiveQuery(() => db.users.toArray(), [], []);
@@ -30,6 +32,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
       name: newUser.name,
       password: hashedPassword,
       role: newUser.role,
+      businessId: activeBusinessId!,
       updated_at: Date.now()
     });
     setNewUser({ name: '', password: '', role: 'CASHIER' });
