@@ -443,7 +443,10 @@ export default function MtaaniPOS() {
       
       // 3. Verify User — compare using verifyPassword (supports legacy + hashed)
       const allUsers = await db.users.toArray();
-      const matchedUser = allUsers.find(u => u.name.toLowerCase() === rawUser.toLowerCase());
+      const matchedUser = allUsers.find(u => 
+        u.name.toLowerCase() === rawUser.toLowerCase() && 
+        u.businessId === business.id
+      );
       const isValid = matchedUser ? await verifyPassword(loginForm.password, matchedUser.password) : false;
 
       if (matchedUser && isValid) {

@@ -111,13 +111,14 @@ export class CloudTable<T extends { id: string }> {
   // ── Hydration ─────────────────────────────────────────────────────────────
 
   async hydrate(): Promise<void> {
+    this.cache.clear(); // Always clear old data before fetching new, even if fetch fails
     try {
       const rows: T[] = await d1Fetch(this.name, 'GET');
-      this.cache.clear();
       rows.forEach(r => this.cache.set(r.id, r));
       this.loaded = true;
     } catch (e) {
       console.error(`[CloudDB] Failed to hydrate "${this.name}":`, e);
+      this.loaded = false; // Mark as not loaded if fetch failed
     }
   }
 
