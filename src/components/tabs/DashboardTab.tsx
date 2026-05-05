@@ -146,62 +146,76 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
   const handleCloseDay = async () => {
     if (!activeShift) return;
+    if (!activeBranchId || !activeBusinessId) {
+      error("Missing business/branch context. Please try logging in again.");
+      return;
+    }
     const reported = Number(reportedCash);
     
-    // Create Zed Report
-    await db.endOfDayReports.add({
-      id: crypto.randomUUID(),
-      shiftId: activeShift.id,
-      timestamp: Date.now(),
-      openingFloat: activeShift.openingFloat,
-      totalSales: todaySales,
-      grossSales: totalGross,
-      taxTotal: totalTax,
-      cashSales: cashTotal,
-      mpesaSales: mpesaTotal,
-      totalExpenses: shiftExpenses,
-      totalPicks: totalPickedAmount,
-      expectedCash: expectedCashDrawer,
-      reportedCash: reported,
-      difference: reported - expectedCashDrawer,
-      cashierName: activeShift.cashierName,
-      branchId: activeBranchId,
-      businessId: activeBusinessId!
-    });
+    try {
+      // Create Zed Report
+      await db.endOfDayReports.add({
+        id: crypto.randomUUID(),
+        shiftId: activeShift.id,
+        timestamp: Date.now(),
+        openingFloat: activeShift.openingFloat,
+        totalSales: todaySales,
+        grossSales: totalGross,
+        taxTotal: totalTax,
+        cashSales: cashTotal,
+        mpesaSales: mpesaTotal,
+        totalExpenses: shiftExpenses,
+        totalPicks: totalPickedAmount,
+        expectedCash: expectedCashDrawer,
+        reportedCash: reported,
+        difference: reported - expectedCashDrawer,
+        cashierName: activeShift.cashierName,
+        branchId: activeBranchId,
+        businessId: activeBusinessId!
+      });
 
-    // Close Shift in DB
-    await db.shifts.update(activeShift.id, { 
-       status: 'CLOSED', 
-       endTime: Date.now() 
-    });
+      // Close Shift in DB
+      await db.shifts.update(activeShift.id, { 
+         status: 'CLOSED', 
+         endTime: Date.now() 
+      });
 
-    // Reset Store
-    setActiveShift(null);
-    setReportedCash("");
-    setIsCloseDayOpen(false);
-    success("Shift closed.");
+      // Reset Store
+      setActiveShift(null);
+      setReportedCash("");
+      setIsCloseDayOpen(false);
+      success("Shift closed successfully.");
+    } catch (err: any) {
+      console.error("Shift closure failed:", err);
+      error("Failed to submit shift: " + (err.message || "Unknown error"));
+    }
   };
 
   const handleFinalizeDay = async () => {
     if (!todaysReports || todaysReports.length === 0 || !activeBranchId) return;
     
-    await db.dailySummaries.add({
-      id: crypto.randomUUID(),
-      date: todayStart.getTime(),
-      shiftIds: (todaysReports || []).map(r => r.shiftId || ''),
-      totalSales: (todaysReports || []).reduce((s: number, r) => s + (Number(r.totalSales) || 0), 0),
-      grossSales: (todaysReports || []).reduce((s: number, r) => s + (Number(r.grossSales) || 0), 0),
-      taxTotal: (todaysReports || []).reduce((s: number, r) => s + (Number(r.taxTotal) || 0), 0),
-      totalExpenses: (todaysReports || []).reduce((s: number, r) => s + (Number(r.totalExpenses) || 0), 0),
-      totalPicks: (todaysReports || []).reduce((s: number, r) => s + (Number(r.totalPicks) || 0), 0),
-      totalVariance: (todaysReports || []).reduce((s: number, r) => s + (Number(r.difference) || 0), 0),
-      timestamp: Date.now(),
-      branchId: activeBranchId,
-      businessId: activeBusinessId!
-    });
-    
-    setIsDailySummaryOpen(false);
-    success("Business Day Finalized successfully.");
+    try {
+      await db.dailySummaries.add({
+        id: crypto.randomUUID(),
+        date: todayStart.getTime(),
+        shiftIds: (todaysReports || []).map(r => r.shiftId || ''),
+        totalSales: (todaysReports || []).reduce((s: number, r) => s + (Number(r.totalSales) || 0), 0),
+        grossSales: (todaysReports || []).reduce((s: number, r) => s + (Number(r.grossSales) || 0), 0),
+        taxTotal: (todaysReports || []).reduce((s: number, r) => s + (Number(r.taxTotal) || 0), 0),
+        totalExpenses: (todaysReports || []).reduce((s: number, r) => s + (Number(r.totalExpenses) || 0), 0),
+        totalPicks: (todaysReports || []).reduce((s: number, r) => s + (Number(r.totalPicks) || 0), 0),
+        totalVariance: (todaysReports || []).reduce((s: number, r) => s + (Number(r.difference) || 0), 0),
+        timestamp: Date.now(),
+        branchId: activeBranchId,
+        businessId: activeBusinessId!
+      });
+      
+      setIsDailySummaryOpen(false);
+      success("Business Day Finalized successfully.");
+    } catch (err: any) {
+      console.error("Day finalization failed:", err);
+      error("Failed to finalize day: " + (err.message || "Unknown error"));
+    }
   };
 
   const pendingAdjustments = useLiveQuery(() => activeBranchId ? db.stockAdjustmentRequests.where('branchId').equals(activeBranchId).and(x => x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBranchId], []);

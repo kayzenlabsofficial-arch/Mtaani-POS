@@ -536,7 +536,8 @@ export default function MtaaniPOS() {
            openingFloat: Number(loginForm.openingFloat),
            cashierName: pendingUser.name,
            status: 'OPEN',
-           branchId: activeBranchId!
+           branchId: activeBranchId!,
+           businessId: activeBusinessId!
         };
         
         await db.shifts.add(newShift);
