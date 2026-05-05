@@ -8,9 +8,10 @@ interface ExpenseModalProps {
   setExpenseForm: (form: any) => void;
   handleSaveExpense: () => Promise<void>;
   actualCashDrawer: number;
+  accounts: any[];
 }
 
-export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseForm, handleSaveExpense, actualCashDrawer }: ExpenseModalProps) {
+export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseForm, handleSaveExpense, actualCashDrawer, accounts }: ExpenseModalProps) {
   if (!isOpen) return null;
 
   return (
@@ -41,22 +42,18 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                 )}
              </div>
              <div className="relative">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Category</label>
-                <input 
-                    type="text" 
-                    list="expense-categories"
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Expense Account (Category)</label>
+                <select 
                     value={expenseForm.category} 
                     onChange={e => setExpenseForm({...expenseForm, category: e.target.value})} 
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-orange-500"
-                    placeholder="e.g. Supplies, Wages..."
-                />
-                <datalist id="expense-categories">
-                   <option value="Supplies" />
-                   <option value="Utilities" />
-                   <option value="Wages" />
-                   <option value="Logistics / Transport" />
-                   <option value="Other" />
-                </datalist>
+                >
+                    <option value="">Select Account...</option>
+                    {(accounts || []).map(acc => (
+                      <option key={acc.id} value={acc.name}>{acc.name}</option>
+                    ))}
+                    <option value="Other">Other / Miscellaneous</option>
+                </select>
              </div>
              <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Description</label>

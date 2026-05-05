@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings as SettingsIcon, ShieldCheck, Users, Plus, Trash2, KeyRound, Tag as TagIcon, Building2 } from 'lucide-react';
+import { Settings as SettingsIcon, ShieldCheck, Users, Plus, Trash2, KeyRound, Tag as TagIcon, Building2, Save, X, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Palette, Check } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { hashPassword } from '../../security';
@@ -7,13 +7,39 @@ import { useStore } from '../../store';
 
 import SettingsTab from './SettingsTab';
 import AdminApprovals from './AdminApprovals';
-import CategoryManagementModal from '../modals/CategoryManagementModal';
 import BranchManagementTab from './BranchManagementTab';
+import { useToast } from '../../context/ToastContext';
+import { type Category } from '../../db';
+
+const ICON_OPTIONS = [
+  { name: 'Utensils', icon: Utensils },
+  { name: 'GlassWater', icon: GlassWater },
+  { name: 'ShoppingBag', icon: ShoppingBag },
+  { name: 'Lightbulb', icon: Lightbulb },
+  { name: 'Package', icon: Package },
+  { name: 'Tag', icon: TagIcon },
+];
+
+const COLOR_OPTIONS = [
+  { name: 'orange', bg: 'bg-orange-500', text: 'text-orange-700', light: 'bg-orange-50' },
+  { name: 'blue',   bg: 'bg-blue-500',   text: 'text-blue-700',   light: 'bg-blue-50'   },
+  { name: 'purple', bg: 'bg-purple-500', text: 'text-purple-700', light: 'bg-purple-50' },
+  { name: 'yellow', bg: 'bg-yellow-500', text: 'text-yellow-700', light: 'bg-yellow-50' },
+  { name: 'slate',  bg: 'bg-slate-600',  text: 'text-slate-700',  light: 'bg-slate-50'  },
+  { name: 'green',  bg: 'bg-green-500',  text: 'text-green-700',  light: 'bg-green-50'  },
+  { name: 'red',    bg: 'bg-red-500',    text: 'text-red-700',    light: 'bg-red-50'    },
+];
 
 export default function AdminPanel({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
   const [activeAdminTab, setActiveAdminTab] = useState<'SETTINGS' | 'APPROVALS' | 'USERS' | 'CATEGORIES' | 'BRANCHES'>('USERS');
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  const { success, error, warning } = useToast();
+  
+  // Category Management State
+  const categories = useLiveQuery(() => db.categories.toArray(), [], []);
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [categoryForm, setCategoryForm] = useState({ name: '', iconName: 'Package', color: 'slate' });
   
   // User Management State
   const users = useLiveQuery(() => db.users.toArray(), [], []);
@@ -63,6 +89,51 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     setEditingPassword('');
     await db.sync();
     alert("Password updated successfully.");
+  };
+
+  const handleSaveCategory = async () => {
+    if (!categoryForm.name.trim()) {
+      warning("Please enter a category name.");
+      return;
+    }
+
+    try {
+      if (editingCategoryId) {
+        await db.categories.update(editingCategoryId, { ...categoryForm, updated_at: Date.now() });
+        success("Category updated successfully.");
+      } else {
+        await db.categories.add({
+          id: crypto.randomUUID(),
+          ...categoryForm,
+          updated_at: Date.now(),
+          businessId: activeBusinessId!
+        });
+        success("New category created.");
+      }
+      resetCategoryForm();
+      db.syncAll();
+    } catch (err) {
+      error("Failed to save category.");
+    }
+  };
+
+  const handleDeleteCategory = async (id: string, name: string) => {
+    if (confirm(`Are you sure you want to delete "${name}"? Products in this category will need to be reassigned.`)) {
+      await db.categories.delete(id);
+      success("Category removed.");
+    }
+  };
+
+  const startEditCategory = (cat: Category) => {
+    setEditingCategoryId(cat.id);
+    setCategoryForm({ name: cat.name, iconName: cat.iconName, color: cat.color });
+    setIsAddingCategory(true);
+  };
+
+  const resetCategoryForm = () => {
+    setCategoryForm({ name: '', iconName: 'Package', color: 'slate' });
+    setIsAddingCategory(false);
+    setEditingCategoryId(null);
   };
 
   return (
@@ -255,28 +326,113 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
           </div>
         )}
          {activeAdminTab === 'CATEGORIES' && (
-           <div className="space-y-4">
-              <div className="bg-white p-6 rounded-[28px] border border-slate-200 shadow-sm text-center">
-                 <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-4">
-                    <TagIcon size={32} />
-                 </div>
-                 <h3 className="text-lg font-black text-slate-900 mb-2">Category Architecture</h3>
-                 <p className="text-sm text-slate-500 mb-6 max-w-sm mx-auto">Configure your product taxonomy. Changes here affect both Inventory and the Register interface.</p>
-                 <button 
-                   onClick={() => setIsCategoryModalOpen(true)}
-                   className="grad-blue text-white font-black text-xs uppercase tracking-widest px-8 py-4 rounded-2xl transition-transform active:scale-95 shadow-blue"
-                 >
-                    Launch Category Manager
-                 </button>
+           <div className="space-y-6">
+              <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200">
+                <div>
+                   <h3 className="text-sm font-extrabold text-slate-900">Category Architecture</h3>
+                   <p className="text-xs text-slate-500">Configure your product taxonomy.</p>
+                </div>
+                {!isAddingCategory && (
+                  <button 
+                    onClick={() => setIsAddingCategory(true)}
+                    className="bg-blue-600 text-white font-bold text-xs flex items-center gap-2 px-4 py-2.5 rounded-xl transition-transform active:scale-95 shadow-lg shadow-blue-600/20"
+                  >
+                     <Plus size={14} /> Add New Category
+                  </button>
+                )}
               </div>
+
+              {isAddingCategory ? (
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm animate-in slide-in-from-top-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-6">
+                      <div>
+                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Category Name</label>
+                        <input 
+                          type="text" 
+                          value={categoryForm.name} 
+                          onChange={e => setCategoryForm({...categoryForm, name: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all"
+                          placeholder="e.g. Snacks, Electronics..."
+                          autoFocus
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Choose Icon</label>
+                        <div className="grid grid-cols-6 gap-3">
+                          {ICON_OPTIONS.map(opt => (
+                            <button
+                              key={opt.name}
+                              onClick={() => setCategoryForm({...categoryForm, iconName: opt.name})}
+                              className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all border ${categoryForm.iconName === opt.name ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-slate-50 text-slate-400 border-slate-100 hover:border-slate-200'}`}
+                            >
+                              <opt.icon size={20} />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-6">
+                      <div>
+                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Theme Color</label>
+                        <div className="grid grid-cols-7 gap-3">
+                          {COLOR_OPTIONS.map(opt => (
+                            <button
+                              key={opt.name}
+                              onClick={() => setCategoryForm({...categoryForm, color: opt.name})}
+                              className={`w-10 h-10 rounded-full ${opt.bg} flex items-center justify-center transition-all border-4 ${categoryForm.color === opt.name ? 'border-white ring-2 ring-slate-900 shadow-lg scale-110' : 'border-transparent opacity-80 hover:opacity-100'}`}
+                            >
+                              {categoryForm.color === opt.name && <Check size={16} className="text-white" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-4 pt-4">
+                        <button onClick={resetCategoryForm} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs uppercase tracking-widest rounded-2xl transition-all press">
+                          Cancel
+                        </button>
+                        <button onClick={handleSaveCategory} className="flex-[2] bg-blue-600 text-white px-6 py-4 font-black text-xs uppercase tracking-widest rounded-2xl transition-all shadow-blue press flex items-center justify-center gap-2">
+                          <Save size={18} /> {editingCategoryId ? 'Update' : 'Create'} Category
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {categories?.map(cat => {
+                    const colorOpt = COLOR_OPTIONS.find(c => c.name === cat.color) || COLOR_OPTIONS[4];
+                    const IconComp = ICON_OPTIONS.find(i => i.name === cat.iconName)?.icon || Package;
+
+                    return (
+                      <div key={cat.id} className="group bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:border-blue-200 transition-all">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl ${colorOpt.light} flex items-center justify-center ${colorOpt.text} border border-slate-50 shadow-sm`}>
+                            <IconComp size={20} />
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-900">{cat.name}</h4>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => startEditCategory(cat)} className="p-2 text-slate-400 hover:text-blue-500 transition-colors">
+                            <Palette size={16} />
+                          </button>
+                          <button onClick={() => handleDeleteCategory(cat.id, cat.name)} className="p-2 text-slate-400 hover:text-red-500 transition-colors">
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
            </div>
          )}
       </div>
       
-      <CategoryManagementModal 
-        isOpen={isCategoryModalOpen} 
-        onClose={() => setIsCategoryModalOpen(false)} 
-      />
+
     </div>
   );
 }

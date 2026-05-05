@@ -232,6 +232,14 @@ export interface Expense {
   updated_at?: number;
 }
 
+export interface ExpenseAccount {
+  id: string;
+  name: string;
+  description?: string;
+  businessId: string;
+  updated_at?: number;
+}
+
 export interface BusinessSettings {
   id: string;
   storeName: string;
@@ -315,6 +323,7 @@ class MtaaniCloudDB {
   creditNotes         = new CloudTable<CreditNote>('creditNotes');
   categories          = new CloudTable<Category>('categories');
   branches            = new CloudTable<Branch>('branches');
+  expenseAccounts     = new CloudTable<ExpenseAccount>('expenseAccounts');
 
   /** Load all tables from D1 in parallel. Call once on app startup. */
   async init(): Promise<void> {
@@ -346,6 +355,7 @@ class MtaaniCloudDB {
       this.creditNotes.hydrate(),
       this.categories.hydrate(),
       this.branches.hydrate(),
+      this.expenseAccounts.hydrate(),
     ]);
   }
 
@@ -375,7 +385,8 @@ class MtaaniCloudDB {
         this.shifts.reload(),
         this.dailySummaries.reload(),
         this.creditNotes.reload(),
-        this.categories.reload()
+        this.categories.reload(),
+        this.expenseAccounts.reload()
       );
     }
 

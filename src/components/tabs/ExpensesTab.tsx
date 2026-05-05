@@ -5,11 +5,14 @@ import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import ExpenseModal from '../modals/ExpenseModal';
+import ExpenseAccountModal from '../modals/ExpenseAccountModal';
+import { BookOpen } from 'lucide-react';
 
 export default function ExpensesTab() {
   const [expenseSearch, setExpenseSearch] = useState("");
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ amount: '', category: 'Supplies', description: '' });
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '' });
   
   const currentUser = useStore(state => state.currentUser);
   const isAdmin = useStore(state => state.isAdmin);
@@ -18,6 +21,7 @@ export default function ExpensesTab() {
   const { success, error } = useToast();
 
   const allExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  const expenseAccounts = useLiveQuery(() => db.expenseAccounts.toArray(), [], []) ;
 
   // Need actualCashDrawer for validation
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
@@ -53,7 +57,7 @@ export default function ExpensesTab() {
          businessId: activeBusinessId!
       });
       setIsExpenseModalOpen(false);
-      setExpenseForm({ amount: '', category: 'Supplies', description: '' });
+      setExpenseForm({ amount: '', category: '', description: '' });
       success("Expense logged successfully.");
   };
 
@@ -83,13 +87,18 @@ export default function ExpensesTab() {
   return (
     <div className="p-6 pb-24 animate-in fade-in max-w-5xl mx-auto w-full">
       <div className="flex justify-between items-end mb-8">
-         <div>
+          <div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">Financial Outflow</h2>
             <p className="text-slate-500 text-sm font-medium">Track operational costs and petty cash expenses.</p>
          </div>
-         <button onClick={() => setIsExpenseModalOpen(true)} className="bg-orange-600 text-white px-5 py-3.5 rounded-2xl shadow-lg shadow-orange-600/20 active:scale-95 transition-all flex items-center gap-2 font-black text-xs uppercase tracking-widest">
-            <Plus size={18} /> New Expense
-         </button>
+         <div className="flex gap-2">
+            <button onClick={() => setIsAccountModalOpen(true)} className="bg-white text-slate-700 border border-slate-200 px-5 py-3.5 rounded-2xl shadow-sm active:scale-95 transition-all flex items-center gap-2 font-black text-xs uppercase tracking-widest">
+               <BookOpen size={18} /> Accounts
+            </button>
+            <button onClick={() => setIsExpenseModalOpen(true)} className="bg-orange-600 text-white px-5 py-3.5 rounded-2xl shadow-lg shadow-orange-600/20 active:scale-95 transition-all flex items-center gap-2 font-black text-xs uppercase tracking-widest">
+               <Plus size={18} /> New Expense
+            </button>
+         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -182,6 +191,12 @@ export default function ExpensesTab() {
         setExpenseForm={setExpenseForm}
         handleSaveExpense={handleSaveExpense}
         actualCashDrawer={actualCashDrawer}
+        accounts={expenseAccounts || []}
+      />
+
+      <ExpenseAccountModal 
+        isOpen={isAccountModalOpen}
+        onClose={() => setIsAccountModalOpen(false)}
       />
     </div>
   );

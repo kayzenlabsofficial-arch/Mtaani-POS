@@ -8,7 +8,7 @@ const ALLOWED_TABLES = new Set([
   'endOfDayReports', 'stockMovements', 'expenses', 'customers',
   'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries',
   'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories',
-  'branches', 'businesses', 'system'
+  'branches', 'businesses', 'system', 'expenseAccounts'
 ]);
 
 // Global tables: shared across all branches, isolated by businessId only
@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS purchaseOrders (id TEXT PRIMARY KEY, supplierId TEXT 
 CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, storeName TEXT NOT NULL, tillNumber TEXT, kraPin TEXT, receiptFooter TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, iconName TEXT NOT NULL, color TEXT NOT NULL, businessId TEXT, branchId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, name TEXT NOT NULL, location TEXT NOT NULL, phone TEXT, tillNumber TEXT, kraPin TEXT, isActive INTEGER NOT NULL DEFAULT 1, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS expenseAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, businessId TEXT, updated_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp);
 CREATE INDEX IF NOT EXISTS idx_stockmovements_product ON stockMovements(productId);
