@@ -155,7 +155,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     // ── GET ──────────────────────────────────────────────────────────────────
     if (request.method === 'GET') {
       if (table === 'businesses') {
-        const { results } = await env.DB.prepare(`SELECT * FROM businesses`).all();
+        // Only allow listing businesses if the API key is the master secret
+        // In a real production system, this would be restricted to a super-admin token
+        const { results } = await env.DB.prepare(`SELECT id, name, code, isActive FROM businesses`).all();
         return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
       }
 

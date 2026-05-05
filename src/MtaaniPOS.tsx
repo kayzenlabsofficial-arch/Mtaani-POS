@@ -397,9 +397,14 @@ export default function MtaaniPOS() {
   // ── M-PESA POLLING ────────────────────────────────────────────────────────
   useEffect(() => {
     let interval: NodeJS.Timeout;
+    let pollCount = 0;
+    const MAX_POLLS = 20; // ~60 seconds (3s * 20)
+
     if (mpesaState === 'POLLING' && mpesaRequestId) {
       interval = setInterval(async () => {
+        pollCount++;
         const status = await MpesaService.checkStatus(mpesaRequestId);
+        
         if (status.found) {
            if (status.resultCode === 0) {
              setMpesaState('SUCCESS');
@@ -409,11 +414,24 @@ export default function MtaaniPOS() {
                setIsMpesaModalOpen(false);
                handleCheckout('PAID', 'MPESA'); // Complete sale automatically
              }, 2000);
+           } else if (status.resultCode === 999) {
+             // Still pending, do nothing and continue polling
+             console.log("[M-Pesa] Payment still pending...");
            } else {
+             // Actual failure from Safaricom
              setMpesaState('FAILED');
              setMpesaMessage(`Payment failed/cancelled: ${status.resultDesc}`);
              error(`M-Pesa failed: ${status.resultDesc}`);
            }
+        } else {
+          // Not found in DB yet
+          console.log("[M-Pesa] Record not found yet, retrying...");
+        }
+
+        if (pollCount >= MAX_POLLS && mpesaState === 'POLLING') {
+          setMpesaState('FAILED');
+          setMpesaMessage("Polling timed out. Please check the transaction status manually.");
+          error("M-Pesa polling timed out.");
         }
       }, 3000);
     }
@@ -658,19 +676,21 @@ export default function MtaaniPOS() {
         changeGiven: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) - total : undefined
       };
 
+      // To ensure data integrity, we should ideally use a server-side transaction.
+      // Since we are using a REST-like API over D1, we'll implement a "Transaction Log"
+      // pattern: first save the transaction, then update stock.
       await db.transactions.add(transaction);
       
       if (status === 'PAID') {
         // Update stock and log movement
+        const stockUpdates = [];
         for (const item of cart) {
           const product = await db.products.get(item.id);
           if (product) {
-            await db.products.update(item.id, {
-              stockQuantity: Math.max(0, product.stockQuantity - item.cartQuantity)
-            });
-            // Log stock movement if table exists (assuming it might based on backup)
-            if (db.stockMovements) {
-              await db.stockMovements.add({
+            stockUpdates.push({
+              id: item.id,
+              newQty: Math.max(0, product.stockQuantity - item.cartQuantity),
+              movement: {
                 id: crypto.randomUUID(),
                 productId: item.id,
                 type: 'OUT',
@@ -679,8 +699,16 @@ export default function MtaaniPOS() {
                 reference: `Sale #${transaction.id.split('-')[0].toUpperCase()}`,
                 branchId: activeBranchId!,
                 businessId: activeBusinessId!
-              });
+              }
             }
+          });
+        }
+
+        // Execute updates. If one fails, we have the transaction record to reconcile.
+        for (const update of stockUpdates) {
+          await db.products.update(update.id, { stockQuantity: update.newQty });
+          if (db.stockMovements) {
+            await db.stockMovements.add(update.movement);
           }
         }
       }

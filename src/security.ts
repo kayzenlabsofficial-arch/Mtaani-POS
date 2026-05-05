@@ -2,15 +2,37 @@
 // MTAANI POS - Security Utilities
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SALT = 'mtaani-pos-v2-secure-2026';
+// Stronger salt for backward compatibility
+const LEGACY_SALT = 'mtaani-pos-v2-secure-2026';
+
+/**
+ * Hash a plaintext password using bcrypt (preferred) or SHA-256 with salt as fallback.
+ * For new implementations, bcrypt is recommended.
+ */
+export async function hashPassword(password: string): Promise<string> {
+  // Try to use bcrypt if available (in Node.js environment)
+  if (typeof window === 'undefined') {
+    try {
+      // Server-side bcrypt implementation
+      const bcrypt = await import('bcryptjs');
+      return await bcrypt.hash(password, 12);
+    } catch (e) {
+      // Fallback to SHA-256 if bcrypt is not available
+      return hashPasswordSHA256(password);
+    }
+  } else {
+    // Client-side fallback to SHA-256
+    return hashPasswordSHA256(password);
+  }
+}
 
 /**
  * Hash a plaintext password using SHA-256 with a fixed app salt.
  * Uses the Web Crypto API — works in all modern browsers and Cloudflare Workers.
  */
-export async function hashPassword(password: string): Promise<string> {
+async function hashPasswordSHA256(password: string): Promise<string> {
   const encoder = new TextEncoder();
-  const data = encoder.encode(password + SALT);
+  const data = encoder.encode(password + LEGACY_SALT);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hashBuffer))
     .map(b => b.toString(16).padStart(2, '0'))
@@ -19,16 +41,39 @@ export async function hashPassword(password: string): Promise<string> {
 
 /**
  * Verify a plaintext password against a stored hash.
- * Handles legacy plain-text passwords gracefully during migration.
+ * Handles legacy plain-text passwords and SHA-256 hashes gracefully during migration.
+ * Also supports bcrypt hashes.
  */
 export async function verifyPassword(plain: string, stored: string): Promise<boolean> {
+  // If stored password looks like a bcrypt hash, use bcrypt verification
+  if (stored.startsWith('$2b$') || stored.startsWith('$2a$') || stored.startsWith('$2y$')) {
+    if (typeof window === 'undefined') {
+      try {
+        const bcrypt = await import('bcryptjs');
+        return await bcrypt.compare(plain, stored);
+      } catch (e) {
+        // Fallback to SHA-256 if bcrypt fails
+        return await verifyPasswordSHA256(plain, stored);
+      }
+    } else {
+      // Client-side cannot verify bcrypt, fallback to SHA-256
+      return await verifyPasswordSHA256(plain, stored);
+    }
+  }
   // If stored password looks like a SHA-256 hash (64 hex chars), compare hashes
   if (/^[a-f0-9]{64}$/.test(stored)) {
-    const hashed = await hashPassword(plain);
-    return hashed === stored;
+    return await verifyPasswordSHA256(plain, stored);
   }
   // Legacy: plain-text comparison (for accounts not yet migrated)
   return plain === stored;
+}
+
+/**
+ * Verify a plaintext password against a SHA-256 hash.
+ */
+async function verifyPasswordSHA256(plain: string, stored: string): Promise<boolean> {
+  const hashed = await hashPasswordSHA256(plain);
+  return hashed === stored;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

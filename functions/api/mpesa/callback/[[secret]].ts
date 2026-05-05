@@ -35,6 +35,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     const data = await request.json() as any;
     const callbackData = data?.Body?.stkCallback;
+    console.log(`[M-Pesa Callback] Received payload for CheckoutID: ${callbackData?.CheckoutRequestID}`);
     
     if (callbackData) {
         const merchantRequestId = callbackData.MerchantRequestID;

@@ -184,32 +184,28 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     }
 
     // 5. SECURE LOGGING: Save the pending request to D1
-    try {
-       await env.DB.prepare(`
-         CREATE TABLE IF NOT EXISTS mpesaCallbacks (
-           checkoutRequestId TEXT PRIMARY KEY,
-           merchantRequestId TEXT,
-           resultCode INTEGER,
-           resultDesc TEXT,
-           amount REAL,
-           receiptNumber TEXT,
-           phoneNumber TEXT,
-           businessId TEXT,
-           branchId TEXT,
-           timestamp INTEGER
-         )
-       `).run();
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS mpesaCallbacks (
+        checkoutRequestId TEXT PRIMARY KEY,
+        merchantRequestId TEXT,
+        resultCode INTEGER,
+        resultDesc TEXT,
+        amount REAL,
+        receiptNumber TEXT,
+        phoneNumber TEXT,
+        businessId TEXT,
+        branchId TEXT,
+        timestamp INTEGER
+      )
+    `).run();
 
-       await env.DB.prepare(`
-         INSERT INTO mpesaCallbacks 
-         (checkoutRequestId, merchantRequestId, resultCode, resultDesc, amount, phoneNumber, businessId, branchId, timestamp)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       `).bind(
-         stkData.CheckoutRequestID, stkData.MerchantRequestID, 999, 'PENDING', amount, phone, body.businessId, body.branchId, Date.now()
-       ).run();
-    } catch (logErr) {
-       console.error("Failed to pre-log M-Pesa transaction:", logErr);
-    }
+    await env.DB.prepare(`
+      INSERT INTO mpesaCallbacks 
+      (checkoutRequestId, merchantRequestId, resultCode, resultDesc, amount, phoneNumber, businessId, branchId, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      stkData.CheckoutRequestID, stkData.MerchantRequestID, 999, 'PENDING', amount, phone, body.businessId, body.branchId, Date.now()
+    ).run();
 
     return new Response(JSON.stringify({ 
       success: true, 
