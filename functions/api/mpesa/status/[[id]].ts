@@ -24,8 +24,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   try {
-    const parts = (params.id as string[]) ?? [];
-    const checkoutRequestId = parts[0];
+    const checkoutRequestId = Array.isArray(params.id) ? params.id[0] : params.id;
 
     if (!checkoutRequestId) {
         return new Response(JSON.stringify({ error: 'CheckoutRequestID required' }), { status: 400, headers: jsonHeaders() });

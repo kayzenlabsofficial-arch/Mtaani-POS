@@ -22,12 +22,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   try {
     // 1. SECURITY: Verify Secret Key from URL
-    const parts = (params.secret as string[]) ?? [];
-    const receivedSecret = parts[0];
+    const receivedSecret = Array.isArray(params.secret) ? params.secret[0] : params.secret;
     const expectedSecret = env.MPESA_CALLBACK_SECRET || 'default_secret_key_123';
 
-    if (receivedSecret !== expectedSecret) {
-      console.warn("[M-PESA SECURITY ALERT]: Unauthorized callback attempt blocked.");
+    if (!receivedSecret || receivedSecret !== expectedSecret) {
+      console.warn(`[M-PESA SECURITY ALERT]: Unauthorized callback attempt. Received: ${receivedSecret}`);
       return new Response(JSON.stringify({ ResultCode: 1, ResultDesc: "Unauthorized" }), { 
         status: 401,
         headers: { 'Content-Type': 'application/json' } 
