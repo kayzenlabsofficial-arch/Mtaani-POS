@@ -13,7 +13,8 @@ export default function BranchManagementTab() {
 
   const BLANK: Omit<Branch, 'id' | 'updated_at'> = {
     name: '', location: '', phone: '', tillNumber: '', kraPin: '', isActive: true,
-    mpesaConsumerKey: '', mpesaConsumerSecret: '', mpesaPasskey: '', mpesaEnv: 'sandbox'
+    mpesaConsumerKey: '', mpesaConsumerSecret: '', mpesaPasskey: '', mpesaEnv: 'sandbox',
+    mpesaType: 'paybill', mpesaStoreNumber: ''
   };
 
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -38,7 +39,9 @@ export default function BranchManagementTab() {
         mpesaConsumerKey: b.mpesaConsumerKey || '',
         mpesaConsumerSecret: b.mpesaConsumerSecret || '',
         mpesaPasskey: b.mpesaPasskey || '',
-        mpesaEnv: b.mpesaEnv || 'sandbox'
+        mpesaEnv: b.mpesaEnv || 'sandbox',
+        mpesaType: b.mpesaType || 'paybill',
+        mpesaStoreNumber: b.mpesaStoreNumber || ''
     });
     setEditingId(b.id);
     setIsFormOpen(true);
@@ -59,7 +62,9 @@ export default function BranchManagementTab() {
           mpesaConsumerKey: form.mpesaConsumerKey?.trim() || undefined,
           mpesaConsumerSecret: form.mpesaConsumerSecret?.trim() || undefined,
           mpesaPasskey: form.mpesaPasskey?.trim() || undefined,
-          mpesaEnv: form.mpesaEnv as any
+          mpesaEnv: form.mpesaEnv as any,
+          mpesaType: form.mpesaType as any,
+          mpesaStoreNumber: form.mpesaStoreNumber?.trim() || undefined
         });
         success("Branch updated.");
       } else {
@@ -75,7 +80,9 @@ export default function BranchManagementTab() {
           mpesaConsumerKey: form.mpesaConsumerKey?.trim() || undefined,
           mpesaConsumerSecret: form.mpesaConsumerSecret?.trim() || undefined,
           mpesaPasskey: form.mpesaPasskey?.trim() || undefined,
-          mpesaEnv: form.mpesaEnv as any
+          mpesaEnv: form.mpesaEnv as any,
+          mpesaType: form.mpesaType as any,
+          mpesaStoreNumber: form.mpesaStoreNumber?.trim() || undefined
         });
         success("Branch created.");
       }
@@ -315,6 +322,17 @@ export default function BranchManagementTab() {
                       </select>
                     </div>
                     <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">M-Pesa Type</label>
+                      <select 
+                        value={form.mpesaType} 
+                        onChange={e => setForm(f => ({ ...f, mpesaType: e.target.value as any }))}
+                        className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-4 py-3 text-sm font-black text-blue-900 focus:outline-none focus:border-blue-500"
+                      >
+                        <option value="paybill">Paybill</option>
+                        <option value="buygoods">Buy Goods (Till)</option>
+                      </select>
+                    </div>
+                    <div>
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Consumer Key</label>
                       <input
                         type="text"
@@ -322,6 +340,29 @@ export default function BranchManagementTab() {
                         onChange={e => setForm(f => ({ ...f, mpesaConsumerKey: e.target.value }))}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
                         placeholder="App Key"
+                      />
+                    </div>
+                 </div>
+                 <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Store Number</label>
+                      <input
+                        type="text"
+                        value={form.mpesaStoreNumber}
+                        onChange={e => setForm(f => ({ ...f, mpesaStoreNumber: e.target.value }))}
+                        className={`w-full border rounded-xl px-4 py-3 text-sm font-bold transition-colors focus:outline-none ${form.mpesaType === 'buygoods' ? 'bg-blue-50 border-blue-200 text-slate-900 focus:border-blue-500' : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'}`}
+                        placeholder="Required for Till"
+                        disabled={form.mpesaType !== 'buygoods'}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">LNM Passkey</label>
+                      <input
+                        type="password"
+                        value={form.mpesaPasskey}
+                        onChange={e => setForm(f => ({ ...f, mpesaPasskey: e.target.value }))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
+                        placeholder="Online Passkey"
                       />
                     </div>
                  </div>
@@ -334,16 +375,6 @@ export default function BranchManagementTab() {
                         onChange={e => setForm(f => ({ ...f, mpesaConsumerSecret: e.target.value }))}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
                         placeholder="App Secret"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">LNM Passkey</label>
-                      <input
-                        type="password"
-                        value={form.mpesaPasskey}
-                        onChange={e => setForm(f => ({ ...f, mpesaPasskey: e.target.value }))}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
-                        placeholder="Online Passkey"
                       />
                     </div>
                  </div>

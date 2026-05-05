@@ -51,11 +51,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const description = 'Payment for items';
 
     // 1. Fetch Credentials from D1 Database for this specific branch
-    let consumerKey, consumerSecret, passkey, shortcode, isProd;
+    let consumerKey, consumerSecret, passkey, shortcode, isProd, mpesaType, storeNumber;
 
     try {
       const branch = await env.DB.prepare(`
-        SELECT mpesaConsumerKey, mpesaConsumerSecret, mpesaPasskey, mpesaEnv, tillNumber 
+        SELECT mpesaConsumerKey, mpesaConsumerSecret, mpesaPasskey, mpesaEnv, tillNumber, mpesaType, mpesaStoreNumber 
         FROM branches 
         WHERE id = ? AND businessId = ?
       `).bind(body.branchId, body.businessId).first() as any;
@@ -64,37 +64,57 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         consumerKey = branch.mpesaConsumerKey;
         consumerSecret = branch.mpesaConsumerSecret;
         passkey = branch.mpesaPasskey;
-        shortcode = branch.tillNumber || env.MPESA_SHORTCODE || '174379';
         isProd = branch.mpesaEnv === 'production';
+        mpesaType = branch.mpesaType || 'paybill';
+        
+        // For Paybill: shortcode = tillNumber
+        // For Buy Goods: shortcode = Store Number, PartyB = tillNumber
+        if (mpesaType === 'buygoods') {
+          shortcode = branch.mpesaStoreNumber;
+          storeNumber = branch.mpesaStoreNumber;
+        } else {
+          shortcode = branch.tillNumber;
+        }
       } else {
         // Fallback to Global Env Vars if branch settings are missing
         consumerKey = env.MPESA_CONSUMER_KEY;
         consumerSecret = env.MPESA_CONSUMER_SECRET;
-        shortcode = env.MPESA_SHORTCODE || '174379';
         passkey = env.MPESA_PASSKEY;
         isProd = env.MPESA_ENV === 'production';
+        mpesaType = env.MPESA_TYPE || 'paybill';
+        
+        if (mpesaType === 'buygoods') {
+           shortcode = env.MPESA_STORE_NUMBER;
+           storeNumber = env.MPESA_STORE_NUMBER;
+        } else {
+           shortcode = env.MPESA_SHORTCODE || '174379';
+        }
       }
     } catch (dbErr) {
       console.error("[DB Error fetching credentials]:", dbErr);
-      // Fallback to Sandbox if DB fails
       isProd = false;
     }
 
+    // Security & Validation: Prevent using sandbox defaults in production
+    if (isProd && (!consumerKey || !consumerSecret || !shortcode || !passkey)) {
+       throw new Error("M-Pesa configuration is incomplete for this branch in PRODUCTION mode.");
+    }
+
     if (!consumerKey || !consumerSecret || !passkey) {
-      if (isProd) {
-        throw new Error("M-Pesa API Keys are missing for this branch. Please configure them in Branch Settings.");
-      }
-      // Final Sandbox Fallback
+      // Sandbox Fallback
       consumerKey = 'LpAmyYqABzW0zg0HDkzSVoDGsDbspcUutfyOpAACv45ZPBtG';
       consumerSecret = '4BOGBBmgJ7rk4GKtMc6TU2Gx6Q02OK2ZJGDRdjGChOPv176qnCMW88FUNa7awEDn';
       passkey = 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919';
+      shortcode = '174379';
+      mpesaType = 'paybill';
+      isProd = false;
     }
 
     const baseUrl = isProd 
       ? 'https://api.safaricom.co.ke'
       : 'https://sandbox.safaricom.co.ke';
 
-    console.log(`[M-Pesa] Triggering STK Push for ${body.branchId} in ${isProd ? 'PRODUCTION' : 'SANDBOX'} mode`);
+    console.log(`[M-Pesa] Triggering STK Push (${mpesaType}) for ${body.branchId} in ${isProd ? 'PRODUCTION' : 'SANDBOX'} mode`);
 
     // 2. Generate OAuth Token
     const authString = btoa(`${consumerKey}:${consumerSecret}`);
@@ -118,19 +138,30 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const urlObj = new URL(request.url);
     const callbackUrl = `${urlObj.protocol}//${urlObj.host}/api/mpesa/callback/${callbackSecret}`;
 
+    const isBuyGoods = mpesaType === 'buygoods';
+
     const stkPayload = {
       BusinessShortCode: shortcode,
       Password: password,
       Timestamp: timestamp,
-      TransactionType: 'CustomerPayBillOnline',
+      TransactionType: isBuyGoods ? 'CustomerBuyGoodsOnline' : 'CustomerPayBillOnline',
       Amount: amount,
       PartyA: phone,
-      PartyB: shortcode,
+      PartyB: isBuyGoods ? body.phone.replace(/\D/g, '').replace(/^0/, '254') : shortcode, // For Till, PartyB is the Till Number (handled via tillNumber in DB usually, but wait...)
       PhoneNumber: phone,
       CallBackURL: callbackUrl,
       AccountReference: reference,
       TransactionDesc: description
     };
+
+    // Correcting PartyB if it's Buy Goods
+    // In our DB, 'tillNumber' field usually stores the Till Number.
+    // If it's Buy Goods: BusinessShortCode = Store Number, PartyB = Till Number.
+    if (isBuyGoods) {
+      // Re-fetch branch tillNumber just in case it was overwritten in local variable
+      const branchAgain = await env.DB.prepare(`SELECT tillNumber FROM branches WHERE id = ?`).bind(body.branchId).first() as any;
+      stkPayload.PartyB = branchAgain?.tillNumber || shortcode;
+    }
 
     // 4. PRE-LOG: Record as PENDING before the push to prevent race conditions
     // We don't have CheckoutRequestID yet, but we can generate a temporary internal ID or wait for response.

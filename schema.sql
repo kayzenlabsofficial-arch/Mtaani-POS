@@ -258,6 +258,12 @@ CREATE TABLE IF NOT EXISTS branches (
     kraPin TEXT,
     isActive INTEGER NOT NULL DEFAULT 1,
     businessId TEXT,
+    mpesaConsumerKey TEXT,
+    mpesaConsumerSecret TEXT,
+    mpesaPasskey TEXT,
+    mpesaEnv TEXT,
+    mpesaType TEXT DEFAULT 'paybill',
+    mpesaStoreNumber TEXT,
     updated_at INTEGER
 );
 

@@ -263,6 +263,8 @@ export interface Branch {
   mpesaConsumerSecret?: string;
   mpesaPasskey?: string;
   mpesaEnv?: 'sandbox' | 'production';
+  mpesaType?: 'paybill' | 'buygoods';
+  mpesaStoreNumber?: string;
   updated_at?: number;
 }
 
