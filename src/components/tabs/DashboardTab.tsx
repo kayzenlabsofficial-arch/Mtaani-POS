@@ -150,6 +150,17 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       error("Missing business/branch context. Please try logging in again.");
       return;
     }
+    
+    if (isCloseDayBlocked) {
+      error("Cannot close shift. You have pending cash picks that must be approved by an Admin.");
+      return;
+    }
+
+    if (!reportedCash) {
+      error("Please enter the actual counted cash in the drawer.");
+      return;
+    }
+    
     const reported = Number(reportedCash);
     
     try {
@@ -539,11 +550,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                <button onClick={() => setIsCloseDayOpen(false)} className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors">Cancel</button>
                <button 
                   onClick={handleCloseDay} 
-                  disabled={!reportedCash || isCloseDayBlocked} 
-                  className="flex-[2] bg-slate-900 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50 transition-colors shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                  className={`flex-[2] text-white px-4 py-3 font-bold rounded-xl transition-colors shadow-lg active:scale-95 flex items-center justify-center gap-2 ${isCloseDayBlocked ? 'bg-red-600 opacity-50 cursor-not-allowed' : (!reportedCash ? 'bg-slate-400' : 'bg-slate-900')}`}
                >
                   {isCloseDayBlocked ? <Lock size={16}/> : <Check size={16}/>}
-                  {isCloseDayBlocked ? 'Banking Pending' : 'Submit Shift'}
+                  {isCloseDayBlocked ? 'Banking Pending' : (!reportedCash ? 'Enter Cash Count' : 'Submit Shift')}
                </button>
             </div>
             {isCloseDayBlocked && (
