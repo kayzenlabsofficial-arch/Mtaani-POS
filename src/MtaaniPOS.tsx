@@ -5,7 +5,7 @@ import {
   Truck, Users, LayoutDashboard, DollarSign, Printer, Activity, 
   CheckCircle2, Banknote, Save, RotateCcw, ClipboardList, BadgePercent, 
   ShieldCheck, Lock, CalendarCheck, KeyRound, Check, Hand, 
-  LogOut, Search, Menu, X, ChevronRight, Bell, User, MoreHorizontal, Grid, Building2, MapPin
+  LogOut, Search, Menu, X, ChevronRight, Bell, User, MoreHorizontal, Grid, Building2, MapPin, ReceiptText, Share2, Loader2
 } from 'lucide-react';
 import { useLiveQuery } from './clouddb';
 import { useRegisterSW } from 'virtual:pwa-register/react';
@@ -34,6 +34,7 @@ import AdminPanel from './components/tabs/AdminPanel';
 // Modals
 import AdminVerificationModal from './components/modals/AdminVerificationModal';
 import ExpenseModal from './components/modals/ExpenseModal';
+import { generateAndShareDocument } from './utils/shareUtils';
 
 function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
   const businesses = useLiveQuery(() => db.businesses.toArray(), []);
@@ -179,11 +180,41 @@ export default function MtaaniPOS() {
   } = useRegisterSW();
 
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'INVENTORY' | 'DOCUMENTS' | 'REPORTS' | 'SUPPLIERS' | 'CUSTOMERS' | 'DASHBOARD' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'SUPPLIER_PAYMENTS' | 'ADMIN_PANEL'>('REGISTER');
-  const { success, error, info, warning } = useToast();
-  const [isCartOpen, setIsCartOpen] = useState(false);
-  const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? navigator.onLine : true);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  
+  // Navigation History Handling
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state) {
+        if (event.state.tab) setActiveTab(event.state.tab);
+        if (event.state.isCartOpen !== undefined) setIsCartOpen(event.state.isCartOpen);
+        if (event.state.isMoreMenuOpen !== undefined) setIsMoreMenuOpen(event.state.isMoreMenuOpen);
+        if (event.state.hasCompletedTransaction === false) setCompletedTransaction(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    // Initialize history
+    history.replaceState({ tab: 'REGISTER', isCartOpen: false, isMoreMenuOpen: false }, '');
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateToTab = (tab: typeof activeTab) => {
+    if (tab !== activeTab) {
+      setActiveTab(tab);
+      history.pushState({ tab, isCartOpen: false, isMoreMenuOpen: false }, '');
+    }
+  };
+
+  const toggleCart = (open: boolean) => {
+    setIsCartOpen(open);
+    if (open) history.pushState({ tab: activeTab, isCartOpen: true }, '');
+    else if (window.history.state?.isCartOpen) window.history.back();
+  };
+
+  const toggleMoreMenu = (open: boolean) => {
+    setIsMoreMenuOpen(open);
+    if (open) history.pushState({ tab: activeTab, isMoreMenuOpen: true }, '');
+    else if (window.history.state?.isMoreMenuOpen) window.history.back();
+  };
 
   // Store Hooks (Top-level)
   const cart = useStore(state => state.cart);
@@ -208,8 +239,10 @@ export default function MtaaniPOS() {
 
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isCashModalOpen, setIsCashModalOpen] = useState(false);
-  const [amountTendered, setAmountTendered] = useState("");
   const [completedTransaction, setCompletedTransaction] = useState<Transaction | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const [isSavingPDF, setIsSavingPDF] = useState(false);
+  const [amountTendered, setAmountTendered] = useState("");
 
   // M-Pesa State
   const [isMpesaModalOpen, setIsMpesaModalOpen] = useState(false);
@@ -840,7 +873,7 @@ export default function MtaaniPOS() {
         <div className="flex items-center gap-2">
           
           <button 
-            onClick={() => setIsCartOpen(true)}
+            onClick={() => toggleCart(true)}
             className={`relative w-9 h-9 flex items-center justify-center rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm ${activeTab === 'REGISTER' ? 'lg:hidden' : ''}`}
           >
             <ShoppingCart size={18} />
@@ -894,11 +927,8 @@ export default function MtaaniPOS() {
           <button
             key={item.id}
             onClick={() => {
-              if (item.id === 'MORE') {
-                setIsMoreMenuOpen(true);
-              } else {
-                setActiveTab(item.id as any);
-              }
+              if (item.id === 'MORE') toggleMoreMenu(true);
+              else navigateToTab(item.id as any);
             }}
             className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${
               (activeTab === item.id && item.id !== 'MORE') || (item.id === 'MORE' && isMoreMenuOpen)
@@ -915,7 +945,7 @@ export default function MtaaniPOS() {
       {/* More Options Sheet */}
       {isMoreMenuOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in" onClick={() => setIsMoreMenuOpen(false)} />
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in" onClick={() => toggleMoreMenu(false)} />
           <div className="relative w-full max-w-xl bg-white rounded-t-[2.5rem] shadow-2xl flex flex-col p-8 animate-in slide-in-from-bottom duration-300 max-h-[85vh]">
             <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6 shrink-0" />
             
@@ -929,7 +959,7 @@ export default function MtaaniPOS() {
                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{currentUser?.role} Session</p>
                   </div>
                </div>
-               <button onClick={() => setIsMoreMenuOpen(false)} className="w-10 h-10 bg-slate-50 text-slate-400 rounded-xl flex items-center justify-center">
+               <button onClick={() => toggleMoreMenu(false)} className="w-10 h-10 bg-slate-50 text-slate-400 rounded-xl flex items-center justify-center">
                   <X size={20} />
                </button>
             </div>
@@ -947,7 +977,7 @@ export default function MtaaniPOS() {
                     ].map(item => (
                       <button
                         key={item.id}
-                        onClick={() => { setActiveTab(item.id as any); setIsMoreMenuOpen(false); }}
+                        onClick={() => { navigateToTab(item.id as any); toggleMoreMenu(false); }}
                         className="flex flex-col items-center justify-center gap-2 p-3 rounded-2xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all group"
                       >
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.bg} ${item.text} group-hover:scale-110 transition-transform`}>
@@ -970,7 +1000,7 @@ export default function MtaaniPOS() {
                     ].map(item => (
                       <button
                         key={item.id}
-                        onClick={() => { setActiveTab(item.id as any); setIsMoreMenuOpen(false); }}
+                        onClick={() => { navigateToTab(item.id as any); toggleMoreMenu(false); }}
                         className="flex flex-col items-center justify-center gap-2 p-3 rounded-2xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all group"
                       >
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.bg} ${item.text} group-hover:scale-110 transition-transform`}>
@@ -1023,7 +1053,7 @@ export default function MtaaniPOS() {
           lg:static lg:inset-auto lg:z-10 lg:w-96 lg:shadow-[-4px_0_24px_rgba(0,0,0,0.05)] lg:border-l lg:border-slate-200 lg:shrink-0
           ${!isCartOpen && activeTab === 'REGISTER' ? 'hidden lg:flex' : 'flex'}
         `}>
-          <div className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm lg:hidden ${!isCartOpen ? 'hidden' : ''}`} onClick={() => setIsCartOpen(false)} />
+          <div className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm lg:hidden ${!isCartOpen ? 'hidden' : ''}`} onClick={() => toggleCart(false)} />
           <div className={`relative w-full max-w-md lg:max-w-none bg-white h-full shadow-2xl lg:shadow-none flex flex-col animate-in slide-in-from-right duration-300 lg:animate-none`}>
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
                <div className="flex items-center gap-3">
@@ -1035,7 +1065,7 @@ export default function MtaaniPOS() {
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Register Session</p>
                   </div>
                </div>
-               <button onClick={() => setIsCartOpen(false)} className="w-10 h-10 flex lg:hidden items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:text-slate-900 transition-all">
+               <button onClick={() => toggleCart(false)} className="w-10 h-10 flex lg:hidden items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:text-slate-900 transition-all">
                  <X size={20} />
                </button>
             </div>
@@ -1316,83 +1346,108 @@ export default function MtaaniPOS() {
       {/* Receipt Modal */}
       {completedTransaction && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setCompletedTransaction(null)} />
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-             <div className="p-8 bg-slate-50 border-b border-dashed border-slate-200 font-mono text-sm flex-1 overflow-y-auto max-h-[70vh] custom-scrollbar">
-                <div className="text-center mb-8">
-                   <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-sm">
-                      <Store size={32} className="text-blue-600" />
-                   </div>
-                   <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">{storeName}</h3>
-                   <p className="text-slate-500 text-[10px] font-bold mt-1 uppercase tracking-widest">Digital Receipt</p>
-                   <div className="flex flex-col gap-1 mt-4 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                      <span>{new Date(completedTransaction.timestamp).toLocaleString()}</span>
-                      <span>Receipt: #{completedTransaction.id.split('-')[0].toUpperCase()}</span>
-                      <span>Cashier: {completedTransaction.cashierName}</span>
-                   </div>
-                </div>
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setCompletedTransaction(null)} />
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 h-full max-h-[90vh]">
+             <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div id="printable-receipt" className="print-receipt-80mm">
+                  <div className="p-8 bg-green-50/50 border-b border-green-100 flex flex-col items-center text-center">
+                    <div className="w-16 h-16 bg-green-100 text-green-600 rounded-3xl flex items-center justify-center mb-4 shadow-sm">
+                        <ReceiptText size={32} />
+                    </div>
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase">{storeName}</h2>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Sales Receipt</p>
+                    
+                    <div className="flex flex-col items-center gap-1 mt-4 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                        <span>{new Date(completedTransaction.timestamp).toLocaleString('en-KE')}</span>
+                        <span>Ref: #{completedTransaction.id.split('-')[0].toUpperCase()}</span>
+                    </div>
+                    
+                    <div className="mt-4 px-3 py-1 bg-green-100 text-green-700 text-[9px] font-black rounded-full tracking-widest uppercase">
+                        PAID VIA {completedTransaction.paymentMethod}
+                    </div>
+                  </div>
 
-                <div className="border-t border-dashed border-slate-200 my-6" />
+                  <div className="p-6 space-y-6">
+                    <div className="space-y-4">
+                        {completedTransaction.items.map((item, i) => (
+                          <div key={i} className="flex justify-between items-start gap-4 text-sm">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-slate-800 leading-tight truncate">{item.name}</p>
+                                <p className="text-slate-500 text-[10px] mt-0.5 font-bold">{item.quantity} x Ksh {item.snapshotPrice.toLocaleString()}</p>
+                              </div>
+                              <span className="font-black text-slate-900 shrink-0">Ksh {(item.quantity * item.snapshotPrice).toLocaleString()}</span>
+                          </div>
+                        ))}
+                    </div>
 
-                <div className="space-y-4">
-                   {completedTransaction.items.map((item, i) => (
-                      <div key={i} className="flex justify-between items-start gap-4">
-                         <div className="flex flex-col min-w-0">
-                            <span className="font-bold text-slate-800 leading-tight truncate">{item.name}</span>
-                            <span className="text-slate-500 text-[10px] mt-1 font-bold">{item.quantity} x Ksh {item.snapshotPrice.toLocaleString()}</span>
-                         </div>
-                         <span className="font-bold text-slate-900 shrink-0">Ksh {(item.quantity * item.snapshotPrice).toLocaleString()}</span>
-                      </div>
-                   ))}
-                </div>
+                    <div className="pt-4 border-t border-dashed border-slate-200 space-y-2">
+                        <div className="flex justify-between text-xs font-bold text-slate-500 uppercase tracking-tight">
+                          <span>Subtotal</span>
+                          <span>Ksh {completedTransaction.subtotal.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-xs font-bold text-slate-500 uppercase tracking-tight">
+                          <span>Tax (16%)</span>
+                          <span>Ksh {completedTransaction.tax.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-end pt-2">
+                          <span className="text-sm font-black text-slate-400 uppercase tracking-widest">Total Paid</span>
+                          <span className="text-2xl font-black text-slate-900">Ksh {completedTransaction.total.toLocaleString()}</span>
+                        </div>
+                        
+                        {completedTransaction.paymentMethod === 'CASH' && completedTransaction.amountTendered && (
+                          <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
+                            <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                <span>Amount Paid</span>
+                                <span>Ksh {completedTransaction.amountTendered.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-green-700 bg-green-50 p-3 rounded-2xl border border-green-100">
+                                <span className="text-[10px] font-black uppercase tracking-widest">Change Given</span>
+                                <span className="text-lg font-black italic">Ksh {(completedTransaction.changeGiven || 0).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        )}
+                    </div>
 
-                <div className="border-t border-dashed border-slate-200 my-6" />
-
-                <div className="space-y-2">
-                   <div className="flex justify-between text-slate-500 text-[10px] font-bold uppercase tracking-widest">
-                      <span>Subtotal</span>
-                      <span>Ksh {completedTransaction.subtotal.toLocaleString()}</span>
-                   </div>
-                   <div className="flex justify-between text-slate-500 text-[10px] font-bold uppercase tracking-widest">
-                      <span>Tax (16%)</span>
-                      <span>Ksh {completedTransaction.tax.toLocaleString()}</span>
-                   </div>
-                   <div className="flex justify-between text-lg font-black text-slate-900 pt-4 mt-2 border-t border-slate-200">
-                      <span>TOTAL</span>
-                      <span className="text-blue-600">Ksh {completedTransaction.total.toLocaleString()}</span>
-                   </div>
-                   {completedTransaction.paymentMethod === 'CASH' && completedTransaction.amountTendered && (
-                      <>
-                         <div className="flex justify-between text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-2">
-                            <span>Amount Tendered</span>
-                            <span>Ksh {completedTransaction.amountTendered.toLocaleString()}</span>
-                         </div>
-                         <div className="flex justify-between text-slate-500 text-[10px] font-bold uppercase tracking-widest">
-                            <span>Change</span>
-                            <span>Ksh {(completedTransaction.changeGiven || 0).toLocaleString()}</span>
-                         </div>
-                      </>
-                   )}
-                </div>
-
-                <div className="mt-8 pt-6 border-t border-dashed border-slate-200 text-center">
-                   <div className="inline-block px-4 py-2 bg-slate-900 text-white text-[10px] font-black rounded-lg uppercase tracking-[0.2em]">
-                      PAID VIA {completedTransaction.paymentMethod}
-                   </div>
-                   <p className="text-[10px] text-slate-400 font-bold mt-6 uppercase tracking-widest">Thank you for shopping with us!</p>
+                    <div className="text-center pt-4">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                          Cashier: {completedTransaction.cashierName}<br/>
+                          Thank you for shopping with us!
+                        </p>
+                    </div>
+                  </div>
                 </div>
              </div>
-             <div className="p-6 bg-white flex gap-3">
-                <button 
-                  onClick={() => window.print()} 
-                  className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 hover:bg-slate-200 transition-all"
-                >
-                  <Printer size={16} /> 
-                  Print
-                </button>
+
+             <div className="p-6 bg-white border-t border-slate-100 flex flex-col gap-3">
+                <div className="flex gap-2">
+                   <button 
+                    onClick={async () => {
+                      setIsSharing(true);
+                      try {
+                        const filename = `Receipt-${completedTransaction.id.split('-')[0].toUpperCase()}`;
+                        await generateAndShareDocument(completedTransaction, filename, null, false);
+                        success('PDF shared!');
+                      } catch (err) {
+                        error('Share failed');
+                      } finally { setIsSharing(false); }
+                    }}
+                    disabled={isSharing}
+                    className="flex-1 py-3.5 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    {isSharing ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+                    Share
+                  </button>
+                  <button 
+                    onClick={() => window.print()} 
+                    className="flex-1 py-3.5 bg-slate-100 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 hover:bg-slate-200 transition-all"
+                  >
+                    <Printer size={16} /> 
+                    Print
+                  </button>
+                </div>
                 <button 
                   onClick={() => setCompletedTransaction(null)} 
-                  className="flex-[2] bg-blue-600 text-white px-6 py-4 font-black text-[10px] uppercase tracking-widest rounded-2xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
+                  className="w-full bg-blue-600 text-white py-4 font-black text-xs uppercase tracking-widest rounded-2xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
                 >
                   New Sale
                 </button>

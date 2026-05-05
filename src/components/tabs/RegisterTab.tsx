@@ -97,18 +97,7 @@ export default function RegisterTab() {
   return (
     <div className="pb-4 bg-transparent min-h-full text-slate-800">
       
-      {/* Sale Controls */}
-      <div className="px-4 py-3 flex gap-2 overflow-x-auto no-scrollbar">
-         <button 
-           onClick={() => {
-             if(confirm("Clear current session?")) clearCart();
-           }}
-           className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-white border border-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest shadow-sm hover:bg-red-50 hover:text-red-600 transition-all active:scale-95 whitespace-nowrap"
-         >
-           <RotateCcw size={14} />
-           New Sale
-         </button>
-      </div>
+
 
       {/* Inline Scanner */}
       {isScannerOpen && (
