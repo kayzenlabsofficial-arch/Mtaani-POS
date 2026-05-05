@@ -34,8 +34,9 @@ export default function InventoryTab() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [selectedProductForDetails, setSelectedProductForDetails] = useState<Product | null>(null);
   const [productForm, setProductForm] = useState({
-     name: '', category: 'Other', barcode: '', sellingPrice: '', stockQuantity: '', unit: 'pcs', taxCategory: 'A' as 'A'|'C'|'E', reason: '', imageUrl: ''
+      name: '', category: 'Other', barcode: '', sellingPrice: '', stockQuantity: '', unit: 'pcs', taxCategory: 'A' as 'A'|'C'|'E', reason: '', imageUrl: ''
   });
+  const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
   const isAdmin = useStore(state => state.isAdmin);
   const { success, error } = useToast();
@@ -189,7 +190,8 @@ export default function InventoryTab() {
                       timestamp: Date.now(),
                       status: 'PENDING',
                       preparedBy: currentUser?.name,
-                      branchId: activeBranchId!
+                      branchId: activeBranchId!,
+                      businessId: activeBusinessId!
                   });
                   
                   // Only update non-stock properties directly
@@ -210,7 +212,7 @@ export default function InventoryTab() {
               }
           } else {
               const newId = crypto.randomUUID();
-              await db.products.add({ id: newId, ...payload, updated_at: Date.now() } as any);
+              await db.products.add({ id: newId, ...payload, updated_at: Date.now(), businessId: activeBusinessId! } as any);
               await db.stockMovements.add({
                   id: crypto.randomUUID(),
                   productId: newId,
@@ -219,7 +221,8 @@ export default function InventoryTab() {
                   timestamp: Date.now(),
                   reference: 'Initial Stock',
                   updated_at: Date.now(),
-                  branchId: activeBranchId!
+                  branchId: activeBranchId!,
+                  businessId: activeBusinessId!
               });
               success("New product added to inventory.");
           }
@@ -255,7 +258,8 @@ export default function InventoryTab() {
           timestamp: Date.now(),
           status: 'PENDING',
           preparedBy: currentUser?.name,
-          branchId: activeBranchId!
+          branchId: activeBranchId!,
+          businessId: activeBusinessId!
       });
       success("Adjustment requested. Admin approval required.");
       

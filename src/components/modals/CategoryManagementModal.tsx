@@ -3,6 +3,7 @@ import { Plus, Tag as TagIcon, Trash2, Save, X, Utensils, GlassWater, ShoppingBa
 import { useLiveQuery } from '../../clouddb';
 import { db, type Category } from '../../db';
 import { useToast } from '../../context/ToastContext';
+import { useStore } from '../../store';
 
 interface CategoryManagementModalProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ const COLOR_OPTIONS = [
 
 export default function CategoryManagementModal({ isOpen, onClose }: CategoryManagementModalProps) {
   const { success, error, warning } = useToast();
+  const activeBusinessId = useStore(state => state.activeBusinessId);
   const categories = useLiveQuery(() => db.categories.toArray(), [], []);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -51,7 +53,8 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
         await db.categories.add({
           id: crypto.randomUUID(),
           ...form,
-          updated_at: Date.now()
+          updated_at: Date.now(),
+          businessId: activeBusinessId!
         });
         success("New category created.");
       }

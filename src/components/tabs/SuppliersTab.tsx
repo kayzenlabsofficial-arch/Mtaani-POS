@@ -17,6 +17,8 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [supplierForm, setSupplierForm] = useState({ name: '', company: '', phone: '', email: '', address: '', kraPin: '' });
   const isAdmin = useStore(state => state.isAdmin);
+  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
   const { success, error } = useToast();
 
   const allSuppliers = useLiveQuery(() => db.suppliers.toArray(), [], []) ;
@@ -60,7 +62,7 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
           await db.suppliers.update(editingSupplier.id, { ...supplierForm });
           success("Supplier information updated.");
       } else {
-          await db.suppliers.add({ id: crypto.randomUUID(), ...supplierForm, balance: 0 } as any);
+          await db.suppliers.add({ id: crypto.randomUUID(), ...supplierForm, balance: 0, branchId: activeBranchId!, businessId: activeBusinessId! } as any);
           success("Supplier added.");
       }
       setIsSupplierModalOpen(false);
@@ -101,7 +103,9 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
           transactionCode: payment.transactionCode,
           reference: payment.reference,
           timestamp: Date.now(),
-          preparedBy: useStore.getState().currentUser?.name || 'Authorized Staff'
+          preparedBy: useStore.getState().currentUser?.name || 'Authorized Staff',
+          branchId: activeBranchId!,
+          businessId: activeBusinessId!
         });
 
         if (payment.purchaseOrderIds && payment.purchaseOrderIds.length > 0) {

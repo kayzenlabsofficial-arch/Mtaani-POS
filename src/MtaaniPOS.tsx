@@ -587,6 +587,7 @@ export default function MtaaniPOS() {
         paymentMethod: paymentMethod,
         cashierName: currentUser?.name || 'Unknown',
         branchId: activeBranchId!,
+        businessId: activeBusinessId!,
         amountTendered: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) : undefined,
         changeGiven: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) - total : undefined
       };
@@ -610,7 +611,8 @@ export default function MtaaniPOS() {
                 quantity: -item.cartQuantity,
                 timestamp: transaction.timestamp,
                 reference: `Sale #${transaction.id.split('-')[0].toUpperCase()}`,
-                branchId: activeBranchId!
+                branchId: activeBranchId!,
+                businessId: activeBusinessId!
               });
             }
           }

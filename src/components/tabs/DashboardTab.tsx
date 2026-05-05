@@ -165,7 +165,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       reportedCash: reported,
       difference: reported - expectedCashDrawer,
       cashierName: activeShift.cashierName,
-      branchId: activeBranchId
+      branchId: activeBranchId,
+      businessId: activeBusinessId!
     });
 
     // Close Shift in DB
@@ -195,7 +196,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       totalPicks: (todaysReports || []).reduce((s: number, r) => s + (Number(r.totalPicks) || 0), 0),
       totalVariance: (todaysReports || []).reduce((s: number, r) => s + (Number(r.difference) || 0), 0),
       timestamp: Date.now(),
-      branchId: activeBranchId
+      branchId: activeBranchId,
+      businessId: activeBusinessId!
     });
     
     setIsDailySummaryOpen(false);

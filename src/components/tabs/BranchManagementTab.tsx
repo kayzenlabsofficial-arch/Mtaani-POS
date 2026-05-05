@@ -8,6 +8,7 @@ import { useToast } from '../../context/ToastContext';
 export default function BranchManagementTab() {
   const branches = useLiveQuery(() => db.branches.toArray(), [], []);
   const isAdmin = useStore(state => state.isAdmin);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
   const { success, error, warning } = useToast();
 
   const BLANK: Omit<Branch, 'id' | 'updated_at'> = {
@@ -54,6 +55,7 @@ export default function BranchManagementTab() {
           tillNumber: form.tillNumber.trim() || undefined,
           kraPin: form.kraPin.trim() || undefined,
           isActive: true,
+          businessId: activeBusinessId!
         });
         success("Branch created.");
       }

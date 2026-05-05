@@ -9,6 +9,7 @@ import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 export default function AdminApprovals() {
   const currentUser = useStore(state => state.currentUser);
   const activeBranchId = useStore(state => state.activeBranchId);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
 
   const pendingAdjustments = useLiveQuery(() => activeBranchId ? db.stockAdjustmentRequests.where('branchId').equals(activeBranchId).and(x => x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBranchId], []);
   const pendingPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).and(x => x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBranchId], []);
@@ -32,7 +33,8 @@ export default function AdminApprovals() {
             quantity: req.newQty - req.oldQty,
             timestamp: Date.now(),
             reference: `Approved Adj: ${req.reason}`,
-            branchId: activeBranchId!
+            branchId: activeBranchId!,
+            businessId: activeBusinessId!
         });
     }
     await db.stockAdjustmentRequests.update(req.id, { 
@@ -87,7 +89,8 @@ export default function AdminApprovals() {
              quantity: item.quantity,
              timestamp: Date.now(),
              reference: `Return #${t.id.split('-')[0].toUpperCase()}`,
-             branchId: activeBranchId!
+             branchId: activeBranchId!,
+             businessId: activeBusinessId!
           });
           const txItem = t.items.find(i => i.productId === item.productId);
           if (txItem) txItem.returnedQuantity = (txItem.returnedQuantity || 0) + item.quantity;

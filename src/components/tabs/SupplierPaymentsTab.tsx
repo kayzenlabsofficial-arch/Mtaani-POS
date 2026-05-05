@@ -16,6 +16,7 @@ export default function SupplierPaymentsTab() {
 
   // Live Queries
   const activeBranchId = useStore(state => state.activeBranchId);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
   const allSuppliers = useLiveQuery(() => db.suppliers.toArray(), [], []) ;
   const allPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
 
@@ -57,7 +58,8 @@ export default function SupplierPaymentsTab() {
           transactionCode: payment.transactionCode,
           reference: payment.reference,
           timestamp: Date.now(),
-          branchId: activeBranchId!
+          branchId: activeBranchId!,
+          businessId: activeBusinessId!
         });
 
         // Allocation logic for multiple invoices

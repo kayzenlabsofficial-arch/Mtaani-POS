@@ -14,6 +14,7 @@ export default function ExpensesTab() {
   const currentUser = useStore(state => state.currentUser);
   const isAdmin = useStore(state => state.isAdmin);
   const activeBranchId = useStore(state => state.activeBranchId);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
   const { success, error } = useToast();
 
   const allExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
@@ -48,7 +49,8 @@ export default function ExpensesTab() {
          userName: currentUser.name,
          preparedBy: currentUser.name,
          status: 'PENDING',
-         branchId: activeBranchId!
+         branchId: activeBranchId!,
+         businessId: activeBusinessId!
       });
       setIsExpenseModalOpen(false);
       setExpenseForm({ amount: '', category: 'Supplies', description: '' });

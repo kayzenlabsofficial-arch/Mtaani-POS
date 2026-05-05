@@ -26,6 +26,7 @@ export default function PurchasesTab() {
   const [receiveSellingPrices, setReceiveSellingPrices] = useState<{ [productId: string]: number }>({});
 
   const activeBranchId = useStore(state => state.activeBranchId);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
   const allPurchaseOrders = useLiveQuery(() => activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const allSuppliers = useLiveQuery(() => db.suppliers.toArray(), [], []) ;
   const allProducts = useLiveQuery(() => db.products.toArray(), [], []) ;
@@ -83,7 +84,8 @@ export default function PurchasesTab() {
             approvalStatus: 'PENDING',
             orderDate: Date.now(),
             preparedBy: currentUser?.name || 'Authorized Staff',
-            branchId: activeBranchId!
+            branchId: activeBranchId!,
+            businessId: activeBusinessId!
          } as any);
       }
       setIsPOModalOpen(false);
@@ -162,7 +164,8 @@ export default function PurchasesTab() {
                      quantity: item.receivedQuantity,
                      timestamp: Date.now(),
                      reference: `PO#${selectedPO.id.split('-')[0].toUpperCase()} Inv:${invoiceNumber}`,
-                     branchId: activeBranchId!
+                     branchId: activeBranchId!,
+                     businessId: activeBusinessId!
                  });
              }
              totalReceivedCost += (item.receivedQuantity * item.unitCost);

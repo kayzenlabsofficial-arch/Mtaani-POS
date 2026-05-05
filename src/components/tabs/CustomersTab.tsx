@@ -11,6 +11,7 @@ export default function CustomersTab() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
   const isAdmin = useStore(state => state.isAdmin);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
   const { success, error } = useToast();
 
   const allCustomers = useLiveQuery(() => db.customers.toArray(), [], []) ;
@@ -48,7 +49,7 @@ export default function CustomersTab() {
           await db.customers.update(editingCustomer.id, { ...customerForm });
           success("Customer updated.");
       } else {
-          await db.customers.add({ id: crypto.randomUUID(), ...customerForm, totalSpent: 0, balance: 0 } as any);
+          await db.customers.add({ id: crypto.randomUUID(), ...customerForm, totalSpent: 0, balance: 0, businessId: activeBusinessId! } as any);
           success("Customer added.");
       }
       setIsCustomerModalOpen(false);
