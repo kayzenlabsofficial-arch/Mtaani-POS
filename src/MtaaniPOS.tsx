@@ -250,6 +250,8 @@ export default function MtaaniPOS() {
   const [amountTendered, setAmountTendered] = useState("");
 
   // M-Pesa State
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isMpesaModalOpen, setIsMpesaModalOpen] = useState(false);
@@ -257,6 +259,18 @@ export default function MtaaniPOS() {
   const [mpesaState, setMpesaState] = useState<'IDLE' | 'PUSHING' | 'POLLING' | 'SUCCESS' | 'FAILED'>('IDLE');
   const [mpesaRequestId, setMpesaRequestId] = useState<string | null>(null);
   const [mpesaMessage, setMpesaMessage] = useState('');
+
+  // ── NETWORK STATUS MONITOR ────────────────────────────────────────────────
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
   // Group state is no longer needed with bottom nav
 
 

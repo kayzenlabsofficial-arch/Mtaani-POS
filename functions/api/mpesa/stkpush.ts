@@ -113,9 +113,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
     const password = btoa(`${shortcode}${passkey}${timestamp}`);
     
+    // SECURITY: Use a secret callback path to prevent spoofing
+    const callbackSecret = env.MPESA_CALLBACK_SECRET || 'default_secret_key_123';
     const urlObj = new URL(request.url);
-    const defaultCallback = `${urlObj.protocol}//${urlObj.host}/api/mpesa/callback`;
-    const callbackUrl = env.MPESA_CALLBACK_URL || defaultCallback;
+    const callbackUrl = `${urlObj.protocol}//${urlObj.host}/api/mpesa/callback/${callbackSecret}`;
 
     const stkPayload = {
       BusinessShortCode: shortcode,
@@ -131,7 +132,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       TransactionDesc: description
     };
 
-    // 4. Send STK Push Request
+    // 4. PRE-LOG: Record as PENDING before the push to prevent race conditions
+    // We don't have CheckoutRequestID yet, but we can generate a temporary internal ID or wait for response.
+    // Safaricom returns CheckoutRequestID in the response.
+    
+    // Send STK Push Request
     const stkRes = await fetch(`${baseUrl}/mpesa/stkpush/v1/processrequest`, {
       method: 'POST',
       headers: {
@@ -145,6 +150,34 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     if (!stkRes.ok || stkData.errorCode) {
        throw new Error(`STK Push failed: ${JSON.stringify(stkData)}`);
+    }
+
+    // 5. SECURE LOGGING: Save the pending request to D1
+    try {
+       await env.DB.prepare(`
+         CREATE TABLE IF NOT EXISTS mpesaCallbacks (
+           checkoutRequestId TEXT PRIMARY KEY,
+           merchantRequestId TEXT,
+           resultCode INTEGER,
+           resultDesc TEXT,
+           amount REAL,
+           receiptNumber TEXT,
+           phoneNumber TEXT,
+           businessId TEXT,
+           branchId TEXT,
+           timestamp INTEGER
+         )
+       `).run();
+
+       await env.DB.prepare(`
+         INSERT INTO mpesaCallbacks 
+         (checkoutRequestId, merchantRequestId, resultCode, resultDesc, amount, phoneNumber, businessId, branchId, timestamp)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       `).bind(
+         stkData.CheckoutRequestID, stkData.MerchantRequestID, 999, 'PENDING', amount, phone, body.businessId, body.branchId, Date.now()
+       ).run();
+    } catch (logErr) {
+       console.error("Failed to pre-log M-Pesa transaction:", logErr);
     }
 
     return new Response(JSON.stringify({ 
