@@ -431,16 +431,14 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                   <CalendarCheck size={16} /> Close Shift
                   {isCloseDayBlocked && <div className="absolute inset-0 bg-red-600/20 backdrop-blur-[1px] flex items-center justify-center"><Lock size={12} className="text-red-600" /></div>}
                </button>
-               {(isAdmin || isManager) && (
-                  <button 
-                     onClick={() => setIsDailySummaryOpen(true)} 
-                     disabled={!!existingDailySummary}
-                     className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                     {existingDailySummary ? <CheckCircle2 size={16} /> : <TrendingUp size={16} />}
-                     {existingDailySummary ? 'Day Closed' : 'Close Day'}
-                  </button>
-               )}
+               <button 
+                  onClick={() => setIsDailySummaryOpen(true)} 
+                  disabled={!!existingDailySummary}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                  {existingDailySummary ? <CheckCircle2 size={16} /> : <TrendingUp size={16} />}
+                  {existingDailySummary ? 'Day Closed' : 'Close Day'}
+               </button>
             </div>
          </div>
 
