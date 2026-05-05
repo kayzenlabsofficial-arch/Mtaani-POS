@@ -145,7 +145,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   };
 
   const handleCloseDay = async () => {
-    if (!activeShift) return;
+    if (!activeShift) {
+      error("No active shift found. It may have already been closed.");
+      return;
+    }
     if (!activeBranchId || !activeBusinessId) {
       error("Missing business/branch context. Please try logging in again.");
       return;
@@ -185,10 +188,14 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         businessId: activeBusinessId!
       });
 
-      // Close Shift in DB
-      await db.shifts.update(activeShift.id, { 
-         status: 'CLOSED', 
-         endTime: Date.now() 
+      // Close Shift in DB — use add() (INSERT OR REPLACE) to bypass cache lookup
+      // Old shifts may lack businessId and won't be in cache, causing update() to silently fail
+      await db.shifts.add({
+         ...activeShift,
+         status: 'CLOSED',
+         endTime: Date.now(),
+         branchId: activeBranchId!,
+         businessId: activeBusinessId!
       });
 
       // Reset Store

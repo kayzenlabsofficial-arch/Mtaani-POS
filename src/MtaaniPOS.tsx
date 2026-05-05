@@ -461,6 +461,10 @@ export default function MtaaniPOS() {
           if (matchedUser.role === 'CASHIER') {
             setLoginStep('FLOAT');
           } else {
+            // Restore any open shift for this branch from D1
+            const openShift = await db.shifts.where('status').equals('OPEN')
+              .and(s => s.branchId === active[0].id).first();
+            if (openShift) setActiveShift(openShift);
             setCurrentUser(matchedUser);
             setPendingUser(null);
             setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
@@ -498,6 +502,10 @@ export default function MtaaniPOS() {
       if (pendingUser.role === 'CASHIER') {
         setLoginStep('FLOAT');
       } else {
+        // Restore any open shift for this branch from D1
+        const openShift = await db.shifts.where('status').equals('OPEN')
+          .and(s => s.branchId === selectedBranchId).first();
+        if (openShift) setActiveShift(openShift);
         setCurrentUser(pendingUser);
         setPendingUser(null);
         setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
