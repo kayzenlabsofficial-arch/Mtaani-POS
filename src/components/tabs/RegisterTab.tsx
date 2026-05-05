@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Search, ShoppingCart, Zap, AlertTriangle, Store, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Plus, RotateCcw, Tag as TagIcon, ScanLine } from 'lucide-react';
+import { Search, ShoppingCart, Zap, AlertTriangle, Store, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Plus, RotateCcw, Tag as TagIcon, ScanLine, User } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
@@ -31,7 +31,10 @@ export default function RegisterTab() {
   const clearCart = useStore((state) => state.clearCart);
   const cart = useStore((state) => state.cart);
   const { success: toastSuccess, error: toastError } = useStore.getState ? {} : {};
+  const { selectedCustomerId, setSelectedCustomerId } = useStore();
   const allProducts = useLiveQuery(() => db.products.toArray(), [], []);
+  const allCustomers = useLiveQuery(() => db.customers.toArray(), [], []);
+  const selectedCustomer = allCustomers?.find(c => c.id === selectedCustomerId);
 
   const products = useLiveQuery(
     () => {
@@ -109,7 +112,35 @@ export default function RegisterTab() {
            />
         </div>
       )}
-
+      {/* Customer Selection */}
+      <div className="px-4 pt-4">
+        <div className="relative group">
+          <div className={`flex items-center gap-3 p-3 rounded-2xl border-2 transition-all cursor-pointer ${
+            selectedCustomer ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100 hover:border-slate-200'
+          }`}>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+              selectedCustomer ? 'bg-blue-600 text-white shadow-blue' : 'bg-slate-50 text-slate-400'
+            }`}>
+              <User size={18} />
+            </div>
+            <div className="flex-1 min-w-0">
+               <select 
+                value={selectedCustomerId || ''} 
+                onChange={(e) => setSelectedCustomerId(e.target.value || null)}
+                className="w-full bg-transparent border-none p-0 text-sm font-black text-slate-900 focus:ring-0 cursor-pointer appearance-none"
+               >
+                 <option value="">Walk-in Customer</option>
+                 {allCustomers?.map(c => (
+                   <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
+                 ))}
+               </select>
+               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">
+                 {selectedCustomer ? `Ksh ${selectedCustomer.balance.toLocaleString()} Balance` : 'Select Client to Link Sale'}
+               </p>
+            </div>
+          </div>
+        </div>
+      </div>
       {/* Search bar */}
       <div className="px-4 pt-3 pb-2">
         <div className="relative flex items-center gap-2">

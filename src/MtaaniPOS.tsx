@@ -230,6 +230,11 @@ export default function MtaaniPOS() {
   const setActiveBranchId = useStore(state => state.setActiveBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const setActiveBusinessId = useStore(state => state.setActiveBusinessId);
+  const selectedCustomerId = useStore(state => state.selectedCustomerId);
+  
+  const allCustomers = useLiveQuery(() => db.customers.toArray(), [], []);
+  const selectedCustomer = allCustomers?.find(c => c.id === selectedCustomerId);
+
   const [loginForm, setLoginForm] = useState({ businessCode: '', username: '', password: '', openingFloat: '' });
   const [loginStep, setLoginStep] = useState<'LOGIN' | 'BRANCH' | 'FLOAT'>('LOGIN');
   const [pendingUser, setPendingUser] = useState<any>(null);
@@ -1164,7 +1169,7 @@ export default function MtaaniPOS() {
                       <button 
                         onClick={() => {
                           setMpesaState('IDLE');
-                          setMpesaPhone('');
+                          setMpesaPhone(selectedCustomer?.phone || '');
                           setMpesaMessage('');
                           setIsMpesaModalOpen(true);
                         }}
@@ -1255,6 +1260,18 @@ export default function MtaaniPOS() {
             </div>
             <h2 className="text-2xl font-black text-slate-900 mb-2 text-center">M-Pesa Payment</h2>
             
+            {selectedCustomer && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-2xl flex items-center gap-3">
+                 <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-xs">
+                    {selectedCustomer.name.charAt(0)}
+                 </div>
+                 <div>
+                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest leading-none">Paying Customer</p>
+                    <p className="text-sm font-black text-slate-900 mt-1">{selectedCustomer.name}</p>
+                 </div>
+              </div>
+            )}
+
             <div className="bg-slate-50 p-6 rounded-3xl mb-6 border border-slate-100 text-center">
                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Amount Due</p>
                <p className="text-3xl font-black text-slate-900">Ksh {cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0).toLocaleString()}</p>

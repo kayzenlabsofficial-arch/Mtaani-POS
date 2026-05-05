@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Search, Plus, Users, Phone, Mail, ChevronRight, X, User, Trash2 } from 'lucide-react';
+import { Search, Plus, Users, Phone, Mail, ChevronRight, X, User, Trash2, Smartphone, Loader2, CheckCircle2 } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Customer } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
+import { MpesaService } from '../../services/mpesa';
 
 export default function CustomersTab() {
   const [customerSearch, setCustomerSearch] = useState("");
@@ -12,7 +13,11 @@ export default function CustomersTab() {
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
   const isAdmin = useStore(state => state.isAdmin);
   const activeBusinessId = useStore(state => state.activeBusinessId);
-  const { success, error } = useToast();
+  const { success, error, info } = useToast();
+
+  const [mpesaState, setMpesaState] = useState<'IDLE' | 'PUSHING' | 'POLLING' | 'SUCCESS' | 'FAILED'>('IDLE');
+  const [mpesaRequestId, setMpesaRequestId] = useState('');
+  const [repaymentAmount, setRepaymentAmount] = useState('');
 
   const allCustomers = useLiveQuery(() => db.customers.toArray(), [], []) ;
 
@@ -61,6 +66,66 @@ export default function CustomersTab() {
       setIsCustomerModalOpen(false);
       success("Customer removed.");
     }
+  }
+
+  const handleMpesaRepayment = async () => {
+    if (!editingCustomer || !repaymentAmount) return;
+    const amount = Number(repaymentAmount);
+    if (isNaN(amount) || amount <= 0) return error("Invalid amount");
+
+    setMpesaState('PUSHING');
+    try {
+      const res = await MpesaService.triggerStkPush(editingCustomer.phone, amount, `REPAY-${editingCustomer.name.substring(0,5)}`);
+      if (res.success && res.checkoutRequestId) {
+        setMpesaRequestId(res.checkoutRequestId);
+        setMpesaState('POLLING');
+        startPolling(res.checkoutRequestId, amount);
+      } else {
+        setMpesaState('FAILED');
+        error(res.error || "STK Push failed");
+      }
+    } catch (err) {
+      setMpesaState('FAILED');
+      error("Connection failed");
+    }
+  }
+
+  const startPolling = (requestId: string, amount: number) => {
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts > 12) { // 1 minute max
+        clearInterval(interval);
+        setMpesaState('FAILED');
+        error("Payment timeout. Check M-Pesa message.");
+        return;
+      }
+
+      const res = await MpesaService.checkStatus(requestId);
+      if (res.found && res.resultCode === 0) {
+        clearInterval(interval);
+        setMpesaState('SUCCESS');
+        
+        // Update Customer Balance
+        if (editingCustomer) {
+          const newBalance = Math.max(0, editingCustomer.balance - amount);
+          await db.customers.update(editingCustomer.id, { balance: newBalance });
+          success(`Ksh ${amount} received! New balance: Ksh ${newBalance}`);
+          
+          // Log as a special transaction or transaction record if needed, 
+          // but for now just update the balance.
+        }
+        
+        setTimeout(() => {
+          setMpesaState('IDLE');
+          setRepaymentAmount('');
+        }, 3000);
+      } else if (res.found && res.resultCode !== 0) {
+        clearInterval(interval);
+        setMpesaState('FAILED');
+        error(res.resultDesc || "Payment failed");
+      }
+    }, 5000);
   }
 
   return (
@@ -166,7 +231,48 @@ export default function CustomersTab() {
                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                     </div>
                  </div>
-              </div>
+
+                  {editingCustomer && editingCustomer.balance > 0 && (
+                    <div className="pt-4 mt-4 border-t border-dashed border-slate-200">
+                       <label className="block text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3 ml-1 flex items-center gap-2">
+                         <Smartphone size={12} /> Pay Balance via M-Pesa
+                       </label>
+                       
+                       {mpesaState === 'IDLE' || mpesaState === 'FAILED' ? (
+                         <div className="flex gap-2">
+                            <div className="relative flex-1">
+                               <input 
+                                type="number" 
+                                value={repaymentAmount}
+                                onChange={e => setRepaymentAmount(e.target.value)}
+                                placeholder="Amount"
+                                className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-4 py-3 text-sm font-black text-blue-900 focus:outline-none focus:border-blue-500"
+                               />
+                            </div>
+                            <button 
+                              onClick={handleMpesaRepayment}
+                              className="px-4 py-3 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-blue active:scale-95 transition-all flex items-center gap-2"
+                            >
+                              Push
+                            </button>
+                         </div>
+                       ) : (
+                         <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-center gap-3">
+                            {mpesaState === 'SUCCESS' ? (
+                               <CheckCircle2 className="text-green-600 animate-bounce" size={20} />
+                            ) : (
+                               <Loader2 className="text-blue-600 animate-spin" size={20} />
+                            )}
+                            <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                               {mpesaState === 'PUSHING' ? 'Sending Prompt...' : 
+                                mpesaState === 'POLLING' ? 'Waiting for Pin...' : 
+                                mpesaState === 'SUCCESS' ? 'Payment Received!' : 'Processing...'}
+                            </span>
+                         </div>
+                       )}
+                    </div>
+                  )}
+               </div>
 
               <div className="flex gap-4">
                  <button onClick={() => setIsCustomerModalOpen(false)} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs uppercase tracking-widest rounded-2xl transition-all press">
