@@ -530,12 +530,12 @@ export default function MtaaniPOS() {
 
     try {
         setIsSyncing(true);
+        // RULE: Cannot open a new shift if one is already active on this branch
         const existingShift = await db.shifts.where('status').equals('OPEN').and(s => s.branchId === activeBranchId).first();
         if (existingShift) {
-            await db.shifts.update(existingShift.id, { 
-                status: 'CLOSED', 
-                endTime: Date.now()
-            });
+            error(`Cannot open a new shift. ${existingShift.cashierName}'s shift is still active. Please close it first.`);
+            setIsSyncing(false);
+            return;
         }
 
         const newShift: Shift = {

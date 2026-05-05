@@ -210,8 +210,22 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   };
 
   const handleFinalizeDay = async () => {
-    if (!todaysReports || todaysReports.length === 0 || !activeBranchId) return;
-    
+    if (!todaysReports || todaysReports.length === 0 || !activeBranchId) {
+      error("No shift reports found for today. Close at least one shift first.");
+      return;
+    }
+    if (!activeBusinessId) {
+      error("Missing business context. Please log in again.");
+      return;
+    }
+
+    // RULE: Cannot close day if any shift is still open
+    const openShift = await db.shifts.where('status').equals('OPEN').and(s => s.branchId === activeBranchId).first();
+    if (openShift) {
+      error(`Cannot close the day. ${openShift.cashierName}'s shift is still active. Close all shifts first.`);
+      return;
+    }
+
     try {
       await db.dailySummaries.add({
         id: crypto.randomUUID(),
