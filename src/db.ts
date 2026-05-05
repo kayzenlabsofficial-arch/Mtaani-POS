@@ -259,6 +259,10 @@ export interface Branch {
   kraPin?: string;
   isActive: boolean;
   businessId: string;
+  mpesaConsumerKey?: string;
+  mpesaConsumerSecret?: string;
+  mpesaPasskey?: string;
+  mpesaEnv?: 'sandbox' | 'production';
   updated_at?: number;
 }
 

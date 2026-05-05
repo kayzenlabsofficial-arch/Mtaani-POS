@@ -73,9 +73,11 @@ export default function CustomersTab() {
     const amount = Number(repaymentAmount);
     if (isNaN(amount) || amount <= 0) return error("Invalid amount");
 
+    const activeBranchId = useStore.getState().activeBranchId;
+
     setMpesaState('PUSHING');
     try {
-      const res = await MpesaService.triggerStkPush(editingCustomer.phone, amount, `REPAY-${editingCustomer.name.substring(0,5)}`);
+      const res = await MpesaService.triggerStkPush(editingCustomer.phone, amount, `REPAY-${editingCustomer.name.substring(0,5)}`, activeBusinessId!, activeBranchId!);
       if (res.success && res.checkoutRequestId) {
         setMpesaRequestId(res.checkoutRequestId);
         setMpesaState('POLLING');

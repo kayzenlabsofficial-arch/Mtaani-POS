@@ -1309,7 +1309,7 @@ export default function MtaaniPOS() {
                       if (!mpesaPhone || mpesaPhone.length < 9) return error("Enter a valid phone number");
                       setMpesaState('PUSHING');
                       const total = cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0);
-                      const res = await MpesaService.triggerStkPush(mpesaPhone, total);
+                      const res = await MpesaService.triggerStkPush(mpesaPhone, total, 'POS', activeBusinessId!, activeBranchId!);
                       if (res.success && res.checkoutRequestId) {
                         setMpesaRequestId(res.checkoutRequestId);
                         setMpesaState('POLLING');

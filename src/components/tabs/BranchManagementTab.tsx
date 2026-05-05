@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MapPin, Plus, Pencil, Power, Phone, Hash, Building2, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
+import { MapPin, Plus, Pencil, Power, Phone, Hash, Building2, CheckCircle2, XCircle, Trash2, Smartphone } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Branch } from '../../db';
 import { useStore } from '../../store';
@@ -13,6 +13,7 @@ export default function BranchManagementTab() {
 
   const BLANK: Omit<Branch, 'id' | 'updated_at'> = {
     name: '', location: '', phone: '', tillNumber: '', kraPin: '', isActive: true,
+    mpesaConsumerKey: '', mpesaConsumerSecret: '', mpesaPasskey: '', mpesaEnv: 'sandbox'
   };
 
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -27,7 +28,18 @@ export default function BranchManagementTab() {
   };
 
   const openEdit = (b: Branch) => {
-    setForm({ name: b.name, location: b.location, phone: b.phone || '', tillNumber: b.tillNumber || '', kraPin: b.kraPin || '', isActive: b.isActive });
+    setForm({ 
+        name: b.name, 
+        location: b.location, 
+        phone: b.phone || '', 
+        tillNumber: b.tillNumber || '', 
+        kraPin: b.kraPin || '', 
+        isActive: b.isActive,
+        mpesaConsumerKey: b.mpesaConsumerKey || '',
+        mpesaConsumerSecret: b.mpesaConsumerSecret || '',
+        mpesaPasskey: b.mpesaPasskey || '',
+        mpesaEnv: b.mpesaEnv || 'sandbox'
+    });
     setEditingId(b.id);
     setIsFormOpen(true);
   };
@@ -44,6 +56,10 @@ export default function BranchManagementTab() {
           tillNumber: form.tillNumber.trim() || undefined,
           kraPin: form.kraPin.trim() || undefined,
           isActive: form.isActive,
+          mpesaConsumerKey: form.mpesaConsumerKey?.trim() || undefined,
+          mpesaConsumerSecret: form.mpesaConsumerSecret?.trim() || undefined,
+          mpesaPasskey: form.mpesaPasskey?.trim() || undefined,
+          mpesaEnv: form.mpesaEnv as any
         });
         success("Branch updated.");
       } else {
@@ -55,7 +71,11 @@ export default function BranchManagementTab() {
           tillNumber: form.tillNumber.trim() || undefined,
           kraPin: form.kraPin.trim() || undefined,
           isActive: true,
-          businessId: activeBusinessId!
+          businessId: activeBusinessId!,
+          mpesaConsumerKey: form.mpesaConsumerKey?.trim() || undefined,
+          mpesaConsumerSecret: form.mpesaConsumerSecret?.trim() || undefined,
+          mpesaPasskey: form.mpesaPasskey?.trim() || undefined,
+          mpesaEnv: form.mpesaEnv as any
         });
         success("Branch created.");
       }
@@ -208,7 +228,7 @@ export default function BranchManagementTab() {
       {isFormOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFormOpen(false)} />
-          <div className="relative w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl p-8 animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 z-10">
+          <div className="relative w-full max-w-xl bg-white rounded-[2.5rem] shadow-2xl p-8 animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 z-10 max-h-[90vh] overflow-y-auto no-scrollbar">
             
             <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-5">
               <Building2 size={24} />
@@ -276,6 +296,57 @@ export default function BranchManagementTab() {
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
                   placeholder="P0012345678X"
                 />
+              </div>
+
+              <div className="pt-4 border-t border-slate-100">
+                 <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+                   <Smartphone size={12} /> Daraja API Integration (M-Pesa)
+                 </h4>
+                 <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">M-Pesa Env</label>
+                      <select 
+                        value={form.mpesaEnv} 
+                        onChange={e => setForm(f => ({ ...f, mpesaEnv: e.target.value as any }))}
+                        className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-4 py-3 text-sm font-black text-blue-900 focus:outline-none focus:border-blue-500"
+                      >
+                        <option value="sandbox">Sandbox (Testing)</option>
+                        <option value="production">Production (Live)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Consumer Key</label>
+                      <input
+                        type="text"
+                        value={form.mpesaConsumerKey}
+                        onChange={e => setForm(f => ({ ...f, mpesaConsumerKey: e.target.value }))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
+                        placeholder="App Key"
+                      />
+                    </div>
+                 </div>
+                 <div className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Consumer Secret</label>
+                      <input
+                        type="password"
+                        value={form.mpesaConsumerSecret}
+                        onChange={e => setForm(f => ({ ...f, mpesaConsumerSecret: e.target.value }))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
+                        placeholder="App Secret"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">LNM Passkey</label>
+                      <input
+                        type="password"
+                        value={form.mpesaPasskey}
+                        onChange={e => setForm(f => ({ ...f, mpesaPasskey: e.target.value }))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
+                        placeholder="Online Passkey"
+                      />
+                    </div>
+                 </div>
               </div>
             </div>
 

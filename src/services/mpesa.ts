@@ -22,15 +22,14 @@ export const MpesaService = {
   /**
    * Triggers an STK Push to the specified phone number.
    */
-  async triggerStkPush(phone: string, amount: number, reference: string = 'POS'): Promise<StkPushResponse> {
+  async triggerStkPush(phone: string, amount: number, reference: string = 'POS', businessId: string, branchId: string): Promise<StkPushResponse> {
     try {
       const res = await fetch(`${API_BASE}/stkpush`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // Assuming the generic fetch handles API key if needed, or if it's public for internal use.
         },
-        body: JSON.stringify({ phone, amount, reference })
+        body: JSON.stringify({ phone, amount, reference, businessId, branchId })
       });
       return await res.json();
     } catch (err: any) {
