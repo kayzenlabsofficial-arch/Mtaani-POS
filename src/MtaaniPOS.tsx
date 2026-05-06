@@ -181,6 +181,8 @@ export default function MtaaniPOS() {
 
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'INVENTORY' | 'DOCUMENTS' | 'REPORTS' | 'SUPPLIERS' | 'CUSTOMERS' | 'DASHBOARD' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'SUPPLIER_PAYMENTS' | 'ADMIN_PANEL'>('REGISTER');
   
+  const { success, error } = useToast();
+
   // Navigation History Handling
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
@@ -470,14 +472,12 @@ export default function MtaaniPOS() {
       return;
     }
 
-    // ── System Manager Intercept (hashed check) ────────────────────────────
+    // ── System Manager Intercept (bypass check) ────────────────────────────
     if (rawCode === 'SYSTEM' && rawUser.toLowerCase() === 'admin') {
       console.log('[Auth] System Manager login attempt...');
-      const enteredHash = await hashPassword(loginForm.password);
-      // Hardcoded strong master password: Kayzen@Secure#POS2026
-      const masterHash = await hashPassword('Kayzen@Secure#POS2026');
       
-      if (enteredHash === masterHash) {
+      // Master password comparison
+      if (loginForm.password === 'Kayzen@Secure#POS2026') {
         console.log('[Auth] System Manager login successful.');
         setIsSystemManager(true);
         setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });

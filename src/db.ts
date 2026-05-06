@@ -331,7 +331,7 @@ class MtaaniCloudDB {
   branches            = new CloudTable<Branch>('branches');
   expenseAccounts     = new CloudTable<ExpenseAccount>('expenseAccounts');
 
-  /** Load global tables from D1. Call once on app startup. */
+  /** Load initial bootstrap data (businesses) from D1. Call once on app startup. */
   async init(): Promise<void> {
     // 1. Ensure remote tables exist
     try {
@@ -340,15 +340,11 @@ class MtaaniCloudDB {
       console.warn('[DB] Remote setup failed or already done.', e);
     }
 
-    // 2. Hydrate global tables from D1
-    // Branch-specific tables (products, transactions, etc.) are only synced 
-    // when a branch is active (see db.sync()).
+    // 2. Hydrate ONLY businesses. 
+    // Other global tables (users, branches, settings) require an activeBusinessId
+    // and will be hydrated during the login flow via db.sync().
     await Promise.all([
-      this.businesses.hydrate(),
-      this.users.hydrate(),
-      this.branches.hydrate(),
-      this.settings.hydrate(),
-      this.expenseAccounts.hydrate(),
+      this.businesses.hydrate()
     ]);
   }
 
