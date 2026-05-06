@@ -567,19 +567,19 @@ export default function InventoryTab() {
                    <p className="text-slate-400 text-xs font-bold   mt-0.5">Inventory Tracking Ledger</p>
                  </div>
                  <div className="flex gap-2">
-                    {isAdmin && (
-                      <>
+                    <>
                         <button 
                             onClick={() => { setIsQuickAdjustOpen(true); setQuickAdjustForm({ quantity: '', reason: '' }); }} 
                             className="bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all px-4 py-2.5 rounded-xl font-bold text-[10px] flex items-center gap-2   press"
                         >
-                            Adjust
+                            {isAdmin ? 'Adjust' : 'Request Adj'}
                         </button>
-                        <button onClick={openEditProductFromDetails} className="bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all px-4 py-2.5 rounded-xl font-bold text-[10px] flex items-center gap-2   press">
-                            <Edit size={14} /> Edit
-                        </button>
-                      </>
-                    )}
+                        {isAdmin && (
+                          <button onClick={openEditProductFromDetails} className="bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all px-4 py-2.5 rounded-xl font-bold text-[10px] flex items-center gap-2   press">
+                              <Edit size={14} /> Edit
+                          </button>
+                        )}
+                    </>
                  </div>
               </div>
 

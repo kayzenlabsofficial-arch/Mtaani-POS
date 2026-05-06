@@ -183,7 +183,7 @@ export default function MtaaniPOS() {
 
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'INVENTORY' | 'DOCUMENTS' | 'REPORTS' | 'SUPPLIERS' | 'CUSTOMERS' | 'DASHBOARD' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'SUPPLIER_PAYMENTS' | 'ADMIN_PANEL'>('REGISTER');
   
-  const { success, error } = useToast();
+  const { success, error, info, warning } = useToast();
 
   // Navigation History Handling
   useEffect(() => {
@@ -239,6 +239,9 @@ export default function MtaaniPOS() {
   const allCustomers = useLiveQuery(() => db.customers.toArray(), [], []);
   const selectedCustomer = allCustomers?.find(c => c.id === selectedCustomerId);
 
+  const financialAccounts = useLiveQuery(() => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
+  const expenseAccounts = useLiveQuery(() => activeBusinessId ? db.expenseAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
+
   const [loginForm, setLoginForm] = useState({ businessCode: '', username: '', password: '', openingFloat: '' });
   const [loginStep, setLoginStep] = useState<'LOGIN' | 'BRANCH' | 'FLOAT'>('LOGIN');
   const [pendingUser, setPendingUser] = useState<any>(null);
@@ -247,11 +250,11 @@ export default function MtaaniPOS() {
   const [isSystemManager, setIsSystemManager] = useState(false);
 
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<any>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isCashModalOpen, setIsCashModalOpen] = useState(false);
   const [completedTransaction, setCompletedTransaction] = useState<Transaction | null>(null);
-  const [isSharing, setIsSharing] = useState(false);
-  const [isSavingPDF, setIsSavingPDF] = useState(false);
   const [amountTendered, setAmountTendered] = useState("");
 
   // M-Pesa State
@@ -265,6 +268,90 @@ export default function MtaaniPOS() {
   const [mpesaRequestId, setMpesaRequestId] = useState<string | null>(null);
   const [mpesaMessage, setMpesaMessage] = useState('');
 
+  // Global Expense State (for Dashboard & Expenses Tab access)
+  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'TILL' | 'ACCOUNT', accountId: '' });
+  
+  // Real-time Cash Drawer Calculation for validation
+  const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  const allExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  const allCashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  const allSupplierPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const todaysPaidTransactions = (allTransactions || []).filter(t => (t.timestamp || 0) >= todayStart.getTime() && t.status === 'PAID');
+  const cashTotal = todaysPaidTransactions.filter(t => t.paymentMethod === 'CASH').reduce((sum, t) => sum + (t.total || 0), 0);
+  const todayTillExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'TILL').reduce((sum, e) => sum + (e.amount || 0), 0);
+  const todayTillPayments = (allSupplierPayments || []).filter(p => (p.timestamp || 0) >= todayStart.getTime() && p.source === 'TILL').reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const todayCashPicks = (allCashPicks || []).filter(c => (c.timestamp || 0) >= todayStart.getTime());
+  const totalPickedAmount = todayCashPicks.reduce((acc, p) => acc + (p.amount || 0), 0);
+  const actualCashDrawer = cashTotal - totalPickedAmount - todayTillExpenses - todayTillPayments;
+
+  const handleSaveExpense = async () => {
+      const amount = Number(expenseForm.amount);
+      if (amount <= 0) {
+          error("Invalid amount.");
+          return;
+      }
+      if (expenseForm.source === 'TILL' && amount > actualCashDrawer) {
+          error("Insufficient cash in drawer.");
+          return;
+      }
+      if (!currentUser || !activeBranchId) return;
+
+      await db.expenses.add({
+         id: crypto.randomUUID(),
+         amount,
+         category: expenseForm.category,
+         description: expenseForm.description,
+         timestamp: Date.now(),
+         userName: currentUser.name,
+         preparedBy: currentUser.name,
+         status: 'PENDING',
+         source: expenseForm.source,
+         accountId: expenseForm.source === 'ACCOUNT' ? expenseForm.accountId : undefined,
+         branchId: activeBranchId,
+         businessId: activeBusinessId!
+      });
+      setIsExpenseModalOpen(false);
+      setExpenseForm({ amount: '', category: '', description: '', source: 'TILL', accountId: '' });
+      success("Expense logged successfully.");
+  };
+
+  const handleSavePayment = async (payment: any) => {
+    try {
+      if (!activeBranchId || !activeBusinessId || !selectedSupplierForPayment) return;
+
+      const totalDeduction = Number(payment.amount);
+      await db.supplierPayments.add({
+        ...payment,
+        id: crypto.randomUUID(),
+        supplierId: selectedSupplierForPayment.id,
+        timestamp: Date.now(),
+        branchId: activeBranchId,
+        businessId: activeBusinessId
+      });
+
+      await db.suppliers.update(selectedSupplierForPayment.id, {
+        balance: Math.max(0, (selectedSupplierForPayment.balance || 0) - totalDeduction)
+      });
+
+      // Deduct from Financial Account if source is ACCOUNT
+      if (payment.source === 'ACCOUNT' && payment.accountId) {
+          const account = await db.financialAccounts.get(payment.accountId);
+          if (account) {
+              await db.financialAccounts.update(account.id, { balance: account.balance - totalDeduction });
+          }
+      }
+
+      setIsPaymentModalOpen(false);
+      success("Payment recorded.");
+    } catch (e) {
+      error("Failed to save payment.");
+    }
+  };
+
   // ── NETWORK STATUS MONITOR ────────────────────────────────────────────────
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -276,8 +363,6 @@ export default function MtaaniPOS() {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
-  // Group state is no longer needed with bottom nav
-
 
   // Initialization
   useEffect(() => {
@@ -302,38 +387,36 @@ export default function MtaaniPOS() {
 
   // ── BACK BUTTON HANDLING (Prevent Quitting) ───────────────────────────────
   useEffect(() => {
-    // Push an initial state
     window.history.pushState({ page: 'home' }, '');
     
     const handlePopState = (e: PopStateEvent) => {
-      // If user tries to go back, we check if we can close something first
       if (isMoreMenuOpen) {
         setIsMoreMenuOpen(false);
         window.history.pushState({ page: 'home' }, '');
         return;
       }
       
-      if (isExpenseModalOpen) {
+      if (isExpenseModalOpen || isPaymentModalOpen) {
         setIsExpenseModalOpen(false);
+        setIsPaymentModalOpen(false);
         window.history.pushState({ page: 'home' }, '');
         return;
       }
 
-      // Default: push state back to prevent quitting the PWA
       window.history.pushState({ page: 'home' }, '');
       info("Navigation locked. Use the menu to switch tabs.");
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [isMoreMenuOpen, isExpenseModalOpen]);
+  }, [isMoreMenuOpen, isExpenseModalOpen, isPaymentModalOpen]);
 
   // ── SESSION TIMEOUT (8 hours idle = auto-logout) ──────────────────────────
   useEffect(() => {
-    if (!currentUser) return; // Only apply when logged in
+    if (!currentUser) return; 
 
-    const SESSION_LIMIT_MS = 8 * 60 * 60 * 1000;      // 8 hours
-    const WARN_BEFORE_MS  = 10 * 60 * 1000;            // warn at 7h50m
+    const SESSION_LIMIT_MS = 8 * 60 * 60 * 1000;
+    const WARN_BEFORE_MS  = 10 * 60 * 1000;
     let lastActivity = Date.now();
     let warned = false;
 
@@ -347,7 +430,6 @@ export default function MtaaniPOS() {
       if (idle >= SESSION_LIMIT_MS) {
         clearInterval(sessionCheck);
         warning('Session expired. You have been logged out for security.');
-        // Trigger logout
         setCurrentUser(null);
         setActiveShift(null);
         setActiveBranchId(null);
@@ -357,7 +439,7 @@ export default function MtaaniPOS() {
         warned = true;
         warning('Your session will expire in 10 minutes due to inactivity.');
       }
-    }, 60000); // check every minute
+    }, 60000);
 
     return () => {
       clearInterval(sessionCheck);
@@ -370,10 +452,7 @@ export default function MtaaniPOS() {
     const doSync = async () => {
       if (isOnline && !isSyncing) {
         try {
-          // Trigger a re-hydration of key tables to catch remote changes
           await db.init();
-          
-          // Update lastSyncAt for the active shift so admin can track online status
           if (activeShift) {
             await db.shifts.update(activeShift.id, { lastSyncAt: Date.now() });
           }
@@ -383,7 +462,7 @@ export default function MtaaniPOS() {
       }
     };
 
-    const poll = setInterval(doSync, 30000); // 30 seconds polling for "sensitive" updates
+    const poll = setInterval(doSync, 30000);
     
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -403,7 +482,7 @@ export default function MtaaniPOS() {
   useEffect(() => {
     let interval: NodeJS.Timeout;
     let pollCount = 0;
-    const MAX_POLLS = 20; // ~60 seconds (3s * 20)
+    const MAX_POLLS = 20;
 
     if (mpesaState === 'POLLING' && mpesaRequestId) {
       interval = setInterval(async () => {
@@ -417,19 +496,16 @@ export default function MtaaniPOS() {
              success(`M-Pesa payment received: ${status.receiptNumber}`);
              setTimeout(() => {
                setIsMpesaModalOpen(false);
-               handleCheckout('PAID', 'MPESA'); // Complete sale automatically
+               handleCheckout('PAID', 'MPESA'); 
              }, 2000);
            } else if (status.resultCode === 999) {
-             // Still pending, do nothing and continue polling
              console.log("[M-Pesa] Payment still pending...");
            } else {
-             // Actual failure from Safaricom
              setMpesaState('FAILED');
              setMpesaMessage(`Payment failed/cancelled: ${status.resultDesc}`);
              error(`M-Pesa failed: ${status.resultDesc}`);
            }
         } else {
-          // Not found in DB yet
           console.log("[M-Pesa] Record not found yet, retrying...");
         }
 
@@ -466,7 +542,6 @@ export default function MtaaniPOS() {
     const rawCode = loginForm.businessCode.trim().toUpperCase();
     const rawUser = loginForm.username.trim();
 
-    // ── Brute Force Check ──────────────────────────────────────────────────
     const lockout = isLockedOut(rawCode);
     if (lockout.locked) {
       const mins = Math.floor(lockout.secondsLeft / 60);
@@ -475,19 +550,13 @@ export default function MtaaniPOS() {
       return;
     }
 
-    // ── System Manager Intercept (bypass check) ────────────────────────────
     if (rawCode === 'SYSTEM' && rawUser.toLowerCase() === 'admin') {
-      console.log('[Auth] System Manager login attempt...');
-      
-      // Master password comparison
       if (loginForm.password === 'Kayzen@Secure#POS2026') {
-        console.log('[Auth] System Manager login successful.');
         setIsSystemManager(true);
         setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
         resetAttempts('SYSTEM');
         return;
       } else {
-        console.warn('[Auth] System Manager login failed: Invalid password.');
         recordFailedAttempt('SYSTEM');
         error('Invalid System Manager credentials.');
         return;
@@ -497,7 +566,6 @@ export default function MtaaniPOS() {
     try {
       setIsSyncing(true);
       
-      // 1. Verify Business Code
       const allBusinesses = await db.businesses.toArray();
       const business = allBusinesses.find(b => b.code.toUpperCase() === rawCode);
       
@@ -514,13 +582,11 @@ export default function MtaaniPOS() {
         return;
       }
       
-      // 2. Switch Context and Sync Data
       if (activeBusinessId !== business.id) {
          setActiveBusinessId(business.id);
          await db.sync();
       }
       
-      // 3. Verify User — compare using verifyPassword (supports legacy + hashed)
       const allUsers = await db.users.toArray();
       const matchedUser = allUsers.find(u => 
         u.name.toLowerCase() === rawUser.toLowerCase() && 
@@ -529,14 +595,12 @@ export default function MtaaniPOS() {
       const isValid = matchedUser ? await verifyPassword(loginForm.password, matchedUser.password) : false;
 
       if (matchedUser && isValid) {
-        resetAttempts(rawCode); // clear lockout on success
-        // Load active branches
+        resetAttempts(rawCode); 
         const allBranches = await db.branches.toArray();
         const active = allBranches.filter(b => b.isActive);
         setPendingUser(matchedUser);
         setAvailableBranches(active);
 
-        // Branch Isolation for Cashiers
         if (matchedUser.role === 'CASHIER' && matchedUser.branchId) {
           const assignedBranch = active.find(b => b.id === matchedUser.branchId);
           if (assignedBranch) {
@@ -559,7 +623,6 @@ export default function MtaaniPOS() {
           if (matchedUser.role === 'CASHIER') {
             setLoginStep('FLOAT');
           } else {
-            // Restore any open shift for this branch from D1
             const openShift = await db.shifts.where('status').equals('OPEN')
               .and(s => s.branchId === active[0].id).first();
             if (openShift) setActiveShift(openShift);
@@ -594,70 +657,42 @@ export default function MtaaniPOS() {
     if (!selectedBranchId || !pendingUser) return;
     try {
       setIsSyncing(true);
-      setActiveBranchId(selectedBranchId);
-      await db.sync(); // Sync branch-specific data now that branchId is set
+      await db.sync(); 
       
-      if (pendingUser.role === 'CASHIER') {
-        setLoginStep('FLOAT');
+      if (pendingUser.role === 'ADMIN') {
+          const adminId = crypto.randomUUID();
+          setCurrentUser(pendingUser);
+          setIsAdmin(true);
+          setActiveBranchId(selectedBranchId);
+          setActiveTab('DASHBOARD');
+          setLoginStep('LOGIN');
+          setPendingUser(null);
+          success(`Welcome back, ${pendingUser.name}`);
       } else {
-        // Restore any open shift for this branch from D1
-        const openShift = await db.shifts.where('status').equals('OPEN')
-          .and(s => s.branchId === selectedBranchId).first();
-        if (openShift) setActiveShift(openShift);
-        setCurrentUser(pendingUser);
-        setPendingUser(null);
-        setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
-        setLoginStep('LOGIN');
-        success(`Welcome back, ${pendingUser.name}!`);
+          const shiftId = crypto.randomUUID();
+          const newShift: Shift = {
+              id: shiftId,
+              startTime: Date.now(),
+              openingFloat: 0,
+              cashierName: pendingUser.name,
+              status: 'OPEN',
+              branchId: selectedBranchId,
+              businessId: activeBusinessId!
+          };
+          await db.shifts.add(newShift);
+          setCurrentUser(pendingUser);
+          setActiveShift(newShift);
+          setIsAdmin(false);
+          setActiveBranchId(selectedBranchId);
+          setActiveTab('REGISTER');
+          setLoginStep('LOGIN');
+          setPendingUser(null);
+          success(`Shift started for ${pendingUser.name}`);
       }
     } catch (err) {
       error("Failed to sync branch data.");
     } finally {
       setIsSyncing(false);
-    }
-  };
-
-  const handleFinalizeLoginWithFloat = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pendingUser || !loginForm.openingFloat) return;
-
-    if (!navigator.onLine) {
-        error("Internet connection required. You must be online to open a shift.");
-        return;
-    }
-
-    try {
-        setIsSyncing(true);
-        // RULE: Cannot open a new shift if one is already active on this branch
-        const existingShift = await db.shifts.where('status').equals('OPEN').and(s => s.branchId === activeBranchId).first();
-        if (existingShift) {
-            error(`Cannot open a new shift. ${existingShift.cashierName}'s shift is still active. Please close it first.`);
-            setIsSyncing(false);
-            return;
-        }
-
-        const newShift: Shift = {
-           id: crypto.randomUUID(),
-           startTime: Date.now(),
-           openingFloat: Number(loginForm.openingFloat),
-           cashierName: pendingUser.name,
-           status: 'OPEN',
-           branchId: activeBranchId!,
-           businessId: activeBusinessId!
-        };
-        
-        await db.shifts.add(newShift);
-        setActiveShift(newShift);
-        setCurrentUser(pendingUser);
-        setPendingUser(null);
-        setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
-        setLoginStep('LOGIN');
-        success(`Personal shift initialized for ${pendingUser.name}.`);
-    } catch (err) {
-        console.error("Shift creation failed:", err);
-        error("Failed to save shift to the server. Please check your internet connection and try again.");
-    } finally {
-        setIsSyncing(false);
     }
   };
 
@@ -699,13 +734,9 @@ export default function MtaaniPOS() {
         changeGiven: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) - total : undefined
       };
 
-      // To ensure data integrity, we should ideally use a server-side transaction.
-      // Since we are using a REST-like API over D1, we'll implement a "Transaction Log"
-      // pattern: first save the transaction, then update stock.
       await db.transactions.add(transaction);
       
       if (status === 'PAID') {
-        // Update stock and log movement
         const stockUpdates = [];
         for (const item of cart) {
           const product = await db.products.get(item.id);
@@ -727,7 +758,6 @@ export default function MtaaniPOS() {
           }
         }
 
-        // Execute updates. If one fails, we have the transaction record to reconcile.
         for (const update of stockUpdates) {
           await db.products.update(update.id, { stockQuantity: update.newQty });
           if (db.stockMovements) {
@@ -870,30 +900,6 @@ export default function MtaaniPOS() {
                 </div>
               </form>
             )}
-
-            {/* ── STEP 3: Opening Float (Cashiers only) ────────────────── */}
-            {loginStep === 'FLOAT' && (
-              <form onSubmit={handleFinalizeLoginWithFloat} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black   text-slate-400 block ml-4 text-left">Opening Float (KES)</label>
-                  <input 
-                    type="number" 
-                    autoFocus
-                    value={loginForm.openingFloat}
-                    onChange={e => setLoginForm({...loginForm, openingFloat: e.target.value})}
-                    className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white transition-all outline-none font-bold text-slate-700"
-                    placeholder="0.00"
-                  />
-                </div>
-                <button 
-                  type="submit"
-                  disabled={isSyncing}
-                  className="w-full py-5 rounded-2xl bg-slate-900 text-white font-black   hover:bg-blue-600 transition-all active:scale-95 shadow-xl disabled:opacity-50"
-                >
-                  {isSyncing ? 'Starting shift...' : 'Start Shift'}
-                </button>
-              </form>
-            )}
           </div>
         </div>
       </div>
@@ -925,26 +931,7 @@ export default function MtaaniPOS() {
               <div className="flex items-center gap-1 mt-0.5">
                 <MapPin size={8} className="text-blue-400" />
                 {currentUser?.role === 'ADMIN' ? (
-                  <select 
-                    value={activeBranchId || ''} 
-                    onChange={async (e) => {
-                      const bid = e.target.value;
-                      if (bid) {
-                        setActiveBranchId(bid);
-                        setIsSyncing(true);
-                        try {
-                          await db.sync();
-                          success(`Switched to ${activeBranchName || 'branch'}`);
-                        } finally {
-                          setIsSyncing(false);
-                        }
-                      }
-                    }}
-                    className="bg-transparent text-[9px] font-bold text-slate-400 border-none p-0 focus:ring-0 cursor-pointer hover:text-blue-600 transition-colors"
-                  >
-                    <option value={activeBranchId || ''}>{activeBranchName}</option>
-                    <BranchOptions activeBranchId={activeBranchId} />
-                  </select>
+                  <p className="text-[9px] font-bold text-slate-400">{activeBranchName}</p>
                 ) : (
                   <p className="text-[9px] font-bold text-slate-400">{activeBranchName}</p>
                 )}
@@ -1006,11 +993,11 @@ export default function MtaaniPOS() {
         {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={setActiveTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}
         {activeTab === 'INVENTORY' && <InventoryTab />}
         {activeTab === 'CUSTOMERS' && <CustomersTab />}
-        {activeTab === 'SUPPLIERS' && <SuppliersTab setActiveTab={setActiveTab} />}
+        {activeTab === 'SUPPLIERS' && <SuppliersTab setActiveTab={setActiveTab} financialAccounts={financialAccounts || []} />}
         {activeTab === 'EXPENSES' && <ExpensesTab />}
         {activeTab === 'REFUNDS' && <RefundsTab setActiveTab={setActiveTab} />}
         {activeTab === 'PURCHASES' && <PurchasesTab />}
-        {activeTab === 'SUPPLIER_PAYMENTS' && <SupplierPaymentsTab />}
+        {activeTab === 'SUPPLIER_PAYMENTS' && <SupplierPaymentsTab financialAccounts={financialAccounts || []} />}
         {activeTab === 'DOCUMENTS' && <DocumentsTab />}
         {activeTab === 'REPORTS' && <ReportsTab />}
         {activeTab === 'ADMIN_PANEL' && <AdminPanel updateServiceWorker={updateServiceWorker} needRefresh={needRefresh} />}
@@ -1020,11 +1007,11 @@ export default function MtaaniPOS() {
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-slate-200 px-2 py-2 flex justify-around items-center z-40 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-safe">
         {[
           { id: 'REGISTER', label: 'Register', icon: ShoppingCart },
-          { id: 'DASHBOARD', label: 'Overview', icon: LayoutDashboard },
+          { id: 'DASHBOARD', label: 'Overview', icon: LayoutDashboard, hidden: !isAdmin && !isManager },
           { id: 'INVENTORY', label: 'Store', icon: Package },
-          { id: 'SUPPLIERS', label: 'Suppliers', icon: Truck },
+          { id: 'SUPPLIERS', label: 'Suppliers', icon: Truck, hidden: !isAdmin && !isManager },
           { id: 'MORE', label: 'More', icon: Grid },
-        ].map((item) => (
+        ].filter(item => !item.hidden).map((item) => (
           <button
             key={item.id}
             onClick={() => {
@@ -1089,29 +1076,30 @@ export default function MtaaniPOS() {
                     ))}
                  </div>
               </div>
-
-              <div>
-                 <h4 className="text-[10px] font-black text-slate-400   mb-3 ml-2">Administration & Reports</h4>
-                 <div className="grid grid-cols-4 gap-3">
-                    {[
-                      { id: 'SUPPLIER_PAYMENTS', label: 'Payments', icon: DollarSign, bg: 'bg-green-50', text: 'text-green-600' },
-                      { id: 'REPORTS', label: 'Reports', icon: BarChart3, bg: 'bg-purple-50', text: 'text-purple-600' },
-                      { id: 'DOCUMENTS', label: 'Records', icon: FileText, bg: 'bg-slate-50', text: 'text-slate-600' },
-                      { id: 'ADMIN_PANEL', label: 'Admin', icon: ShieldCheck, bg: 'bg-slate-900', text: 'text-white' },
-                    ].map(item => (
-                      <button
-                        key={item.id}
-                        onClick={() => { navigateToTab(item.id as any); toggleMoreMenu(false); }}
-                        className="flex flex-col items-center justify-center gap-2 p-3 rounded-2xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all group"
-                      >
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.bg} ${item.text} group-hover:scale-110 transition-transform`}>
-                          <item.icon size={18} />
-                        </div>
-                        <span className="text-[9px] font-black text-slate-900  tracking-tight text-center leading-tight">{item.label}</span>
-                      </button>
-                    ))}
+               {(isAdmin || isManager) && (
+                 <div>
+                    <h4 className="text-[10px] font-black text-slate-400   mb-3 ml-2">Administration & Reports</h4>
+                    <div className="grid grid-cols-4 gap-3">
+                       {[
+                         { id: 'SUPPLIER_PAYMENTS', label: 'Payments', icon: DollarSign, bg: 'bg-green-50', text: 'text-green-600' },
+                         { id: 'REPORTS', label: 'Reports', icon: BarChart3, bg: 'bg-purple-50', text: 'text-purple-600' },
+                         { id: 'DOCUMENTS', label: 'Records', icon: FileText, bg: 'bg-slate-50', text: 'text-slate-600' },
+                         { id: 'ADMIN_PANEL', label: 'Admin', icon: ShieldCheck, bg: 'bg-slate-900', text: 'text-white' },
+                       ].map(item => (
+                         <button
+                           key={item.id}
+                           onClick={() => { navigateToTab(item.id as any); toggleMoreMenu(false); }}
+                           className="flex flex-col items-center justify-center gap-2 p-3 rounded-2xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all group"
+                         >
+                           <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.bg} ${item.text} group-hover:scale-110 transition-transform`}>
+                             <item.icon size={18} />
+                           </div>
+                           <span className="text-[9px] font-black text-slate-900  tracking-tight text-center leading-tight">{item.label}</span>
+                         </button>
+                       ))}
+                    </div>
                  </div>
-              </div>
+               )}
             </div>
 
             <div className="pt-6 border-t border-slate-100 flex gap-3 shrink-0">
@@ -1213,7 +1201,6 @@ export default function MtaaniPOS() {
                             if (!isNaN(val) && val >= 0) {
                               setQuantity(item.id, val);
                             } else if (e.target.value === '') {
-                              // Allow temporary empty state while typing
                               setQuantity(item.id, '' as any);
                             }
                           }}
@@ -1300,9 +1287,22 @@ export default function MtaaniPOS() {
         onClose={() => setIsProfileModalOpen(false)}
         currentUser={currentUser}
       />
+      <SupplierPaymentModal 
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        supplier={selectedSupplierForPayment}
+        onSave={handleSavePayment}
+        financialAccounts={financialAccounts}
+      />
       <ExpenseModal 
         isOpen={isExpenseModalOpen} 
         onClose={() => setIsExpenseModalOpen(false)} 
+        expenseForm={expenseForm}
+        setExpenseForm={setExpenseForm}
+        handleSaveExpense={handleSaveExpense}
+        actualCashDrawer={actualCashDrawer}
+        accounts={expenseAccounts || []}
+        financialAccounts={financialAccounts || []}
       />
 
       {/* Cash Modal */}

@@ -12,7 +12,7 @@ export default function ExpensesTab() {
   const [expenseSearch, setExpenseSearch] = useState("");
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '' });
+  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'TILL' | 'ACCOUNT' });
   
   const currentUser = useStore(state => state.currentUser);
   const isAdmin = useStore(state => state.isAdmin);
@@ -31,15 +31,20 @@ export default function ExpensesTab() {
 
   const todaysPaidTransactions = (allTransactions || []).filter(t => (t.timestamp || 0) >= todayStart.getTime() && t.status === 'PAID');
   const cashTotal = todaysPaidTransactions.filter(t => t.paymentMethod === 'CASH').reduce((sum, t) => sum + (t.total || 0), 0);
-  const todayExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStart.getTime()).reduce((sum, e) => sum + (e.amount || 0), 0);
+  const todayTillExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'TILL').reduce((sum, e) => sum + (e.amount || 0), 0);
+  const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'ACCOUNT').reduce((sum, e) => sum + (e.amount || 0), 0);
   const todayCashPicks = (allCashPicks || []).filter(c => (c.timestamp || 0) >= todayStart.getTime());
   const totalPickedAmount = todayCashPicks.reduce((acc, p) => acc + (p.amount || 0), 0);
-  const actualCashDrawer = cashTotal - totalPickedAmount - todayExpenses;
+  const actualCashDrawer = cashTotal - totalPickedAmount - todayTillExpenses;
 
   const handleSaveExpense = async () => {
       const amount = Number(expenseForm.amount);
-      if (amount <= 0 || amount > actualCashDrawer) {
-          error("Invalid amount or insufficient cash in drawer.");
+      if (amount <= 0) {
+          error("Invalid amount.");
+          return;
+      }
+      if (expenseForm.source === 'TILL' && amount > actualCashDrawer) {
+          error("Insufficient cash in drawer.");
           return;
       }
       if (!currentUser) return;
@@ -53,11 +58,12 @@ export default function ExpensesTab() {
          userName: currentUser.name,
          preparedBy: currentUser.name,
          status: 'PENDING',
+         source: expenseForm.source,
          branchId: activeBranchId!,
          businessId: activeBusinessId!
       });
       setIsExpenseModalOpen(false);
-      setExpenseForm({ amount: '', category: '', description: '' });
+      setExpenseForm({ amount: '', category: '', description: '', source: 'TILL' });
       success("Expense logged successfully.");
   };
 
@@ -115,10 +121,10 @@ export default function ExpensesTab() {
             <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center shadow-sm">
                <FileMinus size={24} />
             </div>
-            <div>
-               <p className="text-orange-100 text-[10px] font-black   mb-0.5">Today's Total</p>
-               <h3 className="text-xl font-black leading-none">Ksh {todayExpenses.toLocaleString()}</h3>
-            </div>
+             <div>
+                <p className="text-orange-100 text-[10px] font-black   mb-0.5">Today's Till Outflow</p>
+                <h3 className="text-xl font-black leading-none">Ksh {todayTillExpenses.toLocaleString()}</h3>
+             </div>
          </div>
       </div>
 
@@ -154,6 +160,9 @@ export default function ExpensesTab() {
                       <p className="text-[10px] font-black text-slate-300   leading-none mb-1">Amount</p>
                       <p className="text-[17px] font-black text-orange-600 tabular-nums">
                          Ksh {expense.amount.toLocaleString()}
+                      </p>
+                      <p className="text-[8px] font-black text-slate-400 opacity-60">
+                         via {expense.source === 'TILL' ? 'TILL' : 'ACC'}
                       </p>
                       {expense.userName && (
                         <p className="text-[9px] font-black text-blue-500  flex items-center justify-end gap-1 mt-0.5">

@@ -31,7 +31,7 @@ const COLOR_OPTIONS = [
 ];
 
 export default function AdminPanel({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
-  const [activeAdminTab, setActiveAdminTab] = useState<'SETTINGS' | 'APPROVALS' | 'USERS' | 'CATEGORIES' | 'BRANCHES'>('USERS');
+  const [activeAdminTab, setActiveAdminTab] = useState<'SETTINGS' | 'APPROVALS' | 'USERS' | 'CATEGORIES' | 'BRANCHES' | 'FINANCE'>('USERS');
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const { success, error, warning } = useToast();
   
@@ -44,10 +44,16 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   // User Management State
   const users = useLiveQuery(() => db.users.toArray(), [], []);
   const activeShifts = useLiveQuery(() => db.shifts.where('status').equals('OPEN').toArray(), [], []);
+  const branches = useLiveQuery(() => db.branches.toArray(), [], []);
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', password: '', role: 'CASHIER' as 'CASHIER' | 'ADMIN', branchId: '' });
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editingPassword, setEditingPassword] = useState('');
+
+  // Financial Management State
+  const financialAccounts = useLiveQuery(() => db.financialAccounts.toArray(), [], []);
+  const [isAddingFinAccount, setIsAddingFinAccount] = useState(false);
+  const [finAccountForm, setFinAccountForm] = useState({ name: '', type: 'BANK' as 'BANK' | 'MPESA' | 'CASH', accountNumber: '', balance: 0, branchId: '' });
 
   const handleAddUser = async () => {
     if (!newUser.name || !newUser.password) return;
@@ -137,6 +143,27 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     setEditingCategoryId(null);
   };
 
+  const handleSaveFinAccount = async () => {
+    if (!finAccountForm.name.trim()) return;
+    await db.financialAccounts.add({
+      id: crypto.randomUUID(),
+      ...finAccountForm,
+      branchId: finAccountForm.branchId || undefined,
+      businessId: activeBusinessId!,
+      updated_at: Date.now()
+    });
+    setFinAccountForm({ name: '', type: 'BANK', accountNumber: '', balance: 0, branchId: '' });
+    setIsAddingFinAccount(false);
+    success("Financial account added.");
+  };
+
+  const handleDeleteFinAccount = async (id: string) => {
+    if (confirm("Remove this financial account?")) {
+      await db.financialAccounts.delete(id);
+      success("Account removed.");
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-transparent relative animate-in fade-in max-w-5xl mx-auto w-full">
       <div className="p-5 pb-0">
@@ -168,6 +195,12 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
               className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap ${activeAdminTab === 'APPROVALS' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
             >
               <ShieldCheck size={13} /> Approvals
+            </button>
+            <button 
+              onClick={() => setActiveAdminTab('FINANCE')} 
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap ${activeAdminTab === 'FINANCE' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              <DollarSign size={13} /> Finance
             </button>
             <button 
               onClick={() => setActiveAdminTab('SETTINGS')} 
@@ -448,8 +481,86 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                 </div>
               )}
            </div>
-         )}
-      </div>
+          )}
+          
+          {activeAdminTab === 'FINANCE' && (
+            <div className="space-y-6">
+               <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200">
+                  <div>
+                     <h3 className="text-sm font-extrabold text-slate-900">Financial Accounts</h3>
+                     <p className="text-xs text-slate-500">Manage bank accounts and M-Pesa tills.</p>
+                  </div>
+                  <button 
+                    onClick={() => setIsAddingFinAccount(true)}
+                    className="bg-blue-600 text-white font-bold text-xs flex items-center gap-2 px-4 py-2.5 rounded-xl"
+                  >
+                     <Plus size={14} /> Add Account
+                  </button>
+               </div>
+
+               {isAddingFinAccount && (
+                 <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm animate-in slide-in-from-top-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                       <div>
+                          <label className="block text-[10px] font-bold text-slate-400 mb-2">Account Name</label>
+                          <input type="text" value={finAccountForm.name} onChange={e => setFinAccountForm({...finAccountForm, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold" placeholder="e.g. KCB Business" />
+                       </div>
+                       <div>
+                          <label className="block text-[10px] font-bold text-slate-400 mb-2">Type</label>
+                          <select value={finAccountForm.type} onChange={e => setFinAccountForm({...finAccountForm, type: e.target.value as any})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold">
+                             <option value="BANK">Bank Account</option>
+                             <option value="MPESA">M-Pesa Till/Paybill</option>
+                             <option value="CASH">External Cash</option>
+                          </select>
+                       </div>
+                       <div>
+                          <label className="block text-[10px] font-bold text-slate-400 mb-2">Account Number (Optional)</label>
+                          <input type="text" value={finAccountForm.accountNumber} onChange={e => setFinAccountForm({...finAccountForm, accountNumber: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold" placeholder="e.g. 123456789" />
+                       </div>
+                       <div>
+                          <label className="block text-[10px] font-bold text-slate-400 mb-2">Linked Branch (Optional)</label>
+                          <select value={finAccountForm.branchId} onChange={e => setFinAccountForm({...finAccountForm, branchId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold">
+                             <option value="">Global (All Branches)</option>
+                             {branches?.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                          </select>
+                       </div>
+                    </div>
+                    <div className="flex gap-3">
+                       <button onClick={() => setIsAddingFinAccount(false)} className="flex-1 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl text-sm">Cancel</button>
+                       <button onClick={handleSaveFinAccount} className="flex-[2] py-3 bg-blue-600 text-white font-bold rounded-xl text-sm">Save Account</button>
+                    </div>
+                 </div>
+               )}
+
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {financialAccounts?.map(acc => (
+                    <div key={acc.id} className="bg-white p-4 rounded-2xl border border-slate-200 flex justify-between items-center">
+                       <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                             <Building2 size={20} />
+                          </div>
+                          <div>
+                             <p className="font-bold text-sm text-slate-900">{acc.name}</p>
+                             <div className="flex items-center gap-2">
+                                <p className="text-[10px] text-slate-500 font-medium capitalize">{acc.type.toLowerCase()} • {acc.accountNumber || 'No number'}</p>
+                                {acc.branchId && (
+                                   <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                      <Building2 size={8} /> {branches?.find(b => b.id === acc.branchId)?.name || 'Local'}
+                                   </span>
+                                )}
+                             </div>
+                          </div>
+                       </div>
+                       <button onClick={() => handleDeleteFinAccount(acc.id)} className="p-2 text-slate-400 hover:text-red-600">
+                          <Trash2 size={16} />
+                       </button>
+                    </div>
+                  ))}
+                  {financialAccounts?.length === 0 && <p className="col-span-full text-center text-slate-400 py-8 italic text-sm">No accounts configured yet.</p>}
+               </div>
+            </div>
+          )}
+       </div>
       
 
     </div>

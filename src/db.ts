@@ -213,6 +213,8 @@ export interface SupplierPayment {
   timestamp: number;
   reference: string;
   preparedBy?: string;
+  source: 'TILL' | 'ACCOUNT'; // Fund source
+  accountId?: string; // Link to FinancialAccount if source is ACCOUNT
   branchId: string;
   businessId: string;
   updated_at?: number;
@@ -228,7 +230,20 @@ export interface Expense {
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   preparedBy?: string;
   approvedBy?: string;
+  source: 'TILL' | 'ACCOUNT';
+  accountId?: string; // Link to FinancialAccount if source is ACCOUNT
   branchId: string;
+  businessId: string;
+  updated_at?: number;
+}
+
+export interface FinancialAccount {
+  id: string;
+  name: string;
+  type: 'BANK' | 'MPESA' | 'CASH';
+  accountNumber?: string;
+  balance: number;
+  branchId?: string; // Optional: Link to a specific branch for local cash/accounts
   businessId: string;
   updated_at?: number;
 }
@@ -331,6 +346,7 @@ class MtaaniCloudDB {
   categories          = new CloudTable<Category>('categories');
   branches            = new CloudTable<Branch>('branches');
   expenseAccounts     = new CloudTable<ExpenseAccount>('expenseAccounts');
+  financialAccounts   = new CloudTable<FinancialAccount>('financialAccounts');
 
   /** Load initial bootstrap data (businesses) from D1. Call once on app startup. */
   async init(): Promise<void> {
@@ -376,7 +392,8 @@ class MtaaniCloudDB {
         this.dailySummaries.reload(),
         this.creditNotes.reload(),
         this.categories.reload(),
-        this.expenseAccounts.reload()
+        this.expenseAccounts.reload(),
+        this.financialAccounts.reload()
       );
     }
 

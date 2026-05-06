@@ -674,14 +674,14 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
               </button>
             </div>
             
-            {isAdmin && isSale && (
+            {isSale && (
                 isReturnMode ? (
                   <button 
                     onClick={onInitiateRefund}
                     disabled={Object.values(returnQuantities).every(q => q === 0)}
                     className="col-span-2 py-3.5 bg-red-600 text-white font-black text-xs   rounded-xl disabled:opacity-50 transition-colors active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-red-600/20"
                    >
-                     <CheckCircle2 size={16} /> Confirm Return
+                     <CheckCircle2 size={16} /> Confirm {isAdmin ? 'Return' : 'Request'}
                    </button>
                 ) : (
                   <button 
@@ -689,7 +689,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                     disabled={selectedRecord.status !== 'PAID' && selectedRecord.status !== 'PARTIAL_REFUND'}
                     className="col-span-2 py-3.5 bg-orange-600 text-white font-black text-xs   rounded-xl disabled:opacity-50 transition-colors active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-orange-600/20"
                   >
-                    <RotateCcw size={16} /> Process Return
+                    <RotateCcw size={16} /> {isAdmin ? 'Process Return' : 'Request Return'}
                   </button>
                 )
             )}

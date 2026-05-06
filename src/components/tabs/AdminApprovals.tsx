@@ -44,8 +44,16 @@ export default function AdminApprovals() {
     success("Stock adjustment approved.");
   };
 
-  const handleApproveExpense = async (id: string) => {
-    await db.expenses.update(id, { 
+  const handleApproveExpense = async (e: any) => {
+    if (e.source === 'ACCOUNT' && e.accountId) {
+        const account = await db.financialAccounts.get(e.accountId);
+        if (account) {
+            await db.financialAccounts.update(e.accountId, {
+                balance: account.balance - e.amount
+            });
+        }
+    }
+    await db.expenses.update(e.id, { 
         status: 'APPROVED',
         approvedBy: currentUser?.name
     });
@@ -71,9 +79,18 @@ export default function AdminApprovals() {
   };
 
   const handleApproveRefund = async (t: Transaction) => {
-    // Process the refund (Stock update and state change)
-    // We assume the refund is for the current balance of non-returned items
-    const items = t.items.map(i => ({ productId: i.productId, quantity: i.quantity - (i.returnedQuantity || 0) }));
+    const items = t.pendingRefundItems || t.items.map(i => ({ productId: i.productId, quantity: i.quantity - (i.returnedQuantity || 0) }));
+
+    // Refund logic: deduct cash from the branch-specific CASH account
+    if (t.paymentMethod === 'CASH' && t.branchId) {
+        const cashAccount = await db.financialAccounts.where('branchId').equals(t.branchId)
+            .and(acc => acc.type === 'CASH').first();
+        if (cashAccount) {
+           await db.financialAccounts.update(cashAccount.id, { 
+               balance: cashAccount.balance - (t.total || 0) 
+           });
+        }
+    }
 
     for (const item of items) {
        if (item.quantity <= 0) continue;
@@ -101,6 +118,7 @@ export default function AdminApprovals() {
     await db.transactions.update(t.id, { 
         status: allReturned ? 'REFUNDED' : 'PARTIAL_REFUND',
         items: t.items,
+        pendingRefundItems: undefined,
         approvedBy: currentUser?.name
     });
     success("Refund authorized and stock returned.");
@@ -298,7 +316,7 @@ export default function AdminApprovals() {
         setSelectedRecord={setSelectedRecordForDetails} 
         handleRefund={async (t) => handleApproveRefund(t)}
         onApprove={async (record) => {
-           if (record.recordType === 'EXPENSE') await handleApproveExpense(record.id);
+           if (record.recordType === 'EXPENSE') await handleApproveExpense(record);
            if (record.recordType === 'PURCHASE_ORDER') await handleApprovePO(record.id);
            if (record.recordType === 'SALE') await handleApproveRefund(record);
         }}

@@ -7,16 +7,19 @@ interface SupplierPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   supplier: Supplier | null;
-  onSave: (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, transactionCode?: string, purchaseOrderId?: string, purchaseOrderIds?: string[] }) => Promise<void>;
+  onSave: (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, source: 'TILL' | 'ACCOUNT', accountId?: string, transactionCode?: string, purchaseOrderId?: string, purchaseOrderIds?: string[] }) => Promise<void>;
+  financialAccounts: any[];
 }
 
-export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave }: SupplierPaymentModalProps) {
+export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave, financialAccounts }: SupplierPaymentModalProps) {
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
     method: 'CASH' as 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE',
     reference: '',
     transactionCode: '',
-    purchaseOrderId: ''
+    purchaseOrderId: '',
+    source: 'TILL' as 'TILL' | 'ACCOUNT',
+    accountId: ''
   });
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
   const [selectedCreditNoteIds, setSelectedCreditNoteIds] = useState<string[]>([]);
@@ -84,11 +87,13 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
       method: paymentForm.method,
       reference: paymentForm.reference,
       transactionCode: paymentForm.transactionCode,
+      source: paymentForm.source,
+      accountId: paymentForm.source === 'ACCOUNT' ? paymentForm.accountId : undefined,
       purchaseOrderIds: selectedInvoiceIds.length > 0 ? selectedInvoiceIds : undefined,
       creditNoteIds: selectedCreditNoteIds.length > 0 ? selectedCreditNoteIds : undefined
     } as any);
     
-    setPaymentForm({ amount: '', method: 'CASH', reference: '', transactionCode: '', purchaseOrderId: '' });
+    setPaymentForm({ amount: '', method: 'CASH', reference: '', transactionCode: '', purchaseOrderId: '', source: 'TILL', accountId: '' });
     setSelectedInvoiceIds([]);
     setSelectedCreditNoteIds([]);
   };
@@ -218,6 +223,42 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
                    ))}
                 </div>
               </div>
+
+              <div>
+                <label className="block text-[9px] font-black text-slate-400   mb-1.5 ml-1">Payment Source</label>
+                <div className="flex gap-2">
+                   <button 
+                    type="button"
+                    onClick={() => setPaymentForm({...paymentForm, source: 'TILL'})}
+                    className={`flex-1 py-2.5 rounded-xl text-[10px] font-black border transition-all ${paymentForm.source === 'TILL' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 text-slate-500'}`}
+                   >
+                     Till (Cash Drawer)
+                   </button>
+                   <button 
+                    type="button"
+                    onClick={() => setPaymentForm({...paymentForm, source: 'ACCOUNT'})}
+                    className={`flex-1 py-2.5 rounded-xl text-[10px] font-black border transition-all ${paymentForm.source === 'ACCOUNT' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-500'}`}
+                   >
+                     Direct Account
+                   </button>
+                </div>
+              </div>
+
+              {paymentForm.source === 'ACCOUNT' && (
+                <div className="animate-in slide-in-from-top-2">
+                   <label className="block text-[9px] font-black text-slate-400   mb-1.5 ml-1 text-blue-600 font-black">Funding Account</label>
+                   <select 
+                      value={paymentForm.accountId || ''} 
+                      onChange={e => setPaymentForm({...paymentForm, accountId: e.target.value})} 
+                      className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-[11px] font-black text-blue-900 focus:outline-none focus:border-blue-500"
+                   >
+                      <option value="">Select Account...</option>
+                      {(financialAccounts || []).map(acc => (
+                        <option key={acc.id} value={acc.id}>{acc.name} ({acc.type})</option>
+                      ))}
+                   </select>
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">

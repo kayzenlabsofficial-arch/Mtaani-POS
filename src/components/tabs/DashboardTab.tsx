@@ -32,6 +32,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const allProducts = useLiveQuery(() => db.products.toArray(), [], []) ;
   const allExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const allCashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  const allSupplierPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
 
   // Metrics Logic - Filtered by Active Shift
   const todayStart = new Date();
@@ -56,14 +57,15 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   
   const cashTotal = shiftTransactions.filter(t => t.paymentMethod === 'CASH').reduce((sum, t) => sum + getNetSales(t).total, 0);
   const mpesaTotal = shiftTransactions.filter(t => t.paymentMethod === 'MPESA').reduce((sum, t) => sum + getNetSales(t).total, 0);
-  const shiftExpenses = allExpenses.filter(e => e.timestamp >= shiftStartTime).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const shiftTillExpenses = allExpenses.filter(e => e.timestamp >= shiftStartTime && e.source === 'TILL').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const shiftTillPayments = allSupplierPayments.filter(p => p.timestamp >= shiftStartTime && p.source === 'TILL').reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const shiftCashPicks = allCashPicks.filter(c => c.timestamp >= shiftStartTime);
   const totalPickedAmount = shiftCashPicks.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
   const lowStock = (allProducts || []).filter(p => p.stockQuantity <= 10);
   
-  // EXPECTED CASH = (Opening Float + Cash Sales) - (Expenses + Confirmed Picks)
+  // EXPECTED CASH = (Opening Float + Cash Sales) - (Expenses + Supplier Payments + Confirmed Picks)
   const openingFloat = activeShift?.openingFloat || 0;
-  const expectedCashDrawer = (openingFloat + cashTotal) - (shiftExpenses + totalPickedAmount);
+  const expectedCashDrawer = (openingFloat + cashTotal) - (shiftTillExpenses + shiftTillPayments + totalPickedAmount);
 
   const recentActivity = sortedTransactions.filter(t => t.timestamp >= todayStart.getTime()).slice(0, 10);
   const pendingQuotes = sortedTransactions.filter(t => t.status === 'QUOTE').length;
@@ -178,8 +180,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         taxTotal: totalTax,
         cashSales: cashTotal,
         mpesaSales: mpesaTotal,
-        totalExpenses: shiftExpenses,
-        totalPicks: totalPickedAmount,
+        totalExpenses: shiftTillExpenses,
+        totalPicks: totalPickedAmount + shiftTillPayments, // Supplier payments are effectively picks if from till
         expectedCash: expectedCashDrawer,
         reportedCash: reported,
         difference: reported - expectedCashDrawer,
@@ -330,7 +332,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
               <h3 className={`text-xl font-black ${expectedCashDrawer < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                 Ksh {expectedCashDrawer.toLocaleString()}
               </h3>
-              <p className="text-[10px] text-slate-400 font-semibold mt-1">Float {openingFloat.toLocaleString()} + Sales − Expenses − Picks</p>
+              <p className="text-[10px] text-slate-400 font-semibold mt-1">Float {openingFloat.toLocaleString()} + Sales − (Outflows { (shiftTillExpenses + shiftTillPayments + totalPickedAmount).toLocaleString() })</p>
             </div>
             <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100">
               <Banknote className="text-slate-300 w-6 h-6" />
@@ -545,8 +547,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                <div className="flex justify-between text-slate-500"><span>Shift Start (Float)</span><span className="font-bold text-slate-900">Ksh {openingFloat.toLocaleString()}</span></div>
                <div className="flex justify-between text-slate-500"><span>Gross Sales</span><span className="font-bold text-slate-900">Ksh {todaySales.toLocaleString()}</span></div>
                <div className="flex justify-between text-slate-500"><span>M-Pesa Receipts</span><span className="font-bold text-slate-600">- Ksh {mpesaTotal.toLocaleString()}</span></div>
-               <div className="flex justify-between text-slate-500"><span>Total Picked (Banked)</span><span className="font-bold text-slate-600">- Ksh {totalPickedAmount.toLocaleString()}</span></div>
-               <div className="flex justify-between text-slate-500"><span>Expenses</span><span className="font-bold text-red-600">- Ksh {shiftExpenses.toLocaleString()}</span></div>
+               <div className="flex justify-between text-slate-500"><span>Total Banked (Picks)</span><span className="font-bold text-slate-600">- Ksh {totalPickedAmount.toLocaleString()}</span></div>
+               <div className="flex justify-between text-slate-500"><span>Supplier Payments (Till)</span><span className="font-bold text-slate-600">- Ksh {shiftTillPayments.toLocaleString()}</span></div>
+               <div className="flex justify-between text-slate-500"><span>Expenses (Till)</span><span className="font-bold text-red-600">- Ksh {shiftTillExpenses.toLocaleString()}</span></div>
                <div className="border-t border-dashed border-slate-200 my-2 pt-2 flex justify-between text-slate-900 font-black">
                   <span>Expected Drawer Cash</span>
                   <span>Ksh {expectedCashDrawer.toLocaleString()}</span>

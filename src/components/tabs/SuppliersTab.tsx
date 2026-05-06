@@ -7,7 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 import SupplierLedgerModal from '../modals/SupplierLedgerModal';
 
-export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: string) => void }) {
+export default function SuppliersTab({ setActiveTab, financialAccounts }: { setActiveTab?: (tab: string) => void, financialAccounts: any[] }) {
   const [supplierSearch, setSupplierSearch] = useState("");
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -76,7 +76,7 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
     }
   }
 
-  const handleSavePayment = async (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, transactionCode?: string, purchaseOrderId?: string, purchaseOrderIds?: string[], creditNoteIds?: string[] }) => {
+   const handleSavePayment = async (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, source: 'TILL' | 'ACCOUNT', transactionCode?: string, purchaseOrderId?: string, purchaseOrderIds?: string[], creditNoteIds?: string[] }) => {
     if (!selectedSupplierForPayment) return;
     
     try {
@@ -102,6 +102,7 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
           paymentMethod: payment.method,
           transactionCode: payment.transactionCode,
           reference: payment.reference,
+          source: payment.source,
           timestamp: Date.now(),
           preparedBy: useStore.getState().currentUser?.name || 'Authorized Staff',
           branchId: activeBranchId!,
@@ -129,6 +130,14 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
         await db.suppliers.update(selectedSupplierForPayment.id, {
           balance: Math.max(0, (selectedSupplierForPayment.balance || 0) - totalDeduction)
         });
+
+        // Deduct from Financial Account if source is ACCOUNT
+        if (payment.source === 'ACCOUNT' && (payment as any).accountId) {
+           const account = await db.financialAccounts.get((payment as any).accountId);
+           if (account) {
+              await db.financialAccounts.update(account.id, { balance: account.balance - payment.amount });
+           }
+        }
         success("Payment recorded successfully.");
     } catch (err) {
         console.error("Failed to save payment:", err);
@@ -232,6 +241,7 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
         onClose={() => setIsPaymentModalOpen(false)}
         supplier={selectedSupplierForPayment}
         onSave={handleSavePayment}
+        financialAccounts={financialAccounts}
       />
 
       <SupplierLedgerModal 

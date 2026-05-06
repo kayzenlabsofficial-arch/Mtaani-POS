@@ -4,14 +4,15 @@ import { FileMinus } from 'lucide-react';
 interface ExpenseModalProps {
   isOpen: boolean;
   onClose: () => void;
-  expenseForm: { amount: string, category: string, description: string };
+  expenseForm: { amount: string, category: string, description: string, source: 'TILL' | 'ACCOUNT' };
   setExpenseForm: (form: any) => void;
   handleSaveExpense: () => Promise<void>;
   actualCashDrawer: number;
   accounts: any[];
+  financialAccounts: any[];
 }
 
-export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseForm, handleSaveExpense, actualCashDrawer, accounts }: ExpenseModalProps) {
+export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseForm, handleSaveExpense, actualCashDrawer, accounts, financialAccounts }: ExpenseModalProps) {
   if (!isOpen) return null;
 
   return (
@@ -37,7 +38,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                       autoFocus 
                    />
                 </div>
-                {Number(expenseForm.amount) > actualCashDrawer && (
+                {expenseForm.source === 'TILL' && Number(expenseForm.amount) > actualCashDrawer && (
                    <p className="text-[10px] text-red-500 font-bold mt-1">Exceeds cash in drawer!</p>
                 )}
              </div>
@@ -55,15 +56,51 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                     <option value="Other">Other / Miscellaneous</option>
                 </select>
              </div>
-             <div>
-                <label className="block text-xs font-bold text-slate-500  mb-1.5">Description</label>
-                <input type="text" value={expenseForm.description} onChange={e => setExpenseForm({...expenseForm, description: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-orange-500" placeholder="e.g. Bought receipt rolls" />
-             </div>
-        </div>
+              <div>
+                 <label className="block text-xs font-bold text-slate-500  mb-1.5">Description</label>
+                 <input type="text" value={expenseForm.description} onChange={e => setExpenseForm({...expenseForm, description: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-orange-500" placeholder="e.g. Bought receipt rolls" />
+              </div>
+              <div>
+                 <label className="block text-xs font-bold text-slate-500  mb-1.5">Source of Funds</label>
+                 <div className="flex gap-2">
+                    <button 
+                       onClick={() => setExpenseForm({...expenseForm, source: 'TILL'})}
+                       className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all ${expenseForm.source === 'TILL' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white border-slate-200 text-slate-500'}`}
+                    >
+                       Till (Cash)
+                    </button>
+                    <button 
+                       onClick={() => setExpenseForm({...expenseForm, source: 'ACCOUNT'})}
+                       className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all ${expenseForm.source === 'ACCOUNT' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}
+                    >
+                       Owner Account
+                    </button>
+                 </div>
+                 <p className="text-[9px] text-slate-400 mt-1 italic">
+                    {expenseForm.source === 'TILL' ? '* Deducted from cashier drawer.' : '* Direct payment by owner (Bank/M-Pesa).'}
+                 </p>
+              </div>
+
+              {expenseForm.source === 'ACCOUNT' && (
+                <div className="animate-in slide-in-from-top-2">
+                   <label className="block text-xs font-bold text-slate-500  mb-1.5 ml-1">Select Payment Account</label>
+                   <select 
+                      value={expenseForm.accountId || ''} 
+                      onChange={e => setExpenseForm({...expenseForm, accountId: e.target.value})} 
+                      className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-blue-500"
+                   >
+                      <option value="">Select Account...</option>
+                      {(financialAccounts || []).map(acc => (
+                        <option key={acc.id} value={acc.id}>{acc.name} ({acc.type})</option>
+                      ))}
+                   </select>
+                </div>
+              )}
+         </div>
 
         <div className="flex gap-3">
            <button onClick={onClose} className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors">Cancel</button>
-           <button onClick={handleSaveExpense} disabled={!expenseForm.amount || Number(expenseForm.amount) <= 0 || Number(expenseForm.amount) > actualCashDrawer} className="flex-[2] bg-orange-600 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50">Log Expense</button>
+           <button onClick={handleSaveExpense} disabled={!expenseForm.amount || Number(expenseForm.amount) <= 0 || (expenseForm.source === 'TILL' && Number(expenseForm.amount) > actualCashDrawer)} className="flex-[2] bg-orange-600 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50">Log Expense</button>
         </div>
       </div>
     </div>

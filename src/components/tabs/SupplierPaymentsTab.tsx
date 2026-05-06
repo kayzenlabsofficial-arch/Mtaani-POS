@@ -6,7 +6,7 @@ import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 
-export default function SupplierPaymentsTab() {
+export default function SupplierPaymentsTab({ financialAccounts }: { financialAccounts: any[] }) {
   const [paySearch, setPaySearch] = useState("");
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<Supplier | null>(null);
@@ -56,11 +56,20 @@ export default function SupplierPaymentsTab() {
           amount: payment.amount,
           paymentMethod: payment.method,
           transactionCode: payment.transactionCode,
-          reference: payment.reference,
+          source: (payment as any).source,
+          accountId: (payment as any).accountId,
           timestamp: Date.now(),
           branchId: activeBranchId!,
           businessId: activeBusinessId!
         });
+
+        // Deduct from Financial Account if source is ACCOUNT
+        if ((payment as any).source === 'ACCOUNT' && (payment as any).accountId) {
+           const account = await db.financialAccounts.get((payment as any).accountId);
+           if (account) {
+              await db.financialAccounts.update(account.id, { balance: account.balance - payment.amount });
+           }
+        }
 
         // Allocation logic for multiple invoices
         if (payment.purchaseOrderIds && payment.purchaseOrderIds.length > 0) {
@@ -210,6 +219,7 @@ export default function SupplierPaymentsTab() {
         onClose={() => setIsPaymentModalOpen(false)}
         supplier={selectedSupplierForPayment}
         onSave={handleSavePayment}
+        financialAccounts={financialAccounts}
       />
     </div>
   );
