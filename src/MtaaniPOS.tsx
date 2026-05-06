@@ -230,13 +230,15 @@ export default function MtaaniPOS() {
   const setActiveShift = useStore(state => state.setActiveShift);
   const currentUser = useStore(state => state.currentUser);
   const setCurrentUser = useStore(state => state.setCurrentUser);
+  const isAdmin = useStore(state => state.isAdmin);
+  const isManager = useStore(state => state.isManager);
   const activeBranchId = useStore(state => state.activeBranchId);
   const setActiveBranchId = useStore(state => state.setActiveBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const setActiveBusinessId = useStore(state => state.setActiveBusinessId);
   const selectedCustomerId = useStore(state => state.selectedCustomerId);
   
-  const allCustomers = useLiveQuery(() => db.customers.toArray(), [], []);
+  const allCustomers = useLiveQuery(() => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
   const selectedCustomer = allCustomers?.find(c => c.id === selectedCustomerId);
 
   const financialAccounts = useLiveQuery(() => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
@@ -374,8 +376,10 @@ export default function MtaaniPOS() {
     const init = async () => {
       await db.init();
       await seedInitialData();
-      const shift = await db.shifts.where('status').equals('OPEN').first();
-      if (shift) setActiveShift(shift);
+      if (activeBranchId) {
+        const shift = await db.shifts.where('status').equals('OPEN').and(s => s.branchId === activeBranchId).first();
+        if (shift) setActiveShift(shift);
+      }
     };
     init();
 
@@ -520,7 +524,7 @@ export default function MtaaniPOS() {
   }, [mpesaState, mpesaRequestId]);
 
   // Settings
-  const savedSettings = useLiveQuery(() => db.settings.get('core'), []);
+  const savedSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
   const [storeName, setStoreName] = useState('Mtaani Shop');
 
   useEffect(() => {
@@ -656,14 +660,13 @@ export default function MtaaniPOS() {
     e.preventDefault();
     if (!selectedBranchId || !pendingUser) return;
     try {
-      setIsSyncing(true);
+      // 1. Establish session context immediately so d1Fetch has required headers
+      setActiveBranchId(selectedBranchId);
+      setCurrentUser(pendingUser);
+
       await db.sync(); 
       
       if (pendingUser.role === 'ADMIN') {
-          const adminId = crypto.randomUUID();
-          setCurrentUser(pendingUser);
-          setIsAdmin(true);
-          setActiveBranchId(selectedBranchId);
           setActiveTab('DASHBOARD');
           setLoginStep('LOGIN');
           setPendingUser(null);
@@ -680,10 +683,7 @@ export default function MtaaniPOS() {
               businessId: activeBusinessId!
           };
           await db.shifts.add(newShift);
-          setCurrentUser(pendingUser);
           setActiveShift(newShift);
-          setIsAdmin(false);
-          setActiveBranchId(selectedBranchId);
           setActiveTab('REGISTER');
           setLoginStep('LOGIN');
           setPendingUser(null);

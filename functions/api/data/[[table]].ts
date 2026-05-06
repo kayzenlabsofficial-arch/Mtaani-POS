@@ -8,11 +8,11 @@ const ALLOWED_TABLES = new Set([
   'endOfDayReports', 'stockMovements', 'expenses', 'customers',
   'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries',
   'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories',
-  'branches', 'businesses', 'system', 'expenseAccounts'
+  'branches', 'businesses', 'system', 'expenseAccounts', 'financialAccounts'
 ]);
 
 // Global tables: shared across all branches, isolated by businessId only
-const GLOBAL_TABLES = new Set(['businesses', 'users', 'branches', 'settings', 'expenseAccounts']);
+const GLOBAL_TABLES = new Set(['businesses', 'users', 'branches', 'settings', 'expenseAccounts', 'financialAccounts', 'customers', 'suppliers']);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, storeName TEXT NOT NUL
 CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, iconName TEXT NOT NULL, color TEXT NOT NULL, businessId TEXT, branchId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, name TEXT NOT NULL, location TEXT NOT NULL, phone TEXT, tillNumber TEXT, kraPin TEXT, isActive INTEGER NOT NULL DEFAULT 1, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS expenseAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS financialAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, balance REAL NOT NULL, businessId TEXT, branchId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS mpesaCallbacks (checkoutRequestId TEXT PRIMARY KEY, merchantRequestId TEXT, resultCode INTEGER, resultDesc TEXT, amount REAL, receiptNumber TEXT, phoneNumber TEXT, businessId TEXT, branchId TEXT, timestamp INTEGER);
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp);
@@ -137,7 +138,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['stockAdjustmentRequests', 'preparedBy TEXT'],
           ['stockAdjustmentRequests', 'approvedBy TEXT'],
         ];
-        const allTables = ['users', 'products', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches'];
+        const allTables = ['users', 'products', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
         for (const t of allTables) {
           try { await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN businessId TEXT`).run(); } catch (e) {}
         }
@@ -224,7 +225,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
       if (table === 'businesses') {
         // Cascade delete: remove ALL data for this business
-        const cascadeTables = ['users', 'products', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches'];
+        const cascadeTables = ['users', 'products', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
         const batch = cascadeTables.map(t => env.DB.prepare(`DELETE FROM ${t} WHERE businessId = ?`).bind(id));
         batch.push(env.DB.prepare(`DELETE FROM businesses WHERE id = ?`).bind(id));
         await env.DB.batch(batch);
