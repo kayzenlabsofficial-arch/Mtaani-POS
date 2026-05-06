@@ -36,6 +36,7 @@ export interface Product {
   stockQuantity: number; // Changed to allow decimals
   unit?: string; // e.g. 'pcs', 'm', 'kg', 'tot'
   barcode: string;
+  reorderPoint?: number; // Minimum stock before alarm triggers
   imageUrl?: string;
   businessId: string;
   branchId: string;

@@ -34,7 +34,7 @@ export default function InventoryTab() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [selectedProductForDetails, setSelectedProductForDetails] = useState<Product | null>(null);
   const [productForm, setProductForm] = useState({
-      name: '', category: 'Other', barcode: '', sellingPrice: '', stockQuantity: '', unit: 'pcs', taxCategory: 'A' as 'A'|'C'|'E', reason: '', imageUrl: ''
+      name: '', category: 'Other', barcode: '', sellingPrice: '', stockQuantity: '', reorderPoint: '10', unit: 'pcs', taxCategory: 'A' as 'A'|'C'|'E', reason: ''
   });
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
@@ -131,7 +131,7 @@ export default function InventoryTab() {
     );
   }
 
-  const lowStock = allProducts.filter(p => p.stockQuantity <= 10);
+  const lowStock = allProducts.filter(p => p.stockQuantity <= (p.reorderPoint || 0));
   const filteredInventory = allProducts.filter(p => 
       p.name.toLowerCase().includes(inventorySearch.toLowerCase()) || 
       p.barcode.includes(inventorySearch)
@@ -140,7 +140,7 @@ export default function InventoryTab() {
   const openAddProduct = () => {
       setSelectedProductForDetails(null);
       setEditingProduct(null);
-      setProductForm({ name: '', category: 'Other', barcode: '', sellingPrice: '', stockQuantity: '', unit: 'pcs', taxCategory: 'A', reason: '', imageUrl: '' });
+      setProductForm({ name: '', category: 'Other', barcode: '', sellingPrice: '', stockQuantity: '', reorderPoint: '10', unit: 'pcs', taxCategory: 'A', reason: '' });
       setIsProductModalOpen(true);
   };
 
@@ -157,8 +157,8 @@ export default function InventoryTab() {
           stockQuantity: selectedProductForDetails.stockQuantity.toString(),
           unit: selectedProductForDetails.unit || 'pcs',
           taxCategory: selectedProductForDetails.taxCategory,
-          reason: '',
-          imageUrl: selectedProductForDetails.imageUrl || ''
+          reorderPoint: (selectedProductForDetails.reorderPoint || 0).toString(),
+          reason: ''
       });
       setSelectedProductForDetails(null);
       setIsProductModalOpen(true);
@@ -172,9 +172,9 @@ export default function InventoryTab() {
               barcode: productForm.barcode,
               sellingPrice: Number(productForm.sellingPrice),
               stockQuantity: Number(productForm.stockQuantity),
+              reorderPoint: Number(productForm.reorderPoint),
               unit: productForm.unit,
               taxCategory: productForm.taxCategory,
-              imageUrl: productForm.imageUrl
           };
 
           if (editingProduct) {
@@ -201,8 +201,8 @@ export default function InventoryTab() {
                     barcode: payload.barcode, 
                     sellingPrice: payload.sellingPrice, 
                     unit: payload.unit,
+                    reorderPoint: payload.reorderPoint,
                     taxCategory: payload.taxCategory,
-                    imageUrl: payload.imageUrl,
                     updated_at: Date.now()
                   });
                   success("Product details saved. Stock adjustment sent for approval.");
@@ -319,8 +319,8 @@ export default function InventoryTab() {
       <div className="space-y-3">
          {filteredInventory.map(product => {
             const cfg = getCategoryConfig(product.category || 'Other');
-            const isLow = product.stockQuantity <= 10;
-            const isCrit = product.stockQuantity <= 5;
+            const isLow = product.stockQuantity <= (product.reorderPoint || 0);
+            const isCrit = product.stockQuantity <= ((product.reorderPoint || 0) * 0.5);
 
             return (
               <div 
@@ -442,50 +442,20 @@ export default function InventoryTab() {
                         <input type="number" value={productForm.sellingPrice} onChange={(e) => setProductForm({...productForm, sellingPrice: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-14 pr-4 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all tabular-nums" placeholder="0" />
                      </div>
                   </div>
-                  <div className="col-span-1 md:col-span-2">
-                       <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Product Visual (KV Storage)</label>
-                       <div className="flex gap-4 items-center">
-                          <div className="w-24 h-24 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center relative overflow-hidden group">
-                             {productForm.imageUrl ? (
-                                <img src={productForm.imageUrl} className="w-full h-full object-cover" />
-                             ) : (
-                                <Package size={32} className="text-slate-200 group-hover:scale-110 transition-transform" />
-                             )}
-                             <input 
-                               type="file" 
-                               accept="image/*" 
-                               className="absolute inset-0 opacity-0 cursor-pointer" 
-                               onChange={async (e) => {
-                                  const file = e.target.files?.[0];
-                                  if (!file) return;
-                                  const formData = new FormData();
-                                  formData.append('file', file);
-                                  try {
-                                    const res = await fetch('/api/images', { method: 'POST', body: formData });
-                                    const data = await res.json() as any;
-                                    setProductForm({ ...productForm, imageUrl: data.url });
-                                  } catch (err) {
-                                    console.error("Upload failed:", err);
-                                  }
-                               }}
-                             />
-                          </div>
-                          <div>
-                             <p className="text-xs font-bold text-slate-600">Upload to Cloudflare KV</p>
-                             <p className="text-[10px] text-slate-400 mt-1 max-w-[200px]">Optimal size 512x512px. Images are served from the edge.</p>
-                          </div>
-                       </div>
-                  </div>
-                  <div className="flex gap-4">
-                     <div className="flex-1">
-                        <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Inventory Level</label>
-                        <input type="number" step="any" value={productForm.stockQuantity} onChange={(e) => setProductForm({...productForm, stockQuantity: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all tabular-nums" placeholder="0" />
-                     </div>
-                     <div className="w-32">
-                        <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Unit</label>
-                        <input type="text" value={productForm.unit} onChange={(e) => setProductForm({...productForm, unit: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all" placeholder="pcs" />
-                     </div>
-                  </div>
+                   <div className="flex gap-4">
+                      <div className="flex-1">
+                         <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Inventory Level</label>
+                         <input type="number" step="any" value={productForm.stockQuantity} onChange={(e) => setProductForm({...productForm, stockQuantity: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all tabular-nums" placeholder="0" />
+                      </div>
+                      <div className="flex-1">
+                         <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Reorder Point</label>
+                         <input type="number" step="any" value={productForm.reorderPoint} onChange={(e) => setProductForm({...productForm, reorderPoint: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all tabular-nums" placeholder="10" />
+                      </div>
+                      <div className="w-24">
+                         <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Unit</label>
+                         <input type="text" value={productForm.unit} onChange={(e) => setProductForm({...productForm, unit: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all" placeholder="pcs" />
+                      </div>
+                   </div>
                   <div className="col-span-1 md:col-span-2">
                      <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">KRA e-TIMS Tax Class</label>
                      <div className="grid grid-cols-3 gap-2">
