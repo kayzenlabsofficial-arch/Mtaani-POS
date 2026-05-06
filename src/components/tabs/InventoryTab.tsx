@@ -274,9 +274,11 @@ export default function InventoryTab() {
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">Inventory</h2>
             <p className="text-slate-500 text-sm font-medium">Control stock levels and product pricing.</p>
          </div>
-         <button onClick={openAddProduct} className="grad-blue text-white px-5 py-3.5 rounded-2xl shadow-blue active:scale-95 transition-all flex items-center gap-2 font-black text-xs  ">
-            <Plus size={18} /> New Product
-         </button>
+         {isAdmin && (
+           <button onClick={openAddProduct} className="grad-blue text-white px-5 py-3.5 rounded-2xl shadow-blue active:scale-95 transition-all flex items-center gap-2 font-black text-xs  ">
+              <Plus size={18} /> New Product
+           </button>
+         )}
       </div>
 
       {/* Stats Cards */}
@@ -393,7 +395,7 @@ export default function InventoryTab() {
                      <p className="text-slate-400 text-xs font-bold  ">Master Inventory Record</p>
                    </div>
                  </div>
-                 {editingProduct && (
+                 {editingProduct && isAdmin && (
                     <button onClick={handleDeleteProduct} className="w-10 h-10 flex items-center justify-center rounded-2xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors press">
                        <Trash2 size={20} />
                     </button>
@@ -565,15 +567,19 @@ export default function InventoryTab() {
                    <p className="text-slate-400 text-xs font-bold   mt-0.5">Inventory Tracking Ledger</p>
                  </div>
                  <div className="flex gap-2">
-                    <button 
-                        onClick={() => { setIsQuickAdjustOpen(true); setQuickAdjustForm({ quantity: '', reason: '' }); }} 
-                        className="bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all px-4 py-2.5 rounded-xl font-bold text-[10px] flex items-center gap-2   press"
-                    >
-                        Adjust
-                    </button>
-                    <button onClick={openEditProductFromDetails} className="bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all px-4 py-2.5 rounded-xl font-bold text-[10px] flex items-center gap-2   press">
-                        <Edit size={14} /> Edit
-                    </button>
+                    {isAdmin && (
+                      <>
+                        <button 
+                            onClick={() => { setIsQuickAdjustOpen(true); setQuickAdjustForm({ quantity: '', reason: '' }); }} 
+                            className="bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all px-4 py-2.5 rounded-xl font-bold text-[10px] flex items-center gap-2   press"
+                        >
+                            Adjust
+                        </button>
+                        <button onClick={openEditProductFromDetails} className="bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all px-4 py-2.5 rounded-xl font-bold text-[10px] flex items-center gap-2   press">
+                            <Edit size={14} /> Edit
+                        </button>
+                      </>
+                    )}
                  </div>
               </div>
 

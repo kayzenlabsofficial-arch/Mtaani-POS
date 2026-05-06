@@ -23,6 +23,7 @@ export interface User {
   password: string;
   role: 'ADMIN' | 'CASHIER' | 'MANAGER';
   businessId: string;
+  branchId?: string; // Assigned branch for isolation
   updated_at?: number;
 }
 

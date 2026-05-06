@@ -4,6 +4,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction, type Expense, type SupplierPayment, type CashPick } from '../../db';
 import { generateAndShareDocument } from '../../utils/shareUtils';
 import { CalendarCheck, AlertTriangle, ArrowRight, TrendingUp, ShieldCheck } from 'lucide-react';
+import { useStore } from '../../store';
 import AdminVerificationModal from './AdminVerificationModal';
 import { useToast } from '../../context/ToastContext';
 
@@ -21,6 +22,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const [isReturnMode, setIsReturnMode] = useState(false);
   const [isAdminVerifying, setIsAdminVerifying] = useState(false);
   const { success, error: toastError } = useToast();
+  const isAdmin = useStore(state => state.isAdmin);
   const [isSharing, setIsSharing] = useState(false);
   const [isSavingPDF, setIsSavingPDF] = useState(false);
 
@@ -612,7 +614,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
          {/* Footer Actions - Sticky at bottom */}
           <div className="p-4 flex flex-col gap-2 bg-white border-t border-slate-100 no-print shadow-[0_-4px_12px_rgba(0,0,0,0.03)] relative z-20">
             {/* LPO Receiving Action */}
-            {onReceive && isPO && selectedRecord.approvalStatus === 'APPROVED' && selectedRecord.status === 'PENDING' && (
+            {isAdmin && onReceive && isPO && selectedRecord.approvalStatus === 'APPROVED' && selectedRecord.status === 'PENDING' && (
                <button
                  onClick={() => { onReceive(selectedRecord); setSelectedRecord(null); }}
                  className="w-full py-3.5 bg-blue-600 text-white font-black text-xs   rounded-xl transition-colors active:bg-blue-700 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
@@ -622,7 +624,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
             )}
 
             {/* Approval Actions */}
-            {onApprove && onReject && (
+            {isAdmin && onApprove && onReject && (
               (selectedRecord?.recordType === 'PURCHASE_ORDER' && selectedRecord?.approvalStatus === 'PENDING') ||
               (selectedRecord?.recordType === 'EXPENSE' && selectedRecord?.status === 'PENDING') ||
               (selectedRecord?.recordType === 'SALE' && selectedRecord?.status === 'PENDING_REFUND')
@@ -672,7 +674,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
               </button>
             </div>
             
-            {isSale && (
+            {isAdmin && isSale && (
                 isReturnMode ? (
                   <button 
                     onClick={onInitiateRefund}

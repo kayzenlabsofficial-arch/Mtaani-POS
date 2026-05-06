@@ -45,7 +45,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   const users = useLiveQuery(() => db.users.toArray(), [], []);
   const activeShifts = useLiveQuery(() => db.shifts.where('status').equals('OPEN').toArray(), [], []);
   const [isAddingUser, setIsAddingUser] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', password: '', role: 'CASHIER' as 'CASHIER' | 'ADMIN' });
+  const [newUser, setNewUser] = useState({ name: '', password: '', role: 'CASHIER' as 'CASHIER' | 'ADMIN', branchId: '' });
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editingPassword, setEditingPassword] = useState('');
 
@@ -59,9 +59,10 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
       password: hashedPassword,
       role: newUser.role,
       businessId: activeBusinessId!,
+      branchId: newUser.branchId || undefined,
       updated_at: Date.now()
     });
-    setNewUser({ name: '', password: '', role: 'CASHIER' });
+    setNewUser({ name: '', password: '', role: 'CASHIER', branchId: '' });
     setIsAddingUser(false);
     await db.sync();
   };
@@ -245,8 +246,13 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded  ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-500'}`}>
                                    {user.role}
                                 </span>
-                                <span className="text-xs text-slate-400 font-mono flex items-center gap-1"><KeyRound size={10}/> ****</span>
-                             </div>
+                                 <span className="text-xs text-slate-400 font-mono flex items-center gap-1"><KeyRound size={10}/> ****</span>
+                                 {user.branchId && (
+                                   <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                     <Building2 size={8} /> {useLiveQuery(() => db.branches.get(user.branchId!), [user.branchId])?.name || 'Loading...'}
+                                   </span>
+                                 )}
+                              </div>
                           </div>
                        </div>
                        <div className="flex items-center gap-1">
@@ -316,10 +322,23 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                            </button>
                         </div>
                       </div>
+                      {newUser.role === 'CASHIER' && (
+                        <div>
+                          <label className="block text-xs font-bold text-slate-400 mb-2 ml-1">Assign Branch</label>
+                          <select 
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500" 
+                            value={newUser.branchId || ''} 
+                            onChange={e => setNewUser({...newUser, branchId: e.target.value})}
+                          >
+                            <option value="">Select a branch</option>
+                            {branches?.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                          </select>
+                        </div>
+                      )}
                    </div>
                    <div className="flex gap-3">
-                      <button onClick={() => {setIsAddingUser(false); setNewUser({ name: '', password: '', role: 'CASHIER' });}} className="flex-1 py-3 bg-slate-100 text-slate-700 font-bold text-sm rounded-xl">Cancel</button>
-                      <button onClick={handleAddUser} disabled={!newUser.name || newUser.password.length < 4} className="flex-[2] py-3 bg-blue-600 text-white font-bold text-sm rounded-xl disabled:opacity-50">Create User</button>
+                      <button onClick={() => {setIsAddingUser(false); setNewUser({ name: '', password: '', role: 'CASHIER', branchId: '' });}} className="flex-1 py-3 bg-slate-100 text-slate-700 font-bold text-sm rounded-xl">Cancel</button>
+                      <button onClick={handleAddUser} disabled={!newUser.name || newUser.password.length < 4 || (newUser.role === 'CASHIER' && !newUser.branchId)} className="flex-[2] py-3 bg-blue-600 text-white font-bold text-sm rounded-xl disabled:opacity-50">Create User</button>
                    </div>
                 </div>
              )}

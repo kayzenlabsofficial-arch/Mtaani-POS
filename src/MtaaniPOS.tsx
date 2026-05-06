@@ -536,6 +536,22 @@ export default function MtaaniPOS() {
         setPendingUser(matchedUser);
         setAvailableBranches(active);
 
+        // Branch Isolation for Cashiers
+        if (matchedUser.role === 'CASHIER' && matchedUser.branchId) {
+          const assignedBranch = active.find(b => b.id === matchedUser.branchId);
+          if (assignedBranch) {
+            setSelectedBranchId(assignedBranch.id);
+            setActiveBranchId(assignedBranch.id);
+            await db.sync();
+            setLoginStep('FLOAT');
+            return;
+          } else {
+            error("Assigned branch is currently inactive.");
+            setIsSyncing(false);
+            return;
+          }
+        }
+
         if (active.length === 1) {
           setSelectedBranchId(active[0].id);
           setActiveBranchId(active[0].id);
@@ -927,7 +943,6 @@ export default function MtaaniPOS() {
                     className="bg-transparent text-[9px] font-bold text-slate-400 border-none p-0 focus:ring-0 cursor-pointer hover:text-blue-600 transition-colors"
                   >
                     <option value={activeBranchId || ''}>{activeBranchName}</option>
-                    {/* The actual branch list will be populated below */}
                     <BranchOptions activeBranchId={activeBranchId} />
                   </select>
                 ) : (
