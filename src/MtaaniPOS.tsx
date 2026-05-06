@@ -963,7 +963,7 @@ export default function MtaaniPOS() {
             <Store size={18} className="text-white" />
           </div>
           <div>
-            <h1 className="text-base font-black tracking-tight text-slate-900 leading-none">{storeName}</h1>
+            <h1 className="text-base font-bold tracking-tight text-slate-900 leading-none">{storeName}</h1>
             {activeBranchName && (
               <div className="flex items-center gap-1 mt-0.5">
                 <MapPin size={8} className="text-blue-400" />
@@ -1004,8 +1004,8 @@ export default function MtaaniPOS() {
             onClick={() => setIsProfileModalOpen(true)}
             className="flex flex-col items-end cursor-pointer hover:opacity-70 transition-opacity"
            >
-              <p className="text-xs font-black text-slate-900 leading-none">{currentUser?.name}</p>
-              <p className="text-[10px] font-bold text-slate-400 mt-1 capitalize">{currentUser?.role?.toLowerCase()}</p>
+              <p className="text-xs font-bold text-slate-900 leading-none">{currentUser?.name}</p>
+              <p className="text-[10px] font-medium text-slate-400 mt-1 capitalize">{currentUser?.role?.toLowerCase()}</p>
            </div>
            <div className="h-8 w-px bg-slate-100 mx-1" />
            <button 
@@ -1044,7 +1044,7 @@ export default function MtaaniPOS() {
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-slate-200 px-2 py-2 flex justify-around items-center z-40 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-safe">
         {[
           { id: 'REGISTER', label: 'Register', icon: ShoppingCart },
-          { id: 'DASHBOARD', label: 'Overview', icon: LayoutDashboard, hidden: !isAdmin && !isManager },
+          { id: 'DASHBOARD', label: 'Overview', icon: LayoutDashboard, hidden: !isAdmin && !isManager && currentUser?.role !== 'CASHIER' },
           { id: 'INVENTORY', label: 'Store', icon: Package },
           { id: 'SUPPLIERS', label: 'Suppliers', icon: Truck, hidden: !isAdmin && !isManager },
           { id: 'MORE', label: 'More', icon: Grid },
@@ -1062,7 +1062,7 @@ export default function MtaaniPOS() {
             }`}
           >
             <item.icon size={22} className={activeTab === item.id && item.id !== 'MORE' ? 'fill-blue-600/10' : ''} />
-            <span className="text-[10px] font-black  tracking-tight">{item.label}</span>
+            <span className="text-[10px] font-bold  tracking-tight">{item.label}</span>
           </button>
         ))}
       </nav>
@@ -1080,8 +1080,8 @@ export default function MtaaniPOS() {
                      <User size={24} className="text-blue-600" />
                   </div>
                   <div>
-                     <p className="text-sm font-black text-slate-900">{currentUser?.name}</p>
-                     <p className="text-[10px] font-black text-slate-400  ">{currentUser?.role} Session</p>
+                     <p className="text-sm font-bold text-slate-900">{currentUser?.name}</p>
+                     <p className="text-[10px] font-semibold text-slate-400  ">{currentUser?.role} Session</p>
                   </div>
                </div>
                <button onClick={() => toggleMoreMenu(false)} className="w-10 h-10 bg-slate-50 text-slate-400 rounded-xl flex items-center justify-center">
@@ -1108,21 +1108,21 @@ export default function MtaaniPOS() {
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.bg} ${item.text} group-hover:scale-110 transition-transform`}>
                           <item.icon size={18} />
                         </div>
-                        <span className="text-[9px] font-black text-slate-900  tracking-tight text-center leading-tight">{item.label}</span>
+                        <span className="text-[9px] font-semibold text-slate-900 tracking-tight text-center leading-tight">{item.label}</span>
                       </button>
                     ))}
                  </div>
               </div>
                {(isAdmin || isManager) && (
                  <div>
-                    <h4 className="text-[10px] font-black text-slate-400   mb-3 ml-2">Administration & Reports</h4>
+                    <h4 className="text-[10px] font-bold text-slate-400 mb-3 ml-2">Administration & Reports</h4>
                     <div className="grid grid-cols-4 gap-3">
                        {[
                          { id: 'SUPPLIER_PAYMENTS', label: 'Payments', icon: DollarSign, bg: 'bg-green-50', text: 'text-green-600' },
                          { id: 'REPORTS', label: 'Reports', icon: BarChart3, bg: 'bg-purple-50', text: 'text-purple-600' },
                          { id: 'DOCUMENTS', label: 'Records', icon: FileText, bg: 'bg-slate-50', text: 'text-slate-600' },
                          { id: 'ADMIN_PANEL', label: 'Admin', icon: ShieldCheck, bg: 'bg-slate-900', text: 'text-white' },
-                       ].map(item => (
+                       ].filter(item => !(item.id === 'REPORTS' && currentUser?.role === 'CASHIER')).map(item => (
                          <button
                            key={item.id}
                            onClick={() => { navigateToTab(item.id as any); toggleMoreMenu(false); }}
@@ -1131,7 +1131,7 @@ export default function MtaaniPOS() {
                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.bg} ${item.text} group-hover:scale-110 transition-transform`}>
                              <item.icon size={18} />
                            </div>
-                           <span className="text-[9px] font-black text-slate-900  tracking-tight text-center leading-tight">{item.label}</span>
+                            <span className="text-[9px] font-bold text-slate-900  tracking-tight text-center leading-tight">{item.label}</span>
                          </button>
                        ))}
                     </div>
