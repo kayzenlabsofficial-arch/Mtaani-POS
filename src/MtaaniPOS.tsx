@@ -1585,11 +1585,20 @@ export default function MtaaniPOS() {
                     Share
                   </button>
                   <button 
-                    onClick={() => window.print()} 
+                    onClick={async () => {
+                      setIsSharing(true);
+                      try {
+                        const filename = `Receipt-${completedTransaction.id.split('-')[0].toUpperCase()}`;
+                        await generateAndShareDocument(completedTransaction, filename, null, true);
+                        success('PDF saved!');
+                      } catch (err) {
+                        error('Failed to save PDF');
+                      } finally { setIsSharing(false); }
+                    }} 
                     className="flex-1 py-3.5 bg-slate-100 text-slate-600 font-bold text-[10px]   rounded-2xl flex items-center justify-center gap-2 hover:bg-slate-200 transition-all"
                   >
                     <Printer size={16} /> 
-                    Print
+                    Save PDF
                   </button>
                 </div>
                 <button 
