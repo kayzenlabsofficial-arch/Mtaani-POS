@@ -258,6 +258,7 @@ export default function MtaaniPOS() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isCashModalOpen, setIsCashModalOpen] = useState(false);
   const [completedTransaction, setCompletedTransaction] = useState<Transaction | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
   const [amountTendered, setAmountTendered] = useState("");
 
   // M-Pesa State
