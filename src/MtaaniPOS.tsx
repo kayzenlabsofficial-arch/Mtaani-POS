@@ -623,23 +623,32 @@ export default function MtaaniPOS() {
           setCurrentUser(matchedUser);
           await db.sync();
           
-          const shiftId = crypto.randomUUID();
-          const newShift: Shift = {
-              id: shiftId,
-              startTime: Date.now(),
-              openingFloat: 0,
-              cashierName: matchedUser.name,
-              status: 'OPEN',
-              branchId: branchToUse,
-              businessId: activeBusinessId!
-          };
-          await db.shifts.add(newShift);
-          setActiveShift(newShift);
+          // Check for existing open shift for this cashier
+          const existingShift = await db.shifts.where('status').equals('OPEN')
+            .and(s => s.branchId === branchToUse && s.cashierName === matchedUser.name).first();
+          
+          if (existingShift) {
+            setActiveShift(existingShift);
+            success(`Welcome back! Resuming shift for ${matchedUser.name}`);
+          } else {
+            const shiftId = crypto.randomUUID();
+            const newShift: Shift = {
+                id: shiftId,
+                startTime: Date.now(),
+                openingFloat: 0,
+                cashierName: matchedUser.name,
+                status: 'OPEN',
+                branchId: branchToUse,
+                businessId: activeBusinessId!
+            };
+            await db.shifts.add(newShift);
+            setActiveShift(newShift);
+            success(`Shift started for ${matchedUser.name}`);
+          }
           
           setActiveTab('REGISTER');
           setLoginStep('LOGIN');
           setPendingUser(null);
-          success(`Shift started for ${matchedUser.name}`);
         } else {
            if (active.length === 1) {
               setActiveBranchId(active[0].id);
@@ -691,22 +700,31 @@ export default function MtaaniPOS() {
           setPendingUser(null);
           success(`Welcome back, ${pendingUser.name}`);
       } else {
-          const shiftId = crypto.randomUUID();
-          const newShift: Shift = {
-              id: shiftId,
-              startTime: Date.now(),
-              openingFloat: 0,
-              cashierName: pendingUser.name,
-              status: 'OPEN',
-              branchId: selectedBranchId,
-              businessId: activeBusinessId!
-          };
-          await db.shifts.add(newShift);
-          setActiveShift(newShift);
+          // Check for existing open shift
+          const existingShift = await db.shifts.where('status').equals('OPEN')
+            .and(s => s.branchId === selectedBranchId && s.cashierName === pendingUser.name).first();
+          
+          if (existingShift) {
+            setActiveShift(existingShift);
+            success(`Welcome back! Resuming shift for ${pendingUser.name}`);
+          } else {
+            const shiftId = crypto.randomUUID();
+            const newShift: Shift = {
+                id: shiftId,
+                startTime: Date.now(),
+                openingFloat: 0,
+                cashierName: pendingUser.name,
+                status: 'OPEN',
+                branchId: selectedBranchId,
+                businessId: activeBusinessId!
+            };
+            await db.shifts.add(newShift);
+            setActiveShift(newShift);
+            success(`Shift started for ${pendingUser.name}`);
+          }
           setActiveTab('REGISTER');
           setLoginStep('LOGIN');
           setPendingUser(null);
-          success(`Shift started for ${pendingUser.name}`);
       }
     } catch (err) {
       error("Failed to sync branch data.");

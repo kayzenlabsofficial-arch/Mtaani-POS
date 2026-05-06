@@ -28,7 +28,7 @@ export default function Sidebar({
 
   const menuItems = [
     { id: 'REGISTER', label: 'Register', icon: ShoppingCart },
-    { id: 'DASHBOARD', label: 'Overview', icon: LayoutDashboard, hidden: !isAdminOrManager },
+    { id: 'DASHBOARD', label: 'Overview', icon: LayoutDashboard, hidden: !isAdminOrManager && currentUser?.role !== 'CASHIER' },
     { id: 'INVENTORY', label: 'Inventory', icon: Package },
     { id: 'SUPPLIERS', label: 'Suppliers', icon: Truck, hidden: !isAdminOrManager },
     { id: 'CUSTOMERS', label: 'Customers', icon: Users },
@@ -36,8 +36,8 @@ export default function Sidebar({
     { id: 'REFUNDS', label: 'Refunds', icon: RotateCcw },
     { id: 'PURCHASES', label: 'LPOs', icon: ClipboardList },
     { id: 'SUPPLIER_PAYMENTS', label: 'Payments', icon: DollarSign, hidden: !isAdminOrManager },
-    { id: 'REPORTS', label: 'Reports', icon: BarChart3, hidden: !isAdminOrManager },
-    { id: 'DOCUMENTS', label: 'Records', icon: FileText, hidden: !isAdminOrManager },
+    { id: 'REPORTS', label: 'Reports', icon: BarChart3, hidden: !isAdminOrManager && currentUser?.role !== 'CASHIER' },
+    { id: 'DOCUMENTS', label: 'Records', icon: FileText },
     { id: 'ADMIN_PANEL', label: 'Admin', icon: ShieldCheck, hidden: !isAdminOrManager },
   ];
 
