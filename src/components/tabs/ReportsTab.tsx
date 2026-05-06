@@ -18,7 +18,7 @@ import { useStore } from '../../store';
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F43F5E'];
 
 export default function ReportsTab() {
-  const [dateRange, setDateRange] = React.useState<'TODAY' | 'WEEK' | 'MONTH' | 'ALL'>('ALL');
+  const [dateRange, setDateRange] = React.useState<'TODAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'ALL'>('ALL');
   const [selectedProductId, setSelectedProductId] = React.useState<string | null>(null);
   const [isSharing, setIsSharing] = React.useState(false);
   const activeBranchId = useStore(state => state.activeBranchId);
@@ -49,6 +49,7 @@ export default function ReportsTab() {
     if (dateRange === 'TODAY') return new Date().setHours(0,0,0,0);
     if (dateRange === 'WEEK') return now.setDate(now.getDate() - 7);
     if (dateRange === 'MONTH') return now.setMonth(now.getMonth() - 1);
+    if (dateRange === 'QUARTER') return now.setMonth(now.getMonth() - 3);
     return 0;
   };
   const startTime = getFilterStartTime();
@@ -166,13 +167,19 @@ export default function ReportsTab() {
               {isSharing ? 'Processing...' : 'Export Intelligence'}
             </button>
             <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
-              {(['TODAY', 'WEEK', 'MONTH', 'ALL'] as const).map(range => (
+              {[
+                { id: 'TODAY', label: 'Today' },
+                { id: 'WEEK', label: '1 Week' },
+                { id: 'MONTH', label: '1 Month' },
+                { id: 'QUARTER', label: '3 Months' },
+                { id: 'ALL', label: 'All' }
+              ].map(range => (
                 <button 
-                  key={range} 
-                  onClick={() => setDateRange(range)}
-                  className={`px-5 py-2.5 rounded-xl text-[10px] font-black transition-all ${dateRange === range ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                  key={range.id} 
+                  onClick={() => setDateRange(range.id as any)}
+                  className={`px-5 py-2.5 rounded-xl text-[10px] font-black transition-all ${dateRange === range.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                 >
-                  {range}
+                  {range.label}
                 </button>
               ))}
             </div>

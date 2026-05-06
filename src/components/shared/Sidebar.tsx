@@ -87,7 +87,7 @@ export default function Sidebar({
             </div>
           </div>
           <button
-            onClick={onSync}
+            onClick={(e) => { e.stopPropagation(); onSync(); }}
             disabled={isSyncing}
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/10 border border-white/10 text-white text-[10px] font-bold hover:bg-white/20 transition-all disabled:opacity-50"
           >
