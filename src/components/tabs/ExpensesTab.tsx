@@ -79,7 +79,7 @@ export default function ExpensesTab() {
               <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
                   <FileMinus size={32} className="text-slate-300" />
               </div>
-              <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Loading Ledger...</p>
+              <p className="text-slate-400 font-black text-xs  ">Loading Ledger...</p>
           </div>
       );
   }
@@ -92,10 +92,10 @@ export default function ExpensesTab() {
             <p className="text-slate-500 text-sm font-medium">Track operational costs and petty cash expenses.</p>
          </div>
          <div className="flex gap-2">
-            <button onClick={() => setIsAccountModalOpen(true)} className="bg-white text-slate-700 border border-slate-200 px-5 py-3.5 rounded-2xl shadow-sm active:scale-95 transition-all flex items-center gap-2 font-black text-xs uppercase tracking-widest">
+            <button onClick={() => setIsAccountModalOpen(true)} className="bg-white text-slate-700 border border-slate-200 px-5 py-3.5 rounded-2xl shadow-sm active:scale-95 transition-all flex items-center gap-2 font-black text-xs  ">
                <BookOpen size={18} /> Accounts
             </button>
-            <button onClick={() => setIsExpenseModalOpen(true)} className="bg-orange-600 text-white px-5 py-3.5 rounded-2xl shadow-lg shadow-orange-600/20 active:scale-95 transition-all flex items-center gap-2 font-black text-xs uppercase tracking-widest">
+            <button onClick={() => setIsExpenseModalOpen(true)} className="bg-orange-600 text-white px-5 py-3.5 rounded-2xl shadow-lg shadow-orange-600/20 active:scale-95 transition-all flex items-center gap-2 font-black text-xs  ">
                <Plus size={18} /> New Expense
             </button>
          </div>
@@ -107,7 +107,7 @@ export default function ExpensesTab() {
                <Wallet size={24} />
             </div>
             <div>
-               <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-0.5">Cash in Drawer</p>
+               <p className="text-slate-400 text-[10px] font-black   mb-0.5">Cash in Drawer</p>
                <h3 className="text-xl font-black text-slate-900 leading-none">Ksh {actualCashDrawer.toLocaleString()}</h3>
             </div>
          </div>
@@ -116,7 +116,7 @@ export default function ExpensesTab() {
                <FileMinus size={24} />
             </div>
             <div>
-               <p className="text-orange-100 text-[10px] font-black uppercase tracking-widest mb-0.5">Today's Total</p>
+               <p className="text-orange-100 text-[10px] font-black   mb-0.5">Today's Total</p>
                <h3 className="text-xl font-black leading-none">Ksh {todayExpenses.toLocaleString()}</h3>
             </div>
          </div>
@@ -151,12 +151,12 @@ export default function ExpensesTab() {
                 </div>
                 <div className="flex items-center gap-4 pl-3">
                    <div className="text-right">
-                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest leading-none mb-1">Amount</p>
+                      <p className="text-[10px] font-black text-slate-300   leading-none mb-1">Amount</p>
                       <p className="text-[17px] font-black text-orange-600 tabular-nums">
                          Ksh {expense.amount.toLocaleString()}
                       </p>
                       {expense.userName && (
-                        <p className="text-[9px] font-black text-blue-500 uppercase flex items-center justify-end gap-1 mt-0.5">
+                        <p className="text-[9px] font-black text-blue-500  flex items-center justify-end gap-1 mt-0.5">
                           <User size={8}/> {expense.userName}
                         </p>
                       )}
@@ -178,7 +178,7 @@ export default function ExpensesTab() {
                <div className="w-20 h-20 bg-slate-50 rounded-[32px] flex items-center justify-center mb-4 text-slate-200">
                  <FileMinus size={40} />
                </div>
-               <p className="text-slate-500 font-black text-sm uppercase tracking-widest">No Records</p>
+               <p className="text-slate-500 font-black text-sm  ">No Records</p>
                <p className="text-slate-400 text-xs mt-1">Operational costs will appear here when logged.</p>
             </div>
          )}

@@ -187,7 +187,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
              {activeShifts && activeShifts.length > 0 && (
                <div className="mb-6">
                  <h3 className="text-sm font-extrabold text-slate-900 mb-3 flex items-center gap-2">
-                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div> Active Cashier Sessions
+                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div> Active cashier sessions
                  </h3>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {activeShifts.map(shift => {
@@ -220,14 +220,14 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
              <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200">
                 <div>
-                   <h3 className="text-sm font-extrabold text-slate-900">Registered Accounts</h3>
+                   <h3 className="text-sm font-extrabold text-slate-900">Registered accounts</h3>
                    <p className="text-xs text-slate-500">Staff members authorized to log in.</p>
                 </div>
                 <button 
                   onClick={() => setIsAddingUser(true)}
                   className="bg-blue-600 text-white font-bold text-xs flex items-center gap-2 px-4 py-2.5 rounded-xl transition-transform active:scale-95 shadow-lg shadow-blue-600/20"
                 >
-                   <Plus size={14} /> Create Staff Account
+                   <Plus size={14} /> Create staff account
                 </button>
              </div>
 
@@ -242,7 +242,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                           <div>
                              <p className="font-bold text-sm text-slate-900">{user.name}</p>
                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded tracking-widest ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-500'}`}>
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded  ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-500'}`}>
                                    {user.role}
                                 </span>
                                 <span className="text-xs text-slate-400 font-mono flex items-center gap-1"><KeyRound size={10}/> ****</span>
@@ -295,18 +295,18 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
              {/* Add User Form Inline */}
              {isAddingUser && (
                 <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm mt-4 animate-in fade-in slide-in-from-top-4">
-                   <h3 className="text-sm font-extrabold text-slate-900 mb-4">Create New Account</h3>
+                   <h3 className="text-sm font-extrabold text-slate-900 mb-4">Create new account</h3>
                    <div className="space-y-4 mb-6">
                       <div>
-                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 ml-1">Full Name</label>
+                        <label className="block text-xs font-bold text-slate-400   mb-2 ml-1">Full name</label>
                         <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500" placeholder="e.g. Jane Doe" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
                       </div>
                       <div>
-                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 ml-1">Default Password</label>
-                        <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 tracking-wider focus:outline-none focus:border-blue-500" placeholder="e.g. secret123" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+                        <label className="block text-xs font-bold text-slate-400   mb-2 ml-1">Default password</label>
+                        <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900  focus:outline-none focus:border-blue-500" placeholder="e.g. secret123" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
                       </div>
                       <div>
-                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 ml-1">Role</label>
+                        <label className="block text-xs font-bold text-slate-400   mb-2 ml-1">Role</label>
                         <div className="flex gap-2">
                            <button onClick={() => setNewUser({...newUser, role: 'CASHIER'})} className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-colors ${newUser.role === 'CASHIER' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-600'}`}>
                                Cashier
@@ -329,7 +329,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
            <div className="space-y-6">
               <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200">
                 <div>
-                   <h3 className="text-sm font-extrabold text-slate-900">Category Architecture</h3>
+                   <h3 className="text-sm font-extrabold text-slate-900">Category architecture</h3>
                    <p className="text-xs text-slate-500">Configure your product taxonomy.</p>
                 </div>
                 {!isAddingCategory && (
@@ -337,7 +337,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                     onClick={() => setIsAddingCategory(true)}
                     className="bg-blue-600 text-white font-bold text-xs flex items-center gap-2 px-4 py-2.5 rounded-xl transition-transform active:scale-95 shadow-lg shadow-blue-600/20"
                   >
-                     <Plus size={14} /> Add New Category
+                     <Plus size={14} /> Add new category
                   </button>
                 )}
               </div>
@@ -347,7 +347,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-6">
                       <div>
-                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Category Name</label>
+                        <label className="block text-[11px] font-black text-slate-400   mb-3 ml-1">Category name</label>
                         <input 
                           type="text" 
                           value={categoryForm.name} 
@@ -359,7 +359,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Choose Icon</label>
+                        <label className="block text-[11px] font-black text-slate-400   mb-3 ml-1">Choose icon</label>
                         <div className="grid grid-cols-6 gap-3">
                           {ICON_OPTIONS.map(opt => (
                             <button
@@ -376,7 +376,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
                     <div className="space-y-6">
                       <div>
-                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Theme Color</label>
+                        <label className="block text-[11px] font-black text-slate-400   mb-3 ml-1">Theme color</label>
                         <div className="grid grid-cols-7 gap-3">
                           {COLOR_OPTIONS.map(opt => (
                             <button
@@ -391,10 +391,10 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                       </div>
 
                       <div className="flex gap-4 pt-4">
-                        <button onClick={resetCategoryForm} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs uppercase tracking-widest rounded-2xl transition-all press">
+                        <button onClick={resetCategoryForm} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs   rounded-2xl transition-all press">
                           Cancel
                         </button>
-                        <button onClick={handleSaveCategory} className="flex-[2] bg-blue-600 text-white px-6 py-4 font-black text-xs uppercase tracking-widest rounded-2xl transition-all shadow-blue press flex items-center justify-center gap-2">
+                        <button onClick={handleSaveCategory} className="flex-[2] bg-blue-600 text-white px-6 py-4 font-black text-xs   rounded-2xl transition-all shadow-blue press flex items-center justify-center gap-2">
                           <Save size={18} /> {editingCategoryId ? 'Update' : 'Create'} Category
                         </button>
                       </div>

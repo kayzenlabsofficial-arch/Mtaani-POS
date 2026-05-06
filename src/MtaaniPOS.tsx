@@ -130,7 +130,7 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
         
         <form onSubmit={handleCreate} className="flex gap-4 mb-8 bg-slate-50 p-6 rounded-2xl border border-slate-100">
            <input type="text" placeholder="Business Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="flex-1 px-4 py-3 rounded-xl border border-slate-200" required />
-           <input type="text" placeholder="Business Code (e.g. MTAANI02)" value={form.code} onChange={e => setForm({...form, code: e.target.value})} className="flex-1 px-4 py-3 rounded-xl border border-slate-200 uppercase" required />
+           <input type="text" placeholder="Business Code (e.g. MTAANI02)" value={form.code} onChange={e => setForm({...form, code: e.target.value})} className="flex-1 px-4 py-3 rounded-xl border border-slate-200 " required />
            <button type="submit" className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 transition-colors">Add Business</button>
         </form>
 
@@ -755,18 +755,18 @@ export default function MtaaniPOS() {
             {loginStep === 'LOGIN' && (
               <form onSubmit={handleLogin} className="space-y-6">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block ml-4 text-left">Business Code</label>
+                  <label className="text-[10px] font-black   text-slate-400 block ml-4 text-left">Business Code</label>
                   <input 
                     type="text" 
                     value={loginForm.businessCode}
                     onChange={e => setLoginForm({...loginForm, businessCode: e.target.value.toUpperCase()})}
-                    className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white transition-all outline-none font-bold text-slate-700 uppercase"
+                    className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white transition-all outline-none font-bold text-slate-700 "
                     placeholder="e.g. MTAANI01"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block ml-4 text-left">Username</label>
+                  <label className="text-[10px] font-black   text-slate-400 block ml-4 text-left">Username</label>
                   <input 
                     type="text" 
                     value={loginForm.username}
@@ -776,7 +776,7 @@ export default function MtaaniPOS() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block ml-4 text-left">Password</label>
+                  <label className="text-[10px] font-black   text-slate-400 block ml-4 text-left">Password</label>
                   <input 
                     type="password" 
                     value={loginForm.password}
@@ -788,7 +788,7 @@ export default function MtaaniPOS() {
                 <button 
                   type="submit"
                   disabled={isSyncing}
-                  className="w-full py-5 rounded-2xl bg-slate-900 text-white font-black uppercase tracking-widest hover:bg-blue-600 transition-all active:scale-95 shadow-xl disabled:opacity-50"
+                  className="w-full py-5 rounded-2xl bg-slate-900 text-white font-black   hover:bg-blue-600 transition-all active:scale-95 shadow-xl disabled:opacity-50"
                 >
                   {isSyncing ? 'Authenticating...' : 'Sign In'}
                 </button>
@@ -799,7 +799,7 @@ export default function MtaaniPOS() {
             {loginStep === 'BRANCH' && (
               <form onSubmit={handleBranchSelect} className="space-y-6 text-left">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 text-center">Select Branch Location</p>
+                  <p className="text-[10px] font-black   text-slate-400 mb-4 text-center">Select Branch Location</p>
                   <div className="space-y-2">
                     {availableBranches.map(branch => (
                       <label
@@ -838,14 +838,14 @@ export default function MtaaniPOS() {
                   <button
                     type="button"
                     onClick={() => { setLoginStep('LOGIN'); setPendingUser(null); }}
-                    className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-600 font-black uppercase tracking-widest text-[10px] hover:bg-slate-200 transition-all"
+                    className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-600 font-bold   text-[10px] hover:bg-slate-200 transition-all"
                   >
                     Back
                   </button>
                   <button 
                     type="submit"
                     disabled={!selectedBranchId}
-                    className="flex-[2] py-4 rounded-2xl bg-slate-900 text-white font-black uppercase tracking-widest text-[10px] hover:bg-blue-600 transition-all active:scale-95 shadow-xl disabled:opacity-50"
+                    className="flex-[2] py-4 rounded-2xl bg-slate-900 text-white font-bold   text-[10px] hover:bg-blue-600 transition-all active:scale-95 shadow-xl disabled:opacity-50"
                   >
                     Continue
                   </button>
@@ -857,7 +857,7 @@ export default function MtaaniPOS() {
             {loginStep === 'FLOAT' && (
               <form onSubmit={handleFinalizeLoginWithFloat} className="space-y-6">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block ml-4 text-left">Opening Float (KES)</label>
+                  <label className="text-[10px] font-black   text-slate-400 block ml-4 text-left">Opening Float (KES)</label>
                   <input 
                     type="number" 
                     autoFocus
@@ -870,7 +870,7 @@ export default function MtaaniPOS() {
                 <button 
                   type="submit"
                   disabled={isSyncing}
-                  className="w-full py-5 rounded-2xl bg-slate-900 text-white font-black uppercase tracking-widest hover:bg-blue-600 transition-all active:scale-95 shadow-xl disabled:opacity-50"
+                  className="w-full py-5 rounded-2xl bg-slate-900 text-white font-black   hover:bg-blue-600 transition-all active:scale-95 shadow-xl disabled:opacity-50"
                 >
                   {isSyncing ? 'Starting shift...' : 'Start Shift'}
                 </button>
@@ -955,10 +955,26 @@ export default function MtaaniPOS() {
             <User size={18} />
           </button>
         </div>
+
+        {/* Desktop Header Actions */}
+        <div className="hidden lg:flex items-center gap-4">
+           <div className="flex flex-col items-end">
+              <p className="text-xs font-black text-slate-900 leading-none">{currentUser?.name}</p>
+              <p className="text-[10px] font-bold text-slate-400 mt-1 capitalize">{currentUser?.role?.toLowerCase()}</p>
+           </div>
+           <div className="h-8 w-px bg-slate-100 mx-1" />
+           <button 
+            onClick={handleLogout}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 text-red-600 text-[11px] font-bold hover:bg-red-600 hover:text-white transition-all border border-red-100"
+           >
+             <LogOut size={14} />
+             Sign out
+           </button>
+        </div>
       </header>
 
       {!isOnline && (
-        <div className="bg-red-600 text-white text-center text-[10px] font-black py-2 uppercase tracking-widest">
+        <div className="bg-red-600 text-white text-center text-[10px] font-black py-2  ">
           ⚠️ Offline Mode — Changes will sync when reconnected
         </div>
       )}
@@ -1001,7 +1017,7 @@ export default function MtaaniPOS() {
             }`}
           >
             <item.icon size={22} className={activeTab === item.id && item.id !== 'MORE' ? 'fill-blue-600/10' : ''} />
-            <span className="text-[10px] font-black uppercase tracking-tight">{item.label}</span>
+            <span className="text-[10px] font-black  tracking-tight">{item.label}</span>
           </button>
         ))}
       </nav>
@@ -1020,7 +1036,7 @@ export default function MtaaniPOS() {
                   </div>
                   <div>
                      <p className="text-sm font-black text-slate-900">{currentUser?.name}</p>
-                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{currentUser?.role} Session</p>
+                     <p className="text-[10px] font-black text-slate-400  ">{currentUser?.role} Session</p>
                   </div>
                </div>
                <button onClick={() => toggleMoreMenu(false)} className="w-10 h-10 bg-slate-50 text-slate-400 rounded-xl flex items-center justify-center">
@@ -1031,7 +1047,7 @@ export default function MtaaniPOS() {
             <div className="flex-1 overflow-y-auto no-scrollbar pb-8 space-y-6">
               
               <div>
-                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Store Operations</h4>
+                 <h4 className="text-[10px] font-black text-slate-400   mb-3 ml-2">Store Operations</h4>
                  <div className="grid grid-cols-4 gap-3">
                     {[
                       { id: 'CUSTOMERS', label: 'Customers', icon: Users, bg: 'bg-cyan-50', text: 'text-cyan-600' },
@@ -1047,14 +1063,14 @@ export default function MtaaniPOS() {
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.bg} ${item.text} group-hover:scale-110 transition-transform`}>
                           <item.icon size={18} />
                         </div>
-                        <span className="text-[9px] font-black text-slate-900 uppercase tracking-tight text-center leading-tight">{item.label}</span>
+                        <span className="text-[9px] font-black text-slate-900  tracking-tight text-center leading-tight">{item.label}</span>
                       </button>
                     ))}
                  </div>
               </div>
 
               <div>
-                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Administration & Reports</h4>
+                 <h4 className="text-[10px] font-black text-slate-400   mb-3 ml-2">Administration & Reports</h4>
                  <div className="grid grid-cols-4 gap-3">
                     {[
                       { id: 'SUPPLIER_PAYMENTS', label: 'Payments', icon: DollarSign, bg: 'bg-green-50', text: 'text-green-600' },
@@ -1070,7 +1086,7 @@ export default function MtaaniPOS() {
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.bg} ${item.text} group-hover:scale-110 transition-transform`}>
                           <item.icon size={18} />
                         </div>
-                        <span className="text-[9px] font-black text-slate-900 uppercase tracking-tight text-center leading-tight">{item.label}</span>
+                        <span className="text-[9px] font-black text-slate-900  tracking-tight text-center leading-tight">{item.label}</span>
                       </button>
                     ))}
                  </div>
@@ -1092,14 +1108,14 @@ export default function MtaaniPOS() {
                   }
                 }}
                 disabled={isSyncing}
-                className="flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl bg-blue-50 text-blue-600 font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50"
+                className="flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl bg-blue-50 text-blue-600 font-bold text-[10px]   hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50"
               >
                 <RotateCcw size={16} className={isSyncing ? 'animate-spin' : ''} />
                 {isSyncing ? 'Syncing...' : 'Sync Cloud'}
               </button>
               <button 
                 onClick={handleLogout}
-                className="flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl bg-red-50 text-red-600 font-black text-[10px] uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all"
+                className="flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl bg-red-50 text-red-600 font-bold text-[10px]   hover:bg-red-600 hover:text-white transition-all"
               >
                 <LogOut size={16} />
                 Log Out
@@ -1125,8 +1141,8 @@ export default function MtaaniPOS() {
                     <ShoppingCart size={20} />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-slate-900 leading-none">Current Sale</h3>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Register Session</p>
+                    <h3 className="text-lg font-black text-slate-900 leading-none">Current sale</h3>
+                    <p className="text-[10px] font-bold text-slate-400 mt-1">Register session</p>
                   </div>
                </div>
                <button onClick={() => toggleCart(false)} className="w-10 h-10 flex lg:hidden items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:text-slate-900 transition-all">
@@ -1140,7 +1156,7 @@ export default function MtaaniPOS() {
                    <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4">
                      <ShoppingCart size={32} />
                    </div>
-                   <p className="font-black text-sm uppercase tracking-widest">Cart is Empty</p>
+                   <p className="font-bold text-sm">Cart is empty</p>
                    <p className="text-xs font-bold mt-1">Add items from the store to begin.</p>
                  </div>
                ) : (
@@ -1198,12 +1214,12 @@ export default function MtaaniPOS() {
             {cart.length > 0 && (
               <div className="p-6 border-t border-slate-100 bg-slate-50/50 space-y-4 shrink-0">
                  <div className="space-y-2">
-                    <div className="flex justify-between text-slate-500 font-bold text-xs uppercase tracking-widest">
+                    <div className="flex justify-between text-slate-500 font-bold text-xs capitalize">
                        <span>Subtotal</span>
                        <span>Ksh {cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0).toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-slate-900 font-black text-xl tracking-tight pt-2 border-t border-slate-200">
-                       <span>Total Amount</span>
+                       <span>Total amount</span>
                        <span className="text-blue-600">Ksh {cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0).toLocaleString()}</span>
                     </div>
                  </div>
@@ -1213,14 +1229,14 @@ export default function MtaaniPOS() {
                       onClick={() => {
                         if(confirm("Clear current sale?")) clearCart();
                       }}
-                      className="px-6 py-4 rounded-2xl bg-white border border-slate-200 text-slate-500 font-black text-[10px] uppercase tracking-widest hover:bg-red-50 hover:text-red-600 hover:border-red-100 transition-all"
+                      className="px-6 py-4 rounded-2xl bg-white border border-slate-200 text-slate-500 font-bold text-[10px] hover:bg-red-50 hover:text-red-600 hover:border-red-100 transition-all"
                     >
-                      Clear All
+                      Clear all
                     </button>
                     <div className="flex gap-2">
                        <button 
                         onClick={() => setIsCashModalOpen(true)}
-                        className="flex-1 px-4 py-4 rounded-2xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                        className="flex-1 px-4 py-4 rounded-2xl bg-slate-900 text-white font-bold text-[10px] hover:bg-blue-600 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
                       >
                         <Banknote size={16} />
                         Cash
@@ -1232,7 +1248,7 @@ export default function MtaaniPOS() {
                           setMpesaMessage('');
                           setIsMpesaModalOpen(true);
                         }}
-                        className="flex-1 px-4 py-4 rounded-2xl bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                        className="flex-1 px-4 py-4 rounded-2xl bg-blue-600 text-white font-bold text-[10px] hover:bg-blue-700 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
                       >
                         <Smartphone size={16} />
                         M-Pesa
@@ -1265,13 +1281,13 @@ export default function MtaaniPOS() {
             <p className="text-slate-500 text-sm mb-6 text-center">Enter the amount received from the customer.</p>
             
             <div className="bg-slate-50 p-6 rounded-3xl mb-6 border border-slate-100 text-center">
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Amount Due</p>
+               <p className="text-[10px] font-bold text-slate-400 mb-1">Total amount due</p>
                <p className="text-3xl font-black text-slate-900">Ksh {cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0).toLocaleString()}</p>
             </div>
 
             <div className="space-y-4 mb-8">
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-4">Amount Tendered</label>
+                <label className="block text-[10px] font-bold text-slate-400 mb-2 ml-4">Amount tendered</label>
                 <div className="relative">
                   <span className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">KSH</span>
                   <input 
@@ -1287,20 +1303,20 @@ export default function MtaaniPOS() {
 
               {Number(amountTendered) >= cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0) && (
                 <div className="bg-green-50 p-5 rounded-2xl border border-green-100 flex justify-between items-center text-green-800 animate-in fade-in slide-in-from-top-2 duration-300">
-                   <span className="font-bold text-xs uppercase tracking-widest">Change to give</span>
+                   <span className="font-bold text-xs">Change to give</span>
                    <span className="text-2xl font-black">Ksh {(Number(amountTendered) - cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0)).toLocaleString()}</span>
                 </div>
               )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-               <button onClick={() => setIsCashModalOpen(false)} className="px-6 py-4 bg-slate-100 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-200 transition-all">Cancel</button>
+               <button onClick={() => setIsCashModalOpen(false)} className="px-6 py-4 bg-slate-100 text-slate-600 font-bold text-[10px] rounded-2xl hover:bg-slate-200 transition-all">Cancel</button>
                <button 
                 onClick={() => { setIsCashModalOpen(false); handleCheckout('PAID', 'CASH'); }} 
                 disabled={Number(amountTendered) < cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0)} 
-                className="px-6 py-4 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl disabled:opacity-50 hover:bg-blue-600 shadow-xl transition-all active:scale-95"
+                className="px-6 py-4 bg-slate-900 text-white font-bold text-[10px] rounded-2xl disabled:opacity-50 hover:bg-blue-600 shadow-xl transition-all active:scale-95"
               >
-                Complete Sale
+                Complete sale
               </button>
             </div>
           </div>
@@ -1325,14 +1341,14 @@ export default function MtaaniPOS() {
                     {selectedCustomer.name.charAt(0)}
                  </div>
                  <div>
-                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest leading-none">Paying Customer</p>
+                    <p className="text-[10px] font-bold text-blue-600 mb-1">Paying customer</p>
                     <p className="text-sm font-black text-slate-900 mt-1">{selectedCustomer.name}</p>
                  </div>
               </div>
             )}
 
             <div className="bg-slate-50 p-6 rounded-3xl mb-6 border border-slate-100 text-center">
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Amount Due</p>
+               <p className="text-[10px] font-bold text-slate-400 mb-1">Total amount due</p>
                <p className="text-3xl font-black text-slate-900">Ksh {cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0).toLocaleString()}</p>
             </div>
 
@@ -1346,7 +1362,7 @@ export default function MtaaniPOS() {
                 )}
                 <div className="space-y-4 mb-8">
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-4">Phone Number</label>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-2 ml-4">Phone number</label>
                     <div className="relative">
                       <span className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">+254</span>
                       <input 
@@ -1362,7 +1378,7 @@ export default function MtaaniPOS() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                   <button onClick={() => setIsMpesaModalOpen(false)} className="px-6 py-4 bg-slate-100 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-200 transition-all">Cancel</button>
+                   <button onClick={() => setIsMpesaModalOpen(false)} className="px-6 py-4 bg-slate-100 text-slate-600 font-bold text-[10px] rounded-2xl hover:bg-slate-200 transition-all">Cancel</button>
                    <button 
                     onClick={async () => {
                       if (!mpesaPhone || mpesaPhone.length < 9) return error("Enter a valid phone number");
@@ -1378,9 +1394,9 @@ export default function MtaaniPOS() {
                       }
                     }} 
                     disabled={!mpesaPhone}
-                    className="px-6 py-4 bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl disabled:opacity-50 hover:bg-blue-700 shadow-xl transition-all active:scale-95"
+                    className="px-6 py-4 bg-blue-600 text-white font-bold text-[10px] rounded-2xl disabled:opacity-50 hover:bg-blue-700 shadow-xl transition-all active:scale-95"
                   >
-                    Send Prompt
+                    Send prompt
                   </button>
                 </div>
               </>
@@ -1401,9 +1417,9 @@ export default function MtaaniPOS() {
                     handleCheckout('PAID', 'MPESA'); // Allow manual override
                     setIsMpesaModalOpen(false);
                   }}
-                  className="px-6 py-3 bg-slate-100 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-200 transition-all w-full"
+                  className="px-6 py-3 bg-slate-100 text-slate-600 font-bold text-[10px]   rounded-xl hover:bg-slate-200 transition-all w-full"
                 >
-                  Verify Manually / Skip
+                  Verify manually / Skip
                 </button>
               </div>
             ) : (
@@ -1430,16 +1446,16 @@ export default function MtaaniPOS() {
                     <div className="w-16 h-16 bg-green-100 text-green-600 rounded-3xl flex items-center justify-center mb-4 shadow-sm">
                         <ReceiptText size={32} />
                     </div>
-                    <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase">{storeName}</h2>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Sales Receipt</p>
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight ">{storeName}</h2>
+                    <p className="text-[10px] font-bold text-slate-400 mt-1">Sales receipt</p>
                     
-                    <div className="flex flex-col items-center gap-1 mt-4 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                    <div className="flex flex-col items-center gap-1 mt-4 text-[10px] text-slate-400 font-bold  ">
                         <span>{new Date(completedTransaction.timestamp).toLocaleString('en-KE')}</span>
                         <span>Ref: #{completedTransaction.id.split('-')[0].toUpperCase()}</span>
                     </div>
                     
-                    <div className="mt-4 px-3 py-1 bg-green-100 text-green-700 text-[9px] font-black rounded-full tracking-widest uppercase">
-                        PAID VIA {completedTransaction.paymentMethod}
+                    <div className="mt-4 px-3 py-1 bg-green-100 text-green-700 text-[9px] font-bold rounded-full">
+                        Paid via {completedTransaction.paymentMethod?.toLowerCase()}
                     </div>
                   </div>
 
@@ -1457,27 +1473,27 @@ export default function MtaaniPOS() {
                     </div>
 
                     <div className="pt-4 border-t border-dashed border-slate-200 space-y-2">
-                        <div className="flex justify-between text-xs font-bold text-slate-500 uppercase tracking-tight">
+                        <div className="flex justify-between text-xs font-bold text-slate-500  tracking-tight">
                           <span>Subtotal</span>
                           <span>Ksh {completedTransaction.subtotal.toLocaleString()}</span>
                         </div>
-                        <div className="flex justify-between text-xs font-bold text-slate-500 uppercase tracking-tight">
+                        <div className="flex justify-between text-xs font-bold text-slate-500  tracking-tight">
                           <span>Tax (16%)</span>
                           <span>Ksh {completedTransaction.tax.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between items-end pt-2">
-                          <span className="text-sm font-black text-slate-400 uppercase tracking-widest">Total Paid</span>
+                          <span className="text-sm font-bold text-slate-400">Total paid</span>
                           <span className="text-2xl font-black text-slate-900">Ksh {completedTransaction.total.toLocaleString()}</span>
                         </div>
                         
                         {completedTransaction.paymentMethod === 'CASH' && completedTransaction.amountTendered && (
                           <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
-                            <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                <span>Amount Paid</span>
+                            <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                                <span>Amount paid</span>
                                 <span>Ksh {completedTransaction.amountTendered.toLocaleString()}</span>
                             </div>
                             <div className="flex justify-between items-center text-green-700 bg-green-50 p-3 rounded-2xl border border-green-100">
-                                <span className="text-[10px] font-black uppercase tracking-widest">Change Given</span>
+                                <span className="text-[10px] font-bold">Change given</span>
                                 <span className="text-lg font-black italic">Ksh {(completedTransaction.changeGiven || 0).toLocaleString()}</span>
                             </div>
                           </div>
@@ -1485,7 +1501,7 @@ export default function MtaaniPOS() {
                     </div>
 
                     <div className="text-center pt-4">
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                        <p className="text-[10px] text-slate-400 font-bold   leading-relaxed">
                           Cashier: {completedTransaction.cashierName}<br/>
                           Thank you for shopping with us!
                         </p>
@@ -1508,14 +1524,14 @@ export default function MtaaniPOS() {
                       } finally { setIsSharing(false); }
                     }}
                     disabled={isSharing}
-                    className="flex-1 py-3.5 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all disabled:opacity-50"
+                    className="flex-1 py-3.5 bg-slate-900 text-white font-bold text-[10px]   rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all disabled:opacity-50"
                   >
                     {isSharing ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
                     Share
                   </button>
                   <button 
                     onClick={() => window.print()} 
-                    className="flex-1 py-3.5 bg-slate-100 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 hover:bg-slate-200 transition-all"
+                    className="flex-1 py-3.5 bg-slate-100 text-slate-600 font-bold text-[10px]   rounded-2xl flex items-center justify-center gap-2 hover:bg-slate-200 transition-all"
                   >
                     <Printer size={16} /> 
                     Print
@@ -1523,7 +1539,7 @@ export default function MtaaniPOS() {
                 </div>
                 <button 
                   onClick={() => setCompletedTransaction(null)} 
-                  className="w-full bg-blue-600 text-white py-4 font-black text-xs uppercase tracking-widest rounded-2xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
+                  className="w-full bg-blue-600 text-white py-4 font-black text-xs   rounded-2xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
                 >
                   New Sale
                 </button>

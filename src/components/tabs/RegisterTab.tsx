@@ -83,7 +83,7 @@ export default function RegisterTab() {
     const found = all.find(p => p.barcode === barcode || p.barcode.trim() === barcode.trim());
     if (found) {
       if (found.stockQuantity <= 0) {
-        setScanFeedback({ found: false, name: `${found.name} — Out of Stock!` });
+        setScanFeedback({ found: false, name: `${found.name} — Out of stock!` });
       } else {
         handleAddToCart(found);
         setScanFeedback({ found: true, name: found.name });
@@ -129,13 +129,13 @@ export default function RegisterTab() {
                 onChange={(e) => setSelectedCustomerId(e.target.value || null)}
                 className="w-full bg-transparent border-none p-0 text-sm font-black text-slate-900 focus:ring-0 cursor-pointer appearance-none"
                >
-                 <option value="">Walk-in Customer</option>
+                 <option value="">Walk-in customer</option>
                  {allCustomers?.map(c => (
                    <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
                  ))}
                </select>
-               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">
-                 {selectedCustomer ? `Ksh ${selectedCustomer.balance.toLocaleString()} Balance` : 'Select Client to Link Sale'}
+               <p className="text-[10px] font-bold text-slate-400   leading-none mt-1">
+                 {selectedCustomer ? `Ksh ${selectedCustomer.balance.toLocaleString()} balance` : 'Select client to link sale'}
                </p>
             </div>
           </div>
@@ -241,8 +241,8 @@ export default function RegisterTab() {
                      {product.name}
                    </h4>
                    {product.taxCategory === 'C' && (
-                     <span className="text-[7px] font-black bg-green-50 text-green-600 px-1 py-0.5 rounded border border-green-100 tracking-tighter uppercase whitespace-nowrap">
-                       Tax-Free
+                     <span className="text-[7px] font-black bg-green-50 text-green-600 px-1 py-0.5 rounded border border-green-100 tracking-tighter  whitespace-nowrap">
+                       Tax-free
                      </span>
                    )}
                 </div>
@@ -256,7 +256,7 @@ export default function RegisterTab() {
                      isLow       ? 'text-amber-600' :
                                    'text-slate-400'
                    }`}>
-                     • {isOutOfStock ? 'No Stock' : `${product.stockQuantity} ${product.unit || 'pcs'} left`}
+                     • {isOutOfStock ? 'No stock' : `${product.stockQuantity} ${product.unit || 'pcs'} left`}
                    </span>
                 </div>
               </div>

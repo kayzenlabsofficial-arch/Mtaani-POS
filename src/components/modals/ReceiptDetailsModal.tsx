@@ -53,16 +53,16 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
          <div id="printable-content" className="print-receipt-80mm">
            <div className="p-6 bg-white sm:bg-slate-50 border-b border-slate-100 flex flex-col items-center">
                <ReceiptText size={32} className="text-slate-400 mb-2 no-print" />
-               <h2 className="text-lg font-black text-slate-900 uppercase tracking-tighter">Mtaani POS Receipt</h2>
-               <p className="text-[10px] font-bold text-slate-500 uppercase">Transaction ID: {selectedReceipt.id.split('-')[0].toUpperCase()}</p>
+               <h2 className="text-lg font-black text-slate-900  tracking-tighter">Mtaani POS Receipt</h2>
+               <p className="text-[10px] font-bold text-slate-500 ">Transaction ID: {selectedReceipt.id.split('-')[0].toUpperCase()}</p>
                <p className="text-[10px] font-bold text-slate-400 mt-0.5">{new Date(selectedReceipt.timestamp).toLocaleString()}</p>
-               <div className={`mt-3 text-[10px] font-black px-2 py-0.5 rounded border tracking-widest no-print ${selectedReceipt.status === 'PAID' ? 'bg-green-100 text-green-700 border-green-200' : selectedReceipt.status === 'QUOTE' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-orange-100 text-orange-700 border-orange-200'}`}>
+               <div className={`mt-3 text-[10px] font-black px-2 py-0.5 rounded border  no-print ${selectedReceipt.status === 'PAID' ? 'bg-green-100 text-green-700 border-green-200' : selectedReceipt.status === 'QUOTE' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-orange-100 text-orange-700 border-orange-200'}`}>
                   {selectedReceipt.status}
                </div>
            </div>
            
            <div className="p-6 space-y-4 max-h-[40vh] overflow-y-auto no-scrollbar print:max-h-none print:overflow-visible">
-              <div className="flex justify-between items-center text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">
+              <div className="flex justify-between items-center text-[10px] font-black text-slate-400   border-b border-slate-100 pb-2">
                  <span>Item / Qty</span>
                  <span>Total</span>
               </div>
@@ -94,27 +94,27 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
               {!isReturnMode && (
                 <div className="border-t-2 border-dashed border-slate-200 mt-4 pt-4 space-y-2">
                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Subtotal</span>
+                      <span className="text-xs font-bold text-slate-500  ">Subtotal</span>
                       <span className="text-sm font-black text-slate-900">Ksh {selectedReceipt.total.toLocaleString()}</span>
                    </div>
                    {selectedReceipt.amountTendered !== undefined && selectedReceipt.paymentMethod === 'CASH' && (
                      <>
                         <div className="flex justify-between items-center">
-                           <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Cash Tendered</span>
+                           <span className="text-xs font-bold text-slate-500  ">Cash Tendered</span>
                            <span className="text-sm font-black text-slate-900">Ksh {selectedReceipt.amountTendered.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between items-center bg-slate-900 text-white px-3 py-2 rounded-xl mt-2 print:bg-white print:text-black print:border print:border-black">
-                           <span className="text-xs font-black uppercase tracking-widest">Change Due</span>
+                           <span className="text-xs font-black  ">Change Due</span>
                            <span className="text-lg font-black tabular-nums">Ksh {(selectedReceipt.amountTendered - selectedReceipt.total).toLocaleString()}</span>
                         </div>
                      </>
                    )}
                    <div className="flex justify-between items-center pt-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Payment Method</span>
-                      <span className="text-[10px] font-black text-slate-900 uppercase">{selectedReceipt.paymentMethod}</span>
+                      <span className="text-[10px] font-black text-slate-400  ">Payment Method</span>
+                      <span className="text-[10px] font-black text-slate-900 ">{selectedReceipt.paymentMethod}</span>
                    </div>
                    <div className="text-center pt-6 no-print-only">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase">Thank you for your business!</p>
+                      <p className="text-[10px] font-bold text-slate-400 ">Thank you for your business!</p>
                    </div>
                 </div>
               )}
@@ -126,7 +126,7 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
                <button 
                   onClick={handleShare} 
                   disabled={isSharing}
-                  className="py-3 bg-slate-900 text-white font-black rounded-xl text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all disabled:opacity-50"
+                  className="py-3 bg-slate-900 text-white font-black rounded-xl text-xs   flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all disabled:opacity-50"
                >
                   {isSharing ? (
                     <Loader2 size={16} className="animate-spin" />
@@ -137,11 +137,11 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
                </button>
                <button 
                   onClick={() => window.print()}
-                  className="py-3 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-colors active:bg-slate-100"
+                  className="py-3 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl text-xs   flex items-center justify-center gap-2 transition-colors active:bg-slate-100"
                >
                   <Printer size={16} /> Print
                </button>
-               <button onClick={() => { setIsReturnMode(false); setSelectedReceipt(null); }} className="py-3 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl text-xs uppercase tracking-widest transition-colors active:bg-slate-100 col-span-2">
+               <button onClick={() => { setIsReturnMode(false); setSelectedReceipt(null); }} className="py-3 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl text-xs   transition-colors active:bg-slate-100 col-span-2">
                   {isReturnMode ? 'Cancel' : 'Close'}
                </button>
             </div>
@@ -150,7 +150,7 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
                <button 
                 onClick={onConfirmRefund}
                 disabled={Object.values(returnQuantities).every(q => q === 0)}
-                className="col-span-2 py-3 bg-red-600 text-white font-black rounded-xl text-xs uppercase tracking-widest disabled:opacity-50 transition-colors active:scale-95 flex items-center justify-center gap-2"
+                className="col-span-2 py-3 bg-red-600 text-white font-black rounded-xl text-xs   disabled:opacity-50 transition-colors active:scale-95 flex items-center justify-center gap-2"
                >
                  <RotateCcw size={16} /> Confirm Return
                </button>
@@ -158,7 +158,7 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
                <button 
                 onClick={() => setIsReturnMode(true)} 
                 disabled={selectedReceipt.status !== 'PAID' && selectedReceipt.status !== 'PARTIAL_REFUND'}
-                className="col-span-2 py-3 bg-orange-600 text-white font-black rounded-xl text-xs uppercase tracking-widest disabled:opacity-50 transition-colors active:scale-95 flex items-center justify-center gap-2"
+                className="col-span-2 py-3 bg-orange-600 text-white font-black rounded-xl text-xs   disabled:opacity-50 transition-colors active:scale-95 flex items-center justify-center gap-2"
                >
                  <RotateCcw size={16} /> Process Returns
                </button>

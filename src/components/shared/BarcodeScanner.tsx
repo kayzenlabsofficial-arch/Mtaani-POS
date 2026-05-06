@@ -217,7 +217,7 @@ export default function BarcodeScanner({ onScan, onClose, isInline = false }: Ba
           </div>
           <div>
             <h2 className="text-white font-black text-xs leading-tight">Barcode Scanner</h2>
-            <p className="text-slate-400 text-[8px] font-bold uppercase tracking-widest">
+            <p className="text-slate-400 text-[8px] font-bold  ">
               {scannerState === 'scanning' ? 'Live — Point at barcode' : scannerState === 'requesting' ? 'Starting camera...' : scannerState === 'error' ? 'Camera Error' : 'Initializing...'}
             </p>
           </div>
@@ -269,7 +269,7 @@ export default function BarcodeScanner({ onScan, onClose, isInline = false }: Ba
         {(scannerState === 'idle' || scannerState === 'requesting') && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 z-10">
             <div className="w-8 h-8 border-4 border-slate-600 border-t-blue-500 rounded-full animate-spin mb-2" />
-            <p className="text-slate-400 text-[8px] font-bold uppercase tracking-widest">Starting camera...</p>
+            <p className="text-slate-400 text-[8px] font-bold  ">Starting camera...</p>
           </div>
         )}
 
@@ -292,12 +292,12 @@ export default function BarcodeScanner({ onScan, onClose, isInline = false }: Ba
       <div className="px-5 pb-5 flex items-center justify-between gap-4">
         {lastScanned ? (
           <div className="flex flex-col min-w-0">
-            <p className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Last Scanned</p>
+            <p className="text-[7px] font-black text-slate-500  ">Last Scanned</p>
             <p className={`text-[11px] font-black font-mono truncate ${flashSuccess ? 'text-green-400' : 'text-slate-200'}`}>{lastScanned}</p>
           </div>
         ) : (
           <div className="flex flex-col">
-            <p className="text-slate-500 text-[7px] font-black uppercase tracking-widest">Ready to Scan</p>
+            <p className="text-slate-500 text-[7px] font-black  ">Ready to Scan</p>
             <p className="text-slate-600 text-[6px] font-medium">Native BarcodeDetector + ML fallback</p>
           </div>
         )}

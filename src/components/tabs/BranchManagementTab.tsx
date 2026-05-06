@@ -249,7 +249,7 @@ export default function BranchManagementTab() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Branch Name *</label>
+                <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Branch Name *</label>
                 <input
                   type="text"
                   value={form.name}
@@ -261,7 +261,7 @@ export default function BranchManagementTab() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Location / Area *</label>
+                <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Location / Area *</label>
                 <input
                   type="text"
                   value={form.location}
@@ -273,7 +273,7 @@ export default function BranchManagementTab() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Phone</label>
+                  <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Phone</label>
                   <input
                     type="tel"
                     value={form.phone}
@@ -283,7 +283,7 @@ export default function BranchManagementTab() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Till No.</label>
+                  <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Till No.</label>
                   <input
                     type="text"
                     value={form.tillNumber}
@@ -295,7 +295,7 @@ export default function BranchManagementTab() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">KRA PIN (optional)</label>
+                <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">KRA PIN (optional)</label>
                 <input
                   type="text"
                   value={form.kraPin}
@@ -306,12 +306,12 @@ export default function BranchManagementTab() {
               </div>
 
               <div className="pt-4 border-t border-slate-100">
-                 <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+                 <h4 className="text-[10px] font-black text-blue-600   mb-4 flex items-center gap-2">
                    <Smartphone size={12} /> Daraja API Integration (M-Pesa)
                  </h4>
                  <div className="grid grid-cols-2 gap-3 mb-4">
                     <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">M-Pesa Env</label>
+                      <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">M-Pesa Env</label>
                       <select 
                         value={form.mpesaEnv} 
                         onChange={e => setForm(f => ({ ...f, mpesaEnv: e.target.value as any }))}
@@ -322,7 +322,7 @@ export default function BranchManagementTab() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">M-Pesa Type</label>
+                      <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">M-Pesa Type</label>
                       <select 
                         value={form.mpesaType} 
                         onChange={e => setForm(f => ({ ...f, mpesaType: e.target.value as any }))}
@@ -333,7 +333,7 @@ export default function BranchManagementTab() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Consumer Key</label>
+                      <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Consumer Key</label>
                       <input
                         type="text"
                         value={form.mpesaConsumerKey}
@@ -345,7 +345,7 @@ export default function BranchManagementTab() {
                  </div>
                  <div className="grid grid-cols-2 gap-3 mb-4">
                     <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Store Number</label>
+                      <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Store Number</label>
                       <input
                         type="text"
                         value={form.mpesaStoreNumber}
@@ -356,7 +356,7 @@ export default function BranchManagementTab() {
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">LNM Passkey</label>
+                      <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">LNM Passkey</label>
                       <input
                         type="password"
                         value={form.mpesaPasskey}
@@ -368,7 +368,7 @@ export default function BranchManagementTab() {
                  </div>
                  <div className="space-y-4">
                     <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Consumer Secret</label>
+                      <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Consumer Secret</label>
                       <input
                         type="password"
                         value={form.mpesaConsumerSecret}
@@ -384,14 +384,14 @@ export default function BranchManagementTab() {
             <div className="flex gap-3 mt-7">
               <button
                 onClick={() => { setIsFormOpen(false); setEditingId(null); setForm(BLANK); }}
-                className="flex-1 py-4 bg-slate-100 text-slate-700 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-200 transition-all"
+                className="flex-1 py-4 bg-slate-100 text-slate-700 font-bold text-[10px]   rounded-2xl hover:bg-slate-200 transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={!form.name.trim() || !form.location.trim() || saving}
-                className="flex-[2] py-4 bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl disabled:opacity-50 shadow-lg shadow-blue-600/20 active:scale-95 transition-all"
+                className="flex-[2] py-4 bg-blue-600 text-white font-bold text-[10px]   rounded-2xl disabled:opacity-50 shadow-lg shadow-blue-600/20 active:scale-95 transition-all"
               >
                 {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Create Branch'}
               </button>

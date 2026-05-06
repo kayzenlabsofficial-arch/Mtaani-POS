@@ -27,7 +27,7 @@ export default function CustomersTab() {
               <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
                   <Users size={32} className="text-slate-300" />
               </div>
-              <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Loading CRM...</p>
+              <p className="text-slate-400 font-black text-xs  ">Loading CRM...</p>
           </div>
       );
   }
@@ -137,7 +137,7 @@ export default function CustomersTab() {
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">Client Directory</h2>
             <p className="text-slate-500 text-sm font-medium">Manage customer relationships and loyalty.</p>
          </div>
-         <button onClick={openAddCustomer} className="grad-blue text-white px-5 py-3.5 rounded-2xl shadow-blue active:scale-95 transition-all flex items-center gap-2 font-black text-xs uppercase tracking-widest">
+         <button onClick={openAddCustomer} className="grad-blue text-white px-5 py-3.5 rounded-2xl shadow-blue active:scale-95 transition-all flex items-center gap-2 font-black text-xs  ">
             <Plus size={18} /> Add Client
          </button>
       </div>
@@ -161,7 +161,7 @@ export default function CustomersTab() {
               className="group bg-white p-5 rounded-[28px] border border-slate-100 shadow-card flex items-center justify-between hover:border-blue-200 transition-all cursor-pointer press"
             >
                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-sm shrink-0 uppercase font-black text-lg group-hover:scale-105 transition-transform">
+                  <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-sm shrink-0  font-black text-lg group-hover:scale-105 transition-transform">
                      {customer.name.substring(0,1)}
                   </div>
                   <div className="min-w-0">
@@ -173,7 +173,7 @@ export default function CustomersTab() {
                   </div>
                </div>
                <div className="text-right shrink-0">
-                  <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Total Spent</p>
+                  <p className="text-[9px] font-black text-slate-300   mb-1">Total Spent</p>
                   <p className="text-sm font-black text-blue-600 tabular-nums">
                      Ksh {customer.totalSpent.toLocaleString()}
                   </p>
@@ -186,7 +186,7 @@ export default function CustomersTab() {
                <div className="w-20 h-20 bg-slate-50 rounded-[32px] flex items-center justify-center mb-4 text-slate-200">
                  <Users size={40} />
                </div>
-               <p className="text-slate-500 font-black text-sm uppercase tracking-widest">No Clients Found</p>
+               <p className="text-slate-500 font-black text-sm  ">No Clients Found</p>
                <p className="text-slate-400 text-xs mt-1">Start by adding your first customer to the system.</p>
             </div>
          )}
@@ -205,7 +205,7 @@ export default function CustomersTab() {
                  </div>
                  <div>
                    <h2 className="text-xl font-black text-slate-900">{editingCustomer ? 'Client Profile' : 'New Client'}</h2>
-                   <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">CRM Management</p>
+                   <p className="text-slate-400 text-[10px] font-black  ">CRM Management</p>
                  </div>
                  {editingCustomer && isAdmin && (
                     <button onClick={handleDeleteCustomer} className="ml-auto w-10 h-10 flex items-center justify-center rounded-2xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors press">
@@ -216,18 +216,18 @@ export default function CustomersTab() {
 
               <div className="space-y-5 mb-8">
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Legal Full Name</label>
+                    <label className="block text-[10px] font-black text-slate-400   mb-2 ml-1">Legal Full name</label>
                     <input type="text" value={customerForm.name} onChange={e => setCustomerForm({...customerForm, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all" placeholder="e.g. Samuel Maina" />
                  </div>
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Mobile Contact</label>
+                    <label className="block text-[10px] font-black text-slate-400   mb-2 ml-1">Mobile Contact</label>
                     <div className="relative">
                        <input type="text" value={customerForm.phone} onChange={e => setCustomerForm({...customerForm, phone: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all" placeholder="0700 000 000" />
                        <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                     </div>
                  </div>
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Email Address</label>
+                    <label className="block text-[10px] font-black text-slate-400   mb-2 ml-1">Email Address</label>
                     <div className="relative">
                        <input type="email" value={customerForm.email} onChange={e => setCustomerForm({...customerForm, email: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all font-medium" placeholder="client@example.com" />
                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -236,7 +236,7 @@ export default function CustomersTab() {
 
                   {editingCustomer && editingCustomer.balance > 0 && (
                     <div className="pt-4 mt-4 border-t border-dashed border-slate-200">
-                       <label className="block text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3 ml-1 flex items-center gap-2">
+                       <label className="block text-[10px] font-black text-blue-600   mb-3 ml-1 flex items-center gap-2">
                          <Smartphone size={12} /> Pay Balance via M-Pesa
                        </label>
                        
@@ -253,7 +253,7 @@ export default function CustomersTab() {
                             </div>
                             <button 
                               onClick={handleMpesaRepayment}
-                              className="px-4 py-3 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-blue active:scale-95 transition-all flex items-center gap-2"
+                              className="px-4 py-3 bg-blue-600 text-white rounded-xl font-bold text-[10px]   shadow-blue active:scale-95 transition-all flex items-center gap-2"
                             >
                               Push
                             </button>
@@ -265,7 +265,7 @@ export default function CustomersTab() {
                             ) : (
                                <Loader2 className="text-blue-600 animate-spin" size={20} />
                             )}
-                            <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                            <span className="text-[10px] font-black text-slate-600  ">
                                {mpesaState === 'PUSHING' ? 'Sending Prompt...' : 
                                 mpesaState === 'POLLING' ? 'Waiting for Pin...' : 
                                 mpesaState === 'SUCCESS' ? 'Payment Received!' : 'Processing...'}
@@ -277,10 +277,10 @@ export default function CustomersTab() {
                </div>
 
               <div className="flex gap-4">
-                 <button onClick={() => setIsCustomerModalOpen(false)} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs uppercase tracking-widest rounded-2xl transition-all press">
+                 <button onClick={() => setIsCustomerModalOpen(false)} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs   rounded-2xl transition-all press">
                    Cancel
                  </button>
-                 <button onClick={handleSaveCustomer} disabled={!customerForm.name} className="flex-[2] grad-blue text-white px-6 py-4 font-black text-xs uppercase tracking-widest rounded-2xl disabled:opacity-40 transition-all shadow-blue press">
+                 <button onClick={handleSaveCustomer} disabled={!customerForm.name} className="flex-[2] grad-blue text-white px-6 py-4 font-black text-xs   rounded-2xl disabled:opacity-40 transition-all shadow-blue press">
                    Save Record
                  </button>
               </div>

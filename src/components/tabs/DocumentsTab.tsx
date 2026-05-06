@@ -31,7 +31,7 @@ export default function DocumentsTab() {
 
   if (!allTransactions || !allExpenses || !allSupplierPayments || !allPurchaseOrders || !allReports || !allDailySummaries) {
       return (
-        <div className="p-10 text-center text-slate-400 font-bold uppercase tracking-widest animate-pulse flex flex-col items-center justify-center min-h-[40vh]">
+        <div className="p-10 text-center text-slate-400 font-bold   animate-pulse flex flex-col items-center justify-center min-h-[40vh]">
            <Receipt size={40} className="mb-4 opacity-20" />
            Loading records...
         </div>
@@ -152,7 +152,7 @@ export default function DocumentsTab() {
                   <div className="text-sm font-black text-slate-900">
                      Ksh {(r.total || 0).toLocaleString()}
                   </div>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded tracking-widest uppercase 
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded   
                     ${r.recordType === 'SALE' ? 'bg-slate-100 text-slate-600' : 
                       r.recordType === 'EXPENSE' ? 'bg-orange-100 text-orange-700' : 
                       r.recordType === 'SUPPLIER_PAYMENT' ? 'bg-purple-100 text-purple-700' :

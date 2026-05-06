@@ -117,7 +117,7 @@ export default function SupplierPaymentsTab() {
       {/* Debt Summary Card */}
       <div className="bg-red-600 rounded-3xl p-6 text-white shadow-xl shadow-red-600/20 mb-6 relative overflow-hidden">
          <div className="relative z-10">
-            <p className="text-red-100 text-xs font-bold uppercase tracking-widest mb-1">Total Outstanding Debt</p>
+            <p className="text-red-100 text-xs font-bold   mb-1">Total Outstanding Debt</p>
             <h3 className="text-4xl font-black mb-1">Ksh {totalDebt.toLocaleString()}</h3>
             <p className="text-red-100/80 text-[10px] font-medium italic">Owed to {suppliersOwed.length} active suppliers</p>
          </div>
@@ -140,18 +140,18 @@ export default function SupplierPaymentsTab() {
             <div className="space-y-2 pb-4">
                {filteredOwed.length === 0 ? (
                   <div className="bg-white/50 border border-dashed border-slate-200 rounded-2xl py-10 text-center">
-                     <p className="text-xs text-slate-400 font-bold uppercase">No pending debts</p>
+                     <p className="text-xs text-slate-400 font-bold ">No pending debts</p>
                   </div>
                ) : (
                   filteredOwed.map(s => (
                      <div key={s.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
                         <div>
                            <h4 className="text-sm font-bold text-slate-900">{s.company}</h4>
-                           <p className="text-[10px] font-bold text-red-600 mt-1 uppercase tracking-tight">Ksh {s.balance.toLocaleString()} Due</p>
+                           <p className="text-[10px] font-bold text-red-600 mt-1  tracking-tight">Ksh {s.balance.toLocaleString()} Due</p>
                         </div>
                         <button 
                           onClick={() => openPaymentModal(s)}
-                          className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-green-600 transition-colors shadow-md active:scale-95"
+                          className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black   hover:bg-green-600 transition-colors shadow-md active:scale-95"
                         >
                           Record Pay
                         </button>
@@ -169,7 +169,7 @@ export default function SupplierPaymentsTab() {
             <div className="space-y-2 pb-24">
                {sortedPayments.length === 0 ? (
                   <div className="bg-white/50 border border-dashed border-slate-200 rounded-2xl py-10 text-center">
-                     <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">No history yet</p>
+                     <p className="text-xs text-slate-400 font-bold  ">No history yet</p>
                   </div>
                ) : (
                   sortedPayments.map(p => {
@@ -187,7 +187,7 @@ export default function SupplierPaymentsTab() {
                                     {p.transactionCode && (
                                         <div className="flex items-center gap-1">
                                             <Landmark size={8} className="text-blue-500" />
-                                            <span className="text-[9px] font-bold text-blue-600 uppercase tracking-tight">{p.transactionCode}</span>
+                                            <span className="text-[9px] font-bold text-blue-600  tracking-tight">{p.transactionCode}</span>
                                         </div>
                                     )}
                                 </div>
@@ -195,7 +195,7 @@ export default function SupplierPaymentsTab() {
                           </div>
                           <div className="text-right">
                              <p className="text-xs font-black text-slate-900">Ksh {p.amount.toLocaleString()}</p>
-                             <p className="text-[8px] font-bold text-green-600 uppercase tracking-widest">SENT</p>
+                             <p className="text-[8px] font-bold text-green-600  ">SENT</p>
                           </div>
                        </div>
                     );

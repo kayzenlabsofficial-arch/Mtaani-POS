@@ -20,7 +20,7 @@ export default function ReportsTab() {
               <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-pulse">
                   <BarChart3 size={32} className="text-slate-300" />
               </div>
-              <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Generating Analytics...</p>
+              <p className="text-slate-400 font-black text-xs  ">Generating Analytics...</p>
           </div>
       );
   }
@@ -44,7 +44,7 @@ export default function ReportsTab() {
   const totalTax = filteredTransactions.reduce((acc, curr) => acc + (curr.tax || 0), 0);
   const totalUnits = filteredTransactions.reduce((acc, curr) => acc + curr.items.reduce((sum, item) => sum + item.quantity, 0), 0);
 
-  // Top Products Calculation
+  // Top products Calculation
   const productPerformance: Record<string, { name: string, qty: number, revenue: number }> = {};
   filteredTransactions.forEach(t => {
       t.items.forEach(item => {
@@ -93,7 +93,7 @@ export default function ReportsTab() {
              <button 
                onClick={handleShareReport}
                disabled={isSharing}
-               className="bg-slate-900 text-white px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all disabled:opacity-50"
+               className="bg-slate-900 text-white px-4 py-2.5 rounded-2xl text-[10px] font-black   flex items-center gap-2 hover:bg-slate-800 transition-all disabled:opacity-50"
              >
                {isSharing ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />}
                {isSharing ? 'Wait...' : 'Export PDF'}
@@ -103,7 +103,7 @@ export default function ReportsTab() {
                    <button 
                       key={range} 
                       onClick={() => setDateRange(range)}
-                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${dateRange === range ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                      className={`px-4 py-2 rounded-xl text-[10px] font-black   transition-all ${dateRange === range ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                    >
                       {range}
                    </button>
@@ -118,7 +118,7 @@ export default function ReportsTab() {
             <button 
                key={range} 
                onClick={() => setDateRange(range)}
-               className={`flex-1 min-w-[70px] px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${dateRange === range ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}
+               className={`flex-1 min-w-[70px] px-3 py-2 rounded-xl text-[10px] font-black   transition-all ${dateRange === range ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}
             >
                {range}
             </button>
@@ -131,7 +131,7 @@ export default function ReportsTab() {
                 <BarChart3 size={120} />
              </div>
              <div className="relative z-10">
-                <p className="text-blue-100 text-[10px] font-black uppercase tracking-[0.2em] mb-2 opacity-80">
+                <p className="text-blue-100 text-[10px] font-black  tracking-[0.2em] mb-2 opacity-80">
                    {dateRange === 'ALL' ? 'Lifetime Revenue' : `${dateRange} Sales Volume`}
                 </p>
                 <h3 className="text-5xl font-black tracking-tighter tabular-nums mb-8 flex items-baseline gap-2">
@@ -141,14 +141,14 @@ export default function ReportsTab() {
                    <div className="flex items-center gap-2">
                      <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center"><CreditCard size={16}/></div>
                      <div>
-                       <p className="text-[10px] uppercase font-black text-blue-200">M-PESA</p>
+                       <p className="text-[10px]  font-black text-blue-200">M-PESA</p>
                        <p className="text-sm font-black">Ksh {mpesaRevenue.toLocaleString()}</p>
                      </div>
                    </div>
                    <div className="flex items-center gap-2">
                      <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center"><Wallet size={16}/></div>
                      <div>
-                       <p className="text-[10px] uppercase font-black text-blue-200">CASH</p>
+                       <p className="text-[10px]  font-black text-blue-200">CASH</p>
                        <p className="text-sm font-black">Ksh {cashRevenue.toLocaleString()}</p>
                      </div>
                    </div>
@@ -158,24 +158,24 @@ export default function ReportsTab() {
           
           <div className="bg-white rounded-[32px] p-8 shadow-card border border-slate-100 flex flex-col justify-center gap-4">
              <div>
-                <p className="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">Orders Count</p>
+                <p className="text-[10px]   font-black text-slate-400 mb-1">Orders Count</p>
                 <div className="flex items-baseline gap-2">
                   <h3 className="text-3xl font-black text-slate-900">{filteredTransactions.length}</h3>
-                  <span className="text-green-500 font-black text-[10px] flex items-center gap-0.5"><ArrowUpRight size={10}/> +12%</span>
+                  <span className="text-green-500 font-bold text-[10px] flex items-center gap-0.5"><ArrowUpRight size={10}/> +12%</span>
                 </div>
              </div>
              <div className="h-px bg-slate-100 w-full" />
              <div>
-                <p className="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">Tax Accrued</p>
+                <p className="text-[10px]   font-black text-slate-400 mb-1">Tax Accrued</p>
                 <h3 className="text-xl font-black text-slate-700 tabular-nums">Ksh {totalTax.toLocaleString()}</h3>
              </div>
           </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-         {/* Top Products */}
+         {/* Top products */}
          <section>
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 mb-4 ml-1">
+            <h3 className="text-xs font-black text-slate-400  tracking-[0.2em] flex items-center gap-2 mb-4 ml-1">
                <Package size={14} /> Performance Leaderboard
             </h3>
             <div className="bg-white rounded-[32px] shadow-card border border-slate-100 overflow-hidden">
@@ -191,7 +191,7 @@ export default function ReportsTab() {
                               </div>
                               <div>
                                  <p className="text-sm font-black text-slate-900">{p.name}</p>
-                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{p.qty} Units Sold</p>
+                                 <p className="text-[10px] font-bold text-slate-400   mt-0.5">{p.qty} Units Sold</p>
                               </div>
                            </div>
                            <div className="text-right">
@@ -209,7 +209,7 @@ export default function ReportsTab() {
 
          {/* Business Health */}
          <section>
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 mb-4 ml-1">
+            <h3 className="text-xs font-black text-slate-400  tracking-[0.2em] flex items-center gap-2 mb-4 ml-1">
                <Activity size={14} /> Financial Health
             </h3>
             <div className="bg-slate-900 p-8 rounded-[32px] text-white shadow-elevated relative overflow-hidden flex flex-col justify-between h-full min-h-[340px]">
@@ -217,8 +217,8 @@ export default function ReportsTab() {
                
                <div>
                   <div className="flex justify-between items-center mb-2">
-                    <p className="text-slate-400 font-extrabold uppercase tracking-[0.2em] text-[10px]">Estimated Business Equity</p>
-                    <div className="bg-white/10 px-3 py-1 rounded-full border border-white/10 text-[9px] font-black uppercase tracking-widest">Live Audit</div>
+                    <p className="text-slate-400 font-extrabold  tracking-[0.2em] text-[10px]">Estimated Business Equity</p>
+                    <div className="bg-white/10 px-3 py-1 rounded-full border border-white/10 text-[9px] font-black  ">Live Audit</div>
                   </div>
                   <h3 className={`text-4xl sm:text-5xl font-black tracking-tighter mb-4 ${businessNetWorth >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                      Ksh {businessNetWorth.toLocaleString()}
@@ -230,11 +230,11 @@ export default function ReportsTab() {
 
                <div className="grid grid-cols-2 gap-3 mt-8">
                   <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
-                     <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Asset Value</p>
+                     <p className="text-[9px] font-black text-slate-500   mb-1">Asset Value</p>
                      <p className="text-sm font-black text-blue-400">Ksh {(totalStockValue + liquidCashEstimate).toLocaleString()}</p>
                   </div>
                   <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
-                     <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Liabilities</p>
+                     <p className="text-[9px] font-black text-slate-500   mb-1">Liabilities</p>
                      <p className="text-sm font-black text-red-400">Ksh {supplierDebt.toLocaleString()}</p>
                   </div>
                </div>
@@ -243,14 +243,14 @@ export default function ReportsTab() {
       </div>
 
       {/* Asset Breakdown Cards */}
-      <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 ml-1">Asset Composition</h3>
+      <h3 className="text-xs font-black text-slate-400  tracking-[0.2em] mb-4 ml-1">Asset Composition</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-card flex items-center gap-4 group hover:border-blue-200 transition-all">
             <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
                <Package size={22} />
             </div>
             <div className="min-w-0">
-               <p className="text-[9px] uppercase tracking-widest font-black text-slate-400 mb-0.5">Physical Inventory</p>
+               <p className="text-[9px]   font-black text-slate-400 mb-0.5">Physical Inventory</p>
                <h4 className="text-lg font-black text-slate-900 truncate">Ksh {totalStockValue.toLocaleString()}</h4>
             </div>
          </div>
@@ -259,7 +259,7 @@ export default function ReportsTab() {
                <Wallet size={22} />
             </div>
             <div className="min-w-0">
-               <p className="text-[9px] uppercase tracking-widest font-black text-slate-400 mb-0.5">Liquid Floating Cash</p>
+               <p className="text-[9px]   font-black text-slate-400 mb-0.5">Liquid Floating Cash</p>
                <h4 className="text-lg font-black text-green-600 truncate">Ksh {liquidCashEstimate.toLocaleString()}</h4>
             </div>
          </div>
@@ -268,7 +268,7 @@ export default function ReportsTab() {
                <TrendingDown size={22} />
             </div>
             <div className="min-w-0">
-               <p className="text-[9px] uppercase tracking-widest font-black text-red-400 mb-0.5">Accounts Payable</p>
+               <p className="text-[9px]   font-black text-red-400 mb-0.5">Accounts Payable</p>
                <h4 className="text-lg font-black text-red-700 truncate">Ksh {supplierDebt.toLocaleString()}</h4>
             </div>
          </div>

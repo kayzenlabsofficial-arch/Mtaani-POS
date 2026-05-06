@@ -29,7 +29,7 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
               <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
                   <Truck size={32} className="text-slate-300" />
               </div>
-              <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Loading Supply Chain...</p>
+              <p className="text-slate-400 font-black text-xs  ">Loading Supply Chain...</p>
           </div>
       );
   }
@@ -146,7 +146,7 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">Supply Chain</h2>
             <p className="text-slate-500 text-sm font-medium">Manage vendors, procurement and payables.</p>
          </div>
-         <button onClick={openAddSupplier} className="bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-elevated active:scale-95 transition-all flex items-center gap-2 font-black text-xs uppercase tracking-widest">
+         <button onClick={openAddSupplier} className="bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-elevated active:scale-95 transition-all flex items-center gap-2 font-black text-xs  ">
             <Plus size={18} /> New Supplier
          </button>
       </div>
@@ -154,13 +154,13 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
       {/* Supplier Stats */}
       <div className="grid grid-cols-2 gap-4 mb-8">
          <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Payables</p>
+            <p className="text-[10px] font-black text-slate-400   mb-1">Total Payables</p>
             <p className="text-2xl font-black text-red-600 tracking-tight">
                Ksh {allSuppliers.reduce((acc, s) => acc + (s.balance || 0), 0).toLocaleString()}
             </p>
          </div>
          <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Active Vendors</p>
+            <p className="text-[10px] font-black text-slate-400   mb-1">Active Vendors</p>
             <p className="text-2xl font-black text-slate-900 tracking-tight">
                {allSuppliers.length}
             </p>
@@ -199,7 +199,7 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
                   </div>
                </div>
                <div className="flex flex-col items-end gap-2 shrink-0">
-                  <div className={`text-[9px] font-black px-2.5 py-1 rounded-lg uppercase tracking-widest border-2 ${supplier.balance > 0 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-green-50 text-green-600 border-green-100'}`}>
+                  <div className={`text-[9px] font-black px-2.5 py-1 rounded-lg   border-2 ${supplier.balance > 0 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-green-50 text-green-600 border-green-100'}`}>
                      Ksh {supplier.balance.toLocaleString()}
                   </div>
                   <button 
@@ -208,7 +208,7 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
                        useStore.getState().setPaymentSupplierId(supplier.id);
                        if (setActiveTab) setActiveTab('SUPPLIER_PAYMENTS');
                     }}
-                    className="px-4 h-10 flex items-center justify-center rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-900 hover:text-white transition-all shadow-sm active:scale-90 font-bold text-[10px] uppercase tracking-widest whitespace-nowrap"
+                    className="px-4 h-10 flex items-center justify-center rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-900 hover:text-white transition-all shadow-sm active:scale-90 font-bold text-[10px]   whitespace-nowrap"
                   >
                     Make Payment
                   </button>
@@ -221,7 +221,7 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
                <div className="w-20 h-20 bg-slate-50 rounded-[32px] flex items-center justify-center mb-4 text-slate-200">
                  <Truck size={40} />
                </div>
-               <p className="text-slate-500 font-black text-sm uppercase tracking-widest">No Vendors</p>
+               <p className="text-slate-500 font-black text-sm  ">No Vendors</p>
                <p className="text-slate-400 text-xs mt-1">Add your product suppliers to track inventory procurement.</p>
             </div>
          )}
@@ -254,7 +254,7 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
                  </div>
                  <div>
                    <h2 className="text-xl font-black text-slate-900">{editingSupplier ? 'Vendor Profile' : 'New Vendor'}</h2>
-                   <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Procurement Registry</p>
+                   <p className="text-slate-400 text-[10px] font-black  ">Procurement Registry</p>
                  </div>
                  {editingSupplier && isAdmin && (
                     <button onClick={handleDeleteSupplier} className="ml-auto w-10 h-10 flex items-center justify-center rounded-2xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors press">
@@ -265,11 +265,11 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
 
               <div className="space-y-5 mb-8">
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Registered Company Name</label>
+                    <label className="block text-[10px] font-black text-slate-400   mb-2 ml-1">Registered Company Name</label>
                     <input type="text" value={supplierForm.company} onChange={e => setSupplierForm({...supplierForm, company: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-slate-800 transition-all font-bold" placeholder="e.g. Fresh Farms Ltd" />
                  </div>
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Key Account Manager</label>
+                    <label className="block text-[10px] font-black text-slate-400   mb-2 ml-1">Key Account Manager</label>
                     <div className="relative">
                        <input type="text" value={supplierForm.name} onChange={e => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-slate-800 transition-all" placeholder="Primary contact name" />
                        <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -277,29 +277,29 @@ export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: st
                  </div>
                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Mobile</label>
+                        <label className="block text-[10px] font-black text-slate-400   mb-2 ml-1">Mobile</label>
                         <input type="text" value={supplierForm.phone} onChange={e => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-slate-800 transition-all" placeholder="07..." />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Email</label>
+                        <label className="block text-[10px] font-black text-slate-400   mb-2 ml-1">Email</label>
                         <input type="email" value={supplierForm.email} onChange={e => setSupplierForm({...supplierForm, email: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-slate-800 transition-all" placeholder="@" />
                     </div>
                  </div>
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Business Address</label>
+                    <label className="block text-[10px] font-black text-slate-400   mb-2 ml-1">Business Address</label>
                     <input type="text" value={supplierForm.address} onChange={e => setSupplierForm({...supplierForm, address: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-slate-800 transition-all" placeholder="Street, Building, City" />
                  </div>
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">KRA PIN</label>
-                    <input type="text" value={supplierForm.kraPin} onChange={e => setSupplierForm({...supplierForm, kraPin: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-slate-800 transition-all uppercase" placeholder="A00..." />
+                    <label className="block text-[10px] font-black text-slate-400   mb-2 ml-1">KRA PIN</label>
+                    <input type="text" value={supplierForm.kraPin} onChange={e => setSupplierForm({...supplierForm, kraPin: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-slate-800 transition-all " placeholder="A00..." />
                  </div>
               </div>
 
               <div className="flex gap-4">
-                 <button onClick={() => setIsSupplierModalOpen(false)} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs uppercase tracking-widest rounded-2xl transition-all press">
+                 <button onClick={() => setIsSupplierModalOpen(false)} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs   rounded-2xl transition-all press">
                    Cancel
                  </button>
-                 <button onClick={handleSaveSupplier} disabled={!supplierForm.company} className="flex-[2] bg-slate-900 text-white px-6 py-4 font-black text-xs uppercase tracking-widest rounded-2xl disabled:opacity-40 transition-all shadow-lg press">
+                 <button onClick={handleSaveSupplier} disabled={!supplierForm.company} className="flex-[2] bg-slate-900 text-white px-6 py-4 font-black text-xs   rounded-2xl disabled:opacity-40 transition-all shadow-lg press">
                    Save Record
                  </button>
               </div>

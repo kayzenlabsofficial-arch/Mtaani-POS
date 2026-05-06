@@ -25,7 +25,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
         
         <div className="space-y-4 mb-6">
              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Amount</label>
+                <label className="block text-xs font-bold text-slate-500  mb-1.5">Amount</label>
                 <div className="relative">
                    <span className="absolute left-4 top-3 text-slate-400 font-bold">Ksh</span>
                    <input 
@@ -42,7 +42,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                 )}
              </div>
              <div className="relative">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Expense Account (Category)</label>
+                <label className="block text-xs font-bold text-slate-500  mb-1.5">Expense Account (Category)</label>
                 <select 
                     value={expenseForm.category} 
                     onChange={e => setExpenseForm({...expenseForm, category: e.target.value})} 
@@ -56,7 +56,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                 </select>
              </div>
              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Description</label>
+                <label className="block text-xs font-bold text-slate-500  mb-1.5">Description</label>
                 <input type="text" value={expenseForm.description} onChange={e => setExpenseForm({...expenseForm, description: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-orange-500" placeholder="e.g. Bought receipt rolls" />
              </div>
         </div>

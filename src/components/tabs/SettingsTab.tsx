@@ -61,15 +61,15 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
       <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-4 mb-6">
           <h3 className="text-sm font-extrabold text-slate-900 border-b border-slate-100 pb-2">Store Identity</h3>
           <div>
-             <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Business Name</label>
+             <label className="block text-xs font-bold text-slate-500  mb-1.5">Business Name</label>
              <input type="text" value={storeSettings.storeName} onChange={e => setStoreSettings({...storeSettings, storeName: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-slate-500" />
           </div>
           <div>
-             <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">KRA PIN (eTIMS)</label>
+             <label className="block text-xs font-bold text-slate-500  mb-1.5">KRA PIN (eTIMS)</label>
              <input type="text" value={storeSettings.krapin} onChange={e => setStoreSettings({...storeSettings, krapin: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-slate-500" />
           </div>
           <div>
-             <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Receipt Footer Message</label>
+             <label className="block text-xs font-bold text-slate-500  mb-1.5">Receipt Footer Message</label>
              <input type="text" value={storeSettings.receiptFooter} onChange={e => setStoreSettings({...storeSettings, receiptFooter: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-slate-500" />
           </div>
       </div>
@@ -82,7 +82,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
               <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl">
                   <div>
                       <p className="text-sm font-bold text-slate-900">Application Sync</p>
-                      <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">
+                      <p className="text-[10px] text-slate-500  font-black  mt-1">
                         {needRefresh ? 'New Version Available!' : 'System is Up to Date'}
                       </p>
                   </div>

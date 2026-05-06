@@ -20,7 +20,7 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   
   if (!allTransactions) {
     return (
-        <div className="p-10 text-center text-slate-400 font-bold uppercase tracking-widest animate-pulse flex flex-col items-center justify-center min-h-[40vh]">
+        <div className="p-10 text-center text-slate-400 font-bold   animate-pulse flex flex-col items-center justify-center min-h-[40vh]">
             <RotateCcw size={40} className="mb-4 opacity-20" />
             Loading returns...
         </div>
@@ -82,7 +82,7 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
                   <div className="text-sm font-black text-slate-900">
                      Ksh {t.total.toLocaleString()}
                   </div>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded tracking-widest ${t.status === 'REFUNDED' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded  ${t.status === 'REFUNDED' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
                      {t.status}
                   </span>
                </div>

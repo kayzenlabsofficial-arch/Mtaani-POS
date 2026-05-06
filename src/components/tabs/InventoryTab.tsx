@@ -126,7 +126,7 @@ export default function InventoryTab() {
             <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
                 <Package size={32} className="text-slate-300" />
             </div>
-            <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Loading Inventory...</p>
+            <p className="text-slate-400 font-black text-xs  ">Loading Inventory...</p>
         </div>
     );
   }
@@ -274,7 +274,7 @@ export default function InventoryTab() {
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">Inventory</h2>
             <p className="text-slate-500 text-sm font-medium">Control stock levels and product pricing.</p>
          </div>
-         <button onClick={openAddProduct} className="grad-blue text-white px-5 py-3.5 rounded-2xl shadow-blue active:scale-95 transition-all flex items-center gap-2 font-black text-xs uppercase tracking-widest">
+         <button onClick={openAddProduct} className="grad-blue text-white px-5 py-3.5 rounded-2xl shadow-blue active:scale-95 transition-all flex items-center gap-2 font-black text-xs  ">
             <Plus size={18} /> New Product
          </button>
       </div>
@@ -286,7 +286,7 @@ export default function InventoryTab() {
                <Package size={24} />
             </div>
             <div>
-               <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-0.5">Total SKU</p>
+               <p className="text-slate-400 text-[10px] font-black   mb-0.5">Total SKU</p>
                <h3 className="text-xl font-black text-slate-900 leading-none">{allProducts.length}</h3>
             </div>
          </div>
@@ -295,7 +295,7 @@ export default function InventoryTab() {
                <AlertCircle size={24} />
             </div>
             <div>
-               <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-0.5">Alerts</p>
+               <p className="text-slate-400 text-[10px] font-black   mb-0.5">Alerts</p>
                <h3 className={`text-xl font-black leading-none transition-colors ${lowStock.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{lowStock.length}</h3>
             </div>
          </div>
@@ -333,7 +333,7 @@ export default function InventoryTab() {
                    <div className="min-w-0">
                       <h4 className="text-[15px] font-black text-slate-900 truncate">{product.name}</h4>
                       <div className="flex items-center gap-3 mt-1.5 font-bold">
-                         <span className="text-[10px] text-slate-400 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 flex items-center gap-1 uppercase tracking-tight">
+                         <span className="text-[10px] text-slate-400 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 flex items-center gap-1  tracking-tight">
                             <Barcode size={10} /> {product.barcode}
                          </span>
                          <span className="text-xs text-blue-600 tabular-nums">
@@ -344,8 +344,8 @@ export default function InventoryTab() {
                 </div>
                 <div className="flex items-center gap-4">
                    <div className="text-right hidden sm:block">
-                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Status</p>
-                     <p className={`text-xs font-black uppercase tracking-tighter ${isLow ? 'text-amber-500' : 'text-green-500'}`}>
+                     <p className="text-[10px] font-black text-slate-400   leading-none mb-1">Status</p>
+                     <p className={`text-xs font-black  tracking-tighter ${isLow ? 'text-amber-500' : 'text-green-500'}`}>
                         {isLow ? 'Low Stock' : 'Good'}
                      </p>
                    </div>
@@ -355,7 +355,7 @@ export default function InventoryTab() {
                       'bg-green-50 border-green-100 text-green-600'
                    }`}>
                       <span className="text-sm font-black leading-none">{product.stockQuantity}</span>
-                      <span className="text-[8px] font-black uppercase tracking-widest mt-1 opacity-70">{product.unit || 'Units'}</span>
+                      <span className="text-[8px] font-black   mt-1 opacity-70">{product.unit || 'Units'}</span>
                    </div>
                    <ChevronRight className="text-slate-300 group-hover:text-blue-400 transition-colors" size={20} />
                 </div>
@@ -368,7 +368,7 @@ export default function InventoryTab() {
                <div className="w-20 h-20 bg-slate-50 rounded-[32px] flex items-center justify-center mb-4 transition-transform hover:rotate-12 cursor-default">
                  <Search size={40} className="text-slate-200" />
                </div>
-               <p className="text-slate-500 font-black text-sm uppercase tracking-widest">No Matches</p>
+               <p className="text-slate-500 font-black text-sm  ">No Matches</p>
                <p className="text-slate-400 text-xs mt-1">Try a different search term or add a product.</p>
             </div>
          )}
@@ -390,7 +390,7 @@ export default function InventoryTab() {
                      <h2 className="text-xl font-black text-slate-900 tracking-tight">
                         {editingProduct ? 'Update Product' : 'New Product Entry'}
                      </h2>
-                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Master Inventory Record</p>
+                     <p className="text-slate-400 text-xs font-bold  ">Master Inventory Record</p>
                    </div>
                  </div>
                  {editingProduct && (
@@ -402,11 +402,11 @@ export default function InventoryTab() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
                   <div className="col-span-1 md:col-span-2">
-                      <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Product Designation</label>
+                      <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Product Designation</label>
                       <input type="text" value={productForm.name} onChange={(e) => setProductForm({...productForm, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all" placeholder="e.g. Premium White Rice 1kg" />
                   </div>
                   <div>
-                      <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Market Category</label>
+                      <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Market Category</label>
                       <div className="relative">
                         <select value={productForm.category} onChange={(e) => setProductForm({...productForm, category: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-blue-500 appearance-none">
                            {categories?.map(cat => (
@@ -418,10 +418,10 @@ export default function InventoryTab() {
                       </div>
                   </div>
                   <div>
-                     <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Universal Barcode / SKU</label>
+                     <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Universal Barcode / SKU</label>
                      <div className="relative flex gap-2">
                         <div className="relative flex-1">
-                           <input type="text" value={productForm.barcode} onChange={(e) => setProductForm({...productForm, barcode: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all font-mono tracking-widest" placeholder="000000000000" />
+                           <input type="text" value={productForm.barcode} onChange={(e) => setProductForm({...productForm, barcode: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all font-mono " placeholder="000000000000" />
                            <Barcode className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                         </div>
                         <button 
@@ -434,14 +434,14 @@ export default function InventoryTab() {
                      </div>
                   </div>
                   <div>
-                     <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Unit Selling Price</label>
+                     <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Unit Selling Price</label>
                      <div className="relative">
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-black text-xs">KSH</span>
                         <input type="number" value={productForm.sellingPrice} onChange={(e) => setProductForm({...productForm, sellingPrice: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-14 pr-4 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all tabular-nums" placeholder="0" />
                      </div>
                   </div>
                   <div className="col-span-1 md:col-span-2">
-                       <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Product Visual (KV Storage)</label>
+                       <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Product Visual (KV Storage)</label>
                        <div className="flex gap-4 items-center">
                           <div className="w-24 h-24 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center relative overflow-hidden group">
                              {productForm.imageUrl ? (
@@ -476,16 +476,16 @@ export default function InventoryTab() {
                   </div>
                   <div className="flex gap-4">
                      <div className="flex-1">
-                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Inventory Level</label>
+                        <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Inventory Level</label>
                         <input type="number" step="any" value={productForm.stockQuantity} onChange={(e) => setProductForm({...productForm, stockQuantity: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all tabular-nums" placeholder="0" />
                      </div>
                      <div className="w-32">
-                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Unit</label>
+                        <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Unit</label>
                         <input type="text" value={productForm.unit} onChange={(e) => setProductForm({...productForm, unit: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all" placeholder="pcs" />
                      </div>
                   </div>
                   <div className="col-span-1 md:col-span-2">
-                     <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">KRA e-TIMS Tax Class</label>
+                     <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">KRA e-TIMS Tax Class</label>
                      <div className="grid grid-cols-3 gap-2">
                         {[
                           { id: 'A', label: '16% Standard' },
@@ -495,7 +495,7 @@ export default function InventoryTab() {
                           <button 
                             key={tax.id}
                             onClick={() => setProductForm({...productForm, taxCategory: tax.id as any})}
-                            className={`py-3.5 rounded-2xl border-2 text-[10px] font-black uppercase tracking-widest transition-all ${
+                            className={`py-3.5 rounded-2xl border-2 text-[10px] font-black   transition-all ${
                               productForm.taxCategory === tax.id 
                                 ? 'border-blue-600 bg-blue-50 text-blue-700' 
                                 : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-slate-200'
@@ -509,7 +509,7 @@ export default function InventoryTab() {
 
                   {editingProduct && Number(productForm.stockQuantity) !== editingProduct.stockQuantity && (
                     <div className="col-span-1 md:col-span-2 animate-in slide-in-from-top-2">
-                       <label className="block text-[11px] font-black text-amber-600 uppercase tracking-widest mb-2 ml-1">Audit Reason Required</label>
+                       <label className="block text-[11px] font-black text-amber-600   mb-2 ml-1">Audit Reason Required</label>
                        <textarea 
                           value={productForm.reason} 
                           onChange={(e) => setProductForm({...productForm, reason: e.target.value})} 
@@ -522,7 +522,7 @@ export default function InventoryTab() {
               </div>
 
               <div className="flex gap-4 shrink-0">
-                 <button onClick={() => setIsProductModalOpen(false)} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs uppercase tracking-widest rounded-2xl transition-all press">
+                 <button onClick={() => setIsProductModalOpen(false)} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs   rounded-2xl transition-all press">
                    Close
                  </button>
                  <button 
@@ -534,7 +534,7 @@ export default function InventoryTab() {
                         Math.abs(Number(productForm.stockQuantity) - editingProduct.stockQuantity) > 0 &&
                         !productForm.reason.trim())
                     } 
-                    className="flex-[2] grad-blue text-white px-6 py-4 font-black text-xs uppercase tracking-widest rounded-2xl disabled:opacity-40 transition-all shadow-blue press flex items-center justify-center gap-2"
+                    className="flex-[2] grad-blue text-white px-6 py-4 font-black text-xs   rounded-2xl disabled:opacity-40 transition-all shadow-blue press flex items-center justify-center gap-2"
                   >
                     <Save size={18} />
                     {editingProduct &&
@@ -562,16 +562,16 @@ export default function InventoryTab() {
               <div className="flex items-center justify-between mb-8 shrink-0">
                  <div>
                    <h2 className="text-xl font-black text-slate-900 tracking-tight">Stock Insight</h2>
-                   <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-0.5">Inventory Tracking Ledger</p>
+                   <p className="text-slate-400 text-xs font-bold   mt-0.5">Inventory Tracking Ledger</p>
                  </div>
                  <div className="flex gap-2">
                     <button 
                         onClick={() => { setIsQuickAdjustOpen(true); setQuickAdjustForm({ quantity: '', reason: '' }); }} 
-                        className="bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all px-4 py-2.5 rounded-xl font-black text-[10px] flex items-center gap-2 uppercase tracking-widest press"
+                        className="bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all px-4 py-2.5 rounded-xl font-bold text-[10px] flex items-center gap-2   press"
                     >
                         Adjust
                     </button>
-                    <button onClick={openEditProductFromDetails} className="bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all px-4 py-2.5 rounded-xl font-black text-[10px] flex items-center gap-2 uppercase tracking-widest press">
+                    <button onClick={openEditProductFromDetails} className="bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all px-4 py-2.5 rounded-xl font-bold text-[10px] flex items-center gap-2   press">
                         <Edit size={14} /> Edit
                     </button>
                  </div>
@@ -582,19 +582,19 @@ export default function InventoryTab() {
                  <Package className="absolute -right-6 -bottom-6 w-32 h-32 text-white/10 rotate-12" />
                  <div className="relative z-10">
                    <div className="flex justify-between items-start mb-4">
-                     <span className="text-blue-100 text-[10px] font-black uppercase tracking-[0.2em]">{selectedProductForDetails.barcode}</span>
-                     <span className="bg-white/20 text-white text-[10px] font-black px-2.5 py-1 rounded-lg border border-white/10 uppercase tracking-widest">
+                     <span className="text-blue-100 text-[10px] font-black  tracking-[0.2em]">{selectedProductForDetails.barcode}</span>
+                     <span className="bg-white/20 text-white text-[10px] font-black px-2.5 py-1 rounded-lg border border-white/10  ">
                        {selectedProductForDetails.category || 'Standard'}
                      </span>
                    </div>
                    <h3 className="text-xl font-black mb-6 pr-10">{selectedProductForDetails.name}</h3>
                    <div className="grid grid-cols-2 gap-6">
                       <div>
-                         <p className="text-blue-200 text-[10px] font-black uppercase tracking-widest mb-1">Available Qty</p>
+                         <p className="text-blue-200 text-[10px] font-black   mb-1">Available Qty</p>
                          <p className="text-3xl font-black tabular-nums">{selectedProductForDetails.stockQuantity} <span className="text-sm opacity-60">{selectedProductForDetails.unit || 'pcs'}</span></p>
                       </div>
                       <div>
-                         <p className="text-blue-200 text-[10px] font-black uppercase tracking-widest mb-1">Selling Price</p>
+                         <p className="text-blue-200 text-[10px] font-black   mb-1">Selling Price</p>
                          <p className="text-3xl font-black tabular-nums">Ksh {selectedProductForDetails.sellingPrice.toLocaleString()}</p>
                       </div>
                    </div>
@@ -605,7 +605,7 @@ export default function InventoryTab() {
               <div className="flex-1 overflow-y-auto no-scrollbar pb-4 pr-1">
                  <div className="mb-6" id="performance-chart-container">
                     <div className="flex items-center justify-between mb-4">
-                       <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                       <h3 className="text-[11px] font-black text-slate-400  tracking-[0.2em] flex items-center gap-2">
                           <BarChart size={14} /> Performance (Last 7 Days)
                        </h3>
                        <button onClick={exportPerformancePDF} className="text-[10px] bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg font-bold hover:bg-slate-200 transition-colors">
@@ -624,7 +624,7 @@ export default function InventoryTab() {
                     </div>
                  </div>
 
-                 <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 mb-4 shrink-0">
+                 <h3 className="text-[11px] font-black text-slate-400  tracking-[0.2em] flex items-center gap-2 mb-4 shrink-0">
                     <FileStack size={14} /> Movement Logs
                  </h3>
                  <div className="flex-1 min-h-0">
@@ -633,7 +633,7 @@ export default function InventoryTab() {
                           <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 text-slate-200">
                             <Clock size={32} />
                           </div>
-                          <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">No activities found</p>
+                          <p className="text-slate-400 font-bold text-xs  ">No activities found</p>
                        </div>
                     ) : (
                        <div className="space-y-3 pb-4">
@@ -663,7 +663,7 @@ export default function InventoryTab() {
                     )}
                  </div>
               </div>
-              <button onClick={() => setSelectedProductForDetails(null)} className="mt-8 w-full bg-slate-900 text-white font-black text-xs uppercase tracking-widest py-4 rounded-2xl active:scale-95 transition-all shadow-lg shadow-slate-900/10 shrink-0">
+              <button onClick={() => setSelectedProductForDetails(null)} className="mt-8 w-full bg-slate-900 text-white font-black text-xs   py-4 rounded-2xl active:scale-95 transition-all shadow-lg shadow-slate-900/10 shrink-0">
                  Finish View
               </button>
            </div>
@@ -681,18 +681,18 @@ export default function InventoryTab() {
                     </div>
                     <div>
                         <h3 className="text-lg font-black text-slate-900 leading-none">Quick Adjust</h3>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">{selectedProductForDetails.name}</p>
+                        <p className="text-[10px] text-slate-400 font-bold   mt-1">{selectedProductForDetails.name}</p>
                     </div>
                 </div>
 
                 <div className="bg-slate-50 p-4 rounded-xl mb-6 flex justify-between items-center border border-slate-100">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Current Stock</span>
+                    <span className="text-xs font-bold text-slate-500  ">Current Stock</span>
                     <span className="text-xl font-black text-slate-900 tabular-nums">{selectedProductForDetails.stockQuantity}</span>
                 </div>
 
                 <div className="space-y-4 mb-6">
                     <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Adjustment Amount (+/-)</label>
+                        <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Adjustment Amount (+/-)</label>
                         <input 
                             type="number" 
                             value={quickAdjustForm.quantity} 
@@ -702,7 +702,7 @@ export default function InventoryTab() {
                         />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1.5 ml-1">Reason (Required)</label>
+                        <label className="block text-[10px] font-black text-amber-600   mb-1.5 ml-1">Reason (Required)</label>
                         <input 
                             type="text" 
                             value={quickAdjustForm.reason} 
@@ -714,11 +714,11 @@ export default function InventoryTab() {
                 </div>
 
                 <div className="flex gap-2">
-                    <button onClick={() => setIsQuickAdjustOpen(false)} className="flex-1 py-3.5 bg-slate-100 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all press">Cancel</button>
+                    <button onClick={() => setIsQuickAdjustOpen(false)} className="flex-1 py-3.5 bg-slate-100 text-slate-600 font-bold text-[10px]   rounded-xl transition-all press">Cancel</button>
                     <button 
                         onClick={handleQuickAdjust}
                         disabled={!quickAdjustForm.quantity || Number(quickAdjustForm.quantity) === 0 || !quickAdjustForm.reason}
-                        className="flex-[2] py-3.5 bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl disabled:opacity-50 transition-all shadow-lg shadow-blue-600/20 press"
+                        className="flex-[2] py-3.5 bg-blue-600 text-white font-bold text-[10px]   rounded-xl disabled:opacity-50 transition-all shadow-lg shadow-blue-600/20 press"
                     >
                         Confirm Adjust
                     </button>

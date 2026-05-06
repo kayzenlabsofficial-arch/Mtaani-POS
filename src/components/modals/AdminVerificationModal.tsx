@@ -34,7 +34,7 @@ export default function AdminVerificationModal({ actionDescription, onSuccess, o
                <ShieldAlert size={28} />
             </div>
             <h2 className="text-lg font-black text-slate-900">Admin Override</h2>
-            <p className="text-xs font-bold text-red-600 mt-1 uppercase tracking-tight">{actionDescription}</p>
+            <p className="text-xs font-bold text-red-600 mt-1  tracking-tight">{actionDescription}</p>
          </div>
          <div className="p-6">
             {error && (
@@ -42,7 +42,7 @@ export default function AdminVerificationModal({ actionDescription, onSuccess, o
             )}
             <div className="space-y-4">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 ml-1">Supervisor PIN</label>
+                  <label className="block text-[11px] font-bold text-slate-400   mb-2 ml-1">Supervisor PIN</label>
                   <div className="relative">
                      <KeyRound size={18} className="absolute left-4 top-3.5 text-slate-400" />
                      <input 
@@ -68,13 +68,13 @@ export default function AdminVerificationModal({ actionDescription, onSuccess, o
             </div>
          </div>
          <div className="p-4 grid grid-cols-2 gap-2 bg-slate-50 border-t border-slate-100">
-            <button onClick={onCancel} className="py-3.5 bg-white border border-slate-200 text-slate-700 font-black text-xs uppercase tracking-widest rounded-xl transition-colors active:bg-slate-100 flex items-center justify-center gap-1">
+            <button onClick={onCancel} className="py-3.5 bg-white border border-slate-200 text-slate-700 font-black text-xs   rounded-xl transition-colors active:bg-slate-100 flex items-center justify-center gap-1">
                <X size={14} /> Cancel
             </button>
             <button 
               onClick={handleVerify} 
               disabled={pin.length < 4}
-              className="py-3.5 bg-red-600 text-white font-black text-xs uppercase tracking-widest rounded-xl disabled:opacity-50 transition-colors active:scale-95 shadow-lg shadow-red-600/20"
+              className="py-3.5 bg-red-600 text-white font-black text-xs   rounded-xl disabled:opacity-50 transition-colors active:scale-95 shadow-lg shadow-red-600/20"
             >
                Authorize
             </button>

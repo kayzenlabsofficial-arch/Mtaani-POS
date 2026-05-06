@@ -112,11 +112,11 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
         <div className="flex-1 overflow-y-auto no-scrollbar p-5 pt-4">
           <div className="bg-slate-50 rounded-2xl p-3.5 mb-4 border border-slate-100 flex justify-between items-center gap-3">
              <div className="min-w-0">
-                <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-0.5">Paying To</p>
+                <p className="text-[9px] text-slate-400 font-black   mb-0.5">Paying To</p>
                 <p className="text-xs font-black text-slate-900 truncate">{supplier.company}</p>
              </div>
              <div className="text-right shrink-0">
-                <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-0.5">Total Bal</p>
+                <p className="text-[9px] text-slate-400 font-black   mb-0.5">Total Bal</p>
                 <p className="text-xs font-black text-red-600">Ksh {supplier.balance.toLocaleString()}</p>
              </div>
           </div>
@@ -125,7 +125,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
             <div className="space-y-4">
               {/* Invoices Selection */}
               <div>
-                <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                <label className="block text-[9px] font-black text-slate-400   mb-1.5 ml-1">
                     Select Invoices {selectedInvoiceIds.length > 0 && `(${selectedInvoiceIds.length})`}
                 </label>
                 <div className="space-y-1 max-h-[160px] overflow-y-auto no-scrollbar pr-1">
@@ -156,7 +156,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
               {/* Credit Notes Selection */}
               {pendingCreditNotes.length > 0 && (
                 <div>
-                  <label className="block text-[9px] font-black text-orange-500 uppercase tracking-widest mb-1.5 ml-1">
+                  <label className="block text-[9px] font-black text-orange-500   mb-1.5 ml-1">
                       Apply Credits {selectedCreditNoteIds.length > 0 && `(${selectedCreditNoteIds.length})`}
                   </label>
                   <div className="space-y-1 max-h-[120px] overflow-y-auto no-scrollbar pr-1">
@@ -183,7 +183,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
             {/* Amount & Method */}
             <div className="grid grid-cols-1 gap-4 pt-1">
               <div>
-                <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Payment Amount</label>
+                <label className="block text-[9px] font-black text-slate-400   mb-1.5 ml-1">Payment Amount</label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-3 text-slate-400 font-black text-xs">Ksh</span>
                   <input 
@@ -198,7 +198,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
               </div>
 
               <div>
-                <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Method</label>
+                <label className="block text-[9px] font-black text-slate-400   mb-1.5 ml-1">Method</label>
                 <div className="grid grid-cols-4 gap-1.5">
                    {[
                      { id: 'CASH', icon: Banknote },
@@ -213,7 +213,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
                        className={`flex flex-col items-center justify-center p-2 rounded-lg border-2 transition-all ${paymentForm.method === m.id ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-400'}`}
                      >
                        <m.icon size={14} />
-                       <span className="text-[7px] font-black mt-1 uppercase">{m.id}</span>
+                       <span className="text-[7px] font-black mt-1 ">{m.id}</span>
                      </button>
                    ))}
                 </div>
@@ -222,7 +222,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
 
             <div className="space-y-3">
               <div>
-                <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Transaction Ref / Cheque #</label>
+                <label className="block text-[9px] font-black text-slate-400   mb-1.5 ml-1">Transaction Ref / Cheque #</label>
                 <input 
                   type="text" 
                   value={paymentForm.transactionCode} 
@@ -233,7 +233,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
               </div>
 
               <div>
-                <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Internal Reference</label>
+                <label className="block text-[9px] font-black text-slate-400   mb-1.5 ml-1">Internal Reference</label>
                 <input 
                   type="text" 
                   value={paymentForm.reference} 
@@ -245,8 +245,8 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
             </div>
 
             <div className="flex gap-2 pt-2 sticky bottom-0 bg-white pb-2 mt-auto">
-              <button type="button" onClick={onClose} className="flex-1 px-4 py-3.5 bg-slate-100 text-slate-500 font-black text-[9px] uppercase tracking-widest rounded-xl">Cancel</button>
-              <button type="submit" disabled={!paymentForm.amount || Number(paymentForm.amount) < 0} className="flex-[2] bg-green-600 text-white py-3.5 font-black text-[9px] uppercase tracking-widest rounded-xl shadow-lg shadow-green-600/20 active:scale-95 transition-transform disabled:opacity-50">
+              <button type="button" onClick={onClose} className="flex-1 px-4 py-3.5 bg-slate-100 text-slate-500 font-black text-[9px]   rounded-xl">Cancel</button>
+              <button type="submit" disabled={!paymentForm.amount || Number(paymentForm.amount) < 0} className="flex-[2] bg-green-600 text-white py-3.5 font-black text-[9px]   rounded-xl shadow-lg shadow-green-600/20 active:scale-95 transition-transform disabled:opacity-50">
                 Confirm & Pay
               </button>
             </div>

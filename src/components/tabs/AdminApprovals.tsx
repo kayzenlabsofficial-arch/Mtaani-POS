@@ -120,7 +120,7 @@ export default function AdminApprovals() {
     return (
         <div className="flex flex-col items-center justify-center h-full p-10 opacity-50">
             <div className="w-10 h-10 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-            <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Loading Approvals...</p>
+            <p className="text-sm font-bold text-slate-400  ">Loading Approvals...</p>
         </div>
     );
   }
@@ -141,7 +141,7 @@ export default function AdminApprovals() {
             </h3>
             <div className="space-y-2">
                {pendingExpenses.length === 0 ? (
-                  <div className="bg-white border border-dashed border-slate-200 rounded-2xl py-8 text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">No pending expenses</div>
+                  <div className="bg-white border border-dashed border-slate-200 rounded-2xl py-8 text-center text-[10px] text-slate-400 font-bold   italic">No pending expenses</div>
                ) : (
                   pendingExpenses.map(e => (
                      <div key={e.id} onClick={() => setSelectedRecordForDetails({ ...e, recordType: 'EXPENSE' })} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center justify-between group hover:border-blue-300 transition-all cursor-pointer">
@@ -170,13 +170,13 @@ export default function AdminApprovals() {
             </h3>
             <div className="space-y-2">
                {pendingRefunds.length === 0 ? (
-                  <div className="bg-white border border-dashed border-slate-200 rounded-2xl py-8 text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">No pending refunds</div>
+                  <div className="bg-white border border-dashed border-slate-200 rounded-2xl py-8 text-center text-[10px] text-slate-400 font-bold   italic">No pending refunds</div>
                ) : (
                   pendingRefunds.map(t => (
                      <div key={t.id} onClick={() => setSelectedRecordForDetails({ ...t, recordType: 'SALE' })} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center justify-between group hover:border-blue-300 transition-all cursor-pointer">
                         <div className="flex-1">
                            <div className="flex items-center gap-1.5 mb-1">
-                              <p className="text-xs font-bold text-slate-900">Receipt #{t.id ? t.id.split('-')[0].toUpperCase() : 'UNKNOWN'}</p>
+                              <p className="text-xs font-bold text-slate-900">Receipt #{t.id ? t.id.split('-')[0].toUpperCase() : 'Unknown'}</p>
                               <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">@{t.cashierName || 'System'}</span>
                               <Eye size={12} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                            </div>
@@ -199,7 +199,7 @@ export default function AdminApprovals() {
             </h3>
             <div className="space-y-2">
                {pendingPOs.length === 0 ? (
-                  <div className="bg-white border border-dashed border-slate-200 rounded-2xl py-8 text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">No pending orders</div>
+                  <div className="bg-white border border-dashed border-slate-200 rounded-2xl py-8 text-center text-[10px] text-slate-400 font-bold   italic">No pending orders</div>
                ) : (
                   pendingPOs.map(po => (
                      <div key={po.id} onClick={() => setSelectedRecordForDetails({ ...po, recordType: 'PURCHASE_ORDER' })} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm group hover:border-blue-300 transition-all cursor-pointer">
@@ -209,11 +209,11 @@ export default function AdminApprovals() {
                                  {allSuppliers?.find(s => s.id === po.supplierId)?.company || 'Unknown Supplier'}
                                  <Eye size={12} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                               </h4>
-                              <p className="text-xs text-slate-500 font-medium">PO #{po.id ? (po.id.startsWith('PO-') ? po.id : po.id.split('-')[0].toUpperCase()) : 'UNKNOWN'} • {po.orderDate ? new Date(po.orderDate).toLocaleDateString() : 'Unknown'} • Items: {po.items?.length || 0}</p>
+                              <p className="text-xs text-slate-500 font-medium">PO #{po.id ? (po.id.startsWith('PO-') ? po.id : po.id.split('-')[0].toUpperCase()) : 'Unknown'} • {po.orderDate ? new Date(po.orderDate).toLocaleDateString() : 'Unknown'} • Items: {po.items?.length || 0}</p>
                            </div>
                            <div className="flex flex-col items-end">
                               <h3 className="text-base font-black text-blue-600">Ksh {(po.totalAmount || 0).toLocaleString()}</h3>
-                              <div className="mt-2 text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-50 px-2 py-1 rounded">Pending Review</div>
+                              <div className="mt-2 text-[9px] font-black   text-slate-400 bg-slate-50 px-2 py-1 rounded">Pending Review</div>
                            </div>
                         </div>
                      </div>
@@ -229,23 +229,23 @@ export default function AdminApprovals() {
             </h3>
             <div className="space-y-2">
                {pendingAdjustments.length === 0 ? (
-                  <div className="bg-white border border-dashed border-slate-200 rounded-2xl py-8 text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">No pending adjustments</div>
+                  <div className="bg-white border border-dashed border-slate-200 rounded-2xl py-8 text-center text-[10px] text-slate-400 font-bold   italic">No pending adjustments</div>
                ) : (
                   pendingAdjustments.map(req => (
                      <div key={req.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                         <div className="flex justify-between items-start mb-2">
                            <h4 className="text-sm font-bold text-slate-900">{req.productName || 'Unknown Product'}</h4>
                            <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Clock size={10} /> {req.timestamp ? new Date(req.timestamp).toLocaleDateString() : 'Unknown'}</span>
-                               {req.preparedBy && <span className="text-[9px] font-black text-blue-500 uppercase tracking-tighter">By: {req.preparedBy}</span>}
+                               {req.preparedBy && <span className="text-[9px] font-black text-blue-500  tracking-tighter">By: {req.preparedBy}</span>}
                         </div>
                         <div className="flex items-center gap-4 mb-3">
                            <div className="text-center">
-                              <p className="text-[9px] font-bold text-slate-400 uppercase">Current</p>
+                              <p className="text-[9px] font-bold text-slate-400 ">Current</p>
                               <p className="text-sm font-black text-slate-400">{req.oldQty}</p>
                            </div>
                            <div className="text-slate-300">→</div>
                            <div className="text-center">
-                              <p className="text-[9px] font-bold text-blue-500 uppercase">New</p>
+                              <p className="text-[9px] font-bold text-blue-500 ">New</p>
                               <p className="text-sm font-black text-blue-600">{req.newQty}</p>
                            </div>
                         </div>
@@ -267,7 +267,7 @@ export default function AdminApprovals() {
             </h3>
             <div className="space-y-2">
                {pendingPicks.length === 0 ? (
-                  <div className="bg-white border border-dashed border-slate-200 rounded-2xl py-8 text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">Everything banked</div>
+                  <div className="bg-white border border-dashed border-slate-200 rounded-2xl py-8 text-center text-[10px] text-slate-400 font-bold   italic">Everything banked</div>
                ) : (
                   pendingPicks.map(p => (
                       <div key={p.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center justify-between">

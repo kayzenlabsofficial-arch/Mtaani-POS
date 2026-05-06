@@ -107,13 +107,13 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                            {supplier.name} <span className="hidden sm:inline">•</span> {supplier.phone}
                         </p>
                         <div className="flex gap-2 mt-3 no-print overflow-x-auto no-scrollbar">
-                           <button onClick={() => onEdit(supplier)} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 hover:bg-slate-200 transition-all shrink-0">
+                           <button onClick={() => onEdit(supplier)} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black   flex items-center gap-1 hover:bg-slate-200 transition-all shrink-0">
                               <Edit size={12} /> Edit Profile
                            </button>
                            <button 
                             onClick={handlePrintStatement} 
                             disabled={isSharing}
-                            className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 hover:bg-slate-200 transition-all disabled:opacity-50 shrink-0"
+                            className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black   flex items-center gap-1 hover:bg-slate-200 transition-all disabled:opacity-50 shrink-0"
                            >
                               {isSharing ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />}
                               {isSharing ? 'Generating...' : 'Statement'}
@@ -122,11 +122,11 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                     </div>
                 </div>
                 <div className="sm:text-right w-full sm:w-auto">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Current Ledger Balance</p>
+                    <p className="text-[10px] font-black text-slate-400  tracking-[0.2em] mb-1">Current Ledger Balance</p>
                     <h3 className={`text-2xl sm:text-4xl font-black tabular-nums break-words ${supplier.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
                         Ksh {supplier.balance.toLocaleString()}
                     </h3>
-                    <button onClick={() => onPay(supplier)} className="mt-3 bg-green-600 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-green-600/20 active:scale-95 transition-all no-print w-full sm:w-auto">
+                    <button onClick={() => onPay(supplier)} className="mt-3 bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold text-[10px]   shadow-lg shadow-green-600/20 active:scale-95 transition-all no-print w-full sm:w-auto">
                         Make a Payment
                     </button>
                 </div>
@@ -138,7 +138,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                     <button 
                         key={tab} 
                         onClick={() => setActiveTab(tab)}
-                        className={`py-4 px-6 text-[10px] font-black uppercase tracking-widest transition-all relative ${activeTab === tab ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                        className={`py-4 px-6 text-[10px] font-black   transition-all relative ${activeTab === tab ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
                     >
                         {tab.replace('_', ' ')}
                         {tab === 'INVOICES' && invoices && invoices.length > 0 && <span className="ml-2 bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md">{invoices.length}</span>}
@@ -151,7 +151,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                 {activeTab === 'INVOICES' && (
                     <div className="space-y-3">
                         <div className="hidden print:block mb-8">
-                           <h3 className="text-lg font-black uppercase tracking-widest border-b pb-2">Purchase Invoices Statement</h3>
+                           <h3 className="text-lg font-black   border-b pb-2">Purchase Invoices Statement</h3>
                         </div>
                         {invoices?.length === 0 ? (
                             <div className="py-20 text-center text-slate-400 flex flex-col items-center">
@@ -167,7 +167,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                                         </div>
                                         <div>
                                             <p className="text-sm font-black text-slate-900">Inv #{inv.invoiceNumber || inv.id.split('-')[0].toUpperCase()}</p>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase">
+                                            <p className="text-[10px] font-bold text-slate-400 ">
                                                {new Date(inv.orderDate).toLocaleDateString()} • {inv.status}
                                                {inv.preparedBy && <span className="ml-2 text-blue-500 font-black">@{inv.preparedBy}</span>}
                                             </p>
@@ -176,7 +176,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                                     <div className="text-right">
                                         <p className="text-sm font-black text-slate-900">Ksh {inv.totalAmount.toLocaleString()}</p>
                                         <div className="flex items-center gap-2 mt-1">
-                                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg uppercase tracking-widest border ${inv.paymentStatus === 'PAID' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
+                                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg   border ${inv.paymentStatus === 'PAID' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
                                                 {inv.paymentStatus || 'UNPAID'}
                                             </span>
                                             {inv.paymentStatus === 'PARTIAL' && <span className="text-[9px] font-bold text-slate-400 italic">Due: Ksh {(inv.totalAmount - (inv.paidAmount || 0)).toLocaleString()}</span>}
@@ -204,7 +204,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                                         </div>
                                         <div>
                                             <p className="text-sm font-black text-slate-900">{pay.reference || 'Vendor Payment'}</p>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase">
+                                            <p className="text-[10px] font-bold text-slate-400 ">
                                                {new Date(pay.timestamp).toLocaleDateString()} • via {pay.paymentMethod}
                                                {pay.preparedBy && <span className="ml-2 text-purple-500 font-black">@{pay.preparedBy}</span>}
                                             </p>
@@ -212,7 +212,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                                     </div>
                                     <div className="text-right">
                                         <p className="text-sm font-black text-purple-600">Ksh {pay.amount.toLocaleString()}</p>
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{pay.transactionCode || 'No Ref'}</p>
+                                        <p className="text-[9px] font-bold text-slate-400   mt-0.5">{pay.transactionCode || 'No Ref'}</p>
                                     </div>
                                 </div>
                             ))
@@ -223,8 +223,8 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                 {activeTab === 'CREDIT_NOTES' && (
                     <div className="space-y-4">
                         <div className="flex justify-between items-center no-print">
-                            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Available Credits</h3>
-                            <button onClick={() => setIsAddCreditNoteOpen(true)} className="flex items-center gap-1.5 text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-all">
+                            <h3 className="text-[10px] font-black text-slate-400  ">Available Credits</h3>
+                            <button onClick={() => setIsAddCreditNoteOpen(true)} className="flex items-center gap-1.5 text-[10px] font-black text-blue-600   bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-all">
                                 <Plus size={14} /> New Credit Note
                             </button>
                         </div>
@@ -242,9 +242,9 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                                         </div>
                                         <div>
                                             <p className="text-sm font-black text-slate-900">{cn.reference || 'Credit Note'}</p>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase">{new Date(cn.timestamp).toLocaleDateString()} • {cn.reason}</p>
+                                            <p className="text-[10px] font-bold text-slate-400 ">{new Date(cn.timestamp).toLocaleDateString()} • {cn.reason}</p>
                                             <div className="flex items-center gap-2 mt-1">
-                                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-widest border ${cn.status === 'ALLOCATED' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-orange-50 text-orange-700 border-orange-100'}`}>
+                                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md   border ${cn.status === 'ALLOCATED' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-orange-50 text-orange-700 border-orange-100'}`}>
                                                     {cn.status || 'PENDING'}
                                                 </span>
                                             </div>
@@ -255,12 +255,12 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                                         {cn.status !== 'ALLOCATED' ? (
                                             <button 
                                                 onClick={() => handleAllocateCreditNote(cn)}
-                                                className="mt-1 text-[9px] font-black text-blue-600 uppercase tracking-widest border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-600 hover:text-white transition-all"
+                                                className="mt-1 text-[9px] font-black text-blue-600   border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-600 hover:text-white transition-all"
                                             >
                                                 Allocate Credit
                                             </button>
                                         ) : (
-                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 italic">Balance Updated</p>
+                                            <p className="text-[9px] font-bold text-slate-400   mt-0.5 italic">Balance Updated</p>
                                         )}
                                     </div>
                                 </div>
@@ -285,21 +285,21 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                 <h3 className="text-lg font-black text-slate-900 mb-6 flex items-center gap-2"><div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center"><AlertCircle size={18}/></div> Create Credit</h3>
                 <div className="space-y-4 mb-6">
                     <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Credit Amount</label>
+                        <label className="block text-[10px] font-black text-slate-400  mb-2 ml-1">Credit Amount</label>
                         <input type="number" value={creditNoteForm.amount} onChange={e => setCreditNoteForm({...creditNoteForm, amount: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-black" placeholder="Ksh 0.00" />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Reference #</label>
+                        <label className="block text-[10px] font-black text-slate-400  mb-2 ml-1">Reference #</label>
                         <input type="text" value={creditNoteForm.reference} onChange={e => setCreditNoteForm({...creditNoteForm, reference: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold" placeholder="CRN-XXX" />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Reason for Credit</label>
+                        <label className="block text-[10px] font-black text-slate-400  mb-2 ml-1">Reason for Credit</label>
                         <textarea value={creditNoteForm.reason} onChange={e => setCreditNoteForm({...creditNoteForm, reason: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium h-20" placeholder="e.g. Returned broken stock" />
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={() => setIsAddCreditNoteOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs uppercase tracking-widest">Cancel</button>
-                    <button onClick={handleAddCreditNote} disabled={!creditNoteForm.amount} className="flex-[2] py-3 bg-blue-600 text-white font-black rounded-xl text-xs uppercase tracking-widest active:scale-95 transition-all disabled:opacity-50 shadow-blue">Apply Credit</button>
+                    <button onClick={() => setIsAddCreditNoteOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs  ">Cancel</button>
+                    <button onClick={handleAddCreditNote} disabled={!creditNoteForm.amount} className="flex-[2] py-3 bg-blue-600 text-white font-black rounded-xl text-xs   active:scale-95 transition-all disabled:opacity-50 shadow-blue">Apply Credit</button>
                 </div>
             </div>
         </div>

@@ -242,7 +242,7 @@ export default function PurchasesTab() {
                   <div className="text-sm font-black text-slate-900">
                      Ksh {po.totalAmount.toLocaleString()}
                   </div>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded tracking-widest 
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded  
                     ${po.status === 'RECEIVED' ? 'bg-green-100 text-green-700' : 
                       (po.approvalStatus === 'APPROVED' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700')}`}>
                      {po.status === 'RECEIVED' ? 'RECEIVED' : (po.approvalStatus === 'APPROVED' ? 'APPROVED' : 'AWAITING APPROVAL')}
@@ -270,7 +270,7 @@ export default function PurchasesTab() {
             
             <div className="space-y-4 mb-4 flex-1 overflow-y-auto no-scrollbar">
                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Supplier</label>
+                    <label className="block text-xs font-bold text-slate-500  mb-1.5">Supplier</label>
                     <select value={poForm.supplierId} onChange={e => setPoForm({supplierId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-blue-500">
                        <option value="">Select a supplier...</option>
                        {allSuppliers?.map(s => (
@@ -280,7 +280,7 @@ export default function PurchasesTab() {
                  </div>
                  
                  <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 space-y-3">
-                    <label className="block text-xs font-bold text-slate-500 uppercase">Add Item to Order</label>
+                    <label className="block text-xs font-bold text-slate-500 ">Add Item to Order</label>
                     <div className="flex flex-col gap-2">
                        <input 
                            type="text" 
@@ -311,7 +311,7 @@ export default function PurchasesTab() {
 
                  {poItems.length > 0 && (
                     <div className="mt-4">
-                       <h3 className="text-xs font-bold text-slate-500 uppercase mb-2">Order Items</h3>
+                       <h3 className="text-xs font-bold text-slate-500  mb-2">Order Items</h3>
                        <div className="space-y-2">
                           {poItems.map((item, idx) => (
                              <div key={idx} className="flex justify-between items-center bg-white border border-slate-200 p-2 rounded-lg text-sm">
@@ -325,7 +325,7 @@ export default function PurchasesTab() {
                           ))}
                        </div>
                        <div className="flex justify-between items-center text-sm font-black mt-3 pt-3 border-t border-slate-200">
-                          <span>Total Amount</span>
+                          <span>Total amount</span>
                           <span>Ksh {poItems.reduce((acc, item) => acc + (item.expectedQuantity * item.unitCost), 0).toLocaleString()}</span>
                        </div>
                     </div>
@@ -352,12 +352,12 @@ export default function PurchasesTab() {
             
             <div className="space-y-4 mb-4 flex-1 overflow-y-auto no-scrollbar">
                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Supplier Invoice Number</label>
+                    <label className="block text-xs font-bold text-slate-500  mb-1.5">Supplier Invoice Number</label>
                     <input type="text" value={receiveInvoices[selectedPO.id] || ''} onChange={e => setReceiveInvoices({...receiveInvoices, [selectedPO.id]: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-green-500" placeholder="e.g. INV-2023-001" />
                  </div>
 
                  <div className="mt-4">
-                    <h3 className="text-xs font-bold text-slate-500 uppercase mb-2">Items to Receive</h3>
+                    <h3 className="text-xs font-bold text-slate-500  mb-2">Items to Receive</h3>
                     <div className="space-y-3">
                         {selectedPO.items.map((item, idx) => (
                            <div key={idx} className="bg-white border border-slate-200 p-3 rounded-lg text-sm flex flex-col gap-3">
@@ -367,7 +367,7 @@ export default function PurchasesTab() {
                                     <div className="text-xs text-slate-500">Ordered: {item.expectedQuantity} @ Ksh {item.unitCost}</div>
                                  </div>
                                  <div className="w-20 shrink-0">
-                                    <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1">Recv Qty</label>
+                                    <label className="block text-[9px]  font-bold text-slate-400 mb-1">Recv Qty</label>
                                     <input 
                                         type="number" 
                                         value={receiveQuantities[item.productId] ?? item.expectedQuantity} 
@@ -378,7 +378,7 @@ export default function PurchasesTab() {
                               </div>
                               <div className="flex gap-2 pt-2 border-t border-slate-100">
                                  <div className="flex-1">
-                                    <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1">Actual Unit Cost</label>
+                                    <label className="block text-[9px]  font-bold text-slate-400 mb-1">Actual Unit Cost</label>
                                     <input 
                                         type="number" 
                                         value={receiveUnitCosts[item.productId] ?? item.unitCost} 
@@ -387,7 +387,7 @@ export default function PurchasesTab() {
                                     />
                                  </div>
                                  <div className="flex-1">
-                                    <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1">Update Sell Price</label>
+                                    <label className="block text-[9px]  font-bold text-slate-400 mb-1">Update Sell Price</label>
                                     <input 
                                         type="number" 
                                         value={receiveSellingPrices[item.productId] ?? ''} 

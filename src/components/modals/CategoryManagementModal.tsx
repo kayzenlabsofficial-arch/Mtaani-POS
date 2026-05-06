@@ -97,7 +97,7 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
             </div>
             <div>
               <h2 className="text-xl font-black text-slate-900 tracking-tight">Manage Categories</h2>
-              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Organize your inventory</p>
+              <p className="text-slate-400 text-xs font-bold  ">Organize your inventory</p>
             </div>
           </div>
           <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-2xl bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
@@ -109,7 +109,7 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
           {isAdding ? (
             <div className="space-y-6 animate-in slide-in-from-top-4">
               <div>
-                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Category Name</label>
+                <label className="block text-[11px] font-black text-slate-400   mb-3 ml-1">Category name</label>
                 <input 
                   type="text" 
                   value={form.name} 
@@ -121,7 +121,7 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
               </div>
 
               <div>
-                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Choose Icon</label>
+                <label className="block text-[11px] font-black text-slate-400   mb-3 ml-1">Choose icon</label>
                 <div className="grid grid-cols-6 gap-3">
                   {ICON_OPTIONS.map(opt => (
                     <button
@@ -136,7 +136,7 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
               </div>
 
               <div>
-                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Theme Color</label>
+                <label className="block text-[11px] font-black text-slate-400   mb-3 ml-1">Theme color</label>
                 <div className="grid grid-cols-7 gap-3">
                   {COLOR_OPTIONS.map(opt => (
                     <button
@@ -151,10 +151,10 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
               </div>
 
               <div className="flex gap-4 pt-4">
-                <button onClick={resetForm} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs uppercase tracking-widest rounded-2xl transition-all press">
+                <button onClick={resetForm} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs   rounded-2xl transition-all press">
                   Cancel
                 </button>
-                <button onClick={handleSave} className="flex-[2] grad-blue text-white px-6 py-4 font-black text-xs uppercase tracking-widest rounded-2xl transition-all shadow-blue press flex items-center justify-center gap-2">
+                <button onClick={handleSave} className="flex-[2] grad-blue text-white px-6 py-4 font-black text-xs   rounded-2xl transition-all shadow-blue press flex items-center justify-center gap-2">
                   <Save size={18} /> {editingId ? 'Update' : 'Create'} Category
                 </button>
               </div>
@@ -163,7 +163,7 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
             <div className="space-y-3">
               <button onClick={() => setIsAdding(true)} className="w-full p-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 hover:border-blue-400 hover:text-blue-500 transition-all flex items-center justify-center gap-2 group">
                 <Plus size={20} className="group-hover:scale-110 transition-transform" />
-                <span className="font-black text-xs uppercase tracking-widest">Add New Category</span>
+                <span className="font-black text-xs  ">Add new category</span>
               </button>
 
               {categories?.map(cat => {
@@ -192,7 +192,7 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
 
               {categories?.length === 0 && (
                 <div className="py-12 text-center text-slate-400">
-                  <p className="text-xs font-bold uppercase tracking-widest">No categories defined</p>
+                  <p className="text-xs font-bold  ">No categories defined</p>
                 </div>
               )}
             </div>

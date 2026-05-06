@@ -46,7 +46,7 @@ export default function Sidebar({
           </div>
           <div>
             <h2 className="text-lg font-black text-slate-900 leading-none">Mtaani POS</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Version 2.4</p>
+            <p className="text-[10px] font-bold text-slate-400 mt-1">Version 2.4</p>
           </div>
         </div>
 
@@ -76,16 +76,16 @@ export default function Sidebar({
             </div>
             <div className="min-w-0">
               <p className="text-xs font-black text-slate-900 truncate">{currentUser?.name}</p>
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{currentUser?.role}</p>
+              <p className="text-[10px] font-bold text-slate-400 capitalize">{currentUser?.role?.toLowerCase()}</p>
             </div>
           </div>
           <button
             onClick={onSync}
             disabled={isSyncing}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 text-[10px] font-black hover:bg-slate-100 transition-all disabled:opacity-50"
           >
             <RotateCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-            {isSyncing ? 'Syncing...' : 'Sync Cloud'}
+            {isSyncing ? 'Syncing...' : 'Sync cloud'}
           </button>
         </div>
 

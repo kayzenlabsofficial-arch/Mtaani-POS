@@ -188,7 +188,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         businessId: activeBusinessId!
       });
 
-      // Close Shift in DB — use add() (INSERT OR REPLACE) to bypass cache lookup
+      // Close shift in DB — use add() (INSERT OR REPLACE) to bypass cache lookup
       // Old shifts may lack businessId and won't be in cache, causing update() to silently fail
       await db.shifts.add({
          ...activeShift,
@@ -271,8 +271,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                    <ShieldAlert size={20} />
                 </div>
                 <div>
-                   <p className="text-white font-black text-sm">Approvals Needed</p>
-                   <p className="text-red-100 text-[11px] font-medium uppercase tracking-wider">{totalPending} requests awaiting your authorization</p>
+                   <p className="text-white font-black text-sm">Approvals needed</p>
+                   <p className="text-red-100 text-[11px] font-medium ">{totalPending} requests awaiting your authorization</p>
                 </div>
              </div>
              <ChevronRight className="text-white/50" size={24} />
@@ -292,9 +292,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
             <div className="relative z-10 flex justify-between items-start">
                <div>
                  <div className="flex items-center gap-2 mb-3">
-                   <p className="text-blue-100 text-xs font-bold uppercase tracking-widest">Shift Revenue</p>
+                   <p className="text-blue-100 text-xs font-bold capitalize">Shift revenue</p>
                    {activeShift && (
-                     <span className="flex items-center gap-1 bg-green-400/20 text-green-300 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full">
+                     <span className="flex items-center gap-1 bg-green-400/20 text-green-300 text-[9px] font-black   px-2 py-0.5 rounded-full">
                        <div className="w-1.5 h-1.5 bg-green-400 rounded-full" style={{ animation: 'pulse 2s infinite' }} /> Live
                      </span>
                    )}
@@ -303,7 +303,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                  <p className="text-blue-200 text-xs font-semibold mt-2">{shiftTransactions.length} transactions this shift</p>
                </div>
                <div className="text-right">
-                 <p className="text-blue-200 text-[10px] font-bold uppercase tracking-wider mb-1">Shifts Today</p>
+                 <p className="text-blue-200 text-[10px] font-bold   mb-1">Shifts today</p>
                  <h3 className="text-3xl font-black">{todaysReports?.length || 0}</h3>
                  {pendingQuotes > 0 && <p className="text-amber-300 text-[10px] font-bold mt-1">{pendingQuotes} pending quotes</p>}
                </div>
@@ -313,20 +313,20 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
          {/* M-Pesa */}
          <div className="grad-purple text-white rounded-3xl p-4 shadow-purple relative overflow-hidden">
             <Smartphone className="absolute right-3 top-3 text-white/20 w-10 h-10" />
-            <p className="text-purple-100 text-[10px] font-bold uppercase tracking-widest mb-2">M-Pesa</p>
+            <p className="text-purple-100 text-[10px] font-bold mb-2">M-Pesa</p>
             <h3 className="text-xl font-black">Ksh {mpesaTotal.toLocaleString()}</h3>
          </div>
 
          <div className="grad-green text-white rounded-3xl p-4 shadow-green relative overflow-hidden">
             <DollarSign className="absolute right-3 top-3 text-white/20 w-10 h-10" />
-            <p className="text-green-100 text-[10px] font-bold uppercase tracking-widest mb-2">Cash Receipts</p>
+            <p className="text-green-100 text-[10px] font-bold mb-2">Cash receipts</p>
             <h3 className="text-xl font-black">Ksh {cashTotal.toLocaleString()}</h3>
          </div>
 
          {/* Drawer & Tax */}
          <div className="bg-white col-span-2 rounded-3xl p-4 border border-slate-200 shadow-card flex items-center justify-between">
             <div>
-              <p className="text-slate-400 text-[10px] uppercase tracking-widest font-black mb-1">Expected Cash in Drawer</p>
+              <p className="text-slate-400 text-[10px] font-bold mb-1">Expected cash in drawer</p>
               <h3 className={`text-xl font-black ${expectedCashDrawer < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                 Ksh {expectedCashDrawer.toLocaleString()}
               </h3>
@@ -340,7 +340,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm">
-            <h3 className="text-sm font-extrabold text-slate-900 mb-4">Payment Method Split</h3>
+            <h3 className="text-sm font-extrabold text-slate-900 mb-4">Payment method split</h3>
             <div className="h-[180px] w-full flex items-center">
                <div className="w-1/2 h-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -365,7 +365,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                      <div key={idx} className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: data.color }} />
                         <div>
-                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">{data.name}</p>
+                           <p className="text-[10px] font-bold text-slate-400 capitalize leading-none">{data.name.toLowerCase()}</p>
                            <p className="text-sm font-black text-slate-900">Ksh {data.value.toLocaleString()}</p>
                         </div>
                      </div>
@@ -375,11 +375,11 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
          </div>
 
          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm">
-            <h3 className="text-sm font-extrabold text-slate-900 mb-4">Current Shift: Top Products</h3>
+            <h3 className="text-sm font-extrabold text-slate-900 mb-4">Current Shift: Top products</h3>
             {topSellingProducts.length === 0 ? (
                <div className="h-[180px] flex flex-col items-center justify-center text-slate-400 grayscale transition-all opacity-40">
                   <TrendingUp size={32} className="mb-2" />
-                  <p className="text-xs font-bold uppercase tracking-widest">No Sales Yet</p>
+                  <p className="text-xs font-bold capitalize">No sales yet</p>
                </div>
             ) : (
                <div className="space-y-4">
@@ -405,7 +405,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       {/* Daily Performance Graph */}
       <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm mb-6">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-sm font-extrabold text-slate-900">Sales Trend</h3>
+            <h3 className="text-sm font-extrabold text-slate-900">Sales trend</h3>
             <div className="flex bg-slate-100 p-1 rounded-xl">
               <button onClick={() => setTrendView('DAY')} className={`text-[10px] px-3 py-1 font-bold rounded-lg transition-colors ${trendView === 'DAY' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>DAY</button>
               <button onClick={() => setTrendView('WEEK')} className={`text-[10px] px-3 py-1 font-bold rounded-lg transition-colors ${trendView === 'WEEK' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>WEEK</button>
@@ -424,16 +424,16 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           </div>
       </div>
 
-      {/* Daily Actions */}
+      {/* Daily actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
          <div className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm flex flex-col gap-3">
             <h3 className="text-sm font-extrabold text-slate-900 flex justify-between">
-               Daily Actions
-               <span className="text-xs text-orange-600 bg-orange-100 px-2 py-0.5 rounded-md font-bold">{pendingQuotes} Quotes</span>
+               Daily actions
+               <span className="text-xs text-orange-600 bg-orange-100 px-2 py-0.5 rounded-md font-bold">{pendingQuotes} quotes</span>
             </h3>
             <div className="grid grid-cols-2 gap-2 h-full items-end mt-2">
                <button onClick={() => setIsPickCashOpen(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-slate-200 flex flex-col items-center justify-center gap-1">
-                  <ArrowUpRight size={16} /> Pick Cash
+                  <ArrowUpRight size={16} /> Pick cash
                </button>
                <button onClick={openExpenseModal} className="bg-orange-50 hover:bg-orange-100 text-orange-700 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-orange-200 flex flex-col items-center justify-center gap-1">
                   <FileMinus size={16} /> Expense
@@ -442,7 +442,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                   <RotateCcw size={16} /> Refund
                </button>
                <button onClick={() => setIsCloseDayOpen(true)} className="bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-slate-900/10 flex flex-col items-center justify-center gap-1 relative overflow-hidden">
-                  <CalendarCheck size={16} /> Close Shift
+                  <CalendarCheck size={16} /> Close shift
                   {isCloseDayBlocked && <div className="absolute inset-0 bg-red-600/20 backdrop-blur-[1px] flex items-center justify-center"><Lock size={12} className="text-red-600" /></div>}
                </button>
                <button 
@@ -451,29 +451,29 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                   className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                >
                   {existingDailySummary ? <CheckCircle2 size={16} /> : <TrendingUp size={16} />}
-                  {existingDailySummary ? 'Day Closed' : 'Close Day'}
+                  {existingDailySummary ? 'Day Closed' : 'Close day'}
                </button>
             </div>
          </div>
 
          {/* Inventory Tracker */}
          <div className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm flex flex-col gap-3">
-            <h3 className="text-sm font-extrabold text-slate-900">Inventory Status</h3>
+            <h3 className="text-sm font-extrabold text-slate-900">Inventory status</h3>
             <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
                <Package className="text-slate-400" size={20} />
                <div>
-                  <p className="text-xs font-semibold text-slate-600">Active Products</p>
+                  <p className="text-xs font-semibold text-slate-600">Active products</p>
                   <p className="text-sm font-black text-slate-900">{allProducts.length}</p>
                </div>
             </div>
             <div className={`flex items-center justify-between p-3 rounded-2xl border ${lowStock.length > 0 ? 'bg-orange-50 border-orange-100' : 'bg-slate-50 border-slate-100'}`}>
-               <span className={`text-xs font-semibold ${lowStock.length > 0 ? 'text-orange-800' : 'text-slate-600'}`}>Low Stock Alerts</span>
+               <span className={`text-xs font-semibold ${lowStock.length > 0 ? 'text-orange-800' : 'text-slate-600'}`}>Low stock alerts</span>
                {lowStock.length > 0 ? (
                   <button onClick={() => setActiveTab('INVENTORY')} className="text-[10px] font-bold text-white bg-orange-500 px-2 py-1 rounded-lg shadow-sm">
                      {lowStock.length} ITEM(S)
                   </button>
                ) : (
-                  <span className="text-[10px] font-bold text-green-600 bg-green-100 px-2 py-1 rounded-lg">ALL GOOD</span>
+                  <span className="text-[10px] font-bold text-green-600 bg-green-100 px-2 py-1 rounded-lg">All good</span>
                )}
             </div>
          </div>
@@ -482,7 +482,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       {/* Recent Activity List */}
       <div>
          <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2 mb-3">
-            <Clock size={16} className="text-slate-500" /> Live Sales Feed
+            <Clock size={16} className="text-slate-500" /> Live sales feed
          </h3>
          <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
             {recentActivity.length === 0 ? (
@@ -497,8 +497,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                         </div>
                         <div className="text-right">
                            <p className="text-sm font-black text-slate-900">Ksh {t.total.toLocaleString()}</p>
-                           <p className={`text-[9px] font-bold mt-1 px-1.5 py-0.5 rounded tracking-widest inline-block ${t.paymentMethod === 'MPESA' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-700'}`}>
-                              {t.paymentMethod || 'UNKNOWN'}
+                           <p className={`text-[9px] font-bold mt-1 px-1.5 py-0.5 rounded  inline-block ${t.paymentMethod === 'MPESA' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-700'}`}>
+                              {t.paymentMethod || 'Unknown'}
                            </p>
                         </div>
                      </div>
@@ -508,12 +508,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
          </div>
       </div>
 
-      {/* Pick Cash Modal */}
+      {/* Pick cash Modal */}
       {isPickCashOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPickCashOpen(false)} />
           <div className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
-            <h2 className="text-xl font-bold text-slate-900 mb-2">Pick Cash</h2>
+            <h2 className="text-xl font-bold text-slate-900 mb-2">Pick cash</h2>
             <p className="text-sm text-slate-500 mb-6">Remove cash from the drawer for deposit.</p>
             <div className="bg-blue-50 p-4 rounded-xl mb-6 border border-blue-100 flex justify-between items-center text-blue-900">
                <span className="font-semibold text-sm">Expected Drawer:</span>
@@ -534,12 +534,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         </div>
       )}
 
-      {/* Close Day Modal */}
+      {/* Close day Modal */}
       {isCloseDayOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsCloseDayOpen(false)} />
           <div className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
-            <h2 className="text-xl font-black text-slate-900 mb-2 flex items-center gap-2"><div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center"><CalendarCheck size={18} /></div> Z-Report / Close Shift</h2>
+            <h2 className="text-xl font-black text-slate-900 mb-2 flex items-center gap-2"><div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center"><CalendarCheck size={18} /></div> Z-Report / Close shift</h2>
             <p className="text-sm text-slate-500 mb-6 flex items-center gap-1">Finalizing <span className="font-bold text-slate-900">{activeShift?.cashierName}</span>'s active shift ledger.</p>
              <div className="space-y-2 mb-6 text-sm">
                <div className="flex justify-between text-slate-500"><span>Shift Start (Float)</span><span className="font-bold text-slate-900">Ksh {openingFloat.toLocaleString()}</span></div>
@@ -560,7 +560,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
               </div>
               {reportedCash && Number(reportedCash) !== expectedCashDrawer && (
                  <div className="flex justify-between items-center bg-red-50 p-2 rounded-lg mt-2">
-                    <span className="text-[10px] font-bold text-red-600 uppercase">Cashier Variance</span>
+                    <span className="text-[10px] font-bold text-red-600">Cashier variance</span>
                     <span className="text-xs font-black text-red-700">Ksh {(Number(reportedCash) - expectedCashDrawer).toLocaleString()}</span>
                  </div>
               )}
@@ -595,17 +595,17 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                    <TrendingUp size={24} />
                 </div>
                 <h2 className="text-xl font-black">Daily Master Summary</h2>
-                <p className="text-blue-100 text-xs font-semibold uppercase tracking-widest mt-1">{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                <p className="text-blue-100 text-xs font-semibold mt-1">{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
              </div>
              
              <div className="p-6 space-y-6">
                 <div className="grid grid-cols-2 gap-4">
                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Total Sales (Today)</p>
+                      <p className="text-[10px] font-black text-slate-400  mb-1">Total Sales (Today)</p>
                       <p className="text-lg font-black text-slate-900">Ksh {(todaysReports || []).reduce((s: number, r) => s + (Number(r.totalSales) || 0), 0).toLocaleString()}</p>
                    </div>
                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Total Variance</p>
+                      <p className="text-[10px] font-black text-slate-400  mb-1">Total Variance</p>
                       <p className={`text-lg font-black ${(todaysReports || []).reduce((s: number, r) => s + (Number(r.difference) || 0), 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>
                          Ksh {(todaysReports || []).reduce((s: number, r) => s + (Number(r.difference) || 0), 0).toLocaleString()}
                       </p>
@@ -613,7 +613,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 </div>
 
                 <div className="space-y-3">
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Shifts Summarized</p>
+                   <p className="text-[10px] font-bold text-slate-400 ml-1">Shifts summarized</p>
                    {todaysReports?.map((r, idx) => (
                       <div key={idx} className="flex justify-between items-center py-2 border-b border-dashed border-slate-100 last:border-0">
                          <div>
@@ -629,22 +629,22 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 </div>
 
                 <div className="bg-slate-900 text-white p-5 rounded-2xl space-y-3">
-                   <div className="flex justify-between text-xs font-bold opacity-60 uppercase tracking-widest text-[9px]">
-                      <span>Aggregated Metrics</span>
+                    <div className="flex justify-between text-xs font-bold opacity-60 text-[9px]">
+                       <span>Aggregated metrics</span>
                       <span>Amount</span>
                    </div>
                    <div className="flex justify-between text-sm font-bold"><span>Total Expenses</span><span>- Ksh {(todaysReports || []).reduce((s: number, r) => s + (Number(r.totalExpenses) || 0), 0).toLocaleString()}</span></div>
                    <div className="flex justify-between text-sm font-bold"><span>Total Banked</span><span>- Ksh {(todaysReports || []).reduce((s: number, r) => s + (Number(r.totalPicks) || 0), 0).toLocaleString()}</span></div>
                    <div className="pt-2 border-t border-white/10 flex justify-between items-end">
-                      <span className="text-sm font-black uppercase tracking-widest text-slate-400">Total VAT (16%)</span>
+                      <span className="text-sm font-black   text-slate-400">Total VAT (16%)</span>
                       <span className="text-xl font-black">Ksh {(todaysReports || []).reduce((s: number, r) => s + (Number(r.taxTotal) || 0), 0).toLocaleString()}</span>
                    </div>
                 </div>
              </div>
 
              <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
-                <button onClick={() => setIsDailySummaryOpen(false)} className="flex-1 py-4 bg-white border border-slate-200 text-slate-700 font-black text-xs uppercase tracking-widest rounded-2xl">Cancel</button>
-                <button onClick={handleFinalizeDay} className="flex-[2] py-4 bg-blue-600 text-white font-black text-xs uppercase tracking-widest rounded-2xl shadow-lg shadow-blue-600/20 active:scale-95">Finalize Business Day</button>
+                <button onClick={() => setIsDailySummaryOpen(false)} className="flex-1 py-4 bg-white border border-slate-200 text-slate-700 font-bold text-xs rounded-2xl">Cancel</button>
+                <button onClick={handleFinalizeDay} className="flex-[2] py-4 bg-blue-600 text-white font-bold text-xs rounded-2xl shadow-lg shadow-blue-600/20 active:scale-95">Finalize business day</button>
              </div>
           </div>
         </div>
