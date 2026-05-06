@@ -700,8 +700,8 @@ export default function MtaaniPOS() {
                 branchId: activeBranchId!,
                 businessId: activeBusinessId!
               }
-            }
-          });
+            });
+          }
         }
 
         // Execute updates. If one fails, we have the transaction record to reconcile.
