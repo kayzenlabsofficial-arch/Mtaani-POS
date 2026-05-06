@@ -308,3 +308,28 @@ CREATE INDEX IF NOT EXISTS idx_shifts_branch ON shifts(branchId);
 -- ALTER TABLE settings ADD COLUMN businessId TEXT;
 -- ALTER TABLE categories ADD COLUMN businessId TEXT;
 -- ALTER TABLE branches ADD COLUMN businessId TEXT;
+
+CREATE TABLE IF NOT EXISTS mpesaCallbacks (
+    checkoutRequestId TEXT PRIMARY KEY,
+    merchantRequestId TEXT,
+    resultCode INTEGER,
+    resultDesc TEXT,
+    amount REAL,
+    receiptNumber TEXT,
+    phoneNumber TEXT,
+    businessId TEXT,
+    branchId TEXT,
+    timestamp INTEGER
+);
+
+-- MIGRATION: Fix mpesaCallbacks missing columns
+-- ALTER TABLE mpesaCallbacks ADD COLUMN businessId TEXT;
+-- ALTER TABLE mpesaCallbacks ADD COLUMN branchId TEXT;
+
+CREATE TABLE IF NOT EXISTS expenseAccounts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    businessId TEXT,
+    updated_at INTEGER
+);
