@@ -282,7 +282,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                                  <span className="text-xs text-slate-400 font-mono flex items-center gap-1"><KeyRound size={10}/> ****</span>
                                  {user.branchId && (
                                    <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded flex items-center gap-1">
-                                     <Building2 size={8} /> {useLiveQuery(() => db.branches.get(user.branchId!), [user.branchId])?.name || 'Loading...'}
+                                     <Building2 size={8} /> {branches?.find(b => b.id === user.branchId)?.name || 'Loading...'}
                                    </span>
                                  )}
                               </div>
