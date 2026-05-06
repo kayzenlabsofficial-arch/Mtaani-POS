@@ -36,6 +36,7 @@ import AdminVerificationModal from './components/modals/AdminVerificationModal';
 import ExpenseModal from './components/modals/ExpenseModal';
 import Sidebar from './components/shared/Sidebar';
 import ProfileModal from './components/modals/ProfileModal';
+import SupplierPaymentModal from './components/modals/SupplierPaymentModal';
 import { generateAndShareDocument } from './utils/shareUtils';
 
 function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
