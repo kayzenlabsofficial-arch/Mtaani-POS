@@ -248,3 +248,19 @@ body {
   animation: scanLine 2s ease-in-out infinite;
 }
 
+/* Desktop Layout Enhancements */
+@media (min-width: 1024px) {
+  .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  
+  .max-w-desktop {
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+}
+
+.sidebar-enter {
+  animation: slide-from-left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+

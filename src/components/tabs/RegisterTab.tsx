@@ -214,7 +214,7 @@ export default function RegisterTab() {
       </div>
 
       {/* Product List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 px-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 px-4 pb-8">
         {(products || []).map(product => {
           const cfg = getCategoryConfig(product.category);
           const isFlashing = recentlyAdded.has(product.id);

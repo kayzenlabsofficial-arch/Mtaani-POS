@@ -34,6 +34,7 @@ import AdminPanel from './components/tabs/AdminPanel';
 // Modals
 import AdminVerificationModal from './components/modals/AdminVerificationModal';
 import ExpenseModal from './components/modals/ExpenseModal';
+import Sidebar from './components/shared/Sidebar';
 import { generateAndShareDocument } from './utils/shareUtils';
 
 function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
@@ -882,8 +883,19 @@ export default function MtaaniPOS() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-100 overflow-hidden font-sans">
-      <header className="bg-white px-6 py-2 border-b border-slate-200 flex justify-between items-center z-20 shrink-0 shadow-sm">
+    <div className="h-screen flex bg-slate-100 overflow-hidden font-sans">
+      {/* Desktop Sidebar */}
+      <Sidebar 
+        activeTab={activeTab}
+        onTabChange={navigateToTab}
+        onLogout={handleLogout}
+        onSync={db.sync.bind(db)}
+        isSyncing={isSyncing}
+        currentUser={currentUser}
+      />
+
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="bg-white px-6 py-3 border-b border-slate-200 flex justify-between items-center z-20 shrink-0 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 grad-blue rounded-xl flex items-center justify-center shadow-blue">
             <Store size={18} className="text-white" />
@@ -923,11 +935,10 @@ export default function MtaaniPOS() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          
+        <div className="flex items-center gap-2 lg:hidden">
           <button 
             onClick={() => toggleCart(true)}
-            className={`relative w-9 h-9 flex items-center justify-center rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm ${activeTab === 'REGISTER' ? 'lg:hidden' : ''}`}
+            className="relative w-9 h-9 flex items-center justify-center rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
           >
             <ShoppingCart size={18} />
             {cart.length > 0 && (
@@ -969,7 +980,7 @@ export default function MtaaniPOS() {
       </main>
 
       {/* Bottom Navigation Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-slate-200 px-2 py-2 flex justify-around items-center z-40 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-safe">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-slate-200 px-2 py-2 flex justify-around items-center z-40 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-safe">
         {[
           { id: 'REGISTER', label: 'Register', icon: ShoppingCart },
           { id: 'DASHBOARD', label: 'Overview', icon: LayoutDashboard },
@@ -1233,7 +1244,7 @@ export default function MtaaniPOS() {
           </div>
         </div>
       )}
-
+      </div>
       </div>
 
       {/* Global Modals */}
