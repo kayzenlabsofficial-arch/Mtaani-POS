@@ -238,6 +238,7 @@ export default function MtaaniPOS() {
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const setActiveBusinessId = useStore(state => state.setActiveBusinessId);
   const selectedCustomerId = useStore(state => state.selectedCustomerId);
+  const setSelectedCustomerId = useStore(state => state.setSelectedCustomerId);
   
   const allCustomers = useLiveQuery(() => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
   const selectedCustomer = allCustomers?.find(c => c.id === selectedCustomerId);
@@ -270,6 +271,9 @@ export default function MtaaniPOS() {
   const [mpesaPhone, setMpesaPhone] = useState('');
   const [mpesaState, setMpesaState] = useState<'IDLE' | 'PUSHING' | 'POLLING' | 'SUCCESS' | 'FAILED'>('IDLE');
   const [mpesaRequestId, setMpesaRequestId] = useState<string | null>(null);
+  const [discountValue, setDiscountValue] = useState<number>(0);
+  const [discountType, setDiscountType] = useState<'FIXED' | 'PERCENT'>('FIXED');
+  const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState(false);
   const [mpesaMessage, setMpesaMessage] = useState('');
 
   // Global Expense State (for Dashboard & Expenses Tab access)
@@ -742,10 +746,27 @@ export default function MtaaniPOS() {
     info("Logged out successfully.");
   };
 
-  const handleCheckout = async (status: 'QUOTE' | 'PAID', paymentMethod: 'CASH' | 'MPESA') => {
+
+
+  const handleCheckout = async (status: 'QUOTE' | 'PAID', paymentMethod: 'CASH' | 'MPESA' | 'CREDIT') => {
     if (cart.length === 0) return;
     
-    const total = cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0);
+    let currentCustomer = null;
+    if (paymentMethod === 'CREDIT') {
+       if (!selectedCustomerId) {
+         setIsCustomerSelectOpen(true);
+         return;
+       }
+       currentCustomer = await db.customers.get(selectedCustomerId);
+       if (!currentCustomer) {
+         error("Selected customer not found.");
+         return;
+       }
+    }
+    
+    const subtotal = cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0);
+    const discountAmount = discountType === 'PERCENT' ? (subtotal * (discountValue / 100)) : discountValue;
+    const total = Math.max(0, subtotal - discountAmount);
     
     try {
       setIsSyncing(true);
@@ -759,7 +780,9 @@ export default function MtaaniPOS() {
           quantity: item.cartQuantity,
           taxCategory: item.taxCategory
         })),
-        subtotal: total,
+        subtotal: subtotal,
+        discountAmount: discountAmount,
+        discountReason: discountValue > 0 ? `${discountValue}${discountType === 'PERCENT' ? '%' : ' Ksh'} Discount` : undefined,
         tax: total * 0.16,
         total: total,
         status: status,
@@ -768,10 +791,20 @@ export default function MtaaniPOS() {
         branchId: activeBranchId!,
         businessId: activeBusinessId!,
         amountTendered: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) : undefined,
-        changeGiven: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) - total : undefined
+        changeGiven: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) - total : undefined,
+        preparedBy: currentCustomer ? currentCustomer.name : undefined 
       };
 
       await db.transactions.add(transaction);
+
+      // Handle Customer Credit Update
+      if (paymentMethod === 'CREDIT' && currentCustomer) {
+         await db.customers.update(currentCustomer.id, {
+            balance: (currentCustomer.balance || 0) + total,
+            totalSpent: (currentCustomer.totalSpent || 0) + total
+         });
+         success(`Credit added to ${currentCustomer.name}'s account.`);
+      }
       
       if (status === 'PAID') {
         const stockUpdates = [];
@@ -806,6 +839,7 @@ export default function MtaaniPOS() {
       clearCart();
       setIsCartOpen(false);
       setAmountTendered("");
+      setDiscountValue(0);
       setCompletedTransaction(transaction);
       
       if (status === 'PAID') {
@@ -1098,7 +1132,8 @@ export default function MtaaniPOS() {
                       { id: 'CUSTOMERS', label: 'Customers', icon: Users, bg: 'bg-cyan-50', text: 'text-cyan-600' },
                       { id: 'EXPENSES', label: 'Expenses', icon: FileMinus, bg: 'bg-orange-50', text: 'text-orange-600' },
                       { id: 'REFUNDS', label: 'Refunds', icon: RotateCcw, bg: 'bg-red-50', text: 'text-red-600' },
-                      { id: 'PURCHASES', label: 'LPOs', icon: ClipboardList, bg: 'bg-blue-50', text: 'text-blue-600' }
+                      { id: 'PURCHASES', label: 'LPOs', icon: ClipboardList, bg: 'bg-blue-50', text: 'text-blue-600' },
+                      { id: 'DOCUMENTS', label: 'Records', icon: FileText, bg: 'bg-slate-50', text: 'text-slate-600' }
                     ].map(item => (
                       <button
                         key={item.id}
@@ -1120,7 +1155,6 @@ export default function MtaaniPOS() {
                        {[
                          { id: 'SUPPLIER_PAYMENTS', label: 'Payments', icon: DollarSign, bg: 'bg-green-50', text: 'text-green-600' },
                          { id: 'REPORTS', label: 'Reports', icon: BarChart3, bg: 'bg-purple-50', text: 'text-purple-600' },
-                         { id: 'DOCUMENTS', label: 'Records', icon: FileText, bg: 'bg-slate-50', text: 'text-slate-600' },
                          { id: 'ADMIN_PANEL', label: 'Admin', icon: ShieldCheck, bg: 'bg-slate-900', text: 'text-white' },
                        ].filter(item => !(item.id === 'REPORTS' && currentUser?.role === 'CASHIER')).map(item => (
                          <button
@@ -1268,16 +1302,55 @@ export default function MtaaniPOS() {
 
             {cart.length > 0 && (
               <div className="p-6 border-t border-slate-100 bg-slate-50/50 space-y-4 shrink-0">
-                 <div className="space-y-2">
-                    <div className="flex justify-between text-slate-500 font-bold text-xs capitalize">
-                       <span>Subtotal</span>
-                       <span>Ksh {cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-900 font-black text-xl tracking-tight pt-2 border-t border-slate-200">
-                       <span>Total amount</span>
-                       <span className="text-blue-600">Ksh {cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0).toLocaleString()}</span>
-                    </div>
-                 </div>
+                  {/* Discount Entry */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                     <div className="flex items-center justify-between mb-3">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Apply Discount</label>
+                        <div className="flex bg-slate-100 p-1 rounded-lg">
+                           <button 
+                             onClick={() => setDiscountType('FIXED')}
+                             className={`px-3 py-1 text-[9px] font-black rounded-md transition-all ${discountType === 'FIXED' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}
+                           >
+                             KSH
+                           </button>
+                           <button 
+                             onClick={() => setDiscountType('PERCENT')}
+                             className={`px-3 py-1 text-[9px] font-black rounded-md transition-all ${discountType === 'PERCENT' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}
+                           >
+                             %
+                           </button>
+                        </div>
+                     </div>
+                     <div className="relative">
+                        <BadgePercent className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input 
+                          type="number" 
+                          value={discountValue || ''} 
+                          onChange={(e) => setDiscountValue(Number(e.target.value))}
+                          placeholder={discountType === 'PERCENT' ? "Percentage (e.g. 10)" : "Amount (e.g. 500)"}
+                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-transparent focus:border-blue-500 rounded-xl text-sm font-bold outline-none transition-all"
+                        />
+                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                     <div className="flex justify-between text-slate-500 font-bold text-xs">
+                        <span>Subtotal</span>
+                        <span>Ksh {cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0).toLocaleString()}</span>
+                     </div>
+                     {discountValue > 0 && (
+                       <div className="flex justify-between text-red-500 font-bold text-xs">
+                          <span>Discount ({discountType === 'PERCENT' ? `${discountValue}%` : `Ksh ${discountValue}`})</span>
+                          <span>- Ksh {(discountType === 'PERCENT' ? (cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0) * (discountValue / 100)) : discountValue).toLocaleString()}</span>
+                       </div>
+                     )}
+                     <div className="flex justify-between text-slate-900 font-black text-xl tracking-tight pt-2 border-t border-slate-200">
+                        <span>Total amount</span>
+                        <span className="text-blue-600">
+                          Ksh {Math.max(0, cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0) - (discountType === 'PERCENT' ? (cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0) * (discountValue / 100)) : discountValue)).toLocaleString()}
+                        </span>
+                     </div>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <button 
@@ -1289,28 +1362,37 @@ export default function MtaaniPOS() {
                       Clear all
                     </button>
                     <div className="flex gap-2">
-                       <button 
-                        onClick={() => setIsCashModalOpen(true)}
-                        className="flex-1 px-4 py-4 rounded-2xl bg-slate-900 text-white font-bold text-[10px] hover:bg-blue-600 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                      <button 
+                        onClick={() => handleCheckout('PAID', 'CASH')}
+                        className="flex-1 px-4 py-4 rounded-2xl bg-slate-900 text-white font-bold text-[10px] hover:bg-slate-800 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
                       >
                         <Banknote size={16} />
                         Cash
                       </button>
                       <button 
-                        onClick={() => {
-                          setMpesaState('IDLE');
-                          setMpesaPhone(selectedCustomer?.phone || '');
-                          setMpesaMessage('');
-                          setIsMpesaModalOpen(true);
-                        }}
-                        className="flex-1 px-4 py-4 rounded-2xl bg-blue-600 text-white font-bold text-[10px] hover:bg-blue-700 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                        onClick={() => setIsMpesaModalOpen(true)}
+                        className="flex-1 px-4 py-4 rounded-2xl bg-green-600 text-white font-bold text-[10px] hover:bg-green-700 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
                       >
                         <Smartphone size={16} />
                         M-Pesa
                       </button>
                     </div>
+                    <button 
+                      onClick={() => handleCheckout('PAID', 'CREDIT')}
+                      className="w-full px-4 py-4 rounded-2xl bg-orange-600 text-white font-bold text-[10px] hover:bg-orange-700 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Users size={16} />
+                      Sell on Credit
+                    </button>
+                    <button 
+                      onClick={() => handleCheckout('QUOTE', 'CASH')}
+                      className="w-full px-4 py-4 rounded-2xl bg-blue-50 text-blue-600 font-bold text-[10px] hover:bg-blue-100 transition-all flex items-center justify-center gap-2"
+                    >
+                      <FileText size={16} />
+                      Save as Quote
+                    </button>
                   </div>
-              </div>
+                </div>
             )}
           </div>
         </div>
@@ -1631,6 +1713,90 @@ export default function MtaaniPOS() {
       )}
 
 
+      {isCustomerSelectOpen && (
+        <CustomerSelectionModal 
+          isOpen={isCustomerSelectOpen}
+          onClose={() => setIsCustomerSelectOpen(false)}
+          onSelect={(customer) => {
+            setSelectedCustomerId(customer.id);
+            setIsCustomerSelectOpen(false);
+            // Re-trigger checkout with credit now that customer is selected
+            setTimeout(() => handleCheckout('PAID', 'CREDIT'), 100);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── CUSTOMER SELECTION MODAL ───────────────────────────────────────────────
+
+function CustomerSelectionModal({ isOpen, onClose, onSelect }: { isOpen: boolean, onClose: () => void, onSelect: (c: any) => void }) {
+  const [search, setSearch] = useState("");
+  const customers = useLiveQuery(() => db.customers.toArray(), [], []);
+  const filtered = (customers || []).filter(c => 
+    c.name.toLowerCase().includes(search.toLowerCase()) || 
+    c.phone.includes(search)
+  );
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in" onClick={onClose} />
+      <div className="relative w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-black text-slate-900">Select Customer</h3>
+            <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-wider">Assigning Credit Sale</p>
+          </div>
+          <button onClick={onClose} className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400">
+            <X size={20} />
+          </button>
+        </div>
+        
+        <div className="p-6">
+          <div className="relative mb-6">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="Search by name or phone..." 
+              value={search} 
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-2xl text-sm font-bold outline-none transition-all"
+              autoFocus
+            />
+          </div>
+          
+          <div className="space-y-2 max-h-[350px] overflow-y-auto no-scrollbar pb-4">
+            {filtered.map(c => (
+              <button 
+                key={c.id} 
+                onClick={() => onSelect(c)}
+                className="w-full flex items-center justify-between p-4 bg-white border-2 border-slate-50 hover:border-blue-500 hover:bg-blue-50/30 rounded-2xl transition-all group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center font-black">
+                    {c.name.charAt(0)}
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-black text-slate-900">{c.name}</p>
+                    <p className="text-[10px] font-bold text-slate-400">{c.phone}</p>
+                  </div>
+                </div>
+                <ChevronRight className="text-slate-300 group-hover:text-blue-500" size={18} />
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <div className="py-12 text-center text-slate-400 font-bold italic text-sm">No customers found.</div>
+            )}
+          </div>
+        </div>
+        
+        <div className="p-6 bg-slate-50 border-t border-slate-100">
+           <button onClick={onClose} className="w-full py-4 bg-white border border-slate-200 text-slate-600 font-black rounded-2xl text-xs uppercase tracking-widest active:scale-95 transition-all">
+             Cancel
+           </button>
+        </div>
+      </div>
     </div>
   );
 }
