@@ -24,19 +24,21 @@ export default function Sidebar({
   currentUser,
   onOpenProfile
 }: SidebarProps) {
+  const isAdminOrManager = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+
   const menuItems = [
     { id: 'REGISTER', label: 'Register', icon: ShoppingCart },
-    { id: 'DASHBOARD', label: 'Overview', icon: LayoutDashboard },
+    { id: 'DASHBOARD', label: 'Overview', icon: LayoutDashboard, hidden: !isAdminOrManager },
     { id: 'INVENTORY', label: 'Inventory', icon: Package },
-    { id: 'SUPPLIERS', label: 'Suppliers', icon: Truck },
+    { id: 'SUPPLIERS', label: 'Suppliers', icon: Truck, hidden: !isAdminOrManager },
     { id: 'CUSTOMERS', label: 'Customers', icon: Users },
     { id: 'EXPENSES', label: 'Expenses', icon: FileMinus },
     { id: 'REFUNDS', label: 'Refunds', icon: RotateCcw },
     { id: 'PURCHASES', label: 'LPOs', icon: ClipboardList },
-    { id: 'SUPPLIER_PAYMENTS', label: 'Payments', icon: DollarSign },
-    { id: 'REPORTS', label: 'Reports', icon: BarChart3 },
-    { id: 'DOCUMENTS', label: 'Records', icon: FileText },
-    { id: 'ADMIN_PANEL', label: 'Admin', icon: ShieldCheck },
+    { id: 'SUPPLIER_PAYMENTS', label: 'Payments', icon: DollarSign, hidden: !isAdminOrManager },
+    { id: 'REPORTS', label: 'Reports', icon: BarChart3, hidden: !isAdminOrManager },
+    { id: 'DOCUMENTS', label: 'Records', icon: FileText, hidden: !isAdminOrManager },
+    { id: 'ADMIN_PANEL', label: 'Admin', icon: ShieldCheck, hidden: !isAdminOrManager },
   ];
 
   return (
@@ -53,7 +55,7 @@ export default function Sidebar({
         </div>
 
         <nav className="space-y-1">
-          {menuItems.map((item) => (
+          {menuItems.filter(item => !item.hidden).map((item) => (
             <button
               key={item.id}
               onClick={() => onTabChange(item.id)}

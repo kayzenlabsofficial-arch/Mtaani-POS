@@ -606,40 +606,57 @@ export default function MtaaniPOS() {
         setPendingUser(matchedUser);
         setAvailableBranches(active);
 
-        if (matchedUser.role === 'CASHIER' && matchedUser.branchId) {
-          const assignedBranch = active.find(b => b.id === matchedUser.branchId);
-          if (assignedBranch) {
-            setSelectedBranchId(assignedBranch.id);
-            setActiveBranchId(assignedBranch.id);
-            await db.sync();
-            setLoginStep('FLOAT');
-            return;
-          } else {
-            error("Assigned branch is currently inactive.");
-            setIsSyncing(false);
-            return;
-          }
+        let branchToUse = active[0]?.id;
+        if (matchedUser.branchId && active.find(b => b.id === matchedUser.branchId)) {
+           branchToUse = matchedUser.branchId;
         }
 
-        if (active.length === 1) {
-          setSelectedBranchId(active[0].id);
-          setActiveBranchId(active[0].id);
-          await db.sync();
-          if (matchedUser.role === 'CASHIER') {
-            setLoginStep('FLOAT');
-          } else {
-            const openShift = await db.shifts.where('status').equals('OPEN')
-              .and(s => s.branchId === active[0].id).first();
-            if (openShift) setActiveShift(openShift);
-            setCurrentUser(matchedUser);
-            setPendingUser(null);
-            setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
-            setLoginStep('LOGIN');
-            success(`Welcome back, ${matchedUser.name}!`);
+        if (matchedUser.role === 'CASHIER') {
+          if (!branchToUse) {
+             error("No active branch available.");
+             setIsSyncing(false);
+             return;
           }
+          
+          setActiveBranchId(branchToUse);
+          setCurrentUser(matchedUser);
+          await db.sync();
+          
+          const shiftId = crypto.randomUUID();
+          const newShift: Shift = {
+              id: shiftId,
+              startTime: Date.now(),
+              openingFloat: 0,
+              cashierName: matchedUser.name,
+              status: 'OPEN',
+              branchId: branchToUse,
+              businessId: activeBusinessId!
+          };
+          await db.shifts.add(newShift);
+          setActiveShift(newShift);
+          
+          setActiveTab('REGISTER');
+          setLoginStep('LOGIN');
+          setPendingUser(null);
+          success(`Shift started for ${matchedUser.name}`);
         } else {
-          setSelectedBranchId(active[0]?.id || '');
-          setLoginStep('BRANCH');
+           if (active.length === 1) {
+              setActiveBranchId(active[0].id);
+              setCurrentUser(matchedUser);
+              await db.sync();
+              
+              const openShift = await db.shifts.where('status').equals('OPEN')
+                .and(s => s.branchId === active[0].id).first();
+              if (openShift) setActiveShift(openShift);
+              
+              setActiveTab('DASHBOARD');
+              setLoginStep('LOGIN');
+              setPendingUser(null);
+              success(`Welcome back, ${matchedUser.name}!`);
+           } else {
+              setSelectedBranchId(active[0]?.id || '');
+              setLoginStep('BRANCH');
+           }
         }
       } else {
         recordFailedAttempt(rawCode);
