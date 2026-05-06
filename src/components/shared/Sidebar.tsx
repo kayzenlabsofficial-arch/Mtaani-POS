@@ -12,6 +12,7 @@ interface SidebarProps {
   onSync: () => void;
   isSyncing: boolean;
   currentUser: any;
+  onOpenProfile: () => void;
 }
 
 export default function Sidebar({ 
@@ -20,7 +21,8 @@ export default function Sidebar({
   onLogout, 
   onSync, 
   isSyncing,
-  currentUser 
+  currentUser,
+  onOpenProfile
 }: SidebarProps) {
   const menuItems = [
     { id: 'REGISTER', label: 'Register', icon: ShoppingCart },
@@ -69,10 +71,13 @@ export default function Sidebar({
       </div>
 
       <div className="mt-auto p-6 space-y-4">
-        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+        <div 
+          onClick={onOpenProfile}
+          className="p-4 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer hover:bg-slate-100 transition-all group"
+        >
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center border border-slate-200">
-              <ShieldCheck size={16} className="text-blue-600" />
+            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center border border-slate-200 group-hover:border-blue-200 group-hover:text-blue-600 transition-colors">
+              <ShieldCheck size={16} />
             </div>
             <div className="min-w-0">
               <p className="text-xs font-black text-slate-900 truncate">{currentUser?.name}</p>

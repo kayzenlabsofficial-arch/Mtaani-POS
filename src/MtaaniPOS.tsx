@@ -35,6 +35,7 @@ import AdminPanel from './components/tabs/AdminPanel';
 import AdminVerificationModal from './components/modals/AdminVerificationModal';
 import ExpenseModal from './components/modals/ExpenseModal';
 import Sidebar from './components/shared/Sidebar';
+import ProfileModal from './components/modals/ProfileModal';
 import { generateAndShareDocument } from './utils/shareUtils';
 
 function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
@@ -246,6 +247,7 @@ export default function MtaaniPOS() {
   const [isSystemManager, setIsSystemManager] = useState(false);
 
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isCashModalOpen, setIsCashModalOpen] = useState(false);
   const [completedTransaction, setCompletedTransaction] = useState<Transaction | null>(null);
   const [isSharing, setIsSharing] = useState(false);
@@ -892,6 +894,7 @@ export default function MtaaniPOS() {
         onSync={db.sync.bind(db)}
         isSyncing={isSyncing}
         currentUser={currentUser}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
       />
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -958,7 +961,10 @@ export default function MtaaniPOS() {
 
         {/* Desktop Header Actions */}
         <div className="hidden lg:flex items-center gap-4">
-           <div className="flex flex-col items-end">
+           <div 
+            onClick={() => setIsProfileModalOpen(true)}
+            className="flex flex-col items-end cursor-pointer hover:opacity-70 transition-opacity"
+           >
               <p className="text-xs font-black text-slate-900 leading-none">{currentUser?.name}</p>
               <p className="text-[10px] font-bold text-slate-400 mt-1 capitalize">{currentUser?.role?.toLowerCase()}</p>
            </div>
@@ -1114,6 +1120,16 @@ export default function MtaaniPOS() {
                 {isSyncing ? 'Syncing...' : 'Sync Cloud'}
               </button>
               <button 
+                onClick={() => {
+                  setIsMoreMenuOpen(false);
+                  setIsProfileModalOpen(true);
+                }}
+                className="flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl bg-slate-50 text-slate-600 font-bold text-[10px]   hover:bg-slate-900 hover:text-white transition-all"
+              >
+                <KeyRound size={16} />
+                Change Password
+              </button>
+              <button 
                 onClick={handleLogout}
                 className="flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl bg-red-50 text-red-600 font-bold text-[10px]   hover:bg-red-600 hover:text-white transition-all"
               >
@@ -1264,6 +1280,11 @@ export default function MtaaniPOS() {
       </div>
 
       {/* Global Modals */}
+      <ProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        currentUser={currentUser}
+      />
       <ExpenseModal 
         isOpen={isExpenseModalOpen} 
         onClose={() => setIsExpenseModalOpen(false)} 
