@@ -471,16 +471,20 @@ export default function MtaaniPOS() {
     }
 
     // ── System Manager Intercept (hashed check) ────────────────────────────
-    if (rawCode === 'SYSTEM' && rawUser === 'admin') {
+    if (rawCode === 'SYSTEM' && rawUser.toLowerCase() === 'admin') {
+      console.log('[Auth] System Manager login attempt...');
       const enteredHash = await hashPassword(loginForm.password);
       // Hardcoded strong master password: Kayzen@Secure#POS2026
       const masterHash = await hashPassword('Kayzen@Secure#POS2026');
+      
       if (enteredHash === masterHash) {
+        console.log('[Auth] System Manager login successful.');
         setIsSystemManager(true);
         setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
         resetAttempts('SYSTEM');
         return;
       } else {
+        console.warn('[Auth] System Manager login failed: Invalid password.');
         recordFailedAttempt('SYSTEM');
         error('Invalid System Manager credentials.');
         return;

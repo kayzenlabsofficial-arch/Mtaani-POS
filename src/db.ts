@@ -331,7 +331,7 @@ class MtaaniCloudDB {
   branches            = new CloudTable<Branch>('branches');
   expenseAccounts     = new CloudTable<ExpenseAccount>('expenseAccounts');
 
-  /** Load all tables from D1 in parallel. Call once on app startup. */
+  /** Load global tables from D1. Call once on app startup. */
   async init(): Promise<void> {
     // 1. Ensure remote tables exist
     try {
@@ -340,27 +340,14 @@ class MtaaniCloudDB {
       console.warn('[DB] Remote setup failed or already done.', e);
     }
 
-    // 2. Hydrate all tables from D1
+    // 2. Hydrate global tables from D1
+    // Branch-specific tables (products, transactions, etc.) are only synced 
+    // when a branch is active (see db.sync()).
     await Promise.all([
       this.businesses.hydrate(),
-      this.products.hydrate(),
-      this.transactions.hydrate(),
-      this.cashPicks.hydrate(),
-      this.endOfDayReports.hydrate(),
-      this.stockMovements.hydrate(),
-      this.customers.hydrate(),
-      this.suppliers.hydrate(),
-      this.supplierPayments.hydrate(),
-      this.expenses.hydrate(),
-      this.settings.hydrate(),
-      this.purchaseOrders.hydrate(),
-      this.stockAdjustmentRequests.hydrate(),
-      this.shifts.hydrate(),
-      this.dailySummaries.hydrate(),
       this.users.hydrate(),
-      this.creditNotes.hydrate(),
-      this.categories.hydrate(),
       this.branches.hydrate(),
+      this.settings.hydrate(),
       this.expenseAccounts.hydrate(),
     ]);
   }
