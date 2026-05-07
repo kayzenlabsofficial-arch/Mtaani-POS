@@ -42,11 +42,11 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
   // CRITICAL: Dashboard should only show data since the LAST "Close Day"
   const lastFinalizedDay = useLiveQuery(
-    () => activeBranchId ? db.dailySummaries.where('branchId').equals(activeBranchId).reverse().sortBy('date') : Promise.resolve([]),
+    () => activeBranchId ? db.dailySummaries.where('branchId').equals(activeBranchId).reverse().sortBy('timestamp') : Promise.resolve([]),
     [activeBranchId]
   )?.[0];
   
-  const metricsStartTime = lastFinalizedDay ? lastFinalizedDay.date + 86400000 : todayStart.getTime();
+  const metricsStartTime = lastFinalizedDay ? Math.max(lastFinalizedDay.timestamp, todayStart.getTime()) : todayStart.getTime();
 
   const shiftStartTime = activeShift?.startTime || metricsStartTime;
 
@@ -87,17 +87,17 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   
   const shiftTillExpenses = (allExpenses || []).filter(e => {
       if (!isAdmin && !isManager) return activeShift ? e.shiftId === activeShift.id && e.source === 'TILL' : false;
-      return e.source === 'TILL' && e.timestamp >= todayStart.getTime();
+      return e.source === 'TILL' && e.timestamp >= metricsStartTime;
   }).reduce((sum, e) => sum + (e.amount || 0), 0);
   
   const shiftTillPayments = (allSupplierPayments || []).filter(p => {
       if (!isAdmin && !isManager) return activeShift ? p.shiftId === activeShift.id && p.source === 'TILL' : false;
-      return p.source === 'TILL' && p.timestamp >= todayStart.getTime();
+      return p.source === 'TILL' && p.timestamp >= metricsStartTime;
   }).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   
   const shiftCashPicks = (allCashPicks || []).filter(c => {
       if (!isAdmin && !isManager) return activeShift ? c.shiftId === activeShift.id : false;
-      return c.timestamp >= todayStart.getTime();
+      return c.timestamp >= metricsStartTime;
   });
   
   const totalPickedAmount = shiftCashPicks.reduce((acc, p) => acc + (p.amount || 0), 0);
