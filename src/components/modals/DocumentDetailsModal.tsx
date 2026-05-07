@@ -26,6 +26,9 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const [isSharing, setIsSharing] = useState(false);
   const [isSavingPDF, setIsSavingPDF] = useState(false);
 
+  const businessSettings = useLiveQuery(() => db.settings.get('core'), []);
+  const storeName = businessSettings?.storeName || 'MTAANI POS';
+
   // Fetch contextual data based on record type
   const supplier = useLiveQuery(
     () => (selectedRecord?.recordType === 'SUPPLIER_PAYMENT' || selectedRecord?.recordType === 'PURCHASE_ORDER') 
@@ -135,7 +138,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
         }
       }
 
-      await generateAndShareDocument(recordWithDetails, filename, supplier, false);
+      await generateAndShareDocument(recordWithDetails, filename, supplier, false, storeName);
       success('PDF ready!');
     } catch (err) {
       console.error('Share failed:', err);
@@ -172,8 +175,8 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
         }
       }
 
-      await generateAndShareDocument(recordWithDetails, filename, supplier, true);
-      success('PDF downloaded successfully!');
+      await generateAndShareDocument(recordWithDetails, filename, supplier, true, storeName);
+      success('PDF saved successfully!');
     } catch (err) {
       console.error('Save PDF failed:', err);
       toastError('PDF generation failed. Please try again.');

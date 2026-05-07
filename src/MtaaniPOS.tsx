@@ -1737,7 +1737,7 @@ export default function MtaaniPOS() {
                       setIsSharing(true);
                       try {
                         const filename = `Receipt-${completedTransaction.id.split('-')[0].toUpperCase()}`;
-                        await generateAndShareDocument(completedTransaction, filename, null, false);
+                        await generateAndShareDocument(completedTransaction, filename, null, false, storeName);
                         success('PDF shared!');
                       } catch (err) {
                         error('Share failed');
@@ -1754,7 +1754,7 @@ export default function MtaaniPOS() {
                       setIsSharing(true);
                       try {
                         const filename = `Receipt-${completedTransaction.id.split('-')[0].toUpperCase()}`;
-                        await generateAndShareDocument(completedTransaction, filename, null, true);
+                        await generateAndShareDocument(completedTransaction, filename, null, true, storeName);
                         success('PDF saved!');
                       } catch (err) {
                         error('Failed to save PDF');

@@ -22,14 +22,14 @@ const st = (d: jsPDF, c: RGB) => d.setTextColor(c[0], c[1], c[2]);
 const sd = (d: jsPDF, c: RGB) => d.setDrawColor(c[0], c[1], c[2]);
 
 // ─── Shared drawing primitives ────────────────────────────────────────────────
-function banner(doc: jsPDF, title: string, ref: string, date: string): number {
+function banner(doc: jsPDF, title: string, ref: string, date: string, bizName = 'MTAANI POS'): number {
   sf(doc, slate900);
   doc.rect(M, 10, W, 35, 'F');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
   st(doc, white);
-  doc.text('MTAANI POS', M + 5, 22);
+  doc.text(bizName.toUpperCase(), M + 5, 22);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
@@ -158,7 +158,7 @@ function safeStr(s: any, fallback = '—'): string {
 }
 
 // ─── Thermal Receipt (80mm) ──────────────────────────────────────────────────
-function buildReceipt(r: any): Blob {
+function buildReceipt(r: any, bizName = 'MTAANI POS'): Blob {
   const TW = 80; // 80mm width
   const TM = 4;  // margin
   const CW = TW - TM * 2;
@@ -175,7 +175,7 @@ function buildReceipt(r: any): Blob {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
   st(doc, slate900);
-  doc.text('MTAANI POS', TW / 2, y, { align: 'center' });
+  doc.text(bizName.toUpperCase(), TW / 2, y, { align: 'center' });
   y += 5;
   
   doc.setFont('helvetica', 'normal');
@@ -293,10 +293,10 @@ function buildReceipt(r: any): Blob {
 }
 
 // ─── Expense ──────────────────────────────────────────────────────────────────
-function buildExpense(r: any): Blob {
+function buildExpense(r: any, bizName?: string): Blob {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const ref = safeStr((r.id || '').split('-')[0], 'EXP').toUpperCase();
-  let y = banner(doc, 'Expense Document', ref, new Date(r.timestamp).toLocaleString('en-KE'));
+  let y = banner(doc, 'Expense Document', ref, new Date(r.timestamp).toLocaleString('en-KE'), bizName);
   y = hLine(doc, y);
   y = kvRow(doc, 'Category', safeStr(r.category, 'General'), y);
   y = kvRow(doc, 'Description', safeStr(r.description, 'No description provided.'), y);
@@ -309,14 +309,14 @@ function buildExpense(r: any): Blob {
 }
 
 // ─── Purchase Order ───────────────────────────────────────────────────────────
-function buildPO(r: any, supplier?: any): Blob {
+function buildPO(r: any, supplier?: any, bizName?: string): Blob {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const ref = safeStr(r.invoiceNumber || (r.id || '').startsWith('PO-') ? r.id : (r.id || '').split('-')[0], 'LPO').toUpperCase();
   const dateStr = new Date(r.orderDate || r.timestamp || Date.now()).toLocaleDateString('en-KE', { 
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
   });
   
-  let y = banner(doc, 'Purchase Order', ref, dateStr);
+  let y = banner(doc, 'Purchase Order', ref, dateStr, bizName);
   y = hLine(doc, y);
   
   // Supplier Info Section
@@ -377,10 +377,10 @@ function buildPO(r: any, supplier?: any): Blob {
 }
 
 // ─── Supplier Remittance ──────────────────────────────────────────────────────
-function buildRemittance(r: any, supplierName?: string): Blob {
+function buildRemittance(r: any, supplierName?: string, bizName?: string): Blob {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const ref = (r.id || '').split('-')[0].toUpperCase();
-  let y = banner(doc, 'Remittance Advice', ref, new Date(r.timestamp).toLocaleString('en-KE'));
+  let y = banner(doc, 'Remittance Advice', ref, new Date(r.timestamp).toLocaleString('en-KE'), bizName);
   y = hLine(doc, y);
   y = kvRow(doc, 'Supplier', safeStr(supplierName), y);
   y = kvRow(doc, 'Payment Method', safeStr(r.paymentMethod, 'CASH'), y);
@@ -411,7 +411,7 @@ function buildRemittance(r: any, supplierName?: string): Blob {
 }
 
 // ─── Thermal Report (80mm) ───────────────────────────────────────────────────
-function buildReport(r: any): Blob {
+function buildReport(r: any, bizName = 'MTAANI POS'): Blob {
   const TW = 80;
   const TM = 4;
   const items = [
@@ -432,7 +432,7 @@ function buildReport(r: any): Blob {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
   st(doc, slate900);
-  doc.text('MTAANI POS', TW / 2, y, { align: 'center' });
+  doc.text(bizName.toUpperCase(), TW / 2, y, { align: 'center' });
   y += 5;
 
   doc.setFontSize(10);
@@ -487,10 +487,10 @@ function buildReport(r: any): Blob {
 }
 
 // ─── Supplier Statement (A4) ──────────────────────────────────────────────────
-export function buildStatementPDF(s: any, invoices: any[], payments: any[], creditNotes: any[]): Blob {
+export function buildStatementPDF(s: any, invoices: any[], payments: any[], creditNotes: any[], bizName?: string): Blob {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const dateStr = new Date().toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' });
-  let y = banner(doc, 'Supplier Statement', (s.company || '').slice(0, 3).toUpperCase(), dateStr);
+  let y = banner(doc, 'Supplier Statement', (s.company || '').slice(0, 3).toUpperCase(), dateStr, bizName);
   y = hLine(doc, y);
 
   // Supplier Summary
@@ -574,15 +574,15 @@ function download(blob: Blob, filename: string) {
 }
 
 // ─── Build blob by record type ────────────────────────────────────────────────
-function buildPDF(record: any, supplier?: any): Blob {
+function buildPDF(record: any, supplier?: any, bizName?: string): Blob {
   switch (record?.recordType) {
-    case 'SALE':             return buildReceipt(record);
-    case 'EXPENSE':          return buildExpense(record);
-    case 'PURCHASE_ORDER':   return buildPO(record, supplier);
-    case 'SUPPLIER_PAYMENT': return buildRemittance(record, supplier?.company || supplier);
+    case 'SALE':             return buildReceipt(record, bizName);
+    case 'EXPENSE':          return buildExpense(record, bizName);
+    case 'PURCHASE_ORDER':   return buildPO(record, supplier, bizName);
+    case 'SUPPLIER_PAYMENT': return buildRemittance(record, supplier?.company || supplier, bizName);
     case 'CLOSE_DAY_REPORT':
-    case 'DAILY_SUMMARY':    return buildReport(record);
-    default:                 return buildReceipt(record); // treat unknown as receipt
+    case 'DAILY_SUMMARY':    return buildReport(record, bizName);
+    default:                 return buildReceipt(record, bizName); // treat unknown as receipt
   }
 }
 
@@ -591,9 +591,10 @@ export async function generateAndShareDocument(
   record: any,
   filename: string,
   supplier?: any,
-  forceDownload = false
+  forceDownload = false,
+  bizName?: string
 ): Promise<void> {
-  const blob = buildPDF(record, supplier);
+  const blob = buildPDF(record, supplier, bizName);
   const file = new File([blob], `${filename}.pdf`, { type: 'application/pdf' });
 
   // Try native share API (Android PWA, iOS Safari)
