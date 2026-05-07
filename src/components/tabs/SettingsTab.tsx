@@ -42,13 +42,21 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
   };
 
   const handleSaveSettings = async () => {
-      await db.settings.put({
-          id: 'core',
-          storeName: storeSettings.storeName,
-          tillNumber: storeSettings.tillNumber,
-          kraPin: storeSettings.krapin,
-          receiptFooter: storeSettings.receiptFooter
-      });
+      setIsUpdating(true);
+      try {
+        await db.settings.put({
+            id: 'core',
+            storeName: storeSettings.storeName,
+            tillNumber: storeSettings.tillNumber,
+            kraPin: storeSettings.krapin,
+            receiptFooter: storeSettings.receiptFooter
+        });
+        success("Business configuration saved successfully!");
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsUpdating(false);
+      }
   };
 
   return (
@@ -111,8 +119,13 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
           </div>
       </div>
 
-      <button onClick={handleSaveSettings} className="bg-slate-900 text-white w-full py-4 rounded-2xl font-bold transition-transform active:scale-[0.98] shadow-lg shadow-slate-900/10 flex items-center justify-center gap-2">
-         <Save size={18} /> Save Configurations
+      <button 
+        onClick={handleSaveSettings} 
+        disabled={isUpdating}
+        className="bg-slate-900 text-white w-full py-4 rounded-2xl font-bold transition-transform active:scale-[0.98] shadow-lg shadow-slate-900/10 flex items-center justify-center gap-2 disabled:opacity-50"
+      >
+         {isUpdating ? <RefreshCcw size={18} className="animate-spin" /> : <Save size={18} />}
+         {isUpdating ? 'Saving...' : 'Save Configurations'}
       </button>
     </div>
   );
