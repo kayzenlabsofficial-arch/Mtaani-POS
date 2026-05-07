@@ -262,6 +262,7 @@ export interface ExpenseAccount {
 export interface BusinessSettings {
   id: string;
   storeName: string;
+  location: string;
   tillNumber: string;
   kraPin: string;
   receiptFooter: string;

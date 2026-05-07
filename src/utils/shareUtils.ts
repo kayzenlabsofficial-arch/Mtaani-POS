@@ -158,7 +158,7 @@ function safeStr(s: any, fallback = '—'): string {
 }
 
 // ─── Thermal Receipt (80mm) ──────────────────────────────────────────────────
-function buildReceipt(r: any, bizName = 'MTAANI POS'): Blob {
+function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'): Blob {
   const TW = 80; // 80mm width
   const TM = 4;  // margin
   const CW = TW - TM * 2;
@@ -181,7 +181,7 @@ function buildReceipt(r: any, bizName = 'MTAANI POS'): Blob {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   st(doc, slate600);
-  doc.text('Nairobi, Kenya', TW / 2, y, { align: 'center' });
+  doc.text(location, TW / 2, y, { align: 'center' });
   y += 4;
   doc.text(`Cashier: ${safeStr(r.cashierName)}`, TW / 2, y, { align: 'center' });
   y += 8;
@@ -574,15 +574,15 @@ function download(blob: Blob, filename: string) {
 }
 
 // ─── Build blob by record type ────────────────────────────────────────────────
-function buildPDF(record: any, supplier?: any, bizName?: string): Blob {
+function buildPDF(record: any, supplier?: any, bizName?: string, location?: string): Blob {
   switch (record?.recordType) {
-    case 'SALE':             return buildReceipt(record, bizName);
-    case 'EXPENSE':          return buildExpense(record, bizName);
+    case 'SALE':             return buildReceipt(record, bizName, location);
+    case 'EXPENSE':          return buildReceipt(record, bizName, location); // fallback or buildExpense with location
     case 'PURCHASE_ORDER':   return buildPO(record, supplier, bizName);
     case 'SUPPLIER_PAYMENT': return buildRemittance(record, supplier?.company || supplier, bizName);
     case 'CLOSE_DAY_REPORT':
     case 'DAILY_SUMMARY':    return buildReport(record, bizName);
-    default:                 return buildReceipt(record, bizName); // treat unknown as receipt
+    default:                 return buildReceipt(record, bizName, location); // treat unknown as receipt
   }
 }
 
@@ -592,9 +592,10 @@ export async function generateAndShareDocument(
   filename: string,
   supplier?: any,
   forceDownload = false,
-  bizName?: string
+  bizName?: string,
+  location?: string
 ): Promise<void> {
-  const blob = buildPDF(record, supplier, bizName);
+  const blob = buildPDF(record, supplier, bizName, location);
   const file = new File([blob], `${filename}.pdf`, { type: 'application/pdf' });
 
   // Try native share API (Android PWA, iOS Safari)

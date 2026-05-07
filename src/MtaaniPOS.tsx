@@ -544,7 +544,7 @@ export default function MtaaniPOS() {
              error(`M-Pesa failed: ${status.resultDesc}`);
            }
         } else {
-          console.log("[M-Pesa] Record not found yet, retrying...");
+          console.log("Record not found yet, retrying...");
         }
 
         if (pollCount >= MAX_POLLS) {
@@ -563,9 +563,13 @@ export default function MtaaniPOS() {
   // Settings
   const savedSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
   const [storeName, setStoreName] = useState('Mtaani Shop');
+  const [storeLocation, setStoreLocation] = useState('Nairobi, Kenya');
 
   useEffect(() => {
-    if (savedSettings) setStoreName(savedSettings.storeName);
+    if (savedSettings) {
+      setStoreName(savedSettings.storeName);
+      setStoreLocation(savedSettings.location || 'Nairobi, Kenya');
+    }
   }, [savedSettings]);
 
   // Resolve active branch name for header display
@@ -1737,7 +1741,7 @@ export default function MtaaniPOS() {
                       setIsSharing(true);
                       try {
                         const filename = `Receipt-${completedTransaction.id.split('-')[0].toUpperCase()}`;
-                        await generateAndShareDocument(completedTransaction, filename, null, false, storeName);
+                        await generateAndShareDocument(completedTransaction, filename, null, false, storeName, storeLocation);
                         success('PDF shared!');
                       } catch (err) {
                         error('Share failed');
@@ -1754,7 +1758,7 @@ export default function MtaaniPOS() {
                       setIsSharing(true);
                       try {
                         const filename = `Receipt-${completedTransaction.id.split('-')[0].toUpperCase()}`;
-                        await generateAndShareDocument(completedTransaction, filename, null, true, storeName);
+                        await generateAndShareDocument(completedTransaction, filename, null, true, storeName, storeLocation);
                         success('PDF saved!');
                       } catch (err) {
                         error('Failed to save PDF');

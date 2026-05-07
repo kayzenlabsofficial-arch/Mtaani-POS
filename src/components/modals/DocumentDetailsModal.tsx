@@ -28,6 +28,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
 
   const businessSettings = useLiveQuery(() => db.settings.get('core'), []);
   const storeName = businessSettings?.storeName || 'MTAANI POS';
+  const storeLocation = businessSettings?.location || 'Nairobi, Kenya';
 
   // Fetch contextual data based on record type
   const supplier = useLiveQuery(
@@ -138,7 +139,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
         }
       }
 
-      await generateAndShareDocument(recordWithDetails, filename, supplier, false, storeName);
+      await generateAndShareDocument(recordWithDetails, filename, supplier, false, storeName, storeLocation);
       success('PDF ready!');
     } catch (err) {
       console.error('Share failed:', err);
@@ -175,7 +176,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
         }
       }
 
-      await generateAndShareDocument(recordWithDetails, filename, supplier, true, storeName);
+      await generateAndShareDocument(recordWithDetails, filename, supplier, true, storeName, storeLocation);
       success('PDF saved successfully!');
     } catch (err) {
       console.error('Save PDF failed:', err);

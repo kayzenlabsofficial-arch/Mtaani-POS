@@ -11,7 +11,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
   
   const savedSettings = useLiveQuery(() => db.settings.get('core'), [], null);
   const [storeSettings, setStoreSettings] = useState({
-     storeName: 'Mtaani Shop', krapin: 'P0000000000A', tillNumber: '123456', receiptFooter: 'Thank you for shopping!'
+     storeName: 'Mtaani Shop', krapin: 'P0000000000A', tillNumber: '123456', receiptFooter: 'Thank you for shopping!', location: 'Nairobi, Kenya'
   });
 
   const [isUpdating, setIsUpdating] = useState(false);
@@ -22,7 +22,8 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
            storeName: savedSettings.storeName,
            krapin: savedSettings.kraPin,
            tillNumber: savedSettings.tillNumber,
-           receiptFooter: savedSettings.receiptFooter
+           receiptFooter: savedSettings.receiptFooter,
+           location: savedSettings.location || 'Nairobi, Kenya'
         });
      }
   }, [savedSettings]);
@@ -49,7 +50,8 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
             storeName: storeSettings.storeName,
             tillNumber: storeSettings.tillNumber,
             kraPin: storeSettings.krapin,
-            receiptFooter: storeSettings.receiptFooter
+            receiptFooter: storeSettings.receiptFooter,
+            location: storeSettings.location
         });
         success("Business configuration saved successfully!");
       } catch (err) {
@@ -75,6 +77,10 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
           <div>
              <label className="block text-xs font-bold text-slate-500  mb-1.5">KRA PIN (eTIMS)</label>
              <input type="text" value={storeSettings.krapin} onChange={e => setStoreSettings({...storeSettings, krapin: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-slate-500" />
+          </div>
+          <div>
+             <label className="block text-xs font-bold text-slate-500  mb-1.5">Business Location (City/Town)</label>
+             <input type="text" value={storeSettings.location} onChange={e => setStoreSettings({...storeSettings, location: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-slate-500" />
           </div>
           <div>
              <label className="block text-xs font-bold text-slate-500  mb-1.5">Receipt Footer Message</label>
