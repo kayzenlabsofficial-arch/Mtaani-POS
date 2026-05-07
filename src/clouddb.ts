@@ -85,6 +85,10 @@ async function d1Delete(table: string, id: string): Promise<void> {
     'X-API-Key': API_KEY 
   };
   
+  if (!businessId && table !== 'system/setup' && table !== 'businesses') {
+    throw new Error("Business ID missing. Please log in again.");
+  }
+
   if (businessId) headers['X-Business-ID'] = businessId;
   if (branchId) headers['X-Branch-ID'] = branchId;
 
@@ -119,14 +123,17 @@ export class CloudTable<T extends { id: string }> {
   // ── Hydration ─────────────────────────────────────────────────────────────
 
   async hydrate(): Promise<void> {
-    this.cache.clear(); // Always clear old data before fetching new, even if fetch fails
     try {
       const rows: T[] = await d1Fetch(this.name, 'GET');
+      // Only clear and update if we successfully got data
+      this.cache.clear();
       rows.forEach(r => this.cache.set(r.id, r));
       this.loaded = true;
+      emitChange(); // Trigger UI update
     } catch (e) {
       console.error(`[CloudDB] Failed to hydrate "${this.name}":`, e);
-      this.loaded = false; // Mark as not loaded if fetch failed
+      // Keep old cache data on failure
+      this.loaded = false; 
     }
   }
 

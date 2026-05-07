@@ -1291,9 +1291,9 @@ export default function MtaaniPOS() {
                     setIsSyncing(true);
                     await db.sync();
                     success("Data refreshed from cloud.");
-                    setTimeout(() => window.location.reload(), 1000);
-                  } catch (err) {
-                    error("Sync failed. Check connection.");
+                  } catch (err: any) {
+                    console.error("[Sync]", err);
+                    error("Sync failed: " + (err.message || "Unknown error"));
                   } finally {
                     setIsSyncing(false);
                   }
