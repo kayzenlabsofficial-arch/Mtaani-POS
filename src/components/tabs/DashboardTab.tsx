@@ -29,6 +29,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
   // Live Queries - Filtered by Active Branch
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  const allSuppliers = useLiveQuery(() => db.suppliers.toArray(), [], []) ;
   const allProducts = useLiveQuery(() => db.products.toArray(), [], []) ;
   const allExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const allCashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
@@ -37,15 +38,31 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   // Metrics Logic - Filtered by Active Shift
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const shiftStartTime = activeShift?.startTime || todayStart.getTime();
+
+  // CRITICAL: Dashboard should only show data since the LAST "Close Day"
+  const lastFinalizedDay = useLiveQuery(
+    () => activeBranchId ? db.dailySummaries.where('branchId').equals(activeBranchId).reverse().sortBy('date') : Promise.resolve([]),
+    [activeBranchId]
+  )?.[0];
+  
+  const metricsStartTime = lastFinalizedDay ? lastFinalizedDay.date + 86400000 : todayStart.getTime();
+
+  const shiftStartTime = activeShift?.startTime || metricsStartTime;
 
   const sortedTransactions = [...allTransactions].sort((a, b) => b.timestamp - a.timestamp);
   
   // Include PAID, REFUNDED, and PARTIAL_REFUND for a full audit trail
-  const shiftTransactions = sortedTransactions.filter(t => 
-    t.timestamp >= shiftStartTime && 
-    (t.status === 'PAID' || t.status === 'REFUNDED' || t.status === 'PARTIAL_REFUND')
-  );
+  // Enforce shift isolation: If not admin/manager, ONLY show data for the active shift.
+  // If no active shift exists for a cashier, show nothing.
+  const shiftTransactions = sortedTransactions.filter(t => {
+      if (t.timestamp < shiftStartTime) return false;
+      if (t.status !== 'PAID' && t.status !== 'REFUNDED' && t.status !== 'PARTIAL_REFUND') return false;
+      if (!isAdmin && !isManager) {
+          return activeShift ? t.shiftId === activeShift.id : false;
+      }
+      // Admin/Manager sees aggregated day since last finalize
+      return t.timestamp >= metricsStartTime;
+  });
   
   const getNetSales = (t: Transaction) => {
       if (t.status === 'PARTIAL_REFUND') {
@@ -67,12 +84,28 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const mpesaTotal = shiftTransactions.filter(t => t.paymentMethod === 'MPESA').reduce((sum, t) => sum + getNetSales(t).total, 0);
   const shiftRefunds = shiftTransactions.reduce((sum, t) => sum + getNetSales(t).refunded, 0);
   
-  const shiftTillExpenses = (allExpenses || []).filter(e => e.shiftId === activeShift?.id && e.source === 'TILL').reduce((sum, e) => sum + (e.amount || 0), 0);
-  const shiftTillPayments = (allSupplierPayments || []).filter(p => p.shiftId === activeShift?.id && p.source === 'TILL').reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-  const shiftCashPicks = (allCashPicks || []).filter(c => c.shiftId === activeShift?.id);
+  const shiftTillExpenses = (allExpenses || []).filter(e => {
+      if (!isAdmin && !isManager) return activeShift ? e.shiftId === activeShift.id && e.source === 'TILL' : false;
+      return e.source === 'TILL' && e.timestamp >= todayStart.getTime();
+  }).reduce((sum, e) => sum + (e.amount || 0), 0);
+  
+  const shiftTillPayments = (allSupplierPayments || []).filter(p => {
+      if (!isAdmin && !isManager) return activeShift ? p.shiftId === activeShift.id && p.source === 'TILL' : false;
+      return p.source === 'TILL' && p.timestamp >= todayStart.getTime();
+  }).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  
+  const shiftCashPicks = (allCashPicks || []).filter(c => {
+      if (!isAdmin && !isManager) return activeShift ? c.shiftId === activeShift.id : false;
+      return c.timestamp >= todayStart.getTime();
+  });
+  
   const totalPickedAmount = shiftCashPicks.reduce((acc, p) => acc + (p.amount || 0), 0);
 
-  const openingFloat = activeShift?.openingFloat || 0;
+  // For Admin/Manager, openingFloat is the sum of ALL opening floats today
+  const openingFloat = (!isAdmin && !isManager) 
+      ? (activeShift?.openingFloat || 0) 
+      : activeShiftsQuery?.reduce((sum, s) => sum + (s.openingFloat || 0), 0) || 0;
+      
   const expectedCashDrawer = (openingFloat + cashTotal) - (shiftTillExpenses + shiftTillPayments + totalPickedAmount);
 
   const recentActivity = sortedTransactions.filter(t => t.timestamp >= todayStart.getTime()).slice(0, 10);
@@ -143,6 +176,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   }
 
   const handlePickCash = async () => {
+    if (!activeShift) {
+        error("No active shift found. Please open a shift first.");
+        return;
+    }
     if (!pickAmount || Number(pickAmount) <= 0 || Number(pickAmount) > expectedCashDrawer) return;
     
     const amount = Number(pickAmount);
@@ -321,7 +358,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                                      <Clock size={20} />
                                   </div>
                                   <div>
-                                     <p className="text-sm font-black text-slate-900">{s.userName}</p>
+                                     <p className="text-sm font-black text-slate-900">{s.cashierName}</p>
                                      <p className="text-[10px] font-bold text-slate-400">Started: {new Date(s.startTime).toLocaleTimeString()}</p>
                                   </div>
                                </div>
@@ -492,19 +529,19 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                <button onClick={() => setIsPickCashOpen(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-slate-200 flex flex-col items-center justify-center gap-1">
                   <ArrowUpRight size={16} /> Pick cash
                </button>
-               <button onClick={openExpenseModal} className="bg-orange-50 hover:bg-orange-100 text-orange-700 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-orange-200 flex flex-col items-center justify-center gap-1">
+               <button onClick={openExpenseModal} disabled={!activeShift} className="bg-orange-50 hover:bg-orange-100 text-orange-700 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-orange-200 flex flex-col items-center justify-center gap-1 disabled:opacity-50">
                   <FileMinus size={16} /> Expense
                </button>
-               <button onClick={() => setActiveTab('REFUNDS')} className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-blue-200 flex flex-col items-center justify-center gap-1">
+               <button onClick={() => setActiveTab('REFUNDS')} disabled={!activeShift} className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-blue-200 flex flex-col items-center justify-center gap-1 disabled:opacity-50">
                   <RotateCcw size={16} /> Refund
                </button>
-               <button onClick={() => setIsCloseDayOpen(true)} className="bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-slate-900/10 flex flex-col items-center justify-center gap-1 relative overflow-hidden">
+               <button onClick={() => setIsCloseDayOpen(true)} disabled={!activeShift} className="bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-slate-900/10 flex flex-col items-center justify-center gap-1 relative overflow-hidden disabled:opacity-50">
                   <CalendarCheck size={16} /> Close shift
                   {isCloseDayBlocked && <div className="absolute inset-0 bg-red-600/20 backdrop-blur-[1px] flex items-center justify-center"><Lock size={12} className="text-red-600" /></div>}
                </button>
                <button 
                   onClick={() => setIsDailySummaryOpen(true)} 
-                  disabled={!!existingDailySummary}
+                  disabled={!!existingDailySummary || !isAdmin}
                   className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                >
                   {existingDailySummary ? <CheckCircle2 size={16} /> : <TrendingUp size={16} />}

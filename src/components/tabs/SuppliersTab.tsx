@@ -22,6 +22,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
   const { success, error } = useToast();
 
   const allSuppliers = useLiveQuery(() => db.suppliers.toArray(), [], []) ;
+  const allProducts = useLiveQuery(() => db.products.toArray(), [], []);
 
   if (!allSuppliers) {
       return (
