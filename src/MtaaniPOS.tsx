@@ -274,6 +274,7 @@ export default function MtaaniPOS() {
   const [discountValue, setDiscountValue] = useState<number>(0);
   const [discountType, setDiscountType] = useState<'FIXED' | 'PERCENT'>('FIXED');
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [mpesaMessage, setMpesaMessage] = useState('');
   // ── IDEMPOTENCY GUARD: prevents handleCheckout firing more than once per M-Pesa request
   const mpesaCheckoutFiredRef = React.useRef(false);
@@ -320,6 +321,7 @@ export default function MtaaniPOS() {
   const products = useLiveQuery(() => db.products.toArray(), [], []) ;
 
   const handleSaveExpense = async () => {
+      if (isSaving) return;
       const amount = Number(expenseForm.amount);
       if (amount <= 0) {
           error("Invalid amount.");
@@ -340,40 +342,49 @@ export default function MtaaniPOS() {
       }
       if (!currentUser || !activeBranchId) return;
 
-      const expenseId = crypto.randomUUID();
-      await db.expenses.add({
-         id: expenseId,
-         amount,
-         category: expenseForm.category,
-         description: expenseForm.description,
-         timestamp: Date.now(),
-         userName: currentUser.name,
-         preparedBy: currentUser.name,
-         status: 'PENDING',
-         source: expenseForm.source,
-         accountId: expenseForm.source === 'ACCOUNT' ? expenseForm.accountId : undefined,
-         branchId: activeBranchId,
-         businessId: activeBusinessId!,
-         shiftId: activeShift?.id,
-         updated_at: Date.now()
-      });
+      setIsSaving(true);
+      try {
+        const expenseId = crypto.randomUUID();
+        await db.expenses.add({
+           id: expenseId,
+           amount,
+           category: expenseForm.category,
+           description: expenseForm.description,
+           timestamp: Date.now(),
+           userName: currentUser.name,
+           preparedBy: currentUser.name,
+           status: 'PENDING',
+           source: expenseForm.source,
+           accountId: expenseForm.source === 'ACCOUNT' ? expenseForm.accountId : undefined,
+           branchId: activeBranchId,
+           businessId: activeBusinessId!,
+           shiftId: activeShift?.id,
+           updated_at: Date.now()
+        });
 
-      // Capture Product and Quantity for SHOP source
-      if (expenseForm.source === 'SHOP' && (expenseForm as any).productId) {
-         await db.expenses.update(expenseId, {
-            productId: (expenseForm as any).productId,
-            quantity: Number((expenseForm as any).quantity) || 1
-         } as any);
+        // Capture Product and Quantity for SHOP source
+        if (expenseForm.source === 'SHOP' && (expenseForm as any).productId) {
+           await db.expenses.update(expenseId, {
+              productId: (expenseForm as any).productId,
+              quantity: Number((expenseForm as any).quantity) || 1
+           } as any);
+        }
+        setIsExpenseModalOpen(false);
+        setExpenseForm({ amount: '', category: '', description: '', source: 'TILL', accountId: '' });
+        success("Expense logged successfully.");
+      } catch (err: any) {
+        error("Failed to save expense: " + err.message);
+      } finally {
+        setIsSaving(false);
       }
-      setIsExpenseModalOpen(false);
-      setExpenseForm({ amount: '', category: '', description: '', source: 'TILL', accountId: '' });
-      success("Expense logged successfully.");
   };
 
   const handleSavePayment = async (payment: any) => {
+    if (isSaving) return;
     try {
       if (!activeBranchId || !activeBusinessId || !selectedSupplierForPayment) return;
 
+      setIsSaving(true);
       const totalDeduction = Number(payment.amount);
       await db.supplierPayments.add({
         ...payment,
@@ -398,8 +409,10 @@ export default function MtaaniPOS() {
 
       setIsPaymentModalOpen(false);
       success("Payment recorded.");
-    } catch (e) {
-      error("Failed to save payment.");
+    } catch (e: any) {
+      error("Failed to save payment: " + (e.message || "Unknown error"));
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -702,18 +715,25 @@ export default function MtaaniPOS() {
             setActiveShift(existingShift);
             success(`Welcome back! Resuming shift for ${matchedUser.name}`);
           } else {
-            const shiftId = crypto.randomUUID();
-            const newShift: Shift = {
-                id: shiftId,
-                startTime: Date.now(),
-                cashierName: matchedUser.name,
-                status: 'OPEN',
-                branchId: branchToUse,
-                businessId: activeBusinessId!
-            };
-            await db.shifts.add(newShift);
-            setActiveShift(newShift);
-            success(`Shift started for ${matchedUser.name}`);
+            // TIGHTEN: Check if ANY cashier has an open shift for this branch
+            const anyOpenShift = await db.shifts.where('status').equals('OPEN').and(s => s.branchId === branchToUse).first();
+            if (anyOpenShift) {
+              setActiveShift(anyOpenShift);
+              success(`Resuming active shift for branch (started by ${anyOpenShift.cashierName})`);
+            } else {
+              const shiftId = crypto.randomUUID();
+              const newShift: Shift = {
+                  id: shiftId,
+                  startTime: Date.now(),
+                  cashierName: matchedUser.name,
+                  status: 'OPEN',
+                  branchId: branchToUse,
+                  businessId: activeBusinessId!
+              };
+              await db.shifts.add(newShift);
+              setActiveShift(newShift);
+              success(`Shift started for ${matchedUser.name}`);
+            }
           }
           
           setActiveTab('REGISTER');
@@ -778,18 +798,25 @@ export default function MtaaniPOS() {
             setActiveShift(existingShift);
             success(`Welcome back! Resuming shift for ${pendingUser.name}`);
           } else {
-            const shiftId = crypto.randomUUID();
-            const newShift: Shift = {
-                id: shiftId,
-                startTime: Date.now(),
-                cashierName: pendingUser.name,
-                status: 'OPEN',
-                branchId: selectedBranchId,
-                businessId: activeBusinessId!
-            };
-            await db.shifts.add(newShift);
-            setActiveShift(newShift);
-            success(`Shift started for ${pendingUser.name}`);
+            // TIGHTEN: Check if ANY cashier has an open shift for this branch
+            const anyOpenShift = await db.shifts.where('status').equals('OPEN').and(s => s.branchId === selectedBranchId).first();
+            if (anyOpenShift) {
+              setActiveShift(anyOpenShift);
+              success(`Resuming active shift for branch (started by ${anyOpenShift.cashierName})`);
+            } else {
+              const shiftId = crypto.randomUUID();
+              const newShift: Shift = {
+                  id: shiftId,
+                  startTime: Date.now(),
+                  cashierName: pendingUser.name,
+                  status: 'OPEN',
+                  branchId: selectedBranchId,
+                  businessId: activeBusinessId!
+              };
+              await db.shifts.add(newShift);
+              setActiveShift(newShift);
+              success(`Shift started for ${pendingUser.name}`);
+            }
           }
           setActiveTab('REGISTER');
           setLoginStep('LOGIN');
@@ -952,14 +979,10 @@ export default function MtaaniPOS() {
       setDiscountValue(0);
       setCompletedTransaction(transaction);
       
-      if (status === 'PAID') {
-        success("Sale completed successfully!");
-      } else {
-        info("Quote saved.");
-      }
-    } catch (err) {
+      success(status === 'PAID' ? "Sale completed successfully!" : "Quote saved.");
+    } catch (err: any) {
       console.error(err);
-      error("Failed to complete sale.");
+      error("Transaction failed: " + (err.message || "Unknown error"));
     } finally {
       setIsSyncing(false);
       checkoutLockRef.current = false;

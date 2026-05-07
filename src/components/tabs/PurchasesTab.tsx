@@ -24,6 +24,7 @@ export default function PurchasesTab() {
   const [receiveQuantities, setReceiveQuantities] = useState<{ [productId: string]: number }>({}); 
   const [receiveUnitCosts, setReceiveUnitCosts] = useState<{ [productId: string]: number }>({});
   const [receiveSellingPrices, setReceiveSellingPrices] = useState<{ [productId: string]: number }>({});
+  const [isSaving, setIsSaving] = useState(false);
 
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
@@ -54,43 +55,52 @@ export default function PurchasesTab() {
 
   const handleSavePO = async () => {
       if (!poForm.supplierId || poItems.length === 0) return;
-      const totalAmount = poItems.reduce((acc, item) => acc + (item.expectedQuantity * item.unitCost), 0);
-      
-      if (selectedPOToEdit) {
-         await db.purchaseOrders.update(selectedPOToEdit.id, {
-            supplierId: poForm.supplierId,
-            items: poItems.map(item => ({ ...item, receivedQuantity: 0 })),
-            totalAmount,
-            preparedBy: selectedPOToEdit.preparedBy || currentUser?.name || 'Authorized Staff',
-            branchId: activeBranchId!
-         });
-         setSelectedPOToEdit(null);
-      } else {
-         const allPOs = await db.purchaseOrders.toArray();
-         const maxNumber = allPOs.reduce((max, po) => {
-            if (!po.id.startsWith('PO-')) return max;
-            const num = parseInt(po.id.replace('PO-', ''));
-            return !isNaN(num) && num > max ? num : max;
-         }, 0);
-         const nextId = `PO-${String(maxNumber + 1).padStart(4, '0')}`;
+      if (isSaving) return;
+      setIsSaving(true);
+      try {
+        const totalAmount = poItems.reduce((acc, item) => acc + (item.expectedQuantity * item.unitCost), 0);
+        
+        if (selectedPOToEdit) {
+           await db.purchaseOrders.update(selectedPOToEdit.id, {
+              supplierId: poForm.supplierId,
+              items: poItems.map(item => ({ ...item, receivedQuantity: 0 })),
+              totalAmount,
+              preparedBy: selectedPOToEdit.preparedBy || currentUser?.name || 'Authorized Staff',
+              branchId: activeBranchId!
+           });
+           setSelectedPOToEdit(null);
+        } else {
+           const allPOs = await db.purchaseOrders.toArray();
+           const maxNumber = allPOs.reduce((max, po) => {
+              if (!po.id.startsWith('PO-')) return max;
+              const num = parseInt(po.id.replace('PO-', ''));
+              return !isNaN(num) && num > max ? num : max;
+           }, 0);
+           const nextId = `PO-${String(maxNumber + 1).padStart(4, '0')}`;
 
-         await db.purchaseOrders.add({
-            id: nextId,
-            poNumber: nextId,
-            supplierId: poForm.supplierId,
-            items: poItems.map(item => ({ ...item, receivedQuantity: 0 })),
-            totalAmount,
-            status: 'PENDING',
-            approvalStatus: 'PENDING',
-            orderDate: Date.now(),
-            preparedBy: currentUser?.name || 'Authorized Staff',
-            branchId: activeBranchId!,
-            businessId: activeBusinessId!
-         } as any);
+           await db.purchaseOrders.add({
+              id: nextId,
+              poNumber: nextId,
+              supplierId: poForm.supplierId,
+              items: poItems.map(item => ({ ...item, receivedQuantity: 0 })),
+              totalAmount,
+              status: 'PENDING',
+              approvalStatus: 'PENDING',
+              orderDate: Date.now(),
+              preparedBy: currentUser?.name || 'Authorized Staff',
+              branchId: activeBranchId!,
+              businessId: activeBusinessId!
+           } as any);
+        }
+        setIsPOModalOpen(false);
+        setPoForm({ supplierId: '' });
+        setPoItems([]);
+        success("Purchase order saved.");
+      } catch (err: any) {
+        error("Failed to save PO: " + err.message);
+      } finally {
+        setIsSaving(false);
       }
-      setIsPOModalOpen(false);
-      setPoForm({ supplierId: '' });
-      setPoItems([]);
   };
 
   const initEditPO = (po: PurchaseOrder) => {
@@ -129,58 +139,67 @@ export default function PurchasesTab() {
 
   const handleReceivePO = async () => {
       if (!selectedPO) return;
+      if (isSaving) return;
       const invoiceNumber = receiveInvoices[selectedPO.id];
       if (!invoiceNumber) return;
 
-      const updatedItems = selectedPO.items.map(item => {
-          const qty = receiveQuantities[item.productId] || 0;
-          const cost = receiveUnitCosts[item.productId] || item.unitCost;
-          return { ...item, receivedQuantity: qty, unitCost: cost };
-      });
-      
-      await db.purchaseOrders.update(selectedPO.id, { 
-          status: 'RECEIVED', 
-          paymentStatus: 'UNPAID',
-          paidAmount: 0,
-          items: updatedItems,
-          receivedDate: Date.now(),
-          invoiceNumber 
-      });
+      setIsSaving(true);
+      try {
+        const updatedItems = selectedPO.items.map(item => {
+            const qty = receiveQuantities[item.productId] || 0;
+            const cost = receiveUnitCosts[item.productId] || item.unitCost;
+            return { ...item, receivedQuantity: qty, unitCost: cost };
+        });
+        
+        await db.purchaseOrders.update(selectedPO.id, { 
+            status: 'RECEIVED', 
+            paymentStatus: 'UNPAID',
+            paidAmount: 0,
+            items: updatedItems,
+            receivedDate: Date.now(),
+            invoiceNumber 
+        });
 
-      let totalReceivedCost = 0;
-      for (const item of updatedItems) {
-         if (item.receivedQuantity > 0) {
-             const product = await db.products.get(item.productId);
-             if (product) {
-                 const newSell = receiveSellingPrices[item.productId];
-                 await db.products.update(item.productId, {
-                     stockQuantity: product.stockQuantity + item.receivedQuantity,
-                     ...(newSell && newSell !== product.sellingPrice ? { sellingPrice: newSell } : {})
-                 });
-                 await db.stockMovements.add({
-                     id: crypto.randomUUID(),
-                     productId: item.productId,
-                     type: 'IN',
-                     quantity: item.receivedQuantity,
-                     timestamp: Date.now(),
-                     reference: `PO#${selectedPO.id.split('-')[0].toUpperCase()} Inv:${invoiceNumber}`,
-                     branchId: activeBranchId!,
-                     businessId: activeBusinessId!
-                 });
-             }
-             totalReceivedCost += (item.receivedQuantity * item.unitCost);
-         }
+        let totalReceivedCost = 0;
+        for (const item of updatedItems) {
+           if (item.receivedQuantity > 0) {
+               const product = await db.products.get(item.productId);
+               if (product) {
+                   const newSell = receiveSellingPrices[item.productId];
+                   await db.products.update(item.productId, {
+                       stockQuantity: product.stockQuantity + item.receivedQuantity,
+                       ...(newSell && newSell !== product.sellingPrice ? { sellingPrice: newSell } : {})
+                   });
+                   await db.stockMovements.add({
+                       id: crypto.randomUUID(),
+                       productId: item.productId,
+                       type: 'IN',
+                       quantity: item.receivedQuantity,
+                       timestamp: Date.now(),
+                       reference: `PO#${selectedPO.id.split('-')[0].toUpperCase()} Inv:${invoiceNumber}`,
+                       branchId: activeBranchId!,
+                       businessId: activeBusinessId!
+                   });
+               }
+               totalReceivedCost += (item.receivedQuantity * item.unitCost);
+           }
+        }
+
+        const supplier = await db.suppliers.get(selectedPO.supplierId);
+        if (supplier) {
+            await db.suppliers.update(supplier.id, {
+                balance: (supplier.balance || 0) + totalReceivedCost
+            });
+        }
+
+        setIsReceivePOModalOpen(false);
+        setSelectedPO(null);
+        success("Order received and stock updated.");
+      } catch (err: any) {
+        error("Failed to receive order.");
+      } finally {
+        setIsSaving(false);
       }
-
-      const supplier = await db.suppliers.get(selectedPO.supplierId);
-      if (supplier) {
-          await db.suppliers.update(supplier.id, {
-              balance: (supplier.balance || 0) + totalReceivedCost
-          });
-      }
-
-      setIsReceivePOModalOpen(false);
-      setSelectedPO(null);
   };
 
   const handleDetailsClick = (po: PurchaseOrder) => {

@@ -43,6 +43,7 @@ export default function InventoryTab() {
   const currentUser = useStore(state => state.currentUser);
   const isAdmin = useStore(state => state.isAdmin);
   const { success, error } = useToast();
+  const [isSaving, setIsSaving] = useState(false);
   
   const activeBranchId = useStore(state => state.activeBranchId);
   const stockMovementsData = useLiveQuery(
@@ -198,7 +199,9 @@ export default function InventoryTab() {
       setIsProductModalOpen(true);
   };
 
-   const handleSaveProduct = async () => {
+    const handleSaveProduct = async () => {
+      if (isSaving) return;
+      setIsSaving(true);
       try {
           const payload = {
               name: productForm.name,
@@ -265,11 +268,13 @@ export default function InventoryTab() {
               success("New product added to inventory.");
           }
           setIsProductModalOpen(false);
-      } catch (err) {
+      } catch (err: any) {
           console.error("Save failed:", err);
-          error("Failed to save product. Please try again.");
+          error("Failed to save product: " + (err.message || "Unknown error"));
+      } finally {
+          setIsSaving(false);
       }
-   };
+    };
 
   const handleDeleteProduct = async () => {
        if (editingProduct && confirm("Are you sure? This deletes the product and all history.")) {
@@ -281,28 +286,36 @@ export default function InventoryTab() {
 
   const handleQuickAdjust = async () => {
       if (!selectedProductForDetails) return;
+      if (isSaving) return;
       const adjustQty = Number(quickAdjustForm.quantity);
       if (isNaN(adjustQty) || adjustQty === 0) return;
 
-      const newStock = selectedProductForDetails.stockQuantity + adjustQty;
+      setIsSaving(true);
+      try {
+        const newStock = selectedProductForDetails.stockQuantity + adjustQty;
 
-      await db.stockAdjustmentRequests.add({
-          id: crypto.randomUUID(),
-          productId: selectedProductForDetails.id,
-          productName: selectedProductForDetails.name,
-          oldQty: selectedProductForDetails.stockQuantity,
-          newQty: newStock,
-          reason: quickAdjustForm.reason || 'Quick adjustment',
-          timestamp: Date.now(),
-          status: 'PENDING',
-          preparedBy: currentUser?.name,
-          branchId: activeBranchId!,
-          businessId: activeBusinessId!
-      });
-      success("Adjustment requested. Admin approval required.");
-      
-      setIsQuickAdjustOpen(false);
-      setQuickAdjustForm({ quantity: '', reason: '' });
+        await db.stockAdjustmentRequests.add({
+            id: crypto.randomUUID(),
+            productId: selectedProductForDetails.id,
+            productName: selectedProductForDetails.name,
+            oldQty: selectedProductForDetails.stockQuantity,
+            newQty: newStock,
+            reason: quickAdjustForm.reason || 'Quick adjustment',
+            timestamp: Date.now(),
+            status: 'PENDING',
+            preparedBy: currentUser?.name,
+            branchId: activeBranchId!,
+            businessId: activeBusinessId!
+        });
+        success("Adjustment requested. Admin approval required.");
+        
+        setIsQuickAdjustOpen(false);
+        setQuickAdjustForm({ quantity: '', reason: '' });
+      } catch (err: any) {
+        error("Adjustment request failed.");
+      } finally {
+        setIsSaving(false);
+      }
   };
 
   return (

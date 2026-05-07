@@ -55,24 +55,33 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   const [isAddingFinAccount, setIsAddingFinAccount] = useState(false);
   const [finAccountForm, setFinAccountForm] = useState({ name: '', type: 'BANK' as 'BANK' | 'MPESA' | 'CASH', accountNumber: '', balance: 0, branchId: '' });
   const [depositState, setDepositState] = useState<{ accountId: string | null, amount: string }>({ accountId: null, amount: '' });
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleAddUser = async () => {
     if (!newUser.name || !newUser.password) return;
-    const hashedPassword = await hashPassword(newUser.password);
-    
-    await db.users.add({
-      id: crypto.randomUUID(),
-      name: newUser.name,
-      password: hashedPassword,
-      role: newUser.role,
-      businessId: activeBusinessId!,
-      branchId: newUser.branchId || undefined,
-      updated_at: Date.now()
-    });
-    setNewUser({ name: '', password: '', role: 'CASHIER', branchId: '' });
-    setIsAddingUser(false);
-    await db.sync();
-  };
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const hashedPassword = await hashPassword(newUser.password);
+      
+      await db.users.add({
+        id: crypto.randomUUID(),
+        name: newUser.name,
+        password: hashedPassword,
+        role: newUser.role,
+        businessId: activeBusinessId!,
+        branchId: newUser.branchId || undefined,
+        updated_at: Date.now()
+      });
+      setNewUser({ name: '', password: '', role: 'CASHIER', branchId: '' });
+      setIsAddingUser(false);
+      success("Staff member created successfully.");
+      await db.sync();
+    } catch (err: any) {
+      error("Failed to add user: " + err.message);
+    } finally {
+      setIsSaving(false);
+    }
 
   const handleDeleteUser = async (id: string) => {
     const adminCount = users?.filter(u => u.role === 'ADMIN').length || 0;
@@ -104,6 +113,8 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
       warning("Please enter a category name.");
       return;
     }
+    if (isSaving) return;
+    setIsSaving(true);
 
     try {
       if (editingCategoryId) {
@@ -122,6 +133,8 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
       db.syncAll();
     } catch (err) {
       error("Failed to save category.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -146,16 +159,24 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
   const handleSaveFinAccount = async () => {
     if (!finAccountForm.name.trim()) return;
-    await db.financialAccounts.add({
-      id: crypto.randomUUID(),
-      ...finAccountForm,
-      branchId: finAccountForm.branchId || undefined,
-      businessId: activeBusinessId!,
-      updated_at: Date.now()
-    });
-    setFinAccountForm({ name: '', type: 'BANK', accountNumber: '', balance: 0, branchId: '' });
-    setIsAddingFinAccount(false);
-    success("Financial account added.");
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      await db.financialAccounts.add({
+        id: crypto.randomUUID(),
+        ...finAccountForm,
+        branchId: finAccountForm.branchId || undefined,
+        businessId: activeBusinessId!,
+        updated_at: Date.now()
+      });
+      setFinAccountForm({ name: '', type: 'BANK', accountNumber: '', balance: 0, branchId: '' });
+      setIsAddingFinAccount(false);
+      success("Financial account added.");
+    } catch (err: any) {
+      error("Failed to add account: " + err.message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDeleteFinAccount = async (id: string) => {
@@ -167,14 +188,22 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
   const handleDeposit = async () => {
     if (!depositState.accountId || !depositState.amount || Number(depositState.amount) <= 0) return;
-    const account = await db.financialAccounts.get(depositState.accountId);
-    if (account) {
-       await db.financialAccounts.update(account.id, { 
-           balance: (account.balance || 0) + Number(depositState.amount),
-           updated_at: Date.now() 
-       });
-       success(`Deposited Ksh ${Number(depositState.amount).toLocaleString()} successfully.`);
-       setDepositState({ accountId: null, amount: '' });
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const account = await db.financialAccounts.get(depositState.accountId);
+      if (account) {
+         await db.financialAccounts.update(account.id, { 
+             balance: (account.balance || 0) + Number(depositState.amount),
+             updated_at: Date.now() 
+         });
+         success(`Deposited Ksh ${Number(depositState.amount).toLocaleString()} successfully.`);
+         setDepositState({ accountId: null, amount: '' });
+      }
+    } catch (err: any) {
+      error("Deposit failed.");
+    } finally {
+      setIsSaving(false);
     }
   };
 

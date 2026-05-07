@@ -18,6 +18,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const [isCloseDayOpen, setIsCloseDayOpen] = useState(false);
   const [reportedCash, setReportedCash] = useState("");
   const [isDailySummaryOpen, setIsDailySummaryOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const isAdmin = useStore(state => state.isAdmin);
   const isManager = useStore(state => state.isManager);
   const currentUser = useStore(state => state.currentUser);
@@ -182,34 +183,33 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         error("No active shift found. Please open a shift first.");
         return;
     }
-    if (!pickAmount || Number(pickAmount) <= 0 || Number(pickAmount) > expectedCashDrawer) return;
-    
-    const amount = Number(pickAmount);
-    await db.cashPicks.add({ 
-      id: crypto.randomUUID(), 
-      amount, 
-      timestamp: Date.now(), 
-      status: 'PENDING', 
-      userName: currentUser.name, 
-      branchId: activeBranchId, 
-      businessId: activeBusinessId!,
-      shiftId: activeShift?.id
-    });
-    setPickAmount("");
-    setIsPickCashOpen(false);
-    success("Cash pickup awaiting admin approval.");
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const amount = Number(pickAmount);
+      await db.cashPicks.add({ 
+        id: crypto.randomUUID(), 
+        amount, 
+        timestamp: Date.now(), 
+        status: 'PENDING', 
+        userName: currentUser.name, 
+        branchId: activeBranchId, 
+        businessId: activeBusinessId!,
+        shiftId: activeShift?.id
+      });
+      setPickAmount("");
+      setIsPickCashOpen(false);
+      success("Cash pickup awaiting admin approval.");
+    } catch (err: any) {
+      error("Pickup failed: " + err.message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCloseDay = async () => {
-    if (!activeShift) {
-      error("No active shift found. It may have already been closed.");
-      return;
-    }
-    if (!activeBranchId || !activeBusinessId) {
-      error("Missing business/branch context. Please try logging in again.");
-      return;
-    }
-    
+    if (isSaving) return;
+    setIsSaving(true);
     // reportedCash is now automatically expectedCashDrawer
     const reported = expectedCashDrawer;
     try {
@@ -236,7 +236,6 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       });
 
       // Close shift in DB — use add() (INSERT OR REPLACE) to bypass cache lookup
-      // Old shifts may lack businessId and won't be in cache, causing update() to silently fail
       await db.shifts.add({
          ...activeShift,
          status: 'CLOSED',
@@ -254,12 +253,14 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     } catch (err: any) {
       console.error("Shift closure failed:", err);
       error("Failed to submit shift: " + (err.message || "Unknown error"));
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleAdminCloseShift = async (s: any, metrics: any) => {
-    if (!confirm(`Are you sure you want to close ${s.cashierName}'s shift?`)) return;
-    
+    if (isSaving) return;
+    setIsSaving(true);
     try {
        await db.endOfDayReports.add({
          id: crypto.randomUUID(),
@@ -291,29 +292,23 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
        });
 
        success(`${s.cashierName}'s shift closed successfully.`);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      error("Failed to close shift.");
+      error("Failed to close shift: " + err.message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleOpenShift = async () => {
-    if (isAdmin) {
-      error("Administrators cannot open shifts. Please use a Cashier or Manager account.");
-      return;
-    }
-    if (!activeBranchId || !activeBusinessId || !currentUser) {
-      error("Session context missing. Please log in again.");
-      return;
-    }
-    
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       // ── CHECK 1: Prevent duplicate open shifts for this branch ──
       const existing = await db.shifts.where('status').equals('OPEN').and(s => s.branchId === activeBranchId).first();
       if (existing) {
          error(`A shift is already open for this branch (${existing.cashierName}). Please close it first.`);
          setActiveShift(existing);
-         setIsOpeningShiftOpen(false);
          return;
       }
 
@@ -331,31 +326,18 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       };
       await db.shifts.add(newShift as any);
       setActiveShift(newShift);
-      setOpeningFloatInput("");
       success("Shift opened! You can now process sales.");
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      error("Failed to start shift.");
+      error("Failed to start shift: " + err.message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleFinalizeDay = async () => {
-    if (!todaysReports || todaysReports.length === 0 || !activeBranchId) {
-      error("No shift reports found for today. Close at least one shift first.");
-      return;
-    }
-    if (!activeBusinessId) {
-      error("Missing business context. Please log in again.");
-      return;
-    }
-
-    // RULE: Cannot close day if any shift is still open
-    const openShift = await db.shifts.where('status').equals('OPEN').and(s => s.branchId === activeBranchId).first();
-    if (openShift) {
-      error(`Cannot close the day. ${openShift.cashierName}'s shift is still active. Close all shifts first.`);
-      return;
-    }
-
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       await db.dailySummaries.add({
         id: crypto.randomUUID(),
@@ -377,6 +359,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     } catch (err: any) {
       console.error("Day finalization failed:", err);
       error("Failed to finalize day: " + (err.message || "Unknown error"));
+    } finally {
+      setIsSaving(false);
     }
   };
 

@@ -20,6 +20,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const { success, error } = useToast();
+  const [isSaving, setIsSaving] = useState(false);
 
   const allSuppliers = useLiveQuery(() => db.suppliers.toArray(), [], []) ;
   const allProducts = useLiveQuery(() => db.products.toArray(), [], []);
@@ -59,14 +60,23 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
   }
 
   const handleSaveSupplier = async () => {
-      if (editingSupplier) {
-          await db.suppliers.update(editingSupplier.id, { ...supplierForm });
-          success("Supplier information updated.");
-      } else {
-          await db.suppliers.add({ id: crypto.randomUUID(), ...supplierForm, balance: 0, branchId: activeBranchId!, businessId: activeBusinessId! } as any);
-          success("Supplier added.");
+      if (!supplierForm.company) return;
+      if (isSaving) return;
+      setIsSaving(true);
+      try {
+        if (editingSupplier) {
+            await db.suppliers.update(editingSupplier.id, { ...supplierForm });
+            success("Supplier information updated.");
+        } else {
+            await db.suppliers.add({ id: crypto.randomUUID(), ...supplierForm, balance: 0, branchId: activeBranchId!, businessId: activeBusinessId! } as any);
+            success("Supplier added.");
+        }
+        setIsSupplierModalOpen(false);
+      } catch (err: any) {
+        error("Failed to save supplier: " + err.message);
+      } finally {
+        setIsSaving(false);
       }
-      setIsSupplierModalOpen(false);
   }
 
   const handleDeleteSupplier = async () => {
@@ -79,6 +89,8 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
 
    const handleSavePayment = async (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, source: 'TILL' | 'ACCOUNT', transactionCode?: string, purchaseOrderId?: string, purchaseOrderIds?: string[], creditNoteIds?: string[] }) => {
     if (!selectedSupplierForPayment) return;
+    if (isSaving) return;
+    setIsSaving(true);
     
     try {
         let totalDeduction = payment.amount;
@@ -141,12 +153,13 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
            }
         }
         success("Payment recorded successfully.");
+        setIsPaymentModalOpen(false);
+        setSelectedSupplierForPayment(null);
     } catch (err) {
         console.error("Failed to save payment:", err);
         error("Failed to save payment.");
     } finally {
-        setIsPaymentModalOpen(false);
-        setSelectedSupplierForPayment(null);
+        setIsSaving(false);
     }
   }
 
