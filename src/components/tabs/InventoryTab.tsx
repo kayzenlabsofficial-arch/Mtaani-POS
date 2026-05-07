@@ -124,12 +124,23 @@ export default function InventoryTab() {
   };
 
   const calculateVirtualStock = (product: Product) => {
-      if (!product.isBundle || !product.components?.length) return product.stockQuantity;
+      if (!product.isBundle || !product.components?.length) return product.stockQuantity || 0;
+      
+      // If we are still loading products, return a placeholder to avoid "Out of Stock" flash
+      if (!allProducts || allProducts.length === 0) return product.stockQuantity || 0;
+
       let minStock = Infinity;
       for (const comp of product.components) {
          const freshComp = allProducts.find(p => p.id === comp.productId);
          if (!freshComp) return 0;
-         const possible = Math.floor(freshComp.stockQuantity / comp.quantity);
+         
+         const compQty = Number(comp.quantity) || 0;
+         if (compQty <= 0) continue;
+
+         // Recursive check for nested bundles
+         const availableStock = freshComp.isBundle ? calculateVirtualStock(freshComp) : (freshComp.stockQuantity || 0);
+         const possible = Math.floor(availableStock / compQty);
+         
          if (possible < minStock) minStock = possible;
       }
       return minStock === Infinity ? 0 : minStock;

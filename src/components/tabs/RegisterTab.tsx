@@ -31,24 +31,26 @@ export default function RegisterTab() {
   const clearCart = useStore((state) => state.clearCart);
   const cart = useStore((state) => state.cart);
   const { success: toastSuccess, error: toastError } = useStore.getState ? {} : {};
-  const { selectedCustomerId, setSelectedCustomerId } = useStore();
-  const allProducts = useLiveQuery(() => db.products.toArray(), [], []);
-  const allCustomers = useLiveQuery(() => db.customers.toArray(), [], []);
+  const { selectedCustomerId, setSelectedCustomerId, activeBusinessId, activeBranchId } = useStore();
+  const allProducts = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
+  const allCustomers = useLiveQuery(() => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
   const selectedCustomer = allCustomers?.find(c => c.id === selectedCustomerId);
 
   const products = useLiveQuery(
     () => {
+      if (!activeBusinessId) return Promise.resolve([]);
+      let query = db.products.where('businessId').equals(activeBusinessId);
+      
+      // If branch-specific stock is needed, we could filter by branchId here
+      // .and(p => !p.branchId || p.branchId === activeBranchId)
+      
       if (selectedCategory !== 'All') {
-        return db.products.where('category').equals(selectedCategory)
-          .filter(p => !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode.includes(searchQuery))
-          .toArray();
+        return query.filter(p => p.category === selectedCategory && (!searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode.includes(searchQuery))).toArray();
       }
-      if (!searchQuery) return db.products.toArray();
-      return db.products
-        .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode.includes(searchQuery))
-        .toArray();
+      
+      return query.filter(p => !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode.includes(searchQuery)).toArray();
     },
-    [searchQuery, selectedCategory],
+    [searchQuery, selectedCategory, activeBusinessId],
     []
   );
 
@@ -67,12 +69,26 @@ export default function RegisterTab() {
   };
 
   const calculateVirtualStock = (product: any) => {
-      if (!product.isBundle || !product.components?.length) return product.stockQuantity;
+      if (!product.isBundle || !product.components?.length) return product.stockQuantity || 0;
+      
+      // If we are still loading products, return a placeholder to avoid "Out of Stock" flash
+      if (!allProducts || allProducts.length === 0) return product.stockQuantity || 0;
+
       let minStock = Infinity;
       for (const comp of product.components) {
-         const freshComp = allProducts?.find(p => p.id === comp.productId);
-         if (!freshComp) return 0;
-         const possible = Math.floor(freshComp.stockQuantity / comp.quantity);
+         const freshComp = allProducts.find(p => p.id === comp.productId);
+         if (!freshComp) {
+            // If component not found, it might be an error or just not loaded
+            return 0;
+         }
+         
+         const compQty = Number(comp.quantity) || 0;
+         if (compQty <= 0) continue; // Skip invalid components
+
+         // Recursive check if the component is ALSO a bundle
+         const availableStock = freshComp.isBundle ? calculateVirtualStock(freshComp) : (freshComp.stockQuantity || 0);
+         const possible = Math.floor(availableStock / compQty);
+         
          if (possible < minStock) minStock = possible;
       }
       return minStock === Infinity ? 0 : minStock;
