@@ -260,8 +260,8 @@ function buildReceipt(r: any): Blob {
   // Payment Details (Tendered & Change)
   const tethered = safe(r.amountTendered);
   if (tethered > 0) {
-    row('Paid', ksh(tethered));
-    const change = tethered - safe(r.total);
+    row(`Paid (${r.paymentMethod || 'CASH'})`, ksh(tethered));
+    const change = safe(r.changeGiven || (tethered - safe(r.total)));
     if (change > 0) {
       st(doc, green);
       row('Change', ksh(change), true);
@@ -269,6 +269,16 @@ function buildReceipt(r: any): Blob {
   } else if (r.paymentMethod) {
     st(doc, slate600);
     row('Paid via', r.paymentMethod);
+  }
+
+  // M-Pesa Specifics
+  if (r.mpesaCode) {
+    st(doc, slate600);
+    row('M-Pesa Code', r.mpesaCode);
+  }
+  if (r.mpesaCustomer) {
+    st(doc, slate600);
+    row('M-Pesa Cust', r.mpesaCustomer);
   }
   
   y += 8;

@@ -71,6 +71,8 @@ export interface Transaction {
   approvedBy?: string;
   branchId: string;
   businessId: string;
+  mpesaCode?: string;
+  mpesaCustomer?: string;
   updated_at?: number;
 }
 

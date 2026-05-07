@@ -530,10 +530,10 @@ export default function MtaaniPOS() {
              setMpesaState('SUCCESS');
              setMpesaMessage(`Payment successful! Receipt: ${status.receiptNumber}`);
              success(`M-Pesa payment received: ${status.receiptNumber}`);
-             setTimeout(() => {
-               setIsMpesaModalOpen(false);
-               handleCheckout('PAID', 'MPESA');
-             }, 2000);
+              setTimeout(() => {
+                setIsMpesaModalOpen(false);
+                handleCheckout('PAID', 'MPESA', status.receiptNumber, status.phoneNumber);
+              }, 2000);
            } else if (status.resultCode === 999) {
              console.log("[M-Pesa] Payment still pending...");
            } else {
@@ -557,6 +557,16 @@ export default function MtaaniPOS() {
     }
     return () => clearInterval(interval);
   }, [mpesaState, mpesaRequestId]);
+
+  // ── AUTO-PRINT RECEIPT ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (completedTransaction) {
+      const timer = setTimeout(() => {
+        window.print();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [completedTransaction]);
 
   // Settings
   const savedSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
@@ -777,7 +787,7 @@ export default function MtaaniPOS() {
 
 
 
-  const handleCheckout = async (status: 'QUOTE' | 'PAID', paymentMethod: 'CASH' | 'MPESA' | 'CREDIT') => {
+  const handleCheckout = async (status: 'QUOTE' | 'PAID', paymentMethod: 'CASH' | 'MPESA' | 'CREDIT', mpesaCode?: string, mpesaCustomer?: string) => {
     if (cart.length === 0) return;
     
     let currentCustomer = null;
@@ -819,9 +829,11 @@ export default function MtaaniPOS() {
         cashierName: currentUser?.name || 'Unknown',
         branchId: activeBranchId!,
         businessId: activeBusinessId!,
-        amountTendered: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) : undefined,
-        changeGiven: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) - total : undefined,
-        preparedBy: currentCustomer ? currentCustomer.name : undefined 
+        amountTendered: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) : (paymentMethod === 'MPESA' ? total : undefined),
+        changeGiven: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) - total : (paymentMethod === 'MPESA' ? 0 : undefined),
+        preparedBy: currentCustomer ? currentCustomer.name : undefined,
+        mpesaCode: mpesaCode,
+        mpesaCustomer: mpesaCustomer
       };
 
       await db.transactions.add(transaction);
@@ -1388,7 +1400,7 @@ export default function MtaaniPOS() {
                     <div className="flex gap-2">
                       {/* ── FIX C4: Disable while isSyncing to prevent double-tap duplicates ── */}
                      <button 
-                        onClick={() => handleCheckout('PAID', 'CASH')}
+                        onClick={() => setIsCashModalOpen(true)}
                         disabled={isSyncing}
                         className="flex-1 px-4 py-4 rounded-2xl bg-slate-900 text-white font-bold text-[10px] hover:bg-slate-800 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                       >
@@ -1644,7 +1656,11 @@ export default function MtaaniPOS() {
                     
                     <div className="mt-4 px-3 py-1 bg-green-100 text-green-700 text-[9px] font-bold rounded-full">
                         Paid via {completedTransaction.paymentMethod?.toLowerCase()}
+                        {completedTransaction.mpesaCode && ` • Code: ${completedTransaction.mpesaCode}`}
                     </div>
+                    {completedTransaction.paymentMethod === 'MPESA' && completedTransaction.mpesaCustomer && (
+                       <p className="text-[9px] font-bold text-slate-500 mt-2">Customer: {completedTransaction.mpesaCustomer}</p>
+                    )}
                   </div>
 
                   <div className="p-6 space-y-6">
@@ -1674,16 +1690,18 @@ export default function MtaaniPOS() {
                           <span className="text-2xl font-black text-slate-900">Ksh {completedTransaction.total.toLocaleString()}</span>
                         </div>
                         
-                        {completedTransaction.paymentMethod === 'CASH' && completedTransaction.amountTendered && (
+                        {(completedTransaction.paymentMethod === 'CASH' || completedTransaction.paymentMethod === 'MPESA') && completedTransaction.amountTendered !== undefined && (
                           <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
                             <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                                <span>Amount paid</span>
+                                <span>Amount paid ({completedTransaction.paymentMethod})</span>
                                 <span>Ksh {completedTransaction.amountTendered.toLocaleString()}</span>
                             </div>
-                            <div className="flex justify-between items-center text-green-700 bg-green-50 p-3 rounded-2xl border border-green-100">
-                                <span className="text-[10px] font-bold">Change given</span>
-                                <span className="text-lg font-black italic">Ksh {(completedTransaction.changeGiven || 0).toLocaleString()}</span>
-                            </div>
+                            {completedTransaction.paymentMethod === 'CASH' && (
+                              <div className="flex justify-between items-center text-green-700 bg-green-50 p-3 rounded-2xl border border-green-100">
+                                  <span className="text-[10px] font-bold">Change given</span>
+                                  <span className="text-lg font-black italic">Ksh {(completedTransaction.changeGiven || 0).toLocaleString()}</span>
+                              </div>
+                            )}
                           </div>
                         )}
                     </div>
