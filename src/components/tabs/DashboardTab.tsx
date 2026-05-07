@@ -358,18 +358,28 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       {/* Admin: Active Shifts Overview */}
       {(isAdmin || isManager) && (activeShiftsQuery?.length || 0) > 0 && (
         <div className="mb-6 bg-white p-5 rounded-[2.5rem] border border-slate-200 shadow-card">
-           <h3 className="text-sm font-black text-slate-900 mb-4 flex items-center gap-2">
-              <Activity size={18} className="text-blue-600" /> Active Cashier Sessions
-           </h3>
+           <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                 <Activity size={18} className="text-blue-600" /> Active Cashier Sessions
+              </h3>
+              <button 
+                onClick={() => db.sync()} 
+                className="text-[10px] font-black text-blue-600 hover:underline"
+              >
+                Force Sync
+              </button>
+           </div>
            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {activeShiftsQuery?.map(s => {
                           const sStartTime = s.startTime || 0;
-                          const sTransactions = allTransactions.filter(t => t.timestamp >= sStartTime && (t.status === 'PAID' || t.status === 'REFUNDED' || t.status === 'PARTIAL_REFUND') && t.shiftId === s.id);
-                          const sSales = sTransactions.reduce((acc, t) => {
-                             const net = getNetSales(t);
-                             return acc + net.total;
-                          }, 0);
-                          const sCashSales = sTransactions.filter(t => t.paymentMethod === 'CASH').reduce((acc, t) => acc + getNetSales(t).total, 0);
+                          const sTransactions = allTransactions.filter(t => {
+                             const matchShift = t.shiftId === s.id;
+                             const matchFallback = !t.shiftId && t.cashierName === s.cashierName && t.timestamp >= sStartTime;
+                             const matchStatus = t.status === 'PAID' || t.status === 'REFUNDED' || t.status === 'PARTIAL_REFUND';
+                             return (matchShift || matchFallback) && matchStatus;
+                          });
+                          const sSales = sTransactions.reduce((acc, t) => acc + (Number(getNetSales(t).total) || 0), 0);
+                          const sCashSales = sTransactions.filter(t => t.paymentMethod === 'CASH').reduce((acc, t) => acc + (Number(getNetSales(t).total) || 0), 0);
                           const sExpenses = (allExpenses || []).filter(e => e.shiftId === s.id && e.source === 'TILL').reduce((acc, e) => acc + (e.amount || 0), 0);
                           const sPayments = (allSupplierPayments || []).filter(p => p.shiftId === s.id && p.source === 'TILL').reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
                           const sPicks = (allCashPicks || []).filter(c => c.shiftId === s.id).reduce((acc, p) => acc + (p.amount || 0), 0);

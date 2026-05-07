@@ -9,6 +9,7 @@ import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 export default function SupplierPaymentsTab({ financialAccounts }: { financialAccounts: any[] }) {
   const [paySearch, setPaySearch] = useState("");
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [activeHistoryTab, setActiveHistoryTab] = useState<'PAYMENTS' | 'CREDITS'>('PAYMENTS');
   const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<Supplier | null>(null);
   const { success, error } = useToast();
   const paymentSupplierId = useStore(state => state.paymentSupplierId);
@@ -19,6 +20,10 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const allSuppliers = useLiveQuery(() => db.suppliers.toArray(), [], []) ;
   const allPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  const allCreditNotes = useLiveQuery(() => activeBranchId ? db.creditNotes.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+
+  const pendingCredits = allCreditNotes.filter(cn => cn.status === 'PENDING');
+  const totalPendingCredit = pendingCredits.reduce((sum, cn) => sum + cn.amount, 0);
 
   const suppliersOwed = allSuppliers.filter(s => s.balance > 0);
   const totalDebt = suppliersOwed.reduce((sum, s) => sum + (s.balance || 0), 0);
@@ -29,6 +34,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
   );
 
   const sortedPayments = [...allPayments].sort((a,b) => b.timestamp - a.timestamp);
+  const sortedCredits = [...allCreditNotes].sort((a,b) => b.timestamp - a.timestamp);
 
   const openPaymentModal = (s: Supplier) => {
       setSelectedSupplierForPayment(s);
@@ -180,48 +186,89 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
             </div>
          </div>
 
-         {/* Right Side: Payment History */}
-         <div className="flex flex-col">
-            <h3 className="text-sm font-black text-slate-900 mb-3 flex items-center gap-2">
-               <Clock size={16} className="text-blue-500" /> Recent Payments
-            </h3>
-            <div className="space-y-2 pb-24">
-               {sortedPayments.length === 0 ? (
-                  <div className="bg-white/50 border border-dashed border-slate-200 rounded-2xl py-10 text-center">
-                     <p className="text-xs text-slate-400 font-bold  ">No history yet</p>
-                  </div>
-               ) : (
-                  sortedPayments.map(p => {
-                    const vendor = allSuppliers.find(s => s.id === p.supplierId);
-                    return (
-                       <div key={p.id} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between border-l-4 border-l-green-500">
-                          <div className="flex items-center gap-3">
-                             <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center text-green-600">
-                                {getMethodIcon(p.paymentMethod)}
-                             </div>
-                             <div>
-                                <h4 className="text-[11px] font-bold text-slate-900">{vendor?.company || 'Unknown Vendor'}</h4>
-                                <div className="flex flex-col gap-0.5 mt-0.5">
-                                    <p className="text-[9px] font-semibold text-slate-500">{new Date(p.timestamp).toLocaleDateString()} • {p.reference || 'No ref'}</p>
-                                    {p.transactionCode && (
-                                        <div className="flex items-center gap-1">
-                                            <Landmark size={8} className="text-blue-500" />
-                                            <span className="text-[9px] font-bold text-blue-600  tracking-tight">{p.transactionCode}</span>
-                                        </div>
-                                    )}
-                                </div>
-                             </div>
-                          </div>
-                          <div className="text-right">
-                             <p className="text-xs font-black text-slate-900">Ksh {p.amount.toLocaleString()}</p>
-                             <p className="text-[8px] font-bold text-green-600  ">SENT</p>
-                          </div>
-                       </div>
-                    );
-                  })
-               )}
-            </div>
-         </div>
+          {/* Right Side: Activity History */}
+          <div className="flex flex-col">
+             <div className="flex border-b border-slate-200 mb-4">
+                <button 
+                  onClick={() => setActiveHistoryTab('PAYMENTS')}
+                  className={`pb-3 px-4 text-[10px] font-black transition-all relative ${activeHistoryTab === 'PAYMENTS' ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-400'}`}
+                >
+                  Payment History
+                </button>
+                <button 
+                  onClick={() => setActiveHistoryTab('CREDITS')}
+                  className={`pb-3 px-4 text-[10px] font-black transition-all relative ${activeHistoryTab === 'CREDITS' ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-400'}`}
+                >
+                  Credit Notes {pendingCredits.length > 0 && <span className="ml-1 bg-red-100 text-red-600 px-1 rounded-full">{pendingCredits.length}</span>}
+                </button>
+             </div>
+
+             <div className="space-y-2 pb-24 h-full overflow-y-auto no-scrollbar">
+                {activeHistoryTab === 'PAYMENTS' ? (
+                   sortedPayments.length === 0 ? (
+                      <div className="bg-white/50 border border-dashed border-slate-200 rounded-2xl py-10 text-center">
+                         <p className="text-xs text-slate-400 font-bold  ">No history yet</p>
+                      </div>
+                   ) : (
+                      sortedPayments.map(p => {
+                        const vendor = allSuppliers.find(s => s.id === p.supplierId);
+                        return (
+                           <div key={p.id} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between border-l-4 border-l-green-500">
+                              <div className="flex items-center gap-3">
+                                 <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center text-green-600">
+                                    {getMethodIcon(p.paymentMethod)}
+                                 </div>
+                                 <div>
+                                    <h4 className="text-[11px] font-bold text-slate-900">{vendor?.company || 'Unknown Vendor'}</h4>
+                                    <div className="flex flex-col gap-0.5 mt-0.5">
+                                        <p className="text-[9px] font-semibold text-slate-500">{new Date(p.timestamp).toLocaleDateString()} • {p.reference || 'No ref'}</p>
+                                        {p.transactionCode && (
+                                            <div className="flex items-center gap-1">
+                                                <Landmark size={8} className="text-blue-500" />
+                                                <span className="text-[9px] font-bold text-blue-600  tracking-tight">{p.transactionCode}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                 </div>
+                              </div>
+                              <div className="text-right">
+                                 <p className="text-xs font-black text-slate-900">Ksh {p.amount.toLocaleString()}</p>
+                                 <p className="text-[8px] font-bold text-green-600  ">SENT</p>
+                              </div>
+                           </div>
+                        );
+                      })
+                   )
+                ) : (
+                   sortedCredits.length === 0 ? (
+                      <div className="bg-white/50 border border-dashed border-slate-200 rounded-2xl py-10 text-center">
+                         <p className="text-xs text-slate-400 font-bold  ">No credit notes found</p>
+                      </div>
+                   ) : (
+                      sortedCredits.map(cn => {
+                        const vendor = allSuppliers.find(s => s.id === cn.supplierId);
+                        return (
+                           <div key={cn.id} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between border-l-4 border-l-blue-500">
+                              <div className="flex items-center gap-3">
+                                 <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                                    <ArrowUpRight size={14} />
+                                 </div>
+                                 <div>
+                                    <h4 className="text-[11px] font-bold text-slate-900">{vendor?.company || 'Unknown Vendor'}</h4>
+                                    <p className="text-[9px] font-semibold text-slate-500">{new Date(cn.timestamp).toLocaleDateString()} • {cn.reference || 'Credit'}</p>
+                                 </div>
+                              </div>
+                              <div className="text-right">
+                                 <p className="text-xs font-black text-blue-600">Ksh {cn.amount.toLocaleString()}</p>
+                                 <p className={`text-[8px] font-bold ${cn.status === 'ALLOCATED' ? 'text-green-600' : 'text-orange-500'}`}>{cn.status}</p>
+                              </div>
+                           </div>
+                        );
+                      })
+                   )
+                )}
+             </div>
+          </div>
       </div>
 
       <SupplierPaymentModal 

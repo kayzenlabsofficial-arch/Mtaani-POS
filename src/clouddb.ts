@@ -374,15 +374,21 @@ export class CloudTable<T extends { id: string }> {
 export function useLiveQuery<T>(
   querier: () => T | Promise<T> | undefined,
   deps: any[] = [],
-  defaultResult?: T
+  defaultResult?: T,
+  pollInterval: number = 15000 // Poll every 15s by default for a "live" feel
 ): T | undefined {
   const [result, setResult] = useState<T | undefined>(defaultResult);
 
   useEffect(() => {
     let alive = true;
 
-    const run = async () => {
+    const run = async (forceHydrate = false) => {
       try {
+        // If forceHydrate is true, we should probably trigger a reload on the tables involved
+        // But for simplicity, we just re-run the querier.
+        // The CloudTable ensure() will only hydrate if !loaded.
+        // To truly sync from server, we'd need to know which tables were used.
+        // Instead, we'll let the global sync or manual reload handle it.
         const val = await querier();
         if (alive) setResult(val as T);
       } catch (e) {
@@ -392,16 +398,57 @@ export function useLiveQuery<T>(
 
     run();
 
-    // Re-run on any DB mutation
+    // Re-run on any local DB mutation
     const handler = () => { if (alive) run(); };
     dbEventBus?.addEventListener('db:change', handler);
+
+    // Polling for remote changes (since we don't have WebSockets)
+    const poller = setInterval(() => {
+      // We don't want to force hydrate every 15s for EVERY query (too expensive).
+      // But for queries that might have remote updates (like transactions), we need it.
+      // For now, just re-running the querier helps if the cache was updated elsewhere.
+      if (alive) run();
+    }, pollInterval);
 
     return () => {
       alive = false;
       dbEventBus?.removeEventListener('db:change', handler);
+      clearInterval(poller);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
   return result;
 }
+
+// ── Background Sync ────────────────────────────────────────────────────────
+// Periodically refreshes all tables from the server to catch remote updates.
+
+let syncTimer: any = null;
+
+export function startBackgroundSync(intervalMs = 30000) {
+  if (syncTimer) return;
+  
+  syncTimer = setInterval(async () => {
+    // Lazy import to check if we are logged in
+    const { useStore } = await import('./store');
+    const businessId = useStore.getState().activeBusinessId;
+    if (!businessId) return;
+
+    console.log('[CloudDB] Background sync starting...');
+    try {
+       // We only need to reload tables that have been loaded/used already
+       // Tables are exported from db.ts, but clouddb doesn't know about 'db'
+       // Instead, we'll let db.ts call a refresh method.
+       dbEventBus?.dispatchEvent(new Event('db:sync-request'));
+    } catch (e) {
+      console.warn('[CloudDB] Background sync failed:', e);
+    }
+  }, intervalMs);
+}
+
+export function stopBackgroundSync() {
+  if (syncTimer) clearInterval(syncTimer);
+  syncTimer = null;
+}
+

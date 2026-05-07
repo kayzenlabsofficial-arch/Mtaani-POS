@@ -883,31 +883,31 @@ export default function MtaaniPOS() {
       };
 
       await db.transactions.add(transaction);
+      
+      // Small artificial delay to allow D1 persist to begin and Dexie-like feel
+      await new Promise(r => setTimeout(r, 100));
 
       // Handle Customer Credit Update
       if (paymentMethod === 'CREDIT' && currentCustomer) {
          await db.customers.update(currentCustomer.id, {
-            balance: (currentCustomer.balance || 0) + total,
-            totalSpent: (currentCustomer.totalSpent || 0) + total
+            balance: (Number(currentCustomer.balance) || 0) + total,
+            totalSpent: (Number(currentCustomer.totalSpent) || 0) + total
          });
          success(`Credit added to ${currentCustomer.name}'s account.`);
       }
       
       if (status === 'PAID') {
-        // ── FIX C3: Re-read each product's CURRENT stock immediately before deducting
-        // to minimise race-condition overselling when multiple cashiers sell simultaneously.
+        // Deduct stock
         for (const item of cart) {
           const freshProduct = await db.products.get(item.id);
           if (freshProduct) {
             if (freshProduct.isBundle && freshProduct.components?.length) {
-              // Deduct each component from stock
               for (const component of freshProduct.components) {
                 const freshComp = await db.products.get(component.productId);
                 if (freshComp) {
                   const deductQty = component.quantity * item.cartQuantity;
                   const newCompQty = Math.max(0, freshComp.stockQuantity - deductQty);
                   await db.products.update(component.productId, { stockQuantity: newCompQty });
-                  
                   if (db.stockMovements) {
                     await db.stockMovements.add({
                       id: crypto.randomUUID(),
@@ -923,10 +923,8 @@ export default function MtaaniPOS() {
                   }
                 }
               }
-              // Update bundle's own record timestamp
               await db.products.update(item.id, { updated_at: Date.now() });
             } else {
-              // Standard non-bundled product deduction
               const newQty = Math.max(0, freshProduct.stockQuantity - item.cartQuantity);
               const oversold = freshProduct.stockQuantity < item.cartQuantity;
               await db.products.update(item.id, { stockQuantity: newQty });

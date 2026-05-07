@@ -418,6 +418,18 @@ class MtaaniCloudDB {
 
 export const db = new MtaaniCloudDB();
 
+// ── Background Sync Wire-up ────────────────────────────────────────────────
+if (typeof window !== 'undefined') {
+  import('./clouddb').then(({ startBackgroundSync }) => {
+    // Listen for sync requests from the polling logic
+    window.addEventListener('db:sync-request', () => {
+      db.sync().catch(console.error);
+    });
+    // Start the 30s background sync loop
+    startBackgroundSync(30000);
+  });
+}
+
 // ── seedInitialData ────────────────────────────────────────────────────────
 // Seeds D1 with default data if the database is empty.
 
