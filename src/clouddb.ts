@@ -102,9 +102,9 @@ export async function setupRemoteDB(): Promise<void> {
   try {
     await d1Fetch('system/setup', 'POST', {});
     console.log('[CloudDB] Remote database schema initialized successfully.');
-  } catch (e) {
-    console.error('[CloudDB] Remote setup failed:', e);
-    throw e;
+  } catch (e: any) {
+    console.warn('[CloudDB] Remote setup failed or already done.', e.message);
+    // Do not throw; failing to run setup should not crash the app if it's already setup
   }
 }
 

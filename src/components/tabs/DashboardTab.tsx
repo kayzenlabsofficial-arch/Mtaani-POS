@@ -106,7 +106,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   );
 
   const shiftOpeningFloat = Number(activeShift?.openingFloat) || 0;
-  const expectedCashDrawer = (shiftOpeningFloat + cashTotal) - (shiftTillExpenses + shiftTillPayments + totalPickedAmount);
+  const expectedCashDrawerRaw = cashTotal - (shiftTillExpenses + shiftTillPayments + totalPickedAmount);
+  const expectedCashDrawer = Math.max(0, expectedCashDrawerRaw);
 
   const recentActivity = sortedTransactions.filter(t => t.timestamp >= todayStart.getTime()).slice(0, 10);
   const pendingQuotes = sortedTransactions.filter(t => t.status === 'QUOTE').length;
