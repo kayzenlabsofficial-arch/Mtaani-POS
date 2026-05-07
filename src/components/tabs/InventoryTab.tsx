@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Plus, Package, AlertCircle, Tag as TagIcon, Barcode, Trash2, Save, Edit, FileStack, Clock, ArrowDownLeft, ArrowUpRight, Settings, ChevronRight, X, Utensils, GlassWater, ShoppingBag, Lightbulb } from 'lucide-react';
+import { Search, Plus, Package, AlertCircle, Tag as TagIcon, Barcode, Trash2, Save, Edit, FileStack, Clock, ArrowDownLeft, ArrowUpRight, Settings, ChevronRight, X, Utensils, GlassWater, ShoppingBag, Lightbulb, DollarSign } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Product } from '../../db';
 import { useStore } from '../../store';
