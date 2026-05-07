@@ -48,7 +48,7 @@ export default function BranchManagementTab() {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.location.trim()) return;
+    if (!form.name.trim() || !form.location.trim() || saving) return;
     setSaving(true);
     try {
       if (editingId) {
@@ -97,19 +97,26 @@ export default function BranchManagementTab() {
   };
 
   const toggleActive = async (b: Branch) => {
-    if (!b.isActive) {
-      await db.branches.update(b.id, { isActive: true });
-    } else {
-      const activeBranches = (branches || []).filter(br => br.isActive);
-      if (activeBranches.length <= 1) {
-        warning('At least one branch must remain active.');
-        return;
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (!b.isActive) {
+        await db.branches.update(b.id, { isActive: true });
+      } else {
+        const activeBranches = (branches || []).filter(br => br.isActive);
+        if (activeBranches.length <= 1) {
+          warning('At least one branch must remain active.');
+          return;
+        }
+        await db.branches.update(b.id, { isActive: false });
       }
-      await db.branches.update(b.id, { isActive: false });
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleDelete = async (b: Branch) => {
+    if (saving) return;
     const activeBranches = (branches || []).length;
     if (activeBranches <= 1) {
       warning('Cannot delete the only remaining branch.');
@@ -117,11 +124,14 @@ export default function BranchManagementTab() {
     }
 
     if (confirm(`CRITICAL: Deleting branch "${b.name}" will permanently erase its specific records. Are you absolutely sure?`)) {
+      setSaving(true);
       try {
         await db.branches.delete(b.id);
         success("Branch permanently removed.");
       } catch (err) {
         error("Deletion failed. Branch may have associated data.");
+      } finally {
+        setSaving(false);
       }
     }
   };

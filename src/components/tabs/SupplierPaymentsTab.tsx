@@ -11,6 +11,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [activeHistoryTab, setActiveHistoryTab] = useState<'PAYMENTS' | 'CREDITS'>('PAYMENTS');
   const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<Supplier | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const { success, error } = useToast();
   const paymentSupplierId = useStore(state => state.paymentSupplierId);
   const setPaymentSupplierId = useStore(state => state.setPaymentSupplierId);
@@ -52,8 +53,9 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
   }, [paymentSupplierId, allSuppliers, setPaymentSupplierId]);
 
   const handleSavePayment = async (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, transactionCode?: string, purchaseOrderId?: string, purchaseOrderIds?: string[] }) => {
-    if (!selectedSupplierForPayment) return;
+    if (!selectedSupplierForPayment || isSaving) return;
     
+    setIsSaving(true);
     try {
         // ── FIX C5: Check ACCOUNT balance BEFORE recording to prevent negative balances ──
         if ((payment as any).source === 'ACCOUNT' && (payment as any).accountId) {
@@ -112,12 +114,13 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
           balance: Math.max(0, (selectedSupplierForPayment.balance || 0) - payment.amount)
         });
         success("Payment recorded successfully.");
-    } catch (err) {
-        console.error("Failed to save payment:", err);
-        error("Failed to save payment.");
-    } finally {
         setIsPaymentModalOpen(false);
         setSelectedSupplierForPayment(null);
+    } catch (err: any) {
+        console.error("Failed to save payment:", err);
+        error("Failed to save payment: " + err.message);
+    } finally {
+        setIsSaving(false);
     }
   }
 
@@ -276,6 +279,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
         onClose={() => setIsPaymentModalOpen(false)}
         supplier={selectedSupplierForPayment}
         onSave={handleSavePayment}
+        isSaving={isSaving}
         financialAccounts={financialAccounts}
       />
     </div>

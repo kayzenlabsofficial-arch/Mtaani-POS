@@ -13,6 +13,7 @@ export default function ExpensesTab() {
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'TILL' | 'ACCOUNT' });
+  const [isSaving, setIsSaving] = useState(false);
   
   const currentUser = useStore(state => state.currentUser);
   const isAdmin = useStore(state => state.isAdmin);
@@ -38,6 +39,7 @@ export default function ExpensesTab() {
   const actualCashDrawer = cashTotal - totalPickedAmount - todayTillExpenses;
 
   const handleSaveExpense = async () => {
+      if (isSaving) return;
       const amount = Number(expenseForm.amount);
       if (amount <= 0) {
           error("Invalid amount.");
@@ -49,29 +51,43 @@ export default function ExpensesTab() {
       }
       if (!currentUser) return;
 
-      await db.expenses.add({
-         id: crypto.randomUUID(),
-         amount,
-         category: expenseForm.category,
-         description: expenseForm.description,
-         timestamp: Date.now(),
-         userName: currentUser.name,
-         preparedBy: currentUser.name,
-         status: 'PENDING',
-         source: expenseForm.source,
-         branchId: activeBranchId!,
-         businessId: activeBusinessId!
-      });
-      setIsExpenseModalOpen(false);
-      setExpenseForm({ amount: '', category: '', description: '', source: 'TILL' });
-      success("Expense logged successfully.");
+      setIsSaving(true);
+      try {
+        await db.expenses.add({
+           id: crypto.randomUUID(),
+           amount,
+           category: expenseForm.category,
+           description: expenseForm.description,
+           timestamp: Date.now(),
+           userName: currentUser.name,
+           preparedBy: currentUser.name,
+           status: 'PENDING',
+           source: expenseForm.source,
+           branchId: activeBranchId!,
+           businessId: activeBusinessId!
+        });
+        setIsExpenseModalOpen(false);
+        setExpenseForm({ amount: '', category: '', description: '', source: 'TILL' });
+        success("Expense logged successfully.");
+      } catch (err: any) {
+        error("Failed to log expense: " + err.message);
+      } finally {
+        setIsSaving(false);
+      }
   };
 
   const handleDeleteExpense = async (id: string) => {
-      if (!isAdmin) return;
+      if (!isAdmin || isSaving) return;
       if (confirm("Are you sure you want to delete this expense? This action cannot be undone.")) {
-          await db.expenses.delete(id);
-          success("Expense deleted.");
+          setIsSaving(true);
+          try {
+            await db.expenses.delete(id);
+            success("Expense deleted.");
+          } catch (err: any) {
+            error("Failed to delete expense: " + err.message);
+          } finally {
+            setIsSaving(false);
+          }
       }
   };
 
@@ -199,6 +215,7 @@ export default function ExpensesTab() {
         expenseForm={expenseForm}
         setExpenseForm={setExpenseForm}
         handleSaveExpense={handleSaveExpense}
+        isSaving={isSaving}
         actualCashDrawer={actualCashDrawer}
         accounts={expenseAccounts || []}
       />

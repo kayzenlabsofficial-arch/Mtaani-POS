@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileMinus } from 'lucide-react';
+import { FileMinus, Loader2 } from 'lucide-react';
 
 interface ExpenseModalProps {
   isOpen: boolean;
@@ -7,13 +7,14 @@ interface ExpenseModalProps {
   expenseForm: { amount: string, category: string, description: string, source: 'TILL' | 'ACCOUNT' };
   setExpenseForm: (form: any) => void;
   handleSaveExpense: () => Promise<void>;
+  isSaving?: boolean;
   actualCashDrawer: number;
   accounts: any[];
   financialAccounts: any[];
   products: any[];
 }
 
-export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseForm, handleSaveExpense, actualCashDrawer, accounts, financialAccounts, products }: ExpenseModalProps) {
+export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseForm, handleSaveExpense, isSaving, actualCashDrawer, accounts, financialAccounts, products }: ExpenseModalProps) {
   if (!isOpen) return null;
 
   return (
@@ -143,8 +144,11 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
          </div>
 
         <div className="flex gap-3">
-           <button onClick={onClose} className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors">Cancel</button>
-           <button onClick={handleSaveExpense} disabled={!expenseForm.amount || Number(expenseForm.amount) <= 0 || (expenseForm.source === 'TILL' && Number(expenseForm.amount) > actualCashDrawer) || (expenseForm.source === 'SHOP' && !expenseForm.productId)} className="flex-[2] bg-orange-600 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50">Log Expense</button>
+           <button onClick={onClose} disabled={isSaving} className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors disabled:opacity-50">Cancel</button>
+           <button onClick={handleSaveExpense} disabled={!expenseForm.amount || Number(expenseForm.amount) <= 0 || (expenseForm.source === 'TILL' && Number(expenseForm.amount) > actualCashDrawer) || (expenseForm.source === 'SHOP' && !expenseForm.productId) || isSaving} className="flex-[2] bg-orange-600 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50 flex justify-center items-center gap-2">
+             {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
+             {isSaving ? 'Logging...' : 'Log Expense'}
+           </button>
         </div>
       </div>
     </div>

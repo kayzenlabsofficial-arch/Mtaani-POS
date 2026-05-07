@@ -13,7 +13,8 @@ interface RefundsTabProps {
 export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   const [refundSearch, setRefundSearch] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
-  const { success } = useToast();
+  const [isSaving, setIsSaving] = useState(false);
+  const { success, error } = useToast();
 
   const activeBranchId = useStore(state => state.activeBranchId);
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
@@ -33,17 +34,21 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
 
   const handleRefund = async (t: Transaction, itemsToReturn?: { productId: string, quantity: number }[]) => {
     if (t.status !== 'PAID' && t.status !== 'PARTIAL_REFUND') return;
+    if (isSaving) return;
 
-    // For accountability, we still need to know which items are being requested for refund
-    // We'll store the refund request details in the transaction temporarily or in a separate table
-    // For now, let's update the transaction status to PENDING_REFUND
-    
-    await db.transactions.update(t.id, { 
-        status: 'PENDING_REFUND'
-    });
-    
-    setSelectedRecord(null);
-    success("Refund request sent to Admin for approval.");
+    setIsSaving(true);
+    try {
+        await db.transactions.update(t.id, { 
+            status: 'PENDING_REFUND'
+        });
+        
+        setSelectedRecord(null);
+        success("Refund request sent to Admin for approval.");
+    } catch (err: any) {
+        error("Failed to request refund: " + err.message);
+    } finally {
+        setIsSaving(false);
+    }
   };
 
   return (

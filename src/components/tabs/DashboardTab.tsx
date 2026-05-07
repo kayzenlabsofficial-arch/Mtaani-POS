@@ -107,9 +107,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     [activeBranchId]
   );
 
+  const totalShiftFloat = (!isAdmin && !isManager) ? (Number(activeShift?.openingFloat) || 0) : (activeShiftsQuery || []).reduce((sum, s) => sum + (Number(s.openingFloat) || 0), 0);
   const shiftOpeningFloat = Number(activeShift?.openingFloat) || 0;
-  const expectedCashDrawerRaw = cashTotal - (shiftTillExpenses + shiftTillPayments + totalPickedAmount);
-  const expectedCashDrawer = Math.max(0, expectedCashDrawerRaw);
+  
+  // FIX: Include the Opening Float in the expected drawer cash
+  const expectedCashDrawerRaw = totalShiftFloat + cashTotal - (shiftTillExpenses + shiftTillPayments + totalPickedAmount);
+  const expectedCashDrawer = expectedCashDrawerRaw; // Allow negative so it's obvious to admins if over-picked
 
   const recentActivity = sortedTransactions.filter(t => t.timestamp >= todayStart.getTime()).slice(0, 10);
   const pendingQuotes = sortedTransactions.filter(t => t.status === 'QUOTE').length;

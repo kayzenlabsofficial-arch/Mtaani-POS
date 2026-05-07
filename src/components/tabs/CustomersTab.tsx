@@ -11,6 +11,7 @@ export default function CustomersTab() {
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
+  const [isSaving, setIsSaving] = useState(false);
   const isAdmin = useStore(state => state.isAdmin);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const { success, error, info } = useToast();
@@ -50,21 +51,37 @@ export default function CustomersTab() {
   }
 
   const handleSaveCustomer = async () => {
-      if (editingCustomer) {
-          await db.customers.update(editingCustomer.id, { ...customerForm });
-          success("Customer updated.");
-      } else {
-          await db.customers.add({ id: crypto.randomUUID(), ...customerForm, totalSpent: 0, balance: 0, businessId: activeBusinessId! } as any);
-          success("Customer added.");
+      if (isSaving) return;
+      setIsSaving(true);
+      try {
+        if (editingCustomer) {
+            await db.customers.update(editingCustomer.id, { ...customerForm });
+            success("Customer updated.");
+        } else {
+            await db.customers.add({ id: crypto.randomUUID(), ...customerForm, totalSpent: 0, balance: 0, businessId: activeBusinessId! } as any);
+            success("Customer added.");
+        }
+        setIsCustomerModalOpen(false);
+      } catch (err: any) {
+        error("Failed to save customer: " + err.message);
+      } finally {
+        setIsSaving(false);
       }
-      setIsCustomerModalOpen(false);
   }
 
   const handleDeleteCustomer = async () => {
+    if (isSaving) return;
     if (editingCustomer && confirm(`Are you sure you want to delete ${editingCustomer.name}?`)) {
-      await db.customers.delete(editingCustomer.id);
-      setIsCustomerModalOpen(false);
-      success("Customer removed.");
+      setIsSaving(true);
+      try {
+        await db.customers.delete(editingCustomer.id);
+        setIsCustomerModalOpen(false);
+        success("Customer removed.");
+      } catch (err: any) {
+        error("Failed to delete customer: " + err.message);
+      } finally {
+        setIsSaving(false);
+      }
     }
   }
 
@@ -277,11 +294,12 @@ export default function CustomersTab() {
                </div>
 
               <div className="flex gap-4">
-                 <button onClick={() => setIsCustomerModalOpen(false)} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs   rounded-2xl transition-all press">
+                 <button onClick={() => setIsCustomerModalOpen(false)} disabled={isSaving} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black text-xs   rounded-2xl transition-all press disabled:opacity-50">
                    Cancel
                  </button>
-                 <button onClick={handleSaveCustomer} disabled={!customerForm.name} className="flex-[2] grad-blue text-white px-6 py-4 font-black text-xs   rounded-2xl disabled:opacity-40 transition-all shadow-blue press">
-                   Save Record
+                 <button onClick={handleSaveCustomer} disabled={!customerForm.name || isSaving} className="flex-[2] grad-blue text-white px-6 py-4 font-black text-xs   rounded-2xl disabled:opacity-40 transition-all shadow-blue press flex items-center justify-center gap-2">
+                   {isSaving ? <Loader2 size={18} className="animate-spin" /> : null}
+                   {isSaving ? 'Saving...' : 'Save Record'}
                  </button>
               </div>
            </div>
