@@ -290,13 +290,34 @@ export default function MtaaniPOS() {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const todaysPaidTransactions = (allTransactions || []).filter(t => (t.timestamp || 0) >= todayStart.getTime() && t.status === 'PAID');
+  // ── FIX: Shift Isolation for Money in Till
+  // If there's an active shift, we ONLY count transactions/expenses for THAT specific shift.
+  // This prevents multiple cashiers' money from mixing.
+  const todaysPaidTransactions = (allTransactions || []).filter(t => 
+    t.status === 'PAID' && 
+    (activeShift ? t.shiftId === activeShift.id : (t.timestamp || 0) >= todayStart.getTime())
+  );
+  
   const cashTotal = todaysPaidTransactions.filter(t => t.paymentMethod === 'CASH').reduce((sum, t) => sum + (t.total || 0), 0);
-  const todayTillExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'TILL').reduce((sum, e) => sum + (e.amount || 0), 0);
-  const todayTillPayments = (allSupplierPayments || []).filter(p => (p.timestamp || 0) >= todayStart.getTime() && p.source === 'TILL').reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-  const todayCashPicks = (allCashPicks || []).filter(c => (c.timestamp || 0) >= todayStart.getTime());
+  
+  const todayTillExpenses = (allExpenses || []).filter(e => 
+    e.source === 'TILL' && 
+    (activeShift ? e.shiftId === activeShift.id : (e.timestamp || 0) >= todayStart.getTime())
+  ).reduce((sum, e) => sum + (e.amount || 0), 0);
+  
+  const todayTillPayments = (allSupplierPayments || []).filter(p => 
+    p.source === 'TILL' && 
+    (activeShift ? p.shiftId === activeShift.id : (p.timestamp || 0) >= todayStart.getTime())
+  ).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  
+  const todayCashPicks = (allCashPicks || []).filter(c => 
+    (activeShift ? c.shiftId === activeShift.id : (c.timestamp || 0) >= todayStart.getTime())
+  );
+  
   const totalPickedAmount = todayCashPicks.reduce((acc, p) => acc + (p.amount || 0), 0);
-  const actualCashDrawer = cashTotal - totalPickedAmount - todayTillExpenses - todayTillPayments;
+  const actualCashDrawer = (activeShift?.openingFloat || 0) + cashTotal - totalPickedAmount - todayTillExpenses - todayTillPayments;
+
+  const products = useLiveQuery(() => db.products.toArray(), [], []) ;
 
   const handleSaveExpense = async () => {
       const amount = Number(expenseForm.amount);
@@ -319,8 +340,9 @@ export default function MtaaniPOS() {
       }
       if (!currentUser || !activeBranchId) return;
 
+      const expenseId = crypto.randomUUID();
       await db.expenses.add({
-         id: crypto.randomUUID(),
+         id: expenseId,
          amount,
          category: expenseForm.category,
          description: expenseForm.description,
@@ -331,8 +353,18 @@ export default function MtaaniPOS() {
          source: expenseForm.source,
          accountId: expenseForm.source === 'ACCOUNT' ? expenseForm.accountId : undefined,
          branchId: activeBranchId,
-         businessId: activeBusinessId!
+         businessId: activeBusinessId!,
+         shiftId: activeShift?.id,
+         updated_at: Date.now()
       });
+
+      // Capture Product and Quantity for SHOP source
+      if (expenseForm.source === 'SHOP' && (expenseForm as any).productId) {
+         await db.expenses.update(expenseId, {
+            productId: (expenseForm as any).productId,
+            quantity: Number((expenseForm as any).quantity) || 1
+         } as any);
+      }
       setIsExpenseModalOpen(false);
       setExpenseForm({ amount: '', category: '', description: '', source: 'TILL', accountId: '' });
       success("Expense logged successfully.");
@@ -785,7 +817,11 @@ export default function MtaaniPOS() {
 
   const checkoutLockRef = React.useRef(false);
 
-  const handleCheckout = async (status: 'QUOTE' | 'PAID', paymentMethod: 'CASH' | 'MPESA' | 'CREDIT', mpesaCode?: string, mpesaCustomer?: string) => {
+  const handleCheckout = async (status: 'QUOTE' | 'PAID', paymentMethod?: 'CASH' | 'MPESA' | 'CREDIT', mpesaCode?: string, resolvedMpesaCustomer?: string) => {
+    if (isAdmin) {
+      error("Administrators cannot process sales. Please use a Cashier or Manager account.");
+      return;
+    }
     if (cart.length === 0) return;
     
     // ── EXTRA RE-ENTRANCY GUARD ──
@@ -793,6 +829,12 @@ export default function MtaaniPOS() {
         console.warn('[Checkout] Blocked re-entrant call.');
         return;
     }
+    
+    if (status === 'PAID' && !activeShift) {
+       error("No active shift found. Please open a shift first.");
+       return;
+    }
+
     checkoutLockRef.current = true;
 
     try {
@@ -806,18 +848,6 @@ export default function MtaaniPOS() {
           setIsCustomerSelectOpen(true);
           checkoutLockRef.current = false;
           return;
-        }
-      }
-
-      // Resolve M-Pesa Customer Name from Phone if not already set by explicit selection
-      let resolvedMpesaCustomer = mpesaCustomer;
-      if (paymentMethod === 'MPESA' && mpesaCustomer && !currentCustomer) {
-        try {
-          const allCust = await db.customers.toArray();
-          const found = allCust.find(c => c.phone === mpesaCustomer || (c.phone && mpesaCustomer.endsWith(c.phone.slice(-9))));
-          if (found) resolvedMpesaCustomer = found.name;
-        } catch (e) {
-          console.error("Customer lookup failed:", e);
         }
       }
 
@@ -850,7 +880,10 @@ export default function MtaaniPOS() {
         changeGiven: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) - total : (paymentMethod === 'MPESA' ? 0 : undefined),
         preparedBy: currentCustomer ? currentCustomer.name : undefined,
         mpesaCode: mpesaCode,
-        mpesaCustomer: currentCustomer ? currentCustomer.name : resolvedMpesaCustomer
+        mpesaCustomer: currentCustomer ? currentCustomer.name : resolvedMpesaCustomer,
+        shiftId: activeShift?.id,
+        branchId: activeBranchId!,
+        businessId: activeBusinessId!
       };
 
       await db.transactions.add(transaction);
@@ -888,7 +921,8 @@ export default function MtaaniPOS() {
                       timestamp: transaction.timestamp,
                       reference: `Bundle Sale #${transaction.id.split('-')[0].toUpperCase()} (${freshProduct.name})`,
                       branchId: activeBranchId!,
-                      businessId: activeBusinessId!
+                      businessId: activeBusinessId!,
+                      shiftId: activeShift?.id
                     });
                   }
                 }
@@ -909,7 +943,8 @@ export default function MtaaniPOS() {
                   timestamp: transaction.timestamp,
                   reference: `Sale #${transaction.id.split('-')[0].toUpperCase()}${oversold ? ' ⚠ OVERSOLD' : ''}`,
                   branchId: activeBranchId!,
-                  businessId: activeBusinessId!
+                  businessId: activeBusinessId!,
+                  shiftId: activeShift?.id
                 });
               }
             }
@@ -1506,6 +1541,7 @@ export default function MtaaniPOS() {
         actualCashDrawer={actualCashDrawer}
         accounts={expenseAccounts || []}
         financialAccounts={financialAccounts || []}
+        products={products || []}
       />
 
       {/* Cash Modal */}

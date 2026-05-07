@@ -38,7 +38,8 @@ export default function AdminApprovals() {
             timestamp: Date.now(),
             reference: `Approved Adj: ${req.reason}`,
             branchId: activeBranchId!,
-            businessId: activeBusinessId!
+            businessId: activeBusinessId!,
+            shiftId: req.shiftId // Preserve the shift ID from the request
         });
     }
     await db.stockAdjustmentRequests.update(req.id, { 
@@ -60,15 +61,28 @@ export default function AdminApprovals() {
         status: 'APPROVED',
         approvedBy: currentUser?.name
     });
-    // Now safely deduct account if applicable
-    if (e.source === 'ACCOUNT' && e.accountId) {
-        const account = await db.financialAccounts.get(e.accountId);
-        if (account) {
-            await db.financialAccounts.update(e.accountId, {
-                balance: account.balance - e.amount
+    // safe deduction of stock for SHOP source
+    if (e.source === 'SHOP' && (e as any).productId) {
+        const product = await db.products.get((e as any).productId);
+        if (product) {
+            const qty = Number((e as any).quantity) || 1;
+            await db.products.update(product.id, {
+                stockQuantity: Math.max(0, product.stockQuantity - qty)
+            });
+            await db.stockMovements.add({
+                id: crypto.randomUUID(),
+                productId: product.id,
+                type: 'OUT',
+                quantity: -qty,
+                timestamp: Date.now(),
+                reference: `Expense: ${e.description || 'Shop Use'}`,
+                branchId: activeBranchId!,
+                businessId: activeBusinessId!,
+                shiftId: e.shiftId
             });
         }
     }
+
     success("Expense disbursement authorized.");
   };
 
@@ -119,7 +133,8 @@ export default function AdminApprovals() {
              timestamp: Date.now(),
              reference: `Return #${t.id.split('-')[0].toUpperCase()}`,
              branchId: activeBranchId!,
-             businessId: activeBusinessId!
+             businessId: activeBusinessId!,
+             shiftId: t.shiftId
           });
           const txItem = t.items.find(i => i.productId === item.productId);
           if (txItem) txItem.returnedQuantity = (txItem.returnedQuantity || 0) + item.quantity;

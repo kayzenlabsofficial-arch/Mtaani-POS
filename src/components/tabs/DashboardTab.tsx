@@ -40,15 +40,23 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const shiftStartTime = activeShift?.startTime || todayStart.getTime();
 
   const sortedTransactions = [...allTransactions].sort((a, b) => b.timestamp - a.timestamp);
-  const shiftTransactions = sortedTransactions.filter(t => t.timestamp >= shiftStartTime && (t.status === 'PAID' || t.status === 'PARTIAL_REFUND'));
+  
+  // Include PAID, REFUNDED, and PARTIAL_REFUND for a full audit trail
+  const shiftTransactions = sortedTransactions.filter(t => 
+    t.timestamp >= shiftStartTime && 
+    (t.status === 'PAID' || t.status === 'REFUNDED' || t.status === 'PARTIAL_REFUND')
+  );
   
   const getNetSales = (t: Transaction) => {
       if (t.status === 'PARTIAL_REFUND') {
           const netSubtotal = t.items.reduce((sum, i) => sum + (i.snapshotPrice * (i.quantity - (i.returnedQuantity || 0))), 0);
           const netTax = netSubtotal * 0.16;
-          return { subtotal: netSubtotal, tax: netTax, total: netSubtotal + netTax };
+          return { subtotal: netSubtotal, tax: netTax, total: netSubtotal + netTax, refunded: (Number(t.total) || 0) - (netSubtotal + netTax) };
       }
-      return { subtotal: Number(t.subtotal) || 0, tax: Number(t.tax) || 0, total: Number(t.total) || 0 };
+      if (t.status === 'REFUNDED') {
+          return { subtotal: 0, tax: 0, total: 0, refunded: Number(t.total) || 0 };
+      }
+      return { subtotal: Number(t.subtotal) || 0, tax: Number(t.tax) || 0, total: Number(t.total) || 0, refunded: 0 };
   };
 
   const todaySales = shiftTransactions.reduce((sum, t) => sum + getNetSales(t).total, 0);
@@ -57,13 +65,13 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   
   const cashTotal = shiftTransactions.filter(t => t.paymentMethod === 'CASH').reduce((sum, t) => sum + getNetSales(t).total, 0);
   const mpesaTotal = shiftTransactions.filter(t => t.paymentMethod === 'MPESA').reduce((sum, t) => sum + getNetSales(t).total, 0);
-  const shiftTillExpenses = allExpenses.filter(e => e.timestamp >= shiftStartTime && e.source === 'TILL').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const shiftTillPayments = allSupplierPayments.filter(p => p.timestamp >= shiftStartTime && p.source === 'TILL').reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-  const shiftCashPicks = allCashPicks.filter(c => c.timestamp >= shiftStartTime);
-  const totalPickedAmount = shiftCashPicks.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
-  const lowStock = (allProducts || []).filter(p => p.stockQuantity <= 10);
+  const shiftRefunds = shiftTransactions.reduce((sum, t) => sum + getNetSales(t).refunded, 0);
   
-  // EXPECTED CASH = (Opening Float + Cash Sales) - (Expenses + Supplier Payments + Confirmed Picks)
+  const shiftTillExpenses = (allExpenses || []).filter(e => e.shiftId === activeShift?.id && e.source === 'TILL').reduce((sum, e) => sum + (e.amount || 0), 0);
+  const shiftTillPayments = (allSupplierPayments || []).filter(p => p.shiftId === activeShift?.id && p.source === 'TILL').reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const shiftCashPicks = (allCashPicks || []).filter(c => c.shiftId === activeShift?.id);
+  const totalPickedAmount = shiftCashPicks.reduce((acc, p) => acc + (p.amount || 0), 0);
+
   const openingFloat = activeShift?.openingFloat || 0;
   const expectedCashDrawer = (openingFloat + cashTotal) - (shiftTillExpenses + shiftTillPayments + totalPickedAmount);
 
@@ -135,16 +143,28 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   }
 
   const handlePickCash = async () => {
+    if (!pickAmount || Number(pickAmount) <= 0 || Number(pickAmount) > expectedCashDrawer) return;
+    
     const amount = Number(pickAmount);
-    if (amount <= 0 || amount > expectedCashDrawer || !currentUser || !activeBranchId) {
-        error("Invalid pickup request.");
-        return;
-    }
-    await db.cashPicks.add({ id: crypto.randomUUID(), amount, timestamp: Date.now(), status: 'PENDING', userName: currentUser.name, branchId: activeBranchId, businessId: activeBusinessId! });
+    await db.cashPicks.add({ 
+      id: crypto.randomUUID(), 
+      amount, 
+      timestamp: Date.now(), 
+      status: 'PENDING', 
+      userName: currentUser.name, 
+      branchId: activeBranchId, 
+      businessId: activeBusinessId!,
+      shiftId: activeShift?.id
+    });
     setPickAmount("");
     setIsPickCashOpen(false);
     success("Cash pickup awaiting admin approval.");
   };
+
+  const activeShiftsQuery = useLiveQuery(
+    () => activeBranchId ? db.shifts.where('status').equals('OPEN').and(s => s.branchId === activeBranchId).toArray() : Promise.resolve([]),
+    [activeBranchId]
+  );
 
   const handleCloseDay = async () => {
     if (!activeShift) {
@@ -156,17 +176,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       return;
     }
     
-    if (isCloseDayBlocked) {
-      error("Cannot close shift. You have pending cash picks that must be approved by an Admin.");
-      return;
-    }
-
-    if (!reportedCash) {
-      error("Please enter the actual counted cash in the drawer.");
-      return;
-    }
-    
-    const reported = Number(reportedCash);
+    // reportedCash is now automatically expectedCashDrawer
+    const reported = expectedCashDrawer;
     
     try {
       // Create Zed Report
@@ -181,10 +192,11 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         cashSales: cashTotal,
         mpesaSales: mpesaTotal,
         totalExpenses: shiftTillExpenses,
-        totalPicks: totalPickedAmount + shiftTillPayments, // Supplier payments are effectively picks if from till
+        totalPicks: totalPickedAmount + shiftTillPayments, 
+        totalRefunds: shiftRefunds,
         expectedCash: expectedCashDrawer,
         reportedCash: reported,
-        difference: reported - expectedCashDrawer,
+        difference: 0,
         cashierName: activeShift.cashierName,
         branchId: activeBranchId,
         businessId: activeBusinessId!
@@ -257,6 +269,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const pendingExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).and(x => x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBranchId], []);
   const pendingRefunds = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).and(x => x.status === 'PENDING_REFUND').toArray() : Promise.resolve([]), [activeBranchId], []);
   const pendingPOs = useLiveQuery(() => activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).and(x => x.approvalStatus === 'PENDING').toArray() : Promise.resolve([]), [activeBranchId], []);
+  const lowStock = allProducts.filter(p => p.stock <= (p.reorderLevel || 5));
 
   const totalPending = (pendingAdjustments?.length || 0) + (pendingPicks?.length || 0) + (pendingExpenses?.length || 0) + (pendingRefunds?.length || 0) + (pendingPOs?.length || 0);
 
@@ -279,6 +292,48 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
              </div>
              <ChevronRight className="text-white/50" size={24} />
           </div>
+      )}
+
+      {/* Admin: Active Shifts Overview */}
+      {(isAdmin || isManager) && (activeShiftsQuery?.length || 0) > 0 && (
+        <div className="mb-6 bg-white p-5 rounded-[2.5rem] border border-slate-200 shadow-card">
+           <h3 className="text-sm font-black text-slate-900 mb-4 flex items-center gap-2">
+              <Activity size={18} className="text-blue-600" /> Active Cashier Sessions
+           </h3>
+           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {activeShiftsQuery?.map(s => {
+                          const sStartTime = s.startTime || 0;
+                          const sTransactions = allTransactions.filter(t => t.timestamp >= sStartTime && (t.status === 'PAID' || t.status === 'REFUNDED' || t.status === 'PARTIAL_REFUND') && t.shiftId === s.id);
+                          const sSales = sTransactions.reduce((acc, t) => {
+                             const net = getNetSales(t);
+                             return acc + net.total;
+                          }, 0);
+                          const sCashSales = sTransactions.filter(t => t.paymentMethod === 'CASH').reduce((acc, t) => acc + getNetSales(t).total, 0);
+                          const sExpenses = (allExpenses || []).filter(e => e.shiftId === s.id && e.source === 'TILL').reduce((acc, e) => acc + (e.amount || 0), 0);
+                          const sPayments = (allSupplierPayments || []).filter(p => p.shiftId === s.id && p.source === 'TILL').reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+                          const sPicks = (allCashPicks || []).filter(c => c.shiftId === s.id).reduce((acc, p) => acc + (p.amount || 0), 0);
+                          const sExpected = (s.openingFloat || 0) + sCashSales - (sExpenses + sPayments + sPicks);
+
+                          return (
+                            <div key={s.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+                               <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                                     <Clock size={20} />
+                                  </div>
+                                  <div>
+                                     <p className="text-sm font-black text-slate-900">{s.userName}</p>
+                                     <p className="text-[10px] font-bold text-slate-400">Started: {new Date(s.startTime).toLocaleTimeString()}</p>
+                                  </div>
+                               </div>
+                               <div className="text-right">
+                                  <p className="text-xs font-black text-slate-900">Ksh {sSales.toLocaleString()}</p>
+                                  <p className="text-[10px] font-bold text-green-600">Till: Ksh {sExpected.toLocaleString()}</p>
+                               </div>
+                            </div>
+                          );
+                       })}
+           </div>
+        </div>
       )}
 
       <h2 className="text-xl font-extrabold text-slate-900 mb-1 flex items-center gap-2"><LayoutDashboard size={20} className="text-blue-600" /> Command Center</h2>
@@ -394,7 +449,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                            <p className="text-xs font-black text-slate-900 truncate max-w-[120px]">{p.name}</p>
                         </div>
                         <div className="text-right">
-                           <p className="text-[10px] font-black text-slate-900">{p.qty} Sold</p>
+                           <p className="text-xs font-black text-slate-900">{p.qty} Sold</p>
                            <p className="text-[9px] font-bold text-slate-400">Total: Ksh {p.revenue.toLocaleString()}</p>
                         </div>
                      </div>
@@ -546,36 +601,25 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
              <div className="space-y-2 mb-6 text-sm">
                <div className="flex justify-between text-slate-500"><span>Shift Start (Float)</span><span className="font-bold text-slate-900">Ksh {openingFloat.toLocaleString()}</span></div>
                <div className="flex justify-between text-slate-500"><span>Gross Sales</span><span className="font-bold text-slate-900">Ksh {todaySales.toLocaleString()}</span></div>
-               <div className="flex justify-between text-slate-500"><span>M-Pesa Receipts</span><span className="font-bold text-slate-600">- Ksh {mpesaTotal.toLocaleString()}</span></div>
+               <div className="flex justify-between text-slate-500"><span>M-Pesa Receipts</span><span className="font-bold text-blue-600">- Ksh {mpesaTotal.toLocaleString()}</span></div>
                <div className="flex justify-between text-slate-500"><span>Total Banked (Picks)</span><span className="font-bold text-slate-600">- Ksh {totalPickedAmount.toLocaleString()}</span></div>
                <div className="flex justify-between text-slate-500"><span>Supplier Payments (Till)</span><span className="font-bold text-slate-600">- Ksh {shiftTillPayments.toLocaleString()}</span></div>
+               <div className="flex justify-between text-slate-500"><span>Refunds Processed</span><span className="font-bold text-amber-600">- Ksh {shiftRefunds.toLocaleString()}</span></div>
                <div className="flex justify-between text-slate-500"><span>Expenses (Till)</span><span className="font-bold text-red-600">- Ksh {shiftTillExpenses.toLocaleString()}</span></div>
                <div className="border-t border-dashed border-slate-200 my-2 pt-2 flex justify-between text-slate-900 font-black">
-                  <span>Expected Drawer Cash</span>
+                  <span>Final Calculated Cash</span>
                   <span>Ksh {expectedCashDrawer.toLocaleString()}</span>
                </div>
             </div>
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Counted Custom Cash</label>
-              <div className="relative">
-                <span className="absolute left-4 top-3 text-slate-400 font-bold">Ksh</span>
-                <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl pl-12 pr-4 py-3 text-xl font-black text-slate-900 shadow-sm focus:outline-none focus:border-slate-500 transition-all" placeholder="0" value={reportedCash} onChange={(e) => setReportedCash(e.target.value)} autoFocus />
-              </div>
-              {reportedCash && Number(reportedCash) !== expectedCashDrawer && (
-                 <div className="flex justify-between items-center bg-red-50 p-2 rounded-lg mt-2">
-                    <span className="text-[10px] font-bold text-red-600">Cashier variance</span>
-                    <span className="text-xs font-black text-red-700">Ksh {(Number(reportedCash) - expectedCashDrawer).toLocaleString()}</span>
-                 </div>
-              )}
-            </div>
+            
             <div className="flex gap-3">
                <button onClick={() => setIsCloseDayOpen(false)} className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors">Cancel</button>
                <button 
                   onClick={handleCloseDay} 
-                  className={`flex-[2] text-white px-4 py-3 font-bold rounded-xl transition-colors shadow-lg active:scale-95 flex items-center justify-center gap-2 ${isCloseDayBlocked ? 'bg-red-600 opacity-50 cursor-not-allowed' : (!reportedCash ? 'bg-slate-400' : 'bg-slate-900')}`}
+                  className={`flex-[2] text-white px-4 py-3 font-bold rounded-xl transition-colors shadow-lg active:scale-95 flex items-center justify-center gap-2 ${isCloseDayBlocked ? 'bg-red-600 opacity-50 cursor-not-allowed' : 'bg-slate-900'}`}
                >
                   {isCloseDayBlocked ? <Lock size={16}/> : <Check size={16}/>}
-                  {isCloseDayBlocked ? 'Banking Pending' : (!reportedCash ? 'Enter Cash Count' : 'Submit Shift')}
+                  {isCloseDayBlocked ? 'Banking Pending' : 'Finalize & Submit Shift'}
                </button>
             </div>
             {isCloseDayBlocked && (

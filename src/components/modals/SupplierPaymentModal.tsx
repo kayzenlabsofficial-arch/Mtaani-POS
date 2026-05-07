@@ -9,6 +9,7 @@ interface SupplierPaymentModalProps {
   supplier: Supplier | null;
   onSave: (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, source: 'TILL' | 'ACCOUNT', accountId?: string, transactionCode?: string, purchaseOrderId?: string, purchaseOrderIds?: string[] }) => Promise<void>;
   financialAccounts: any[];
+  shiftId?: string;
 }
 
 export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave, financialAccounts }: SupplierPaymentModalProps) {

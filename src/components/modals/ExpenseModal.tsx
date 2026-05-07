@@ -10,9 +10,10 @@ interface ExpenseModalProps {
   actualCashDrawer: number;
   accounts: any[];
   financialAccounts: any[];
+  products: any[];
 }
 
-export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseForm, handleSaveExpense, actualCashDrawer, accounts, financialAccounts }: ExpenseModalProps) {
+export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseForm, handleSaveExpense, actualCashDrawer, accounts, financialAccounts, products }: ExpenseModalProps) {
   if (!isOpen) return null;
 
   return (
@@ -71,15 +72,58 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                     </button>
                     <button 
                        onClick={() => setExpenseForm({...expenseForm, source: 'ACCOUNT'})}
-                       className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all ${expenseForm.source === 'ACCOUNT' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}
+                       className={`flex-1 py-2.5 rounded-xl text-[10px] font-bold border transition-all ${expenseForm.source === 'ACCOUNT' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}
                     >
                        Owner Account
                     </button>
+                    <button 
+                       onClick={() => setExpenseForm({...expenseForm, source: 'SHOP'})}
+                       className={`flex-1 py-2.5 rounded-xl text-[10px] font-bold border transition-all ${expenseForm.source === 'SHOP' ? 'bg-purple-50 border-purple-500 text-purple-700' : 'bg-white border-slate-200 text-slate-500'}`}
+                    >
+                       Shop Item
+                    </button>
                  </div>
                  <p className="text-[9px] text-slate-400 mt-1 italic">
-                    {expenseForm.source === 'TILL' ? '* Deducted from cashier drawer.' : '* Direct payment by owner (Bank/M-Pesa).'}
+                    {expenseForm.source === 'TILL' ? '* Deducted from cashier drawer.' : (expenseForm.source === 'SHOP' ? '* Deducted from shop inventory.' : '* Direct payment by owner (Bank/M-Pesa).')}
                  </p>
               </div>
+
+              {expenseForm.source === 'SHOP' && (
+                 <div className="animate-in slide-in-from-top-2 space-y-3">
+                    <div>
+                       <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Select Product</label>
+                       <select 
+                          value={expenseForm.productId || ''} 
+                          onChange={e => {
+                             const p = products.find(x => x.id === e.target.value);
+                             setExpenseForm({
+                                ...expenseForm, 
+                                productId: e.target.value,
+                                amount: p ? String(p.sellingPrice) : expenseForm.amount, 
+                                description: p ? `Expensed: ${p.name}` : expenseForm.description
+                             });
+                          }} 
+                          className="w-full bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-purple-500"
+                       >
+                          <option value="">Choose item...</option>
+                          {(products || []).filter(p => !p.isBundle).map(p => (
+                            <option key={p.id} value={p.id}>{p.name} ({p.stockQuantity} {p.unit || 'pcs'} left)</option>
+                          ))}
+                       </select>
+                    </div>
+                    <div>
+                       <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Quantity</label>
+                       <input 
+                          type="number" 
+                          step="any"
+                          value={expenseForm.quantity || '1'} 
+                          onChange={e => setExpenseForm({...expenseForm, quantity: e.target.value})}
+                          className="w-full bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-purple-500"
+                          placeholder="1"
+                       />
+                    </div>
+                 </div>
+               )}
 
               {expenseForm.source === 'ACCOUNT' && (
                 <div className="animate-in slide-in-from-top-2">
@@ -100,7 +144,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
 
         <div className="flex gap-3">
            <button onClick={onClose} className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors">Cancel</button>
-           <button onClick={handleSaveExpense} disabled={!expenseForm.amount || Number(expenseForm.amount) <= 0 || (expenseForm.source === 'TILL' && Number(expenseForm.amount) > actualCashDrawer)} className="flex-[2] bg-orange-600 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50">Log Expense</button>
+           <button onClick={handleSaveExpense} disabled={!expenseForm.amount || Number(expenseForm.amount) <= 0 || (expenseForm.source === 'TILL' && Number(expenseForm.amount) > actualCashDrawer) || (expenseForm.source === 'SHOP' && !expenseForm.productId)} className="flex-[2] bg-orange-600 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50">Log Expense</button>
         </div>
       </div>
     </div>

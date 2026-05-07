@@ -10,13 +10,15 @@ interface SupplierLedgerModalProps {
   onClose: () => void;
   onEdit: (s: Supplier) => void;
   onPay: (s: Supplier) => void;
+  shiftId?: string;
+  products?: any[];
 }
 
-export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }: SupplierLedgerModalProps) {
+export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, shiftId, products }: SupplierLedgerModalProps) {
   const [activeTab, setActiveTab] = useState<'INVOICES' | 'PAYMENTS' | 'CREDIT_NOTES'>('INVOICES');
   const [isAddCreditNoteOpen, setIsAddCreditNoteOpen] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
-  const [creditNoteForm, setCreditNoteForm] = useState({ amount: '', reference: '', reason: '' });
+  const [creditNoteForm, setCreditNoteForm] = useState({ amount: '', reference: '', reason: '', productId: '', quantity: '1' });
   const { success, error } = useToast();
 
   const invoices = useLiveQuery(
@@ -41,19 +43,47 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
       const amount = Number(creditNoteForm.amount);
       if (amount <= 0) return;
 
+      const cnId = crypto.randomUUID();
       const cn: CreditNote = {
-        id: crypto.randomUUID(),
+        id: cnId,
         supplierId: supplier.id,
         amount,
         reference: creditNoteForm.reference,
         reason: creditNoteForm.reason,
         status: 'PENDING',
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        shiftId,
+        branchId: supplier.branchId,
+        businessId: supplier.businessId
       };
+      
       await db.creditNotes.add(cn);
-      success("Credit Note recorded as PENDING.");
+
+      // If a product was returned, deduct stock
+      if (creditNoteForm.productId) {
+         const p = await db.products.get(creditNoteForm.productId);
+         if (p) {
+            const qty = Number(creditNoteForm.quantity) || 1;
+            await db.products.update(p.id, {
+               stockQuantity: Math.max(0, p.stockQuantity - qty)
+            });
+            await db.stockMovements.add({
+               id: crypto.randomUUID(),
+               productId: p.id,
+               type: 'OUT',
+               quantity: -qty,
+               timestamp: Date.now(),
+               reference: `Supplier Return: ${creditNoteForm.reference || cnId.split('-')[0].toUpperCase()}`,
+               branchId: supplier.branchId,
+               businessId: supplier.businessId,
+               shiftId
+            });
+         }
+      }
+
+      success("Credit Note recorded as PENDING and stock adjusted.");
       setIsAddCreditNoteOpen(false);
-      setCreditNoteForm({ amount: '', reference: '', reason: '' });
+      setCreditNoteForm({ amount: '', reference: '', reason: '', productId: '', quantity: '1' });
     } catch (err) {
       error("Failed to record credit note.");
     }
@@ -295,6 +325,25 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay }
                     <div>
                         <label className="block text-[10px] font-black text-slate-400  mb-2 ml-1">Reason for Credit</label>
                         <textarea value={creditNoteForm.reason} onChange={e => setCreditNoteForm({...creditNoteForm, reason: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium h-20" placeholder="e.g. Returned broken stock" />
+                    </div>
+                    <div className="border-t border-slate-100 pt-4">
+                        <label className="block text-[10px] font-black text-blue-500  mb-2 ml-1 uppercase tracking-wider">Link to Inventory Return (Optional)</label>
+                        <div className="space-y-3">
+                           <select 
+                              value={creditNoteForm.productId} 
+                              onChange={e => setCreditNoteForm({...creditNoteForm, productId: e.target.value})} 
+                              className="w-full bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs font-bold text-slate-900"
+                           >
+                              <option value="">No stock return...</option>
+                              {products?.map(p => <option key={p.id} value={p.id}>{p.name} ({p.stockQuantity} {p.unit} left)</option>)}
+                           </select>
+                           {creditNoteForm.productId && (
+                             <div className="flex items-center gap-2">
+                                <label className="text-[10px] font-black text-slate-400">Qty to Return:</label>
+                                <input type="number" step="any" value={creditNoteForm.quantity} onChange={e => setCreditNoteForm({...creditNoteForm, quantity: e.target.value})} className="w-20 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-center" />
+                             </div>
+                           )}
+                        </div>
                     </div>
                 </div>
                 <div className="flex gap-2">

@@ -73,6 +73,7 @@ export interface Transaction {
   approvedBy?: string;
   branchId: string;
   businessId: string;
+  shiftId?: string; // Link to the specific shift session
   mpesaCode?: string;
   mpesaCustomer?: string;
   updated_at?: number;
@@ -86,6 +87,7 @@ export interface CashPick {
   userName?: string;
   branchId: string;
   businessId: string;
+  shiftId?: string; // Link to the specific shift session
   updated_at?: number;
 }
 
@@ -101,6 +103,7 @@ export interface EndOfDayReport {
   mpesaSales: number;
   totalExpenses: number;
   totalPicks: number;
+  totalRefunds?: number; // Total amount refunded during this shift
   expectedCash: number;
   reportedCash: number;
   difference: number;
@@ -148,6 +151,7 @@ export interface StockMovement {
   reference: string;
   branchId: string;
   businessId: string;
+  shiftId?: string; // Link to the shift if applicable (e.g. shop item expense)
   updated_at?: number;
 }
 
@@ -222,6 +226,7 @@ export interface SupplierPayment {
   accountId?: string; // Link to FinancialAccount if source is ACCOUNT
   branchId: string;
   businessId: string;
+  shiftId?: string; // Link to the shift
   updated_at?: number;
 }
 
@@ -239,6 +244,7 @@ export interface Expense {
   accountId?: string; // Link to FinancialAccount if source is ACCOUNT
   branchId: string;
   businessId: string;
+  shiftId?: string; // Link to the shift
   updated_at?: number;
 }
 
