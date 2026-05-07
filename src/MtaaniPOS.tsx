@@ -275,6 +275,8 @@ export default function MtaaniPOS() {
   const [discountType, setDiscountType] = useState<'FIXED' | 'PERCENT'>('FIXED');
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState(false);
   const [mpesaMessage, setMpesaMessage] = useState('');
+  // ── IDEMPOTENCY GUARD: prevents handleCheckout firing more than once per M-Pesa request
+  const mpesaCheckoutFiredRef = React.useRef(false);
 
   // Global Expense State (for Dashboard & Expenses Tab access)
   const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'TILL' | 'ACCOUNT', accountId: '' });
@@ -305,6 +307,15 @@ export default function MtaaniPOS() {
       if (expenseForm.source === 'TILL' && amount > actualCashDrawer) {
           error("Insufficient cash in drawer.");
           return;
+      }
+      // ── FIX M3: Check ACCOUNT balance before recording ──
+      if (expenseForm.source === 'ACCOUNT' && expenseForm.accountId) {
+          const account = await db.financialAccounts.get(expenseForm.accountId);
+          if (!account) { error("Selected account not found."); return; }
+          if (account.balance < amount) {
+              error(`Insufficient funds in "${account.name}". Balance: Ksh ${account.balance.toLocaleString()}`);
+              return;
+          }
       }
       if (!currentUser || !activeBranchId) return;
 
@@ -490,6 +501,11 @@ export default function MtaaniPOS() {
 
   // ── M-PESA POLLING ────────────────────────────────────────────────────────
   useEffect(() => {
+    // Reset the idempotency guard whenever we start a fresh polling session
+    if (mpesaState === 'POLLING') {
+      mpesaCheckoutFiredRef.current = false;
+    }
+
     let interval: NodeJS.Timeout;
     let pollCount = 0;
     const MAX_POLLS = 20;
@@ -501,16 +517,28 @@ export default function MtaaniPOS() {
         
         if (status.found) {
            if (status.resultCode === 0) {
+             // ── FIX 1: Stop the interval IMMEDIATELY so no further ticks fire ──
+             clearInterval(interval);
+
+             // ── FIX 2: Idempotency guard — only record the sale once ──
+             if (mpesaCheckoutFiredRef.current) {
+               console.warn('[M-Pesa] Duplicate checkout call blocked by idempotency guard.');
+               return;
+             }
+             mpesaCheckoutFiredRef.current = true;
+
              setMpesaState('SUCCESS');
              setMpesaMessage(`Payment successful! Receipt: ${status.receiptNumber}`);
              success(`M-Pesa payment received: ${status.receiptNumber}`);
              setTimeout(() => {
                setIsMpesaModalOpen(false);
-               handleCheckout('PAID', 'MPESA'); 
+               handleCheckout('PAID', 'MPESA');
              }, 2000);
            } else if (status.resultCode === 999) {
              console.log("[M-Pesa] Payment still pending...");
            } else {
+             // ── FIX 1 (failure path): Stop interval immediately on definitive failure ──
+             clearInterval(interval);
              setMpesaState('FAILED');
              setMpesaMessage(`Payment failed/cancelled: ${status.resultDesc}`);
              error(`M-Pesa failed: ${status.resultDesc}`);
@@ -519,7 +547,8 @@ export default function MtaaniPOS() {
           console.log("[M-Pesa] Record not found yet, retrying...");
         }
 
-        if (pollCount >= MAX_POLLS && mpesaState === 'POLLING') {
+        if (pollCount >= MAX_POLLS) {
+          clearInterval(interval);
           setMpesaState('FAILED');
           setMpesaMessage("Polling timed out. Please check the transaction status manually.");
           error("M-Pesa polling timed out.");
@@ -807,31 +836,26 @@ export default function MtaaniPOS() {
       }
       
       if (status === 'PAID') {
-        const stockUpdates = [];
+        // ── FIX C3: Re-read each product's CURRENT stock immediately before deducting
+        // to minimise race-condition overselling when multiple cashiers sell simultaneously.
         for (const item of cart) {
-          const product = await db.products.get(item.id);
-          if (product) {
-            stockUpdates.push({
-              id: item.id,
-              newQty: Math.max(0, product.stockQuantity - item.cartQuantity),
-              movement: {
+          const freshProduct = await db.products.get(item.id);
+          if (freshProduct) {
+            const newQty = Math.max(0, freshProduct.stockQuantity - item.cartQuantity);
+            const oversold = freshProduct.stockQuantity < item.cartQuantity;
+            await db.products.update(item.id, { stockQuantity: newQty });
+            if (db.stockMovements) {
+              await db.stockMovements.add({
                 id: crypto.randomUUID(),
                 productId: item.id,
                 type: 'OUT',
-                quantity: -item.cartQuantity,
+                quantity: oversold ? -freshProduct.stockQuantity : -item.cartQuantity,
                 timestamp: transaction.timestamp,
-                reference: `Sale #${transaction.id.split('-')[0].toUpperCase()}`,
+                reference: `Sale #${transaction.id.split('-')[0].toUpperCase()}${oversold ? ' ⚠ OVERSOLD' : ''}`,
                 branchId: activeBranchId!,
                 businessId: activeBusinessId!
-              }
-            });
-          }
-        }
-
-        for (const update of stockUpdates) {
-          await db.products.update(update.id, { stockQuantity: update.newQty });
-          if (db.stockMovements) {
-            await db.stockMovements.add(update.movement);
+              });
+            }
           }
         }
       }
@@ -1362,16 +1386,19 @@ export default function MtaaniPOS() {
                       Clear all
                     </button>
                     <div className="flex gap-2">
-                      <button 
+                      {/* ── FIX C4: Disable while isSyncing to prevent double-tap duplicates ── */}
+                     <button 
                         onClick={() => handleCheckout('PAID', 'CASH')}
-                        className="flex-1 px-4 py-4 rounded-2xl bg-slate-900 text-white font-bold text-[10px] hover:bg-slate-800 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                        disabled={isSyncing}
+                        className="flex-1 px-4 py-4 rounded-2xl bg-slate-900 text-white font-bold text-[10px] hover:bg-slate-800 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         <Banknote size={16} />
                         Cash
                       </button>
                       <button 
                         onClick={() => setIsMpesaModalOpen(true)}
-                        className="flex-1 px-4 py-4 rounded-2xl bg-green-600 text-white font-bold text-[10px] hover:bg-green-700 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                        disabled={isSyncing}
+                        className="flex-1 px-4 py-4 rounded-2xl bg-green-600 text-white font-bold text-[10px] hover:bg-green-700 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         <Smartphone size={16} />
                         M-Pesa
@@ -1566,15 +1593,21 @@ export default function MtaaniPOS() {
                 <p className="font-bold text-slate-900 mb-2">Waiting for customer...</p>
                 <p className="text-xs text-slate-500 mb-8">Please ask the customer to enter their M-Pesa PIN.</p>
                 
+                {/* ── FIX C2: Require explicit confirmation before recording as PAID ── */}
                 <button 
                   onClick={() => {
+                    if (!confirm(
+                      'WARNING: Only use this if you have independently verified the customer paid.\n\n' +
+                      'Selecting OK will record this sale as PAID (M-Pesa) WITHOUT automatic confirmation from Safaricom.\n\n' +
+                      'Are you sure the payment was received?'
+                    )) return;
                     setMpesaState('IDLE');
-                    handleCheckout('PAID', 'MPESA'); // Allow manual override
+                    handleCheckout('PAID', 'MPESA');
                     setIsMpesaModalOpen(false);
                   }}
-                  className="px-6 py-3 bg-slate-100 text-slate-600 font-bold text-[10px]   rounded-xl hover:bg-slate-200 transition-all w-full"
+                  className="px-6 py-3 bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px] rounded-xl hover:bg-amber-100 transition-all w-full"
                 >
-                  Verify manually / Skip
+                  ⚠ Verify manually (confirm payment received)
                 </button>
               </div>
             ) : (

@@ -23,14 +23,18 @@ export default function AdminApprovals() {
   const { success, error } = useToast();
 
   const handleApproveAdjustment = async (req: any) => {
+    // ── FIX C7: Use DELTA (newQty - oldQty) applied to CURRENT stock, not absolute newQty.
+    // This protects against stale snapshots when sales happened after the request was created.
     const product = await db.products.get(req.productId);
     if (product) {
-        await db.products.update(req.productId, { stockQuantity: req.newQty });
+        const delta = req.newQty - req.oldQty;
+        const adjustedQty = Math.max(0, product.stockQuantity + delta);
+        await db.products.update(req.productId, { stockQuantity: adjustedQty });
         await db.stockMovements.add({
             id: crypto.randomUUID(),
             productId: req.productId,
             type: 'ADJUST',
-            quantity: req.newQty - req.oldQty,
+            quantity: delta,
             timestamp: Date.now(),
             reference: `Approved Adj: ${req.reason}`,
             branchId: activeBranchId!,
@@ -45,6 +49,18 @@ export default function AdminApprovals() {
   };
 
   const handleApproveExpense = async (e: any) => {
+    // ── FIX C6: Guard against double-approval (rapid double-tap) ──
+    const freshExpense = await db.expenses.get(e.id);
+    if (!freshExpense || freshExpense.status !== 'PENDING') {
+      error('This expense has already been processed.');
+      return;
+    }
+    // Mark as APPROVED first to prevent a second concurrent approval from also passing the check
+    await db.expenses.update(e.id, { 
+        status: 'APPROVED',
+        approvedBy: currentUser?.name
+    });
+    // Now safely deduct account if applicable
     if (e.source === 'ACCOUNT' && e.accountId) {
         const account = await db.financialAccounts.get(e.accountId);
         if (account) {
@@ -53,10 +69,6 @@ export default function AdminApprovals() {
             });
         }
     }
-    await db.expenses.update(e.id, { 
-        status: 'APPROVED',
-        approvedBy: currentUser?.name
-    });
     success("Expense disbursement authorized.");
   };
 

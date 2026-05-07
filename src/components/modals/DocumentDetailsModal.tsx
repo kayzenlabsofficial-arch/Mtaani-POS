@@ -614,7 +614,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
          {/* Footer Actions - Sticky at bottom */}
           <div className="p-4 flex flex-col gap-2 bg-white border-t border-slate-100 no-print shadow-[0_-4px_12px_rgba(0,0,0,0.03)] relative z-20">
             {/* LPO Receiving Action */}
-            {isAdmin && onReceive && isPO && selectedRecord.approvalStatus === 'APPROVED' && selectedRecord.status === 'PENDING' && (
+            {onReceive && isPO && selectedRecord.approvalStatus === 'APPROVED' && selectedRecord.status === 'PENDING' && (
                <button
                  onClick={() => { onReceive(selectedRecord); setSelectedRecord(null); }}
                  className="w-full py-3.5 bg-blue-600 text-white font-black text-xs   rounded-xl transition-colors active:bg-blue-700 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"

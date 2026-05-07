@@ -49,6 +49,16 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
     if (!selectedSupplierForPayment) return;
     
     try {
+        // ── FIX C5: Check ACCOUNT balance BEFORE recording to prevent negative balances ──
+        if ((payment as any).source === 'ACCOUNT' && (payment as any).accountId) {
+           const account = await db.financialAccounts.get((payment as any).accountId);
+           if (!account) { error('Selected account not found.'); return; }
+           if (account.balance < payment.amount) {
+               error(`Insufficient funds in "${account.name}". Balance: Ksh ${account.balance.toLocaleString()}`);
+               return;
+           }
+        }
+
         await db.supplierPayments.add({
           id: crypto.randomUUID(),
           supplierId: selectedSupplierForPayment.id,
