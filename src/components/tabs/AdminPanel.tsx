@@ -82,6 +82,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     } finally {
       setIsSaving(false);
     }
+  };
 
   const handleDeleteUser = async (id: string) => {
     const adminCount = users?.filter(u => u.role === 'ADMIN').length || 0;
