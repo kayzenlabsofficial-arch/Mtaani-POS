@@ -66,6 +66,18 @@ export default function RegisterTab() {
     };
   };
 
+  const calculateVirtualStock = (product: any) => {
+      if (!product.isBundle || !product.components?.length) return product.stockQuantity;
+      let minStock = Infinity;
+      for (const comp of product.components) {
+         const freshComp = allProducts?.find(p => p.id === comp.productId);
+         if (!freshComp) return 0;
+         const possible = Math.floor(freshComp.stockQuantity / comp.quantity);
+         if (possible < minStock) minStock = possible;
+      }
+      return minStock === Infinity ? 0 : minStock;
+  };
+
   const handleAddToCart = useCallback((product: any) => {
     addToCart(product);
     setRecentlyAdded(prev => {
@@ -95,7 +107,10 @@ export default function RegisterTab() {
     setTimeout(() => setScanFeedback(null), 3000);
   }, [handleAddToCart]);
 
-  const lowStockProducts = (products || []).filter(p => p.stockQuantity > 0 && p.stockQuantity <= 5);
+  const lowStockProducts = (products || []).filter(p => {
+    const vStock = calculateVirtualStock(p);
+    return vStock > 0 && vStock <= 5;
+  });
 
   return (
     <div className="pb-4 bg-transparent min-h-full text-slate-800">
@@ -217,10 +232,11 @@ export default function RegisterTab() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 px-4 pb-8">
         {(products || []).map(product => {
           const cfg = getCategoryConfig(product.category);
+          const displayStock = calculateVirtualStock(product);
           const isFlashing = recentlyAdded.has(product.id);
-          const isOutOfStock = product.stockQuantity <= 0;
-          const isCritical = product.stockQuantity > 0 && product.stockQuantity <= 5;
-          const isLow = product.stockQuantity > 5 && product.stockQuantity <= 10;
+          const isOutOfStock = displayStock <= 0;
+          const isCritical = displayStock > 0 && displayStock <= 5;
+          const isLow = displayStock > 5 && displayStock <= 10;
           const cartItem = cart.find(i => i.id === product.id);
           const qtyInCart = cartItem ? cartItem.cartQuantity : 0;
 
@@ -256,7 +272,7 @@ export default function RegisterTab() {
                      isLow       ? 'text-amber-600' :
                                    'text-slate-400'
                    }`}>
-                     • {isOutOfStock ? 'No stock' : `${product.stockQuantity} ${product.unit || 'pcs'} left`}
+                     • {isOutOfStock ? 'No stock' : `${displayStock} ${product.unit || 'pcs'} left`}
                    </span>
                 </div>
               </div>

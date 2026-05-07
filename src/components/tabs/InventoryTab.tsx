@@ -122,6 +122,18 @@ export default function InventoryTab() {
           ...COLOR_MAP[cat.color] || COLOR_MAP.slate
       };
   };
+
+  const calculateVirtualStock = (product: Product) => {
+      if (!product.isBundle || !product.components?.length) return product.stockQuantity;
+      let minStock = Infinity;
+      for (const comp of product.components) {
+         const freshComp = allProducts.find(p => p.id === comp.productId);
+         if (!freshComp) return 0;
+         const possible = Math.floor(freshComp.stockQuantity / comp.quantity);
+         if (possible < minStock) minStock = possible;
+      }
+      return minStock === Infinity ? 0 : minStock;
+  };
   
   if (!allProducts) {
     return (
@@ -134,7 +146,10 @@ export default function InventoryTab() {
     );
   }
 
-  const lowStock = allProducts.filter(p => p.stockQuantity <= (p.reorderPoint || 0));
+  const lowStock = allProducts.filter(p => calculateVirtualStock(p) <= (p.reorderPoint || 0));
+  const stockWorth = allProducts
+    .filter(p => !p.isBundle) // Avoid double counting bundles
+    .reduce((sum, p) => sum + (p.sellingPrice * p.stockQuantity), 0);
   const filteredInventory = allProducts.filter(p => {
       const matchesSearch = p.name.toLowerCase().includes(inventorySearch.toLowerCase()) || p.barcode.includes(inventorySearch);
       const matchesCategory = !selectedCategory || p.category === selectedCategory;
@@ -335,6 +350,15 @@ export default function InventoryTab() {
                <h3 className={`text-xl font-black leading-none transition-colors ${lowStock.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{lowStock.length}</h3>
             </div>
          </div>
+         <div className="bg-white rounded-[28px] p-5 shadow-card border border-slate-100 flex items-center gap-4 col-span-2">
+            <div className="w-12 h-12 rounded-2xl bg-green-50 text-green-600 flex items-center justify-center shadow-sm">
+               <DollarSign size={24} />
+            </div>
+            <div>
+               <p className="text-slate-400 text-[10px] font-black   mb-0.5">Stock Worth (Excl. Bundles)</p>
+               <h3 className="text-xl font-black text-slate-900 leading-none">Ksh {stockWorth.toLocaleString()}</h3>
+            </div>
+         </div>
       </div>
 
       {/* Search Input */}
@@ -353,8 +377,9 @@ export default function InventoryTab() {
       <div className="space-y-3">
          {filteredInventory.map(product => {
             const cfg = getCategoryConfig(product.category || 'Other');
-            const isLow = product.stockQuantity <= (product.reorderPoint || 0);
-            const isCrit = product.stockQuantity <= ((product.reorderPoint || 0) * 0.5);
+            const displayStock = calculateVirtualStock(product);
+            const isLow = displayStock <= (product.reorderPoint || 0);
+            const isCrit = displayStock <= ((product.reorderPoint || 0) * 0.5);
 
             return (
               <div 
@@ -385,14 +410,14 @@ export default function InventoryTab() {
                         {isLow ? 'Low Stock' : 'Good'}
                      </p>
                    </div>
-                   <div className={`w-20 py-2.5 rounded-2xl text-center flex flex-col items-center justify-center border ${
-                      isCrit ? 'bg-red-50 border-red-100 text-red-600' : 
-                      isLow ? 'bg-amber-50 border-amber-100 text-amber-600' : 
-                      'bg-green-50 border-green-100 text-green-600'
-                   }`}>
-                      <span className="text-sm font-black leading-none">{product.stockQuantity}</span>
-                      <span className="text-[8px] font-black   mt-1 opacity-70">{product.unit || 'Units'}</span>
-                   </div>
+                    <div className={`w-20 py-2.5 rounded-2xl text-center flex flex-col items-center justify-center border ${
+                       isCrit ? 'bg-red-50 border-red-100 text-red-600' : 
+                       isLow ? 'bg-amber-50 border-amber-100 text-amber-600' : 
+                       'bg-green-50 border-green-100 text-green-600'
+                    }`}>
+                       <span className="text-sm font-black leading-none">{displayStock}</span>
+                       <span className="text-[8px] font-black   mt-1 opacity-70">{product.unit || 'Units'}</span>
+                    </div>
                    <ChevronRight className="text-slate-300 group-hover:text-blue-400 transition-colors" size={20} />
                 </div>
               </div>
@@ -675,7 +700,7 @@ export default function InventoryTab() {
                    <div className="grid grid-cols-2 gap-6">
                       <div>
                          <p className="text-blue-200 text-[10px] font-black   mb-1">Available Qty</p>
-                         <p className="text-3xl font-black tabular-nums">{selectedProductForDetails.stockQuantity} <span className="text-sm opacity-60">{selectedProductForDetails.unit || 'pcs'}</span></p>
+                         <p className="text-3xl font-black tabular-nums">{calculateVirtualStock(selectedProductForDetails)} <span className="text-sm opacity-60">{selectedProductForDetails.unit || 'pcs'}</span></p>
                       </div>
                       <div>
                          <p className="text-blue-200 text-[10px] font-black   mb-1">Selling Price</p>
