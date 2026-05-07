@@ -31,7 +31,7 @@ export default function RegisterTab() {
   const clearCart = useStore((state) => state.clearCart);
   const cart = useStore((state) => state.cart);
   const { success: toastSuccess, error: toastError } = useStore.getState ? {} : {};
-  const { selectedCustomerId, setSelectedCustomerId, activeBusinessId, activeBranchId } = useStore();
+  const { selectedCustomerId, setSelectedCustomerId, activeBusinessId, activeBranchId, activeShift, isAdmin } = useStore();
   const allProducts = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
   const allCustomers = useLiveQuery(() => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
   const selectedCustomer = allCustomers?.find(c => c.id === selectedCustomerId);
@@ -132,6 +132,18 @@ export default function RegisterTab() {
   return (
     <div className="pb-4 bg-transparent min-h-full text-slate-800">
       
+      {/* Shift Warning */}
+      {!activeShift && !isAdmin && (
+        <div className="mx-4 mt-4 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="w-8 h-8 bg-blue-600 text-white rounded-xl flex items-center justify-center shrink-0 shadow-blue">
+            <ShoppingCart size={16} />
+          </div>
+          <div>
+            <p className="text-xs font-black text-blue-900">Shift Required</p>
+            <p className="text-[10px] font-bold text-blue-600  ">Please open a shift in the Command Center to start selling.</p>
+          </div>
+        </div>
+      )}
 
 
       {/* Inline Scanner */}
