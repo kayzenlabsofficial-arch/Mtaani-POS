@@ -181,14 +181,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         return new Response(JSON.stringify({ error: 'X-Business-ID header required' }), { status: 400, headers: jsonHeaders() });
       }
 
-      if (GLOBAL_TABLES.has(table)) {
+      if (GLOBAL_TABLES.has(table) || !branchId) {
         const { results } = await env.DB.prepare(`SELECT * FROM ${table} WHERE businessId = ?`).bind(businessId).all();
         return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
       } else {
-        // Branch-specific table
-        if (!branchId) {
-          return new Response(JSON.stringify({ error: 'X-Branch-ID header required for this table' }), { status: 400, headers: jsonHeaders() });
-        }
+        // Branch-specific table (and branchId is provided)
         const { results } = await env.DB.prepare(`SELECT * FROM ${table} WHERE businessId = ? AND branchId = ?`).bind(businessId, branchId).all();
         return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
       }

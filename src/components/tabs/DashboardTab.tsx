@@ -216,6 +216,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         id: crypto.randomUUID(),
         shiftId: activeShift.id,
         timestamp: Date.now(),
+        openingFloat: 0,
         totalSales: todaySales,
         grossSales: totalGross,
         taxTotal: totalTax,
@@ -238,6 +239,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
          ...activeShift,
          status: 'CLOSED',
          endTime: Date.now(),
+         openingFloat: 0,
          branchId: activeBranchId!,
          businessId: activeBusinessId!
       });
@@ -268,6 +270,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       const newShift = {
         id: shiftId,
         startTime: Date.now(),
+        openingFloat: 0,
         cashierName: currentUser.name,
         status: 'OPEN',
         branchId: activeBranchId,

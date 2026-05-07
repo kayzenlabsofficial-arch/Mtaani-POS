@@ -38,7 +38,11 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
   
   if (businessId) {
     headers['X-Business-ID'] = businessId;
+  } else if (table !== 'businesses' && table !== 'system') {
+    if (method === 'GET') return []; // Prevent 400 errors when logged out
+    throw new Error('Business ID missing for ' + method);
   }
+  
   if (branchId) {
     headers['X-Branch-ID'] = branchId;
   }
