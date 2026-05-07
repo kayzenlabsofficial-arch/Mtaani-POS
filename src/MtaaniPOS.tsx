@@ -558,15 +558,7 @@ export default function MtaaniPOS() {
     return () => clearInterval(interval);
   }, [mpesaState, mpesaRequestId]);
 
-  // ── AUTO-PRINT RECEIPT ───────────────────────────────────────────────────
-  useEffect(() => {
-    if (completedTransaction) {
-      const timer = setTimeout(() => {
-        window.print();
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [completedTransaction]);
+
 
   // Settings
   const savedSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
@@ -787,27 +779,48 @@ export default function MtaaniPOS() {
 
 
 
+  const checkoutLockRef = React.useRef(false);
+
   const handleCheckout = async (status: 'QUOTE' | 'PAID', paymentMethod: 'CASH' | 'MPESA' | 'CREDIT', mpesaCode?: string, mpesaCustomer?: string) => {
     if (cart.length === 0) return;
     
-    let currentCustomer = null;
-    if (paymentMethod === 'CREDIT') {
-       if (!selectedCustomerId) {
-         setIsCustomerSelectOpen(true);
-         return;
-       }
-       currentCustomer = await db.customers.get(selectedCustomerId);
-       if (!currentCustomer) {
-         error("Selected customer not found.");
-         return;
-       }
+    // ── EXTRA RE-ENTRANCY GUARD ──
+    if (checkoutLockRef.current) {
+        console.warn('[Checkout] Blocked re-entrant call.');
+        return;
     }
-    
-    const subtotal = cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0);
-    const discountAmount = discountType === 'PERCENT' ? (subtotal * (discountValue / 100)) : discountValue;
-    const total = Math.max(0, subtotal - discountAmount);
-    
+    checkoutLockRef.current = true;
+
     try {
+      let currentCustomer = null;
+      if (selectedCustomerId) {
+        currentCustomer = await db.customers.get(selectedCustomerId);
+      }
+
+      if (paymentMethod === 'CREDIT') {
+        if (!currentCustomer) {
+          setIsCustomerSelectOpen(true);
+          checkoutLockRef.current = false;
+          return;
+        }
+      }
+
+      // Resolve M-Pesa Customer Name from Phone if not already set by explicit selection
+      let resolvedMpesaCustomer = mpesaCustomer;
+      if (paymentMethod === 'MPESA' && mpesaCustomer && !currentCustomer) {
+        try {
+          const allCust = await db.customers.toArray();
+          const found = allCust.find(c => c.phone === mpesaCustomer || (c.phone && mpesaCustomer.endsWith(c.phone.slice(-9))));
+          if (found) resolvedMpesaCustomer = found.name;
+        } catch (e) {
+          console.error("Customer lookup failed:", e);
+        }
+      }
+
+      const subtotal = cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0);
+      const discountAmount = discountType === 'PERCENT' ? (subtotal * (discountValue / 100)) : discountValue;
+      const total = Math.max(0, subtotal - discountAmount);
+      
       setIsSyncing(true);
       const transaction: Transaction = {
         id: crypto.randomUUID(),
@@ -833,7 +846,7 @@ export default function MtaaniPOS() {
         changeGiven: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) - total : (paymentMethod === 'MPESA' ? 0 : undefined),
         preparedBy: currentCustomer ? currentCustomer.name : undefined,
         mpesaCode: mpesaCode,
-        mpesaCustomer: mpesaCustomer
+        mpesaCustomer: currentCustomer ? currentCustomer.name : resolvedMpesaCustomer
       };
 
       await db.transactions.add(transaction);
@@ -888,6 +901,7 @@ export default function MtaaniPOS() {
       error("Failed to complete sale.");
     } finally {
       setIsSyncing(false);
+      checkoutLockRef.current = false;
     }
   };
 
@@ -1390,7 +1404,7 @@ export default function MtaaniPOS() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <button 
-                      onClick={() => {
+                           onClick={() => {
                         if(confirm("Clear current sale?")) clearCart();
                       }}
                       className="px-6 py-4 rounded-2xl bg-white border border-slate-200 text-slate-500 font-bold text-[10px] hover:bg-red-50 hover:text-red-600 hover:border-red-100 transition-all"
@@ -1398,7 +1412,6 @@ export default function MtaaniPOS() {
                       Clear all
                     </button>
                     <div className="flex gap-2">
-                      {/* ── FIX C4: Disable while isSyncing to prevent double-tap duplicates ── */}
                      <button 
                         onClick={() => setIsCashModalOpen(true)}
                         disabled={isSyncing}
@@ -1409,7 +1422,7 @@ export default function MtaaniPOS() {
                       </button>
                       <button 
                         onClick={() => setIsMpesaModalOpen(true)}
-                        disabled={isSyncing}
+                        disabled={isSyncing || mpesaState !== 'IDLE'}
                         className="flex-1 px-4 py-4 rounded-2xl bg-green-600 text-white font-bold text-[10px] hover:bg-green-700 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         <Smartphone size={16} />
