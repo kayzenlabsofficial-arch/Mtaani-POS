@@ -279,7 +279,6 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
         onClose={() => setIsPaymentModalOpen(false)}
         supplier={selectedSupplierForPayment}
         onSave={handleSavePayment}
-        isSaving={isSaving}
         financialAccounts={financialAccounts}
       />
     </div>
