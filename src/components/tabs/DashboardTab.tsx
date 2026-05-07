@@ -12,7 +12,6 @@ interface DashboardTabProps {
 }
 
 export default function DashboardTab({ setActiveTab, openExpenseModal }: DashboardTabProps) {
-  const [trendView, setTrendView] = useState<'DAY' | 'WEEK'>('DAY');
   const [isPickCashOpen, setIsPickCashOpen] = useState(false);
   const [pickAmount, setPickAmount] = useState("");
   const [isCloseDayOpen, setIsCloseDayOpen] = useState(false);
@@ -106,7 +105,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     [activeBranchId]
   );
 
-  const expectedCashDrawer = cashTotal - (shiftTillExpenses + shiftTillPayments + totalPickedAmount);
+  const shiftOpeningFloat = Number(activeShift?.openingFloat) || 0;
+  const expectedCashDrawer = (shiftOpeningFloat + cashTotal) - (shiftTillExpenses + shiftTillPayments + totalPickedAmount);
 
   const recentActivity = sortedTransactions.filter(t => t.timestamp >= todayStart.getTime()).slice(0, 10);
   const pendingQuotes = sortedTransactions.filter(t => t.status === 'QUOTE').length;
@@ -306,20 +306,33 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     }
     
     try {
+      // ── CHECK 1: Prevent duplicate open shifts for this branch ──
+      const existing = await db.shifts.where('status').equals('OPEN').and(s => s.branchId === activeBranchId).first();
+      if (existing) {
+         error(`A shift is already open for this branch (${existing.cashierName}). Please close it first.`);
+         setActiveShift(existing);
+         setIsOpeningShiftOpen(false);
+         return;
+      }
+
+      const float = 0; // Always 0 as per user request
       const shiftId = crypto.randomUUID();
       const newShift = {
         id: shiftId,
         startTime: Date.now(),
-        openingFloat: 0,
+        openingFloat: float,
         cashierName: currentUser.name,
         status: 'OPEN',
         branchId: activeBranchId,
-        businessId: activeBusinessId
+        businessId: activeBusinessId,
+        lastSyncAt: Date.now()
       };
       await db.shifts.add(newShift as any);
       setActiveShift(newShift);
+      setOpeningFloatInput("");
       success("Shift opened! You can now process sales.");
     } catch (err) {
+      console.error(err);
       error("Failed to start shift.");
     }
   };
@@ -414,9 +427,11 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                           const sStartTime = s.startTime || 0;
                           const sTransactions = allTransactions.filter(t => {
                              const matchShift = t.shiftId === s.id;
-                             const matchFallback = !t.shiftId && t.cashierName === s.cashierName && t.timestamp >= sStartTime;
+                             // Fallback: match by cashier and timestamp window (within shift)
+                             const matchCashier = t.cashierName === s.cashierName;
+                             const matchTime = t.timestamp >= (sStartTime - 60000); // 1 min grace for start time
                              const matchStatus = t.status === 'PAID' || t.status === 'REFUNDED' || t.status === 'PARTIAL_REFUND';
-                             return (matchShift || matchFallback) && matchStatus;
+                             return (matchShift || (matchCashier && matchTime)) && matchStatus;
                           });
                           const sSales = sTransactions.reduce((acc, t) => acc + (Number(getNetSales(t).total) || 0), 0);
                           const sCashSales = sTransactions.filter(t => t.paymentMethod === 'CASH').reduce((acc, t) => acc + (Number(getNetSales(t).total) || 0), 0);
@@ -635,9 +650,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                       {isCloseDayBlocked && <div className="absolute inset-0 bg-red-600/20 backdrop-blur-[1px] flex items-center justify-center"><Lock size={12} className="text-red-600" /></div>}
                    </button>
                  ) : (
-                   <button onClick={handleOpenShift} className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center gap-1">
-                      <Activity size={16} /> Open shift
-                   </button>
+                    <button onClick={handleOpenShift} className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center gap-1">
+                       <Activity size={16} /> Open shift
+                    </button>
                  )
                )}
                <button 
@@ -738,16 +753,17 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
             <p className="text-sm text-slate-500 mb-6 flex items-center gap-1">Finalizing <span className="font-bold text-slate-900">{activeShift?.cashierName}</span>'s active shift ledger.</p>
              <div className="space-y-2 mb-6 text-sm">
 
-               <div className="flex justify-between text-slate-500"><span>Gross Sales</span><span className="font-bold text-slate-900">Ksh {todaySales.toLocaleString()}</span></div>
-               <div className="flex justify-between text-slate-500"><span>M-Pesa Receipts</span><span className="font-bold text-blue-600">- Ksh {mpesaTotal.toLocaleString()}</span></div>
-               <div className="flex justify-between text-slate-500"><span>Total Banked (Picks)</span><span className="font-bold text-slate-600">- Ksh {totalPickedAmount.toLocaleString()}</span></div>
-               <div className="flex justify-between text-slate-500"><span>Supplier Payments (Till)</span><span className="font-bold text-slate-600">- Ksh {shiftTillPayments.toLocaleString()}</span></div>
-               <div className="flex justify-between text-slate-500"><span>Refunds Processed</span><span className="font-bold text-amber-600">- Ksh {shiftRefunds.toLocaleString()}</span></div>
-               <div className="flex justify-between text-slate-500"><span>Expenses (Till)</span><span className="font-bold text-red-600">- Ksh {shiftTillExpenses.toLocaleString()}</span></div>
-               <div className="border-t border-dashed border-slate-200 my-2 pt-2 flex justify-between text-slate-900 font-black">
-                  <span>Final Calculated Cash</span>
-                  <span>Ksh {expectedCashDrawer.toLocaleString()}</span>
-               </div>
+                <div className="flex justify-between text-slate-500"><span>Total Sales (All Methods)</span><span className="font-bold text-slate-900">Ksh {todaySales.toLocaleString()}</span></div>
+                <div className="flex justify-between text-slate-500"><span>Cash Sales Only</span><span className="font-bold text-green-600">Ksh {cashTotal.toLocaleString()}</span></div>
+                <div className="flex justify-between text-slate-500"><span>M-Pesa Receipts</span><span className="font-bold text-blue-600">- Ksh {mpesaTotal.toLocaleString()}</span></div>
+                <div className="flex justify-between text-slate-500"><span>Total Banked (Picks)</span><span className="font-bold text-slate-600">- Ksh {totalPickedAmount.toLocaleString()}</span></div>
+                <div className="flex justify-between text-slate-500"><span>Supplier Payments (Till)</span><span className="font-bold text-slate-600">- Ksh {shiftTillPayments.toLocaleString()}</span></div>
+                <div className="flex justify-between text-slate-500"><span>Refunds Processed</span><span className="font-bold text-amber-600">- Ksh {shiftRefunds.toLocaleString()}</span></div>
+                <div className="flex justify-between text-slate-500"><span>Expenses (Till)</span><span className="font-bold text-red-600">- Ksh {shiftTillExpenses.toLocaleString()}</span></div>
+                <div className="border-t border-dashed border-slate-200 my-2 pt-2 flex justify-between text-slate-900 font-black">
+                   <span>Cash in Till (Expected)</span>
+                   <span>Ksh {expectedCashDrawer.toLocaleString()}</span>
+                </div>
             </div>
             
             <div className="flex gap-3">
