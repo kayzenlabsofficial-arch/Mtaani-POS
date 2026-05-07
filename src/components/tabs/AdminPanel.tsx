@@ -54,6 +54,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   const financialAccounts = useLiveQuery(() => db.financialAccounts.toArray(), [], []);
   const [isAddingFinAccount, setIsAddingFinAccount] = useState(false);
   const [finAccountForm, setFinAccountForm] = useState({ name: '', type: 'BANK' as 'BANK' | 'MPESA' | 'CASH', accountNumber: '', balance: 0, branchId: '' });
+  const [depositState, setDepositState] = useState<{ accountId: string | null, amount: string }>({ accountId: null, amount: '' });
 
   const handleAddUser = async () => {
     if (!newUser.name || !newUser.password) return;
@@ -161,6 +162,19 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     if (confirm("Remove this financial account?")) {
       await db.financialAccounts.delete(id);
       success("Account removed.");
+    }
+  };
+
+  const handleDeposit = async () => {
+    if (!depositState.accountId || !depositState.amount || Number(depositState.amount) <= 0) return;
+    const account = await db.financialAccounts.get(depositState.accountId);
+    if (account) {
+       await db.financialAccounts.update(account.id, { 
+           balance: (account.balance || 0) + Number(depositState.amount),
+           updated_at: Date.now() 
+       });
+       success(`Deposited Ksh ${Number(depositState.amount).toLocaleString()} successfully.`);
+       setDepositState({ accountId: null, amount: '' });
     }
   };
 
@@ -534,26 +548,53 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {financialAccounts?.map(acc => (
-                    <div key={acc.id} className="bg-white p-4 rounded-2xl border border-slate-200 flex justify-between items-center">
-                       <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                             <Building2 size={20} />
-                          </div>
-                          <div>
-                             <p className="font-bold text-sm text-slate-900">{acc.name}</p>
-                             <div className="flex items-center gap-2">
-                                <p className="text-[10px] text-slate-500 font-medium capitalize">{acc.type.toLowerCase()} • {acc.accountNumber || 'No number'}</p>
-                                {acc.branchId && (
-                                   <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded flex items-center gap-1">
-                                      <Building2 size={8} /> {branches?.find(b => b.id === acc.branchId)?.name || 'Local'}
-                                   </span>
-                                )}
+                    <div key={acc.id} className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col justify-between shadow-sm">
+                       <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                             <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                                <Building2 size={20} />
+                             </div>
+                             <div>
+                                <p className="font-bold text-sm text-slate-900">{acc.name}</p>
+                                <div className="flex items-center gap-2">
+                                   <p className="text-[10px] text-slate-500 font-medium capitalize">{acc.type.toLowerCase()} • {acc.accountNumber || 'No number'}</p>
+                                   {acc.branchId && (
+                                      <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                         <Building2 size={8} /> {branches?.find(b => b.id === acc.branchId)?.name || 'Local'}
+                                      </span>
+                                   )}
+                                </div>
                              </div>
                           </div>
+                          <div className="text-right">
+                             <p className="text-xs font-black text-slate-900">Ksh {(acc.balance || 0).toLocaleString()}</p>
+                             <p className="text-[9px] font-bold text-slate-400">Balance</p>
+                          </div>
                        </div>
-                       <button onClick={() => handleDeleteFinAccount(acc.id)} className="p-2 text-slate-400 hover:text-red-600">
-                          <Trash2 size={16} />
-                       </button>
+                       
+                       {depositState.accountId === acc.id ? (
+                          <div className="flex items-center gap-2 mt-2 bg-slate-50 p-2 rounded-xl border border-slate-100 animate-in fade-in zoom-in-95">
+                             <input 
+                                type="number" 
+                                autoFocus
+                                value={depositState.amount} 
+                                onChange={e => setDepositState({...depositState, amount: e.target.value})} 
+                                placeholder="Amount..." 
+                                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-green-500"
+                             />
+                             <button onClick={handleDeposit} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black hover:bg-green-700 whitespace-nowrap">Add</button>
+                             <button onClick={() => setDepositState({ accountId: null, amount: '' })} className="bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-[10px] font-black hover:bg-slate-300">Cancel</button>
+                          </div>
+                       ) : (
+                          <div className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-slate-100">
+                             <button onClick={() => setDepositState({ accountId: acc.id, amount: '' })} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors">
+                                <Plus size={12} /> Deposit
+                             </button>
+                             <button onClick={() => handleDeleteFinAccount(acc.id)} className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors">
+                                <Trash2 size={12} />
+                             </button>
+                          </div>
+                       )}
                     </div>
                   ))}
                   {financialAccounts?.length === 0 && <p className="col-span-full text-center text-slate-400 py-8 italic text-sm">No accounts configured yet.</p>}

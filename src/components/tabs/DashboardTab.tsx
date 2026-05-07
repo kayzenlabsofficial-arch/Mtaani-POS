@@ -556,15 +556,17 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                <button onClick={() => setActiveTab('REFUNDS')} disabled={!activeShift} className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-blue-200 flex flex-col items-center justify-center gap-1 disabled:opacity-50">
                   <RotateCcw size={16} /> Refund
                </button>
-               {activeShift ? (
-                 <button onClick={() => setIsCloseDayOpen(true)} className="bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-slate-900/10 flex flex-col items-center justify-center gap-1 relative overflow-hidden">
-                    <CalendarCheck size={16} /> Close shift
-                    {isCloseDayBlocked && <div className="absolute inset-0 bg-red-600/20 backdrop-blur-[1px] flex items-center justify-center"><Lock size={12} className="text-red-600" /></div>}
-                 </button>
-               ) : (
-                 <button onClick={handleOpenShift} className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center gap-1">
-                    <Activity size={16} /> Open shift
-                 </button>
+               {!isAdmin && (
+                 activeShift ? (
+                   <button onClick={() => setIsCloseDayOpen(true)} className="bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-slate-900/10 flex flex-col items-center justify-center gap-1 relative overflow-hidden">
+                      <CalendarCheck size={16} /> Close shift
+                      {isCloseDayBlocked && <div className="absolute inset-0 bg-red-600/20 backdrop-blur-[1px] flex items-center justify-center"><Lock size={12} className="text-red-600" /></div>}
+                   </button>
+                 ) : (
+                   <button onClick={handleOpenShift} className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center gap-1">
+                      <Activity size={16} /> Open shift
+                   </button>
+                 )
                )}
                <button 
                   onClick={() => setIsDailySummaryOpen(true)} 
