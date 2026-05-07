@@ -38,6 +38,8 @@ export interface Product {
   barcode: string;
   reorderPoint?: number; // Minimum stock before alarm triggers
   imageUrl?: string;
+  isBundle?: boolean;
+  components?: { productId: string; quantity: number }[];
   businessId: string;
   branchId: string;
   updated_at?: number;

@@ -27,6 +27,7 @@ const DEFAULT_CONFIG = { icon: Package, color: 'text-slate-600', bg: 'bg-slate-6
 
 export default function InventoryTab() {
   const [inventorySearch, setInventorySearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isInventoryScannerOpen, setIsInventoryScannerOpen] = useState(false);
   const [isQuickAdjustOpen, setIsQuickAdjustOpen] = useState(false);
@@ -34,7 +35,9 @@ export default function InventoryTab() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [selectedProductForDetails, setSelectedProductForDetails] = useState<Product | null>(null);
   const [productForm, setProductForm] = useState({
-      name: '', category: 'Other', barcode: '', sellingPrice: '', stockQuantity: '', reorderPoint: '10', unit: 'pcs', taxCategory: 'A' as 'A'|'C'|'E', reason: ''
+      name: '', category: 'Other', barcode: '', sellingPrice: '', stockQuantity: '', reorderPoint: '10', unit: 'pcs', taxCategory: 'A' as 'A'|'C'|'E', reason: '',
+      isBundle: false,
+      components: [] as { productId: string; quantity: number }[]
   });
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
@@ -132,15 +135,16 @@ export default function InventoryTab() {
   }
 
   const lowStock = allProducts.filter(p => p.stockQuantity <= (p.reorderPoint || 0));
-  const filteredInventory = allProducts.filter(p => 
-      p.name.toLowerCase().includes(inventorySearch.toLowerCase()) || 
-      p.barcode.includes(inventorySearch)
-  );
+  const filteredInventory = allProducts.filter(p => {
+      const matchesSearch = p.name.toLowerCase().includes(inventorySearch.toLowerCase()) || p.barcode.includes(inventorySearch);
+      const matchesCategory = !selectedCategory || p.category === selectedCategory;
+      return matchesSearch && matchesCategory;
+  });
 
   const openAddProduct = () => {
       setSelectedProductForDetails(null);
       setEditingProduct(null);
-      setProductForm({ name: '', category: 'Other', barcode: '', sellingPrice: '', stockQuantity: '', reorderPoint: '10', unit: 'pcs', taxCategory: 'A', reason: '' });
+      setProductForm({ name: '', category: 'Other', barcode: '', sellingPrice: '', stockQuantity: '', reorderPoint: '10', unit: 'pcs', taxCategory: 'A', reason: '', isBundle: false, components: [] });
       setIsProductModalOpen(true);
   };
 
@@ -158,7 +162,9 @@ export default function InventoryTab() {
           unit: selectedProductForDetails.unit || 'pcs',
           taxCategory: selectedProductForDetails.taxCategory,
           reorderPoint: (selectedProductForDetails.reorderPoint || 0).toString(),
-          reason: ''
+          reason: '',
+          isBundle: !!selectedProductForDetails.isBundle,
+          components: selectedProductForDetails.components || []
       });
       setSelectedProductForDetails(null);
       setIsProductModalOpen(true);
@@ -175,7 +181,9 @@ export default function InventoryTab() {
               reorderPoint: Number(productForm.reorderPoint),
               unit: productForm.unit,
               taxCategory: productForm.taxCategory,
-          };
+              isBundle: productForm.isBundle,
+              components: productForm.isBundle ? productForm.components : undefined
+           };
 
           if (editingProduct) {
               const diff = payload.stockQuantity - editingProduct.stockQuantity;
@@ -203,6 +211,8 @@ export default function InventoryTab() {
                     unit: payload.unit,
                     reorderPoint: payload.reorderPoint,
                     taxCategory: payload.taxCategory,
+                    isBundle: payload.isBundle,
+                    components: payload.components,
                     updated_at: Date.now()
                   });
                   success("Product details saved. Stock adjustment sent for approval.");
@@ -279,6 +289,30 @@ export default function InventoryTab() {
               <Plus size={18} /> New Product
            </button>
          )}
+      </div>
+
+      {/* Category Pills Filter */}
+      <div className="flex gap-2 overflow-x-auto no-scrollbar mb-6 pb-2">
+         <button 
+           onClick={() => setSelectedCategory(null)}
+           className={`px-5 py-2.5 rounded-2xl font-black text-[10px]   transition-all whitespace-nowrap shadow-sm press ${!selectedCategory ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 border border-slate-100 hover:border-slate-200'}`}
+         >
+           All Stock
+         </button>
+         {categories?.map(cat => {
+            const isSel = selectedCategory === cat.name;
+            const cfg = ICON_MAP[cat.iconName] || Package;
+            return (
+              <button 
+                key={cat.id}
+                onClick={() => setSelectedCategory(isSel ? null : cat.name)}
+                className={`px-5 py-2.5 rounded-2xl font-black text-[10px]   transition-all whitespace-nowrap shadow-sm flex items-center gap-2 press ${isSel ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 border border-slate-100 hover:border-slate-200'}`}
+              >
+                {React.createElement(cfg, { size: 14 })}
+                {cat.name}
+              </button>
+            );
+         })}
       </div>
 
       {/* Stats Cards */}
@@ -442,19 +476,93 @@ export default function InventoryTab() {
                         <input type="number" value={productForm.sellingPrice} onChange={(e) => setProductForm({...productForm, sellingPrice: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-14 pr-4 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all tabular-nums" placeholder="0" />
                      </div>
                   </div>
-                   <div className="flex gap-4">
-                      <div className="flex-1">
-                         <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Inventory Level</label>
-                         <input type="number" step="any" value={productForm.stockQuantity} onChange={(e) => setProductForm({...productForm, stockQuantity: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all tabular-nums" placeholder="0" />
+                   <div className="col-span-1 md:col-span-2 space-y-4">
+                      <div className="flex flex-col md:flex-row gap-4">
+                        <div className="flex-1">
+                           <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Stock Level</label>
+                           <input type="number" step="any" value={productForm.stockQuantity} onChange={(e) => setProductForm({...productForm, stockQuantity: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all tabular-nums" placeholder="0" />
+                        </div>
+                        <div className="flex-1">
+                           <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Reorder Point</label>
+                           <input type="number" step="any" value={productForm.reorderPoint} onChange={(e) => setProductForm({...productForm, reorderPoint: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all tabular-nums" placeholder="10" />
+                        </div>
+                        <div className="w-full md:w-24">
+                           <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Unit</label>
+                           <input type="text" value={productForm.unit} onChange={(e) => setProductForm({...productForm, unit: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all" placeholder="pcs" />
+                        </div>
                       </div>
-                      <div className="flex-1">
-                         <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Reorder Point</label>
-                         <input type="number" step="any" value={productForm.reorderPoint} onChange={(e) => setProductForm({...productForm, reorderPoint: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all tabular-nums" placeholder="10" />
+                   </div>
+
+                   <div className="col-span-1 md:col-span-2 pt-4 border-t border-slate-100">
+                      <div className="flex items-center justify-between mb-4">
+                         <div>
+                            <h4 className="text-sm font-black text-slate-900">Bundled Product (BOM)</h4>
+                            <p className="text-[10px] text-slate-400 font-bold">Deduct multiple items upon sale</p>
+                         </div>
+                         <button 
+                            onClick={() => setProductForm({...productForm, isBundle: !productForm.isBundle})}
+                            className={`w-14 h-7 rounded-full transition-all relative ${productForm.isBundle ? 'bg-blue-600' : 'bg-slate-200'}`}
+                         >
+                            <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all ${productForm.isBundle ? 'left-8' : 'left-1'}`} />
+                         </button>
                       </div>
-                      <div className="w-24">
-                         <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Unit</label>
-                         <input type="text" value={productForm.unit} onChange={(e) => setProductForm({...productForm, unit: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[17px] font-black text-slate-900 focus:outline-none focus:border-blue-500 transition-all" placeholder="pcs" />
-                      </div>
+
+                      {productForm.isBundle && (
+                         <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                            <p className="text-[10px] font-black text-blue-600 bg-blue-50 p-3 rounded-xl border border-blue-100">
+                               Note: Bundled products derive their stock availability from their components.
+                            </p>
+                            <div className="space-y-2">
+                               {productForm.components.map((comp, idx) => {
+                                  const p = allProducts.find(x => x.id === comp.productId);
+                                  return (
+                                     <div key={idx} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                                        <div className="flex-1 min-w-0">
+                                           <p className="text-xs font-black text-slate-900 truncate">{p?.name || 'Select Product...'}</p>
+                                        </div>
+                                        <input 
+                                           type="number" 
+                                           step="any"
+                                           value={comp.quantity} 
+                                           onChange={e => {
+                                              const newComps = [...productForm.components];
+                                              newComps[idx].quantity = Number(e.target.value);
+                                              setProductForm({...productForm, components: newComps});
+                                           }}
+                                           className="w-16 bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-black text-center"
+                                        />
+                                        <button 
+                                          onClick={() => {
+                                             const newComps = productForm.components.filter((_, i) => i !== idx);
+                                             setProductForm({...productForm, components: newComps});
+                                          }}
+                                          className="text-red-400 p-1 hover:text-red-600"
+                                        >
+                                           <X size={16} />
+                                        </button>
+                                     </div>
+                                  );
+                               })}
+                               <select 
+                                 className="w-full bg-white border border-dashed border-slate-300 rounded-2xl px-4 py-3 text-xs font-bold text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-all cursor-pointer"
+                                 value=""
+                                 onChange={e => {
+                                    if (!e.target.value) return;
+                                    setProductForm({
+                                       ...productForm, 
+                                       components: [...productForm.components, { productId: e.target.value, quantity: 1 }]
+                                    });
+                                 }}
+                               >
+                                  <option value="">+ Add Component Item...</option>
+                                  {allProducts
+                                    .filter(p => !productForm.components.find(c => c.productId === p.id) && p.id !== editingProduct?.id)
+                                    .map(p => <option key={p.id} value={p.id}>{p.name}</option>)
+                                  }
+                               </select>
+                            </div>
+                         </div>
+                      )}
                    </div>
                   <div className="col-span-1 md:col-span-2">
                      <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">KRA e-TIMS Tax Class</label>

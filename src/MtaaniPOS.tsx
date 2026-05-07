@@ -870,20 +870,48 @@ export default function MtaaniPOS() {
         for (const item of cart) {
           const freshProduct = await db.products.get(item.id);
           if (freshProduct) {
-            const newQty = Math.max(0, freshProduct.stockQuantity - item.cartQuantity);
-            const oversold = freshProduct.stockQuantity < item.cartQuantity;
-            await db.products.update(item.id, { stockQuantity: newQty });
-            if (db.stockMovements) {
-              await db.stockMovements.add({
-                id: crypto.randomUUID(),
-                productId: item.id,
-                type: 'OUT',
-                quantity: oversold ? -freshProduct.stockQuantity : -item.cartQuantity,
-                timestamp: transaction.timestamp,
-                reference: `Sale #${transaction.id.split('-')[0].toUpperCase()}${oversold ? ' ⚠ OVERSOLD' : ''}`,
-                branchId: activeBranchId!,
-                businessId: activeBusinessId!
-              });
+            if (freshProduct.isBundle && freshProduct.components?.length) {
+              // Deduct each component from stock
+              for (const component of freshProduct.components) {
+                const freshComp = await db.products.get(component.productId);
+                if (freshComp) {
+                  const deductQty = component.quantity * item.cartQuantity;
+                  const newCompQty = Math.max(0, freshComp.stockQuantity - deductQty);
+                  await db.products.update(component.productId, { stockQuantity: newCompQty });
+                  
+                  if (db.stockMovements) {
+                    await db.stockMovements.add({
+                      id: crypto.randomUUID(),
+                      productId: component.productId,
+                      type: 'OUT',
+                      quantity: -deductQty,
+                      timestamp: transaction.timestamp,
+                      reference: `Bundle Sale #${transaction.id.split('-')[0].toUpperCase()} (${freshProduct.name})`,
+                      branchId: activeBranchId!,
+                      businessId: activeBusinessId!
+                    });
+                  }
+                }
+              }
+              // Update bundle's own record timestamp
+              await db.products.update(item.id, { updated_at: Date.now() });
+            } else {
+              // Standard non-bundled product deduction
+              const newQty = Math.max(0, freshProduct.stockQuantity - item.cartQuantity);
+              const oversold = freshProduct.stockQuantity < item.cartQuantity;
+              await db.products.update(item.id, { stockQuantity: newQty });
+              if (db.stockMovements) {
+                await db.stockMovements.add({
+                  id: crypto.randomUUID(),
+                  productId: item.id,
+                  type: 'OUT',
+                  quantity: oversold ? -freshProduct.stockQuantity : -item.cartQuantity,
+                  timestamp: transaction.timestamp,
+                  reference: `Sale #${transaction.id.split('-')[0].toUpperCase()}${oversold ? ' ⚠ OVERSOLD' : ''}`,
+                  branchId: activeBranchId!,
+                  businessId: activeBusinessId!
+                });
+              }
             }
           }
         }
