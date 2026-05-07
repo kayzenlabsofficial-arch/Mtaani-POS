@@ -12,6 +12,7 @@ interface DashboardTabProps {
 }
 
 export default function DashboardTab({ setActiveTab, openExpenseModal }: DashboardTabProps) {
+  const [trendView, setTrendView] = useState<'DAY' | 'WEEK'>('DAY');
   const [isPickCashOpen, setIsPickCashOpen] = useState(false);
   const [pickAmount, setPickAmount] = useState("");
   const [isCloseDayOpen, setIsCloseDayOpen] = useState(false);
