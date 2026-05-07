@@ -415,7 +415,6 @@ function buildReport(r: any, bizName = 'MTAANI POS'): Blob {
   const TW = 80;
   const TM = 4;
   const items = [
-    ['Opening Float',      ksh(r.openingFloat)],
     ['Gross Sales',        ksh(r.grossSales ?? r.totalSales)],
     ['M-Pesa Sales',       ksh(r.mpesaSales)],
     ['Cash Sales',         ksh(safe(r.grossSales ?? r.totalSales) - safe(r.mpesaSales))],

@@ -480,10 +480,6 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
 
                        <div className="space-y-3">
                           <div className="flex justify-between text-sm font-bold text-slate-700">
-                             <span>Opening Float</span>
-                             <span>Ksh {(Number(selectedRecord.openingFloat) || 0).toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between text-sm font-bold text-slate-700">
                              <span>Total Sales (Gross)</span>
                              <span>Ksh {(Number(selectedRecord.grossSales) || 0).toLocaleString()}</span>
                           </div>

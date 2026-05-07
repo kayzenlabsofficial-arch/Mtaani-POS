@@ -20,13 +20,15 @@ function emitChange() {
 }
 
 // ── Low-level fetch helpers ────────────────────────────────────────────────
-
-import { useStore } from './store';
+// NOTE: useStore is imported lazily inside each function to break the
+// circular dependency: clouddb → store → db → clouddb.
 
 const API = '/api/data';
 const API_KEY = (import.meta.env.VITE_API_SECRET as string) || 'mtaani-pos-auth-token-2026';
 
 async function d1Fetch(table: string, method: string, body?: any): Promise<any> {
+  // Lazy import to avoid circular dependency with store.ts
+  const { useStore } = await import('./store');
   const businessId = useStore.getState().activeBusinessId;
   const branchId = useStore.getState().activeBranchId;
   const headers: Record<string, string> = { 
@@ -71,6 +73,8 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
 }
 
 async function d1Delete(table: string, id: string): Promise<void> {
+  // Lazy import to avoid circular dependency with store.ts
+  const { useStore } = await import('./store');
   const businessId = useStore.getState().activeBusinessId;
   const branchId = useStore.getState().activeBranchId;
   const headers: Record<string, string> = { 

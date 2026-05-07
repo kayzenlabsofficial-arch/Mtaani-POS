@@ -95,7 +95,6 @@ export interface EndOfDayReport {
   id: string;
   shiftId?: string;
   timestamp: number;
-  openingFloat: number;
   totalSales: number;
   grossSales: number;
   taxTotal: number;
@@ -117,7 +116,6 @@ export interface Shift {
   id: string;
   startTime: number;
   endTime?: number;
-  openingFloat: number;
   cashierName: string;
   status: 'OPEN' | 'CLOSED';
   branchId: string;
@@ -379,6 +377,8 @@ class MtaaniCloudDB {
 
   /** Force reload all data from cloud. Use for 'Hard Sync' buttons. */
   async sync(): Promise<void> {
+    // Lazy import to break the circular dependency: db → store → db
+    const { useStore } = await import('./store');
     const state = useStore.getState();
     const promises = [
       this.businesses.reload(),
@@ -421,9 +421,9 @@ export const db = new MtaaniCloudDB();
 // ── seedInitialData ────────────────────────────────────────────────────────
 // Seeds D1 with default data if the database is empty.
 
-import { useStore } from './store';
-
 export const seedInitialData = async () => {
+  // Lazy import to break the circular dependency: db → store → db
+  const { useStore } = await import('./store');
   try {
     // Determine active business ID or fallback to default
     let businessId = useStore.getState().activeBusinessId;

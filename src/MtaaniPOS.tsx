@@ -246,8 +246,8 @@ export default function MtaaniPOS() {
   const financialAccounts = useLiveQuery(() => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
   const expenseAccounts = useLiveQuery(() => activeBusinessId ? db.expenseAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
 
-  const [loginForm, setLoginForm] = useState({ businessCode: '', username: '', password: '', openingFloat: '' });
-  const [loginStep, setLoginStep] = useState<'LOGIN' | 'BRANCH' | 'FLOAT'>('LOGIN');
+  const [loginForm, setLoginForm] = useState({ businessCode: '', username: '', password: '' });
+  const [loginStep, setLoginStep] = useState<'LOGIN' | 'BRANCH'>('LOGIN');
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [availableBranches, setAvailableBranches] = useState<Branch[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string>('');
@@ -315,7 +315,7 @@ export default function MtaaniPOS() {
   );
   
   const totalPickedAmount = todayCashPicks.reduce((acc, p) => acc + (p.amount || 0), 0);
-  const actualCashDrawer = (activeShift?.openingFloat || 0) + cashTotal - totalPickedAmount - todayTillExpenses - todayTillPayments;
+  const actualCashDrawer = cashTotal - totalPickedAmount - todayTillExpenses - todayTillPayments;
 
   const products = useLiveQuery(() => db.products.toArray(), [], []) ;
 
@@ -630,7 +630,7 @@ export default function MtaaniPOS() {
     if (rawCode === 'SYSTEM' && rawUser.toLowerCase() === 'admin') {
       if (loginForm.password === 'Kayzen@Secure#POS2026') {
         setIsSystemManager(true);
-        setLoginForm({ businessCode: '', username: '', password: '', openingFloat: '' });
+        setLoginForm({ businessCode: '', username: '', password: '' });
         resetAttempts('SYSTEM');
         return;
       } else {
@@ -706,7 +706,6 @@ export default function MtaaniPOS() {
             const newShift: Shift = {
                 id: shiftId,
                 startTime: Date.now(),
-                openingFloat: 0,
                 cashierName: matchedUser.name,
                 status: 'OPEN',
                 branchId: branchToUse,
@@ -783,7 +782,6 @@ export default function MtaaniPOS() {
             const newShift: Shift = {
                 id: shiftId,
                 startTime: Date.now(),
-                openingFloat: 0,
                 cashierName: pendingUser.name,
                 status: 'OPEN',
                 branchId: selectedBranchId,
