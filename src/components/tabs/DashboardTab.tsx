@@ -255,6 +255,46 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     }
   };
 
+  const handleAdminCloseShift = async (s: any, metrics: any) => {
+    if (!confirm(`Are you sure you want to close ${s.cashierName}'s shift?`)) return;
+    
+    try {
+       await db.endOfDayReports.add({
+         id: crypto.randomUUID(),
+         shiftId: s.id,
+         timestamp: Date.now(),
+         openingFloat: s.openingFloat || 0,
+         totalSales: metrics.sales,
+         grossSales: metrics.sales,
+         taxTotal: metrics.sales * 0.16,
+         cashSales: metrics.cashSales,
+         mpesaSales: metrics.sales - metrics.cashSales,
+         totalExpenses: metrics.expenses,
+         totalPicks: metrics.picks + metrics.payments, 
+         totalRefunds: 0,
+         expectedCash: metrics.expected,
+         reportedCash: metrics.expected,
+         difference: 0,
+         cashierName: s.cashierName,
+         branchId: activeBranchId!,
+         businessId: activeBusinessId!
+       });
+
+       await db.shifts.add({
+         ...s,
+         status: 'CLOSED',
+         endTime: Date.now(),
+         branchId: activeBranchId!,
+         businessId: activeBusinessId!
+       });
+
+       success(`${s.cashierName}'s shift closed successfully.`);
+    } catch (err) {
+      console.error(err);
+      error("Failed to close shift.");
+    }
+  };
+
   const handleOpenShift = async () => {
     if (isAdmin) {
       error("Administrators cannot open shifts. Please use a Cashier or Manager account.");
@@ -396,9 +436,26 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                                      <p className="text-[10px] font-bold text-slate-400">Started: {new Date(s.startTime).toLocaleTimeString()}</p>
                                   </div>
                                </div>
-                               <div className="text-right">
-                                  <p className="text-xs font-black text-slate-900">Ksh {sSales.toLocaleString()}</p>
-                                  <p className="text-[10px] font-bold text-green-600">Till: Ksh {sExpected.toLocaleString()}</p>
+                               <div className="text-right flex flex-col items-end gap-2">
+                                  <div>
+                                     <p className="text-xs font-black text-slate-900">Ksh {sSales.toLocaleString()}</p>
+                                     <p className="text-[10px] font-bold text-green-600">Till: Ksh {sExpected.toLocaleString()}</p>
+                                  </div>
+                                  {isAdmin && (
+                                     <button 
+                                       onClick={() => handleAdminCloseShift(s, { 
+                                          sales: sSales, 
+                                          cashSales: sCashSales, 
+                                          expenses: sExpenses, 
+                                          payments: sPayments, 
+                                          picks: sPicks, 
+                                          expected: sExpected 
+                                       })}
+                                       className="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-[9px] font-black hover:bg-red-600 hover:text-white transition-all flex items-center gap-1"
+                                     >
+                                       <Lock size={10} /> Close Shift
+                                     </button>
+                                  )}
                                </div>
                             </div>
                           );
@@ -560,9 +617,11 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                <span className="text-xs text-orange-600 bg-orange-100 px-2 py-0.5 rounded-md font-bold">{pendingQuotes} quotes</span>
             </h3>
             <div className="grid grid-cols-2 gap-2 h-full items-end mt-2">
-               <button onClick={() => setIsPickCashOpen(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-slate-200 flex flex-col items-center justify-center gap-1">
-                  <ArrowUpRight size={16} /> Pick cash
-               </button>
+               {!isAdmin && (
+                 <button onClick={() => setIsPickCashOpen(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-slate-200 flex flex-col items-center justify-center gap-1">
+                    <ArrowUpRight size={16} /> Pick cash
+                 </button>
+               )}
                <button onClick={openExpenseModal} disabled={!activeShift} className="bg-orange-50 hover:bg-orange-100 text-orange-700 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-orange-200 flex flex-col items-center justify-center gap-1 disabled:opacity-50">
                   <FileMinus size={16} /> Expense
                </button>
