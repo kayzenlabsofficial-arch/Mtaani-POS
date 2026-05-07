@@ -71,22 +71,23 @@ export default function RegisterTab() {
   const calculateVirtualStock = (product: any) => {
       if (!product.isBundle || !product.components?.length) return product.stockQuantity || 0;
       
-      // If we are still loading products, return a placeholder to avoid "Out of Stock" flash
-      if (!allProducts || allProducts.length === 0) return product.stockQuantity || 0;
+      // If we are still loading products, return a placeholder
+      if (!allProducts || allProducts.length === 0) return 0;
 
       let minStock = Infinity;
       for (const comp of product.components) {
-         const freshComp = allProducts.find(p => p.id === comp.productId);
+         // Fix: Use String comparison to handle cases where ID might be Number vs String
+         const freshComp = allProducts.find(p => String(p.id) === String(comp.productId));
+         
          if (!freshComp) {
-            // If component not found, it might be an error or just not loaded
-            return 0;
+            return 0; // Component missing
          }
          
          const compQty = Number(comp.quantity) || 0;
-         if (compQty <= 0) continue; // Skip invalid components
+         if (compQty <= 0) continue;
 
-         // Recursive check if the component is ALSO a bundle
-         const availableStock = freshComp.isBundle ? calculateVirtualStock(freshComp) : (freshComp.stockQuantity || 0);
+         // Check if component is also a bundle (recursive)
+         const availableStock = freshComp.isBundle ? calculateVirtualStock(freshComp) : (Number(freshComp.stockQuantity) || 0);
          const possible = Math.floor(availableStock / compQty);
          
          if (possible < minStock) minStock = possible;
@@ -282,15 +283,28 @@ export default function RegisterTab() {
                    <span className="text-[12px] font-black text-slate-900 tabular-nums">
                      Ksh {product.sellingPrice.toLocaleString()} / {product.unit || 'pcs'}
                    </span>
-                   <span className={`text-[10px] font-bold ${
-                     isOutOfStock ? 'text-red-500' :
-                     isCritical  ? 'text-red-500' :
-                     isLow       ? 'text-amber-600' :
-                                   'text-slate-400'
-                   }`}>
-                     • {isOutOfStock ? 'No stock' : `${displayStock} ${product.unit || 'pcs'} left`}
-                   </span>
-                </div>
+                    <span className={`text-[10px] font-bold ${
+                      isOutOfStock ? 'text-red-500' :
+                      isCritical  ? 'text-red-500' :
+                      isLow       ? 'text-amber-600' :
+                                    'text-slate-400'
+                    }`}>
+                      • {isOutOfStock ? 'Out of stock' : `${displayStock} ${product.unit || 'pcs'} left`}
+                    </span>
+                 </div>
+                 {product.isBundle && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                       {product.components?.map((c: any, i: number) => {
+                          const p = allProducts?.find(x => String(x.id) === String(c.productId));
+                          const hasStock = p ? p.stockQuantity >= c.quantity : false;
+                          return (
+                             <span key={i} className={`text-[8px] px-1.5 py-0.5 rounded-md font-bold border ${hasStock ? 'bg-slate-50 text-slate-400 border-slate-100' : 'bg-red-50 text-red-500 border-red-100'}`}>
+                                {p?.name || '??'}: {p?.stockQuantity || 0}
+                             </span>
+                          );
+                       })}
+                    </div>
+                 )}
               </div>
 
               {/* Add Button */}
