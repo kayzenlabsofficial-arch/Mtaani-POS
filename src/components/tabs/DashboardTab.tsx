@@ -213,7 +213,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     
     try {
       // Create Zed Report
-      const report: EndOfDayReport = {
+      await db.endOfDayReports.add({
         id: crypto.randomUUID(),
         shiftId: activeShift.id,
         timestamp: Date.now(),

@@ -879,9 +879,7 @@ export default function MtaaniPOS() {
         preparedBy: currentCustomer ? currentCustomer.name : undefined,
         mpesaCode: mpesaCode,
         mpesaCustomer: currentCustomer ? currentCustomer.name : resolvedMpesaCustomer,
-        shiftId: activeShift?.id,
-        branchId: activeBranchId!,
-        businessId: activeBusinessId!
+        shiftId: activeShift?.id
       };
 
       await db.transactions.add(transaction);
