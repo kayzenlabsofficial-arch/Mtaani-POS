@@ -183,7 +183,7 @@ function buildReceipt(r: any): Blob {
   st(doc, slate600);
   doc.text('Nairobi, Kenya', TW / 2, y, { align: 'center' });
   y += 4;
-  doc.text('mtaani-pos.pages.dev', TW / 2, y, { align: 'center' });
+  doc.text(`Cashier: ${safeStr(r.cashierName)}`, TW / 2, y, { align: 'center' });
   y += 8;
   
   // Info

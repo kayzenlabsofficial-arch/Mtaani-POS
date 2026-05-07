@@ -1665,6 +1665,7 @@ export default function MtaaniPOS() {
                     <div className="flex flex-col items-center gap-1 mt-4 text-[10px] text-slate-400 font-bold  ">
                         <span>{new Date(completedTransaction.timestamp).toLocaleString('en-KE')}</span>
                         <span>Ref: #{completedTransaction.id.split('-')[0].toUpperCase()}</span>
+                        <span className="text-slate-900 mt-1">Cashier: {completedTransaction.cashierName}</span>
                     </div>
                     
                     <div className="mt-4 px-3 py-1 bg-green-100 text-green-700 text-[9px] font-bold rounded-full">
