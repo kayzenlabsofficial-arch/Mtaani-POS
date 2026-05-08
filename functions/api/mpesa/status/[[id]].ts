@@ -1,5 +1,6 @@
 interface Env {
   DB: D1Database;
+  API_SECRET?: string;
 }
 
 const corsHeaders = {
@@ -24,6 +25,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   try {
+    // ── Auth: require API key ────────────────────────────────────────────────
+    const expectedKey = env.API_SECRET;
+    if (!expectedKey) {
+      console.error('[Security] API_SECRET env var is not set. Refusing to serve requests.');
+      return new Response(JSON.stringify({ error: 'Server misconfigured' }), { status: 500, headers: jsonHeaders() });
+    }
+    const apiKey = request.headers.get('X-API-Key');
+    if (apiKey !== expectedKey) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: jsonHeaders() });
+    }
+
     const checkoutRequestId = Array.isArray(params.id) ? params.id[0] : params.id;
 
     if (!checkoutRequestId) {

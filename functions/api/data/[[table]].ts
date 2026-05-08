@@ -17,7 +17,7 @@ const GLOBAL_TABLES = new Set(['businesses', 'users', 'branches', 'settings', 'e
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Business-ID, X-Branch-ID'
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID'
 };
 
 function jsonHeaders() {
@@ -94,9 +94,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // ── Auth: ALL endpoints require a valid API key ───────────────────────────
     const apiKey = request.headers.get('X-API-Key');
-    const expectedKey = env.API_SECRET || 'mtaani-pos-auth-token-2026';
-    if (!env.API_SECRET) {
-      console.warn('[Security] API_SECRET env var is not set. Using fallback key. Set it in Cloudflare Dashboard > Settings > Variables.');
+    const expectedKey = env.API_SECRET;
+    if (!expectedKey) {
+      console.error('[Security] API_SECRET env var is not set. Refusing to serve requests.');
+      return new Response(JSON.stringify({ error: 'Server misconfigured' }), { status: 500, headers: secureJsonHeaders() });
     }
     if (apiKey !== expectedKey) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: secureJsonHeaders() });
@@ -182,7 +183,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         return new Response(JSON.stringify({ error: 'X-Business-ID header required' }), { status: 400, headers: jsonHeaders() });
       }
 
-      if (GLOBAL_TABLES.has(table) || !branchId) {
+      // Branch-scoped tables MUST be requested with an explicit branchId.
+      // Otherwise a caller could read all branch data for a business in one request.
+      if (!GLOBAL_TABLES.has(table) && !branchId) {
+        return new Response(JSON.stringify({ error: 'X-Branch-ID header required for this table' }), { status: 400, headers: jsonHeaders() });
+      }
+
+      if (GLOBAL_TABLES.has(table)) {
         const { results } = await env.DB.prepare(`SELECT * FROM ${table} WHERE businessId = ?`).bind(businessId).all();
         return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
       } else {

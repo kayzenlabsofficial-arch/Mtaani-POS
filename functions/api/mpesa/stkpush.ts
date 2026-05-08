@@ -1,11 +1,15 @@
 interface Env {
   DB: D1Database;
+  API_SECRET?: string;
   MPESA_CONSUMER_KEY?: string;
   MPESA_CONSUMER_SECRET?: string;
   MPESA_SHORTCODE?: string;
   MPESA_PASSKEY?: string;
   MPESA_CALLBACK_URL?: string;
   MPESA_ENV?: string; // 'sandbox' or 'production'
+  MPESA_CALLBACK_SECRET?: string;
+  MPESA_TYPE?: string;
+  MPESA_STORE_NUMBER?: string;
 }
 
 const corsHeaders = {
@@ -39,6 +43,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   try {
+    // ── Auth: require API key ────────────────────────────────────────────────
+    const expectedKey = env.API_SECRET;
+    if (!expectedKey) {
+      console.error('[Security] API_SECRET env var is not set. Refusing to serve requests.');
+      return new Response(JSON.stringify({ error: 'Server misconfigured' }), { status: 500, headers: jsonHeaders() });
+    }
+    const apiKey = request.headers.get('X-API-Key');
+    if (apiKey !== expectedKey) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: jsonHeaders() });
+    }
+
     const body = await request.json() as { amount: number, phone: string, reference?: string, businessId: string, branchId: string };
     
     if (!body.amount || !body.phone || !body.businessId || !body.branchId) {
@@ -87,7 +102,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
            shortcode = env.MPESA_STORE_NUMBER;
            storeNumber = env.MPESA_STORE_NUMBER;
         } else {
-           shortcode = env.MPESA_SHORTCODE || '174379';
+           shortcode = env.MPESA_SHORTCODE;
         }
       }
     } catch (dbErr) {
@@ -100,21 +115,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
        throw new Error("M-Pesa configuration is incomplete for this branch in PRODUCTION mode.");
     }
 
-    if (!consumerKey || !consumerSecret || !passkey) {
-      // Sandbox Fallback
-      consumerKey = 'LpAmyYqABzW0zg0HDkzSVoDGsDbspcUutfyOpAACv45ZPBtG';
-      consumerSecret = '4BOGBBmgJ7rk4GKtMc6TU2Gx6Q02OK2ZJGDRdjGChOPv176qnCMW88FUNa7awEDn';
-      passkey = 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919';
-      shortcode = '174379';
-      mpesaType = 'paybill';
-      isProd = false;
+    if (!consumerKey || !consumerSecret || !passkey || !shortcode) {
+      // Never fall back to hardcoded credentials.
+      // Misconfiguration should fail closed to protect financial integrity.
+      throw new Error("M-Pesa configuration is missing (consumer key/secret/passkey/shortcode). Configure it per-branch or via environment variables.");
     }
 
     const baseUrl = isProd 
       ? 'https://api.safaricom.co.ke'
       : 'https://sandbox.safaricom.co.ke';
 
-    console.log(`[M-Pesa] Triggering STK Push (${mpesaType}) for ${body.branchId} in ${isProd ? 'PRODUCTION' : 'SANDBOX'} mode`);
+    console.log(`[M-Pesa] Triggering STK Push (${mpesaType}) for branch=${body.branchId} env=${isProd ? 'PRODUCTION' : 'SANDBOX'}`);
 
     // 2. Generate OAuth Token
     const authString = btoa(`${consumerKey}:${consumerSecret}`);
@@ -134,7 +145,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const password = btoa(`${shortcode}${passkey}${timestamp}`);
     
     // SECURITY: Use a secret callback path to prevent spoofing
-    const callbackSecret = env.MPESA_CALLBACK_SECRET || 'default_secret_key_123';
+    const callbackSecret = env.MPESA_CALLBACK_SECRET;
+    if (!callbackSecret) {
+      throw new Error("MPESA_CALLBACK_SECRET is not set. Refusing to initiate STK push without a protected callback path.");
+    }
     const urlObj = new URL(request.url);
     const callbackUrl = `${urlObj.protocol}//${urlObj.host}/api/mpesa/callback/${callbackSecret}`;
 

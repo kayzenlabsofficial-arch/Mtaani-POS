@@ -23,10 +23,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   try {
     // 1. SECURITY: Verify Secret Key from URL
     const receivedSecret = Array.isArray(params.secret) ? params.secret[0] : params.secret;
-    const expectedSecret = env.MPESA_CALLBACK_SECRET || 'default_secret_key_123';
+    const expectedSecret = env.MPESA_CALLBACK_SECRET;
+    if (!expectedSecret) {
+      console.error('[Security] MPESA_CALLBACK_SECRET env var is not set. Refusing to process callbacks.');
+      return new Response(JSON.stringify({ ResultCode: 1, ResultDesc: "Server misconfigured" }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
 
     if (!receivedSecret || receivedSecret !== expectedSecret) {
-      console.warn(`[M-PESA SECURITY ALERT]: Unauthorized callback attempt. Received: ${receivedSecret}`);
+      console.warn(`[M-PESA SECURITY ALERT]: Unauthorized callback attempt.`);
       return new Response(JSON.stringify({ ResultCode: 1, ResultDesc: "Unauthorized" }), { 
         status: 401,
         headers: { 'Content-Type': 'application/json' } 
