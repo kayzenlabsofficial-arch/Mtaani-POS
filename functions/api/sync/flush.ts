@@ -29,6 +29,18 @@ function serializeValue(v: any): any {
   return v;
 }
 
+function deserializeRow(row: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (typeof v === 'string' && (v.startsWith('[') || v.startsWith('{'))) {
+      try { out[k] = JSON.parse(v); } catch { out[k] = v; }
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
 
@@ -48,47 +60,128 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const deviceId = body?.deviceId ? String(body.deviceId).slice(0, 120) : null;
   const cashierName = body?.cashierName ? String(body.cashierName).slice(0, 120) : null;
   const mutations: Mutation[] = Array.isArray(body?.mutations) ? body.mutations : [];
+  
   if (mutations.length === 0) return json({ success: true, applied: 0, skipped: 0 });
 
-  let applied = 0;
-  let skipped = 0;
-
-  for (const m of mutations) {
-    if (m?.table !== 'transactions' || m?.op !== 'UPSERT') {
-      return json({ error: 'Only transactions UPSERT supported' }, 400);
-    }
+  // 1. Batch Idempotency Check
+  // We use INSERT OR IGNORE to atomically check if this key was already processed.
+  const idempotencyStmts = mutations.map(m => {
     const idempotencyKey = String(m.idempotencyKey || '').trim();
-    if (!idempotencyKey) return json({ error: 'idempotencyKey required' }, 400);
-
-    // Idempotency check
     const idemId = `${businessId}|${branchId}|${idempotencyKey}`;
-    const insertKey = await env.DB.prepare(
+    return env.DB.prepare(
       `INSERT OR IGNORE INTO idempotencyKeys (id, businessId, branchId, idempotencyKey, operation, deviceId, cashierName, createdAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-      .bind(idemId, businessId, branchId, idempotencyKey, 'transactions:UPSERT', deviceId, cashierName, Date.now())
-      .run();
+    ).bind(idemId, businessId, branchId, idempotencyKey, 'transactions:UPSERT', deviceId, cashierName, Date.now());
+  });
 
-    if ((insertKey as any)?.meta?.changes === 0) {
-      skipped += 1;
-      continue;
-    }
+  const idemResults = await env.DB.batch(idempotencyStmts);
+  const validMutations = mutations.filter((m, idx) => (idemResults[idx] as any).meta.changes > 0);
+  const skippedCount = mutations.length - validMutations.length;
+
+  if (validMutations.length === 0) {
+    return json({ success: true, applied: 0, skipped: skippedCount });
+  }
+
+  // 2. Collect Product IDs for Stock Deduction
+  const productIds = new Set<string>();
+  validMutations.forEach(m => {
+    const items = m.payload?.items || [];
+    items.forEach((it: any) => {
+      if (it.id) productIds.add(it.id);
+    });
+  });
+
+  const productsMap = new Map();
+  if (productIds.size > 0) {
+    const ids = Array.from(productIds);
+    const placeholders = ids.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(
+      `SELECT id, name, isBundle, components, stockQuantity FROM products WHERE businessId = ? AND id IN (${placeholders})`
+    ).bind(businessId, ...ids).all();
+    results.forEach((p: any) => productsMap.set(p.id, deserializeRow(p)));
+  }
+
+  // 3. Build Final Batch (Transactions + Stock Updates + Movements)
+  const finalBatch: D1PreparedStatement[] = [];
+  
+  // Cache transaction table columns for schema safety
+  const { results: pragma } = await env.DB.prepare(`PRAGMA table_info('transactions')`).all();
+  const validTxCols = new Set((pragma as any[]).map((r: any) => r.name));
+
+  for (const m of validMutations) {
+    if (m.table !== 'transactions' || m.op !== 'UPSERT') continue;
 
     const payload = m.payload || {};
     payload.businessId = businessId;
     payload.branchId = branchId;
 
-    // Keep schema strict by using D1 table columns
-    const { results: pragma } = await env.DB.prepare(`PRAGMA table_info('transactions')`).all();
-    const validCols = new Set((pragma as any[]).map((r: any) => r.name));
-    const cols = Object.keys(payload).filter((k) => validCols.has(k));
-    if (cols.length === 0) return json({ error: 'No valid columns to insert' }, 400);
+    // A. Transaction Upsert
+    const cols = Object.keys(payload).filter((k) => validTxCols.has(k));
+    if (cols.length > 0) {
+      const sql = `INSERT OR REPLACE INTO transactions (${cols.map((c) => '"' + c + '"').join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
+      finalBatch.push(env.DB.prepare(sql).bind(...cols.map((c) => serializeValue(payload[c]))));
+    }
 
-    const sql = `INSERT OR REPLACE INTO transactions (${cols.map((c) => '"' + c + '"').join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
-    await env.DB.prepare(sql).bind(...cols.map((c) => serializeValue(payload[c]))).run();
-    applied += 1;
+    // B. Stock Logic (Skip if not PAID)
+    if (payload.status !== 'PAID') continue;
+
+    const items = payload.items || [];
+    const txRef = payload.id?.split('-')[0].toUpperCase() || 'SYNC';
+    const txTime = payload.timestamp || Date.now();
+
+    for (const item of items) {
+      const p = productsMap.get(item.id);
+      if (!p) continue;
+
+      const saleQty = Number(item.cartQuantity || item.quantity) || 0;
+      if (saleQty <= 0) continue;
+
+      if (p.isBundle && p.components) {
+        // Deduct from components
+        const components = Array.isArray(p.components) ? p.components : [];
+        for (const comp of components) {
+          const deductQty = (Number(comp.quantity) || 0) * saleQty;
+          if (deductQty <= 0) continue;
+
+          // Update stock
+          finalBatch.push(
+            env.DB.prepare(`UPDATE products SET stockQuantity = MAX(0, stockQuantity - ?) WHERE id = ? AND businessId = ?`)
+              .bind(deductQty, comp.productId, businessId)
+          );
+          // Record movement
+          finalBatch.push(
+            env.DB.prepare(
+              `INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            ).bind(crypto.randomUUID(), comp.productId, 'OUT', -deductQty, txTime, `Bundle Sale (Sync) #${txRef} (${p.name})`, branchId, businessId, payload.shiftId)
+          );
+        }
+      } else {
+        // Regular product deduction
+        finalBatch.push(
+          env.DB.prepare(`UPDATE products SET stockQuantity = MAX(0, stockQuantity - ?) WHERE id = ? AND businessId = ?`)
+            .bind(saleQty, item.id, businessId)
+        );
+        // Record movement
+        finalBatch.push(
+          env.DB.prepare(
+            `INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ).bind(crypto.randomUUID(), item.id, 'OUT', -saleQty, txTime, `Sale (Sync) #${txRef}`, branchId, businessId, payload.shiftId)
+        );
+      }
+    }
   }
 
-  return json({ success: true, applied, skipped });
+  // Execute final batch in chunks (to stay within D1 limits if many items are synced)
+  if (finalBatch.length > 0) {
+    const CHUNK_SIZE = 100;
+    for (let i = 0; i < finalBatch.length; i += CHUNK_SIZE) {
+      await env.DB.batch(finalBatch.slice(i, i + CHUNK_SIZE));
+    }
+  }
+
+  return json({ success: true, applied: validMutations.length, skipped: skippedCount });
 };
+
 
