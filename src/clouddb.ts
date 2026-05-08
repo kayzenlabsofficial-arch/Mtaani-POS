@@ -10,6 +10,8 @@
 
 import { useState, useEffect } from 'react';
 import { getApiKey } from './runtimeConfig';
+import { cacheTableRows, readCachedTableRows, type OfflineCacheTable } from './offline/localdb';
+import { enqueueOutbox } from './offline/localdb';
 
 // ── Global change event bus ────────────────────────────────────────────────
 // Any CloudTable mutation fires this so useLiveQuery hooks re-run.
@@ -25,6 +27,28 @@ function emitChange() {
 // circular dependency: clouddb → store → db → clouddb.
 
 const API = '/api/data';
+
+const OFFLINE_CACHE_TABLES = new Set<OfflineCacheTable>([
+  'products',
+  'categories',
+  'customers',
+  'suppliers',
+  'settings',
+  'branches',
+  'users',
+  'financialAccounts',
+  'expenseAccounts',
+]);
+
+function isLikelyOfflineError(e: any): boolean {
+  if (typeof window !== 'undefined' && navigator && navigator.onLine === false) return true;
+  const msg = String(e?.message || e || '');
+  return (
+    msg.includes('Failed to fetch') ||
+    msg.includes('NetworkError') ||
+    msg.includes('fetch') && msg.includes('failed')
+  );
+}
 
 async function d1Fetch(table: string, method: string, body?: any): Promise<any> {
   // Lazy import to avoid circular dependency with store.ts
@@ -47,8 +71,10 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
     headers['X-Branch-ID'] = branchId;
   }
 
+  const url = `${API}/${table}`;
+
   try {
-    const res = await fetch(`${API}/${table}`, {
+    const res = await fetch(url, {
       method,
       headers,
       // CRITICAL: Bypass service worker & browser cache — always fetch fresh from D1
@@ -69,9 +95,42 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
       throw new Error(msg);
     }
     
-    return res.json();
+    const json = await res.json();
+
+    // Write-through cache for offline reads
+    if (method === 'GET' && businessId && OFFLINE_CACHE_TABLES.has(table as OfflineCacheTable)) {
+      try {
+        const cacheTable = table as OfflineCacheTable;
+        const scopedBranchId = headers['X-Branch-ID'] ? (branchId ?? undefined) : undefined;
+        await cacheTableRows({
+          table: cacheTable,
+          businessId,
+          branchId: scopedBranchId,
+          rows: Array.isArray(json) ? json : [],
+          updatedAt: Date.now(),
+        });
+      } catch (e) {
+        console.warn('[CloudDB] Offline cache write failed:', e);
+      }
+    }
+
+    return json;
   } catch (e: any) {
     console.error(`[CloudDB] Fetch error (${method} ${table}):`, e.message);
+
+    // Offline fallback for reads
+    if (method === 'GET' && businessId && OFFLINE_CACHE_TABLES.has(table as OfflineCacheTable) && isLikelyOfflineError(e)) {
+      try {
+        const cacheTable = table as OfflineCacheTable;
+        const scopedBranchId = headers['X-Branch-ID'] ? (branchId ?? undefined) : undefined;
+        const rows = await readCachedTableRows({ table: cacheTable, businessId, branchId: scopedBranchId });
+        console.warn(`[CloudDB] Using offline cache for GET ${table} (${rows.length} rows).`);
+        return rows;
+      } catch (e2) {
+        console.warn('[CloudDB] Offline cache read failed:', e2);
+      }
+    }
+
     throw e;
   }
 }
@@ -293,8 +352,45 @@ export class CloudTable<T extends { id: string }> {
     try {
       await d1Fetch(this.name, 'POST', [stamped]);
     } catch (e) {
+      const offline = isLikelyOfflineError(e);
+
+      // ── Offline-safe writes (minimal scope) ───────────────────────────────
+      // Only allow offline upserts for CASH/QUOTE transactions.
+      // Everything else must hard-fail to protect money/data integrity.
+      if (
+        offline &&
+        this.name === 'transactions' &&
+        (stamped.status === 'PAID' || stamped.status === 'QUOTE') &&
+        (stamped.paymentMethod === 'CASH' || stamped.status === 'QUOTE')
+      ) {
+        try {
+          // Queue for sync (idempotencyKey = transaction.id)
+          const { useStore } = await import('./store');
+          const businessId = useStore.getState().activeBusinessId;
+          const branchId = useStore.getState().activeBranchId;
+          if (businessId && branchId) {
+            await enqueueOutbox({
+              businessId,
+              branchId,
+              table: 'transactions',
+              op: 'UPSERT',
+              idempotencyKey: stamped.id,
+              payload: stamped,
+            });
+          }
+        } catch (qe) {
+          console.warn('[CloudDB] Failed to enqueue offline transaction:', qe);
+        }
+        // Keep cache entry and resolve successfully so the sale is recorded locally.
+        return stamped.id;
+      }
+
       this.cache.delete(stamped.id);
       emitChange();
+
+      if (offline) {
+        throw new Error('Offline: this action requires internet connection.');
+      }
       throw e;
     }
     return stamped.id;
@@ -355,8 +451,10 @@ export class CloudTable<T extends { id: string }> {
     try {
       await d1Fetch(this.name, 'POST', stamped);
     } catch (e) {
+      const offline = isLikelyOfflineError(e);
       stamped.forEach((i: any) => this.cache.delete(i.id));
       emitChange();
+      if (offline) throw new Error('Offline: this action requires internet connection.');
       throw e;
     }
   }

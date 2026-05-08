@@ -26,6 +26,9 @@ export const MpesaService = {
    */
   async triggerStkPush(phone: string, amount: number, reference: string = 'POS', businessId: string, branchId: string): Promise<StkPushResponse> {
     try {
+      if (typeof window !== 'undefined' && navigator.onLine === false) {
+        return { error: 'Offline: M-Pesa requires internet connection.' };
+      }
       const apiKey = await getApiKey();
       const res = await fetch(`${API_BASE}/stkpush`, {
         method: 'POST',
@@ -47,6 +50,9 @@ export const MpesaService = {
    */
   async checkStatus(checkoutRequestId: string): Promise<MpesaStatusResponse> {
     try {
+      if (typeof window !== 'undefined' && navigator.onLine === false) {
+        return { found: false, error: 'Offline: status check requires internet.' };
+      }
       const apiKey = await getApiKey();
       const res = await fetch(`${API_BASE}/status/${checkoutRequestId}`, {
         headers: { 'X-API-Key': apiKey }

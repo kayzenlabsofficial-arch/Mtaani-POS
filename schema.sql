@@ -345,3 +345,28 @@ CREATE TABLE IF NOT EXISTS expenseAccounts (
     businessId TEXT,
     updated_at INTEGER
 );
+
+-- Offline sync / device monitoring
+CREATE TABLE IF NOT EXISTS deviceSyncStatus (
+    id TEXT PRIMARY KEY,
+    businessId TEXT NOT NULL,
+    branchId TEXT NOT NULL,
+    deviceId TEXT NOT NULL,
+    cashierName TEXT,
+    lastSyncAt INTEGER,
+    updated_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_deviceSyncStatus_branch ON deviceSyncStatus(businessId, branchId, lastSyncAt);
+
+-- Idempotency keys for outbox flush (prevents duplicates on reconnect/retry)
+CREATE TABLE IF NOT EXISTS idempotencyKeys (
+    id TEXT PRIMARY KEY, -- `${businessId}|${branchId}|${idempotencyKey}`
+    businessId TEXT NOT NULL,
+    branchId TEXT NOT NULL,
+    idempotencyKey TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    deviceId TEXT,
+    cashierName TEXT,
+    createdAt INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, branchId, idempotencyKey);

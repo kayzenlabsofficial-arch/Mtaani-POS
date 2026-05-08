@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Settings as SettingsIcon, ShieldCheck, Users, Plus, Trash2, KeyRound, Tag as TagIcon, Building2, Save, X, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Palette, Check, DollarSign } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { hashPassword } from '../../security';
 import { useStore } from '../../store';
 import { SearchableSelect } from '../shared/SearchableSelect';
+import { getApiKey } from '../../runtimeConfig';
 
 import SettingsTab from './SettingsTab';
 import AdminApprovals from './AdminApprovals';
@@ -46,6 +47,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   const users = useLiveQuery(() => db.users.toArray(), [], []);
   const activeShifts = useLiveQuery(() => db.shifts.where('status').equals('OPEN').toArray(), [], []);
   const branches = useLiveQuery(() => db.branches.toArray(), [], []);
+  const activeBranchId = useStore(state => state.activeBranchId);
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', password: '', role: 'CASHIER' as 'CASHIER' | 'ADMIN', branchId: '' });
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -57,6 +59,44 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   const [finAccountForm, setFinAccountForm] = useState({ name: '', type: 'BANK' as 'BANK' | 'MPESA' | 'CASH', accountNumber: '', balance: 0, branchId: '' });
   const [depositState, setDepositState] = useState<{ accountId: string | null, amount: string }>({ accountId: null, amount: '' });
   const [isSaving, setIsSaving] = useState(false);
+
+  // Device sync status (admin visibility)
+  const [deviceSyncRows, setDeviceSyncRows] = useState<any[]>([]);
+  const [deviceSyncError, setDeviceSyncError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const run = async () => {
+      if (!activeBusinessId || !activeBranchId) return;
+      try {
+        const apiKey = await getApiKey();
+        const res = await fetch('/api/sync/status', {
+          method: 'GET',
+          headers: {
+            'X-API-Key': apiKey,
+            'X-Business-ID': activeBusinessId,
+            'X-Branch-ID': activeBranchId,
+          },
+          cache: 'no-store',
+        });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const j: any = await res.json();
+        if (!alive) return;
+        setDeviceSyncRows(Array.isArray(j?.rows) ? j.rows : []);
+        setDeviceSyncError(null);
+      } catch (e: any) {
+        if (!alive) return;
+        setDeviceSyncError(e?.message || 'Failed to load device status');
+      }
+    };
+
+    run();
+    const t = setInterval(run, 30000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [activeBusinessId, activeBranchId]);
 
   const handleAddUser = async () => {
     if (!newUser.name || !newUser.password) return;
@@ -263,6 +303,42 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
         
         {activeAdminTab === 'USERS' && (
           <div className="space-y-4">
+             <div className="bg-white p-4 rounded-2xl border border-slate-200">
+               <h3 className="text-sm font-extrabold text-slate-900 mb-2">Device sync status</h3>
+               <p className="text-xs text-slate-500 mb-3">Shows when each device/cashier last successfully synced.</p>
+               {deviceSyncError && (
+                 <div className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 px-3 py-2 rounded-xl">
+                   {deviceSyncError}
+                 </div>
+               )}
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                 {(deviceSyncRows || []).slice(0, 6).map((r: any, idx: number) => {
+                   const last = r.lastSyncAt ? new Date(Number(r.lastSyncAt)) : null;
+                   const online = last ? (Date.now() - last.getTime() < 60000) : false;
+                   return (
+                     <div key={(r.deviceId || 'device') + idx} className="p-4 rounded-2xl border border-slate-100 bg-slate-50 flex justify-between items-center">
+                       <div>
+                         <p className="text-xs font-black text-slate-900">{r.cashierName || 'Unknown cashier'}</p>
+                         <p className="text-[9px] font-bold text-slate-400 font-mono mt-1 truncate max-w-[220px]">{r.deviceId}</p>
+                       </div>
+                       <div className="text-right">
+                         <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${online ? 'bg-green-50 text-green-700' : 'bg-slate-200 text-slate-600'}`}>
+                           {online ? 'Online' : 'Offline'}
+                         </span>
+                         <p className="text-[9px] text-slate-400 mt-1">
+                           Last sync: {last ? last.toLocaleTimeString() : 'Never'}
+                         </p>
+                       </div>
+                     </div>
+                   );
+                 })}
+                 {(deviceSyncRows || []).length === 0 && (
+                   <div className="col-span-full text-center text-slate-400 text-xs font-bold py-4">
+                     No device sync data yet.
+                   </div>
+                 )}
+               </div>
+             </div>
              {activeShifts && activeShifts.length > 0 && (
                <div className="mb-6">
                  <h3 className="text-sm font-extrabold text-slate-900 mb-3 flex items-center gap-2">

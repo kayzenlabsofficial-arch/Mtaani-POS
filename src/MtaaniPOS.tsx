@@ -14,6 +14,7 @@ import { useStore } from './store';
 import { useToast } from './context/ToastContext';
 import { MpesaService } from './services/mpesa';
 import { verifyPassword, hashPassword, isLockedOut, recordFailedAttempt, resetAttempts, sanitizeString, isValidBusinessCode } from './security';
+import { flushOutboxNow, sendHeartbeat } from './offline/offlineSync';
 
 declare const __BUILD_DATE__: string;
 
@@ -427,6 +428,30 @@ export default function MtaaniPOS() {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  // ── OFFLINE OUTBOX FLUSH ON RECONNECT ─────────────────────────────────────
+  useEffect(() => {
+    if (!isOnline) return;
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const { flushed } = await flushOutboxNow();
+        if (cancelled) return;
+        if (flushed > 0) {
+          await db.sync();
+          await sendHeartbeat({ cashierName: currentUser?.name });
+          success(`Reconnected: synced ${flushed} offline sale${flushed === 1 ? '' : 's'}.`);
+        }
+      } catch (e) {
+        console.warn('[OfflineSync] flush failed', e);
+      }
+    };
+
+    run();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline]);
 
   // Initialization
   useEffect(() => {
@@ -864,6 +889,13 @@ export default function MtaaniPOS() {
       return;
     }
     if (cart.length === 0) return;
+
+    // ── OFFLINE POLICY (money/data integrity) ───────────────────────────────
+    // Only allow CASH sales (and QUOTEs) while offline.
+    if (!isOnline && status === 'PAID' && paymentMethod !== 'CASH') {
+      error('Offline: only CASH sales are allowed. M-Pesa/Credit require internet.');
+      return;
+    }
     
     // ── EXTRA RE-ENTRANCY GUARD ──
     if (checkoutLockRef.current) {
@@ -939,7 +971,7 @@ export default function MtaaniPOS() {
          success(`Credit added to ${currentCustomer.name}'s account.`);
       }
       
-      if (status === 'PAID') {
+      if (status === 'PAID' && isOnline) {
         // Deduct stock
         for (const item of cart) {
           const freshProduct = await db.products.get(item.id);
@@ -987,6 +1019,9 @@ export default function MtaaniPOS() {
             }
           }
         }
+      }
+      if (status === 'PAID' && !isOnline) {
+        warning('Offline sale recorded. Stock will update after reconnection & sync.');
       }
 
       clearCart();
@@ -1204,7 +1239,7 @@ export default function MtaaniPOS() {
 
       {!isOnline && (
         <div className="bg-red-600 text-white text-center text-[10px] font-black py-2  ">
-          ⚠️ Offline Mode — Changes will sync when reconnected
+          ⚠ Offline Mode — Cash sales only. Changes sync when reconnected
         </div>
       )}
 
@@ -1337,7 +1372,7 @@ export default function MtaaniPOS() {
                     setIsSyncing(false);
                   }
                 }}
-                disabled={isSyncing}
+                disabled={!isOnline || isSyncing}
                 className="flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl bg-blue-50 text-blue-600 font-bold text-[10px]   hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50"
               >
                 <RotateCcw size={16} className={isSyncing ? 'animate-spin' : ''} />
@@ -1522,7 +1557,7 @@ export default function MtaaniPOS() {
                       </button>
                       <button 
                         onClick={() => setIsMpesaModalOpen(true)}
-                        disabled={isSyncing || mpesaState !== 'IDLE'}
+                        disabled={!isOnline || isSyncing || mpesaState !== 'IDLE'}
                         className="flex-1 px-4 py-4 rounded-2xl bg-green-600 text-white font-bold text-[10px] hover:bg-green-700 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         <Smartphone size={16} />
@@ -1531,6 +1566,7 @@ export default function MtaaniPOS() {
                     </div>
                     <button 
                       onClick={() => handleCheckout('PAID', 'CREDIT')}
+                      disabled={!isOnline}
                       className="w-full px-4 py-4 rounded-2xl bg-orange-600 text-white font-bold text-[10px] hover:bg-orange-700 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
                     >
                       <Users size={16} />
