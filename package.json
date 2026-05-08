@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "wrangler:dev": "wrangler dev --port=8788",
+    "wrangler:dev": "wrangler pages dev --port=8788",
     "wrangler:deploy": "wrangler pages deploy dist",
     "d1:setup": "wrangler d1 execute mtaani_pos_prod_v2 --remote --file=schema.sql",
     "d1:local": "wrangler d1 execute mtaani_pos_prod_v2 --local --file=schema.sql",
@@ -51,6 +51,7 @@
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
-    "vite-plugin-pwa": "^1.2.0"
+    "vite-plugin-pwa": "^1.2.0",
+    "wrangler": "^4.90.0"
   }
 }

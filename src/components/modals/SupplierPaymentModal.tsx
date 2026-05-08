@@ -24,6 +24,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
   });
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
   const [selectedCreditNoteIds, setSelectedCreditNoteIds] = useState<string[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Fetch outstanding invoices for this supplier
   const outstandingInvoices = useLiveQuery(
@@ -76,8 +77,6 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
   };
 
   if (!isOpen || !supplier) return null;
-
-  const [isSaving, setIsSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
