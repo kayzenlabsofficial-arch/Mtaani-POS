@@ -4,6 +4,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db, type Supplier, type PurchaseOrder, type CreditNote } from '../../db';
 import { useToast } from '../../context/ToastContext';
 import { shareDocument } from '../../utils/shareUtils';
+import { SearchableSelect } from '../shared/SearchableSelect';
 
 interface SupplierLedgerModalProps {
   supplier: Supplier | null;
@@ -329,14 +330,19 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                     <div className="border-t border-slate-100 pt-4">
                         <label className="block text-[10px] font-black text-blue-500  mb-2 ml-1 uppercase tracking-wider">Link to Inventory Return (Optional)</label>
                         <div className="space-y-3">
-                           <select 
-                              value={creditNoteForm.productId} 
-                              onChange={e => setCreditNoteForm({...creditNoteForm, productId: e.target.value})} 
-                              className="w-full bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs font-bold text-slate-900"
-                           >
-                              <option value="">No stock return...</option>
-                              {products?.map(p => <option key={p.id} value={p.id}>{p.name} ({p.stockQuantity} {p.unit} left)</option>)}
-                           </select>
+                           <SearchableSelect
+                             value={creditNoteForm.productId}
+                             onChange={(v) => setCreditNoteForm({ ...creditNoteForm, productId: v })}
+                             placeholder="No stock return..."
+                             options={(products || []).map(p => ({
+                               value: p.id,
+                               label: `${p.name} (${p.stockQuantity} ${p.unit} left)`,
+                               keywords: `${p.name} ${p.barcode || ''} ${p.category || ''}`,
+                             }))}
+                             size="sm"
+                             buttonClassName="bg-blue-50 border-blue-100 text-slate-900 focus:border-blue-500"
+                             searchInputClassName="bg-white"
+                           />
                            {creditNoteForm.productId && (
                              <div className="flex items-center gap-2">
                                 <label className="text-[10px] font-black text-slate-400">Qty to Return:</label>

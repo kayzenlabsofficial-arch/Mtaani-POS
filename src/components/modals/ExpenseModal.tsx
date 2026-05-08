@@ -1,5 +1,6 @@
 import React from 'react';
 import { FileMinus, Loader2 } from 'lucide-react';
+import { SearchableSelect } from '../shared/SearchableSelect';
 
 interface ExpenseModalProps {
   isOpen: boolean;
@@ -46,17 +47,16 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
              </div>
              <div className="relative">
                 <label className="block text-xs font-bold text-slate-500  mb-1.5">Expense Account (Category)</label>
-                <select 
-                    value={expenseForm.category} 
-                    onChange={e => setExpenseForm({...expenseForm, category: e.target.value})} 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-orange-500"
-                >
-                    <option value="">Select Account...</option>
-                    {(accounts || []).map(acc => (
-                      <option key={acc.id} value={acc.name}>{acc.name}</option>
-                    ))}
-                    <option value="Other">Other / Miscellaneous</option>
-                </select>
+                <SearchableSelect
+                  value={expenseForm.category}
+                  onChange={(v) => setExpenseForm({ ...expenseForm, category: v })}
+                  placeholder="Select Account..."
+                  options={[
+                    ...(accounts || []).map(acc => ({ value: acc.name, label: acc.name, keywords: acc.name })),
+                    { value: 'Other', label: 'Other / Miscellaneous', keywords: 'other miscellaneous misc' },
+                  ]}
+                  buttonClassName="focus:border-orange-500"
+                />
              </div>
               <div>
                  <label className="block text-xs font-bold text-slate-500  mb-1.5">Description</label>
@@ -93,24 +93,28 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                  <div className="animate-in slide-in-from-top-2 space-y-3">
                     <div>
                        <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Select Product</label>
-                       <select 
-                          value={expenseForm.productId || ''} 
-                          onChange={e => {
-                             const p = products.find(x => x.id === e.target.value);
-                             setExpenseForm({
-                                ...expenseForm, 
-                                productId: e.target.value,
-                                amount: p ? String(p.sellingPrice) : expenseForm.amount, 
-                                description: p ? `Expensed: ${p.name}` : expenseForm.description
-                             });
-                          }} 
-                          className="w-full bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-purple-500"
-                       >
-                          <option value="">Choose item...</option>
-                          {(products || []).filter(p => !p.isBundle).map(p => (
-                            <option key={p.id} value={p.id}>{p.name} ({p.stockQuantity} {p.unit || 'pcs'} left)</option>
-                          ))}
-                       </select>
+                       <SearchableSelect
+                         value={expenseForm.productId || ''}
+                         onChange={(v) => {
+                           const p = products.find(x => x.id === v);
+                           setExpenseForm({
+                             ...expenseForm,
+                             productId: v,
+                             amount: p ? String(p.sellingPrice) : expenseForm.amount,
+                             description: p ? `Expensed: ${p.name}` : expenseForm.description,
+                           });
+                         }}
+                         placeholder="Choose item..."
+                         options={(products || [])
+                           .filter(p => !p.isBundle)
+                           .map(p => ({
+                             value: p.id,
+                             label: `${p.name} (${p.stockQuantity} ${p.unit || 'pcs'} left)`,
+                             keywords: `${p.name} ${p.barcode || ''}`,
+                           }))}
+                         buttonClassName="bg-purple-50 border-purple-200 focus:border-purple-500"
+                         searchInputClassName="bg-white"
+                       />
                     </div>
                     <div>
                        <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Quantity</label>
@@ -129,16 +133,18 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
               {expenseForm.source === 'ACCOUNT' && (
                 <div className="animate-in slide-in-from-top-2">
                    <label className="block text-xs font-bold text-slate-500  mb-1.5 ml-1">Select Payment Account</label>
-                   <select 
-                      value={expenseForm.accountId || ''} 
-                      onChange={e => setExpenseForm({...expenseForm, accountId: e.target.value})} 
-                      className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-blue-500"
-                   >
-                      <option value="">Select Account...</option>
-                      {(financialAccounts || []).map(acc => (
-                        <option key={acc.id} value={acc.id}>{acc.name} ({acc.type})</option>
-                      ))}
-                   </select>
+                   <SearchableSelect
+                     value={expenseForm.accountId || ''}
+                     onChange={(v) => setExpenseForm({ ...expenseForm, accountId: v })}
+                     placeholder="Select Account..."
+                     options={(financialAccounts || []).map(acc => ({
+                       value: acc.id,
+                       label: `${acc.name} (${acc.type})`,
+                       keywords: `${acc.name} ${acc.type}`,
+                     }))}
+                     buttonClassName="bg-blue-50 border-blue-200 focus:border-blue-500"
+                     searchInputClassName="bg-white"
+                   />
                 </div>
               )}
          </div>

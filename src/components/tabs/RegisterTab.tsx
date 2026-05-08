@@ -4,6 +4,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import BarcodeScanner from '../shared/BarcodeScanner';
+import { SearchableSelect } from '../shared/SearchableSelect';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Tag: TagIcon, Store
@@ -168,16 +169,20 @@ export default function RegisterTab() {
               <User size={18} />
             </div>
             <div className="flex-1 min-w-0">
-               <select 
-                value={selectedCustomerId || ''} 
-                onChange={(e) => setSelectedCustomerId(e.target.value || null)}
-                className="w-full bg-transparent border-none p-0 text-sm font-black text-slate-900 focus:ring-0 cursor-pointer appearance-none"
-               >
-                 <option value="">Walk-in customer</option>
-                 {allCustomers?.map(c => (
-                   <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
-                 ))}
-               </select>
+              <SearchableSelect
+                value={selectedCustomerId ?? ''}
+                onChange={(v) => setSelectedCustomerId(v || null)}
+                placeholder="Walk-in customer"
+                options={(allCustomers || []).map(c => ({
+                  value: c.id,
+                  label: `${c.name} (${c.phone})`,
+                  keywords: `${c.name} ${c.phone}`,
+                }))}
+                className="w-full"
+                buttonClassName="bg-transparent border-none p-0 rounded-none text-sm font-black text-slate-900"
+                searchInputClassName="bg-white"
+                menuClassName="mt-3"
+              />
                <p className="text-[10px] font-bold text-slate-400   leading-none mt-1">
                  {selectedCustomer ? `Ksh ${selectedCustomer.balance.toLocaleString()} balance` : 'Select client to link sale'}
                </p>

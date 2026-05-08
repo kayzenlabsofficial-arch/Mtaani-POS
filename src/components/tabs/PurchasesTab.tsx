@@ -5,6 +5,7 @@ import { db, type Product, type PurchaseOrder, type Supplier, type Transaction }
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
+import { SearchableSelect } from '../shared/SearchableSelect';
 
 export default function PurchasesTab() {
   const { error } = useToast();
@@ -290,12 +291,16 @@ export default function PurchasesTab() {
             <div className="space-y-4 mb-4 flex-1 overflow-y-auto no-scrollbar">
                  <div>
                     <label className="block text-xs font-bold text-slate-500  mb-1.5">Supplier</label>
-                    <select value={poForm.supplierId} onChange={e => setPoForm({supplierId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-blue-500">
-                       <option value="">Select a supplier...</option>
-                       {allSuppliers?.map(s => (
-                          <option key={s.id} value={s.id}>{s.company} ({s.name})</option>
-                       ))}
-                    </select>
+                    <SearchableSelect
+                      value={poForm.supplierId}
+                      onChange={(v) => setPoForm({ supplierId: v })}
+                      placeholder="Select a supplier..."
+                      options={(allSuppliers || []).map(s => ({
+                        value: s.id,
+                        label: `${s.company} (${s.name})`,
+                        keywords: `${s.company} ${s.name}`,
+                      }))}
+                    />
                  </div>
                  
                  <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 space-y-3">

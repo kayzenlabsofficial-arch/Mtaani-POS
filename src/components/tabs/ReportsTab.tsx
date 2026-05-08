@@ -14,6 +14,7 @@ import {
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
+import { SearchableSelect } from '../shared/SearchableSelect';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F43F5E'];
 
@@ -336,14 +337,23 @@ export default function ReportsTab() {
               </div>
               <div className="relative w-full md:w-80">
                 <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                <select 
-                  onChange={(e) => setSelectedProductId(e.target.value)}
-                  className="w-full bg-white/10 border-2 border-white/10 hover:border-blue-500/50 rounded-[20px] pl-14 pr-6 py-4 text-sm font-black focus:outline-none appearance-none transition-all cursor-pointer"
-                  value={selectedProductId || ""}
-                >
-                  <option value="" className="text-slate-900">Select product for deep-dive...</option>
-                  {allProducts.map(p => <option key={p.id} value={p.id} className="text-slate-900">{p.name}</option>)}
-                </select>
+                <div className="pl-9">
+                  <SearchableSelect
+                    value={selectedProductId || ''}
+                    onChange={(v) => setSelectedProductId(v || null)}
+                    placeholder="Select product for deep-dive..."
+                    options={allProducts.map(p => ({
+                      value: p.id,
+                      label: p.name,
+                      keywords: `${p.name} ${p.barcode || ''} ${p.category || ''}`,
+                    }))}
+                    buttonClassName="bg-white/10 border-white/10 hover:border-blue-500/50 rounded-[20px] pl-5 pr-6 py-4 text-sm font-black text-white"
+                    valueTextClassName="text-white"
+                    placeholderTextClassName="text-slate-400"
+                    searchInputClassName="bg-white"
+                    menuClassName="mt-3"
+                  />
+                </div>
               </div>
             </div>
 

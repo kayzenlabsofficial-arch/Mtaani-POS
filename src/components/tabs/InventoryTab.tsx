@@ -8,6 +8,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recha
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import BarcodeScanner from '../shared/BarcodeScanner';
+import { SearchableSelect } from '../shared/SearchableSelect';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Tag: TagIcon
@@ -495,12 +496,19 @@ export default function InventoryTab() {
                   <div>
                       <label className="block text-[11px] font-black text-slate-400   mb-2 ml-1">Market Category</label>
                       <div className="relative">
-                        <select value={productForm.category} onChange={(e) => setProductForm({...productForm, category: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 focus:outline-none focus:border-blue-500 appearance-none">
-                           {categories?.map(cat => (
-                             <option key={cat.id} value={cat.name}>{cat.name}</option>
-                           ))}
-                           {!categories?.find(c => c.name === 'Other') && <option value="Other">Other</option>}
-                        </select>
+                        <SearchableSelect
+                          value={productForm.category}
+                          onChange={(v) => setProductForm({ ...productForm, category: v })}
+                          placeholder="Select category..."
+                          options={[
+                            ...(categories || []).map(cat => ({ value: cat.name, label: cat.name, keywords: cat.name })),
+                            ...(!categories?.find(c => c.name === 'Other')
+                              ? [{ value: 'Other', label: 'Other', keywords: 'other' }]
+                              : []),
+                          ]}
+                          buttonClassName="rounded-2xl px-5 py-4 font-black text-slate-900"
+                          searchInputClassName="bg-white"
+                        />
                         <Settings className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={16} />
                       </div>
                   </div>
@@ -594,23 +602,26 @@ export default function InventoryTab() {
                                      </div>
                                   );
                                })}
-                               <select 
-                                 className="w-full bg-white border border-dashed border-slate-300 rounded-2xl px-4 py-3 text-xs font-bold text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-all cursor-pointer"
+                               <SearchableSelect
                                  value=""
-                                 onChange={e => {
-                                    if (!e.target.value) return;
-                                    setProductForm({
-                                       ...productForm, 
-                                       components: [...productForm.components, { productId: e.target.value, quantity: 1 }]
-                                    });
+                                 onChange={(v) => {
+                                   if (!v) return;
+                                   setProductForm({
+                                     ...productForm,
+                                     components: [...productForm.components, { productId: v, quantity: 1 }],
+                                   });
                                  }}
-                               >
-                                  <option value="">+ Add Component Item...</option>
-                                  {allProducts
-                                    .filter(p => !productForm.components.find(c => c.productId === p.id) && p.id !== editingProduct?.id)
-                                    .map(p => <option key={p.id} value={p.id}>{p.name}</option>)
-                                  }
-                               </select>
+                                 placeholder="+ Add Component Item..."
+                                 options={allProducts
+                                   .filter(p => !productForm.components.find(c => c.productId === p.id) && p.id !== editingProduct?.id)
+                                   .map(p => ({
+                                     value: p.id,
+                                     label: p.name,
+                                     keywords: `${p.name} ${p.barcode || ''}`,
+                                   }))}
+                                 buttonClassName="bg-white border-dashed border-slate-300 hover:border-blue-400 hover:text-blue-600 rounded-2xl px-4 py-3 text-xs font-bold text-slate-500"
+                                 searchInputClassName="bg-white"
+                               />
                             </div>
                          </div>
                       )}

@@ -4,6 +4,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { hashPassword } from '../../security';
 import { useStore } from '../../store';
+import { SearchableSelect } from '../shared/SearchableSelect';
 
 import SettingsTab from './SettingsTab';
 import AdminApprovals from './AdminApprovals';
@@ -402,14 +403,16 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                       {newUser.role === 'CASHIER' && (
                         <div>
                           <label className="block text-xs font-bold text-slate-400 mb-2 ml-1">Assign Branch</label>
-                          <select 
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500" 
-                            value={newUser.branchId || ''} 
-                            onChange={e => setNewUser({...newUser, branchId: e.target.value})}
-                          >
-                            <option value="">Select a branch</option>
-                            {branches?.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                          </select>
+                          <SearchableSelect
+                            value={newUser.branchId || ''}
+                            onChange={(v) => setNewUser({ ...newUser, branchId: v })}
+                            placeholder="Select a branch"
+                            options={(branches || []).map(b => ({
+                              value: b.id,
+                              label: b.name,
+                              keywords: `${b.name} ${b.location || ''}`,
+                            }))}
+                          />
                         </div>
                       )}
                    </div>
@@ -551,11 +554,16 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                        </div>
                        <div>
                           <label className="block text-[10px] font-bold text-slate-400 mb-2">Type</label>
-                          <select value={finAccountForm.type} onChange={e => setFinAccountForm({...finAccountForm, type: e.target.value as any})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold">
-                             <option value="BANK">Bank Account</option>
-                             <option value="MPESA">M-Pesa Till/Paybill</option>
-                             <option value="CASH">External Cash</option>
-                          </select>
+                          <SearchableSelect
+                            value={finAccountForm.type}
+                            onChange={(v) => setFinAccountForm({ ...finAccountForm, type: v as any })}
+                            placeholder="Select type..."
+                            options={[
+                              { value: 'BANK', label: 'Bank Account', keywords: 'bank' },
+                              { value: 'MPESA', label: 'M-Pesa Till/Paybill', keywords: 'mpesa till paybill' },
+                              { value: 'CASH', label: 'External Cash', keywords: 'cash' },
+                            ]}
+                          />
                        </div>
                        <div>
                           <label className="block text-[10px] font-bold text-slate-400 mb-2">Account Number (Optional)</label>
@@ -563,10 +571,16 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                        </div>
                        <div>
                           <label className="block text-[10px] font-bold text-slate-400 mb-2">Linked Branch (Optional)</label>
-                          <select value={finAccountForm.branchId} onChange={e => setFinAccountForm({...finAccountForm, branchId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold">
-                             <option value="">Global (All Branches)</option>
-                             {branches?.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                          </select>
+                          <SearchableSelect
+                            value={finAccountForm.branchId}
+                            onChange={(v) => setFinAccountForm({ ...finAccountForm, branchId: v })}
+                            placeholder="Global (All Branches)"
+                            options={(branches || []).map(b => ({
+                              value: b.id,
+                              label: b.name,
+                              keywords: `${b.name} ${b.location || ''}`,
+                            }))}
+                          />
                        </div>
                     </div>
                     <div className="flex gap-3">

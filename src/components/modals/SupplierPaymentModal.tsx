@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DollarSign, Save, X, CreditCard, Banknote, Building2, Receipt, FileText, ChevronDown, Loader2, CheckCircle2 } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Supplier, type PurchaseOrder } from '../../db';
+import { SearchableSelect } from '../shared/SearchableSelect';
 
 interface SupplierPaymentModalProps {
   isOpen: boolean;
@@ -256,16 +257,19 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
               {paymentForm.source === 'ACCOUNT' && (
                 <div className="animate-in slide-in-from-top-2">
                    <label className="block text-[9px] font-black text-slate-400   mb-1.5 ml-1 text-blue-600 font-black">Funding Account</label>
-                   <select 
-                      value={paymentForm.accountId || ''} 
-                      onChange={e => setPaymentForm({...paymentForm, accountId: e.target.value})} 
-                      className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-[11px] font-black text-blue-900 focus:outline-none focus:border-blue-500"
-                   >
-                      <option value="">Select Account...</option>
-                      {(financialAccounts || []).map(acc => (
-                        <option key={acc.id} value={acc.id}>{acc.name} ({acc.type})</option>
-                      ))}
-                   </select>
+                   <SearchableSelect
+                     value={paymentForm.accountId || ''}
+                     onChange={(v) => setPaymentForm({ ...paymentForm, accountId: v })}
+                     placeholder="Select Account..."
+                     options={(financialAccounts || []).map(acc => ({
+                       value: acc.id,
+                       label: `${acc.name} (${acc.type})`,
+                       keywords: `${acc.name} ${acc.type}`,
+                     }))}
+                     size="sm"
+                     buttonClassName="bg-blue-50 border-blue-200 text-blue-900 focus:border-blue-500"
+                     searchInputClassName="bg-white"
+                   />
                 </div>
               )}
             </div>

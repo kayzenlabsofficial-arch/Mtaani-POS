@@ -4,6 +4,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db, type Branch } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
+import { SearchableSelect } from '../shared/SearchableSelect';
 
 export default function BranchManagementTab() {
   const branches = useLiveQuery(() => db.branches.toArray(), [], []);
@@ -322,25 +323,31 @@ export default function BranchManagementTab() {
                  <div className="grid grid-cols-2 gap-3 mb-4">
                     <div>
                       <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">M-Pesa Env</label>
-                      <select 
-                        value={form.mpesaEnv} 
-                        onChange={e => setForm(f => ({ ...f, mpesaEnv: e.target.value as any }))}
-                        className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-4 py-3 text-sm font-black text-blue-900 focus:outline-none focus:border-blue-500"
-                      >
-                        <option value="sandbox">Sandbox (Testing)</option>
-                        <option value="production">Production (Live)</option>
-                      </select>
+                      <SearchableSelect
+                        value={form.mpesaEnv}
+                        onChange={(v) => setForm(f => ({ ...f, mpesaEnv: v as any }))}
+                        options={[
+                          { value: 'sandbox', label: 'Sandbox (Testing)', keywords: 'sandbox test testing' },
+                          { value: 'production', label: 'Production (Live)', keywords: 'production live' },
+                        ]}
+                        size="sm"
+                        buttonClassName="bg-blue-50/50 border-blue-100 text-blue-900 focus:border-blue-500"
+                        searchInputClassName="bg-white"
+                      />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">M-Pesa Type</label>
-                      <select 
-                        value={form.mpesaType} 
-                        onChange={e => setForm(f => ({ ...f, mpesaType: e.target.value as any }))}
-                        className="w-full bg-blue-50/50 border border-blue-100 rounded-xl px-4 py-3 text-sm font-black text-blue-900 focus:outline-none focus:border-blue-500"
-                      >
-                        <option value="paybill">Paybill</option>
-                        <option value="buygoods">Buy Goods (Till)</option>
-                      </select>
+                      <SearchableSelect
+                        value={form.mpesaType}
+                        onChange={(v) => setForm(f => ({ ...f, mpesaType: v as any }))}
+                        options={[
+                          { value: 'paybill', label: 'Paybill', keywords: 'paybill' },
+                          { value: 'buygoods', label: 'Buy Goods (Till)', keywords: 'buy goods till' },
+                        ]}
+                        size="sm"
+                        buttonClassName="bg-blue-50/50 border-blue-100 text-blue-900 focus:border-blue-500"
+                        searchInputClassName="bg-white"
+                      />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Consumer Key</label>
