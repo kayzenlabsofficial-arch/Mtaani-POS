@@ -27,20 +27,25 @@ interface POSState {
   setPaymentSupplierId: (id: string | null) => void;
   selectedCustomerId: string | null;
   setSelectedCustomerId: (id: string | null) => void;
+  resetSession: () => void;
 }
+
+const initialState = {
+  cart: [] as CartItem[],
+  isAdmin: false,
+  isManager: false,
+  currentUser: null as User | null,
+  activeShift: null as any | null,
+  activeBranchId: null as string | null,
+  activeBusinessId: null as string | null,
+  paymentSupplierId: null as string | null,
+  selectedCustomerId: null as string | null,
+};
 
 export const useStore = create<POSState>()(
   persist(
     (set) => ({
-      cart: [],
-      isAdmin: false,
-      isManager: false,
-      currentUser: null,
-      activeShift: null,
-      activeBranchId: null,
-      activeBusinessId: null,
-      paymentSupplierId: null,
-      selectedCustomerId: null,
+      ...initialState,
       setPaymentSupplierId: (id) => set({ paymentSupplierId: id }),
       setSelectedCustomerId: (id) => set({ selectedCustomerId: id }),
       setActiveBranchId: (activeBranchId) => set({ activeBranchId }),
@@ -83,7 +88,8 @@ export const useStore = create<POSState>()(
             : item
         )
       })),
-      clearCart: () => set({ cart: [], selectedCustomerId: null })
+      clearCart: () => set({ cart: [], selectedCustomerId: null }),
+      resetSession: () => set({ ...initialState }),
     }),
     {
       name: 'mtaani-pos-storage',

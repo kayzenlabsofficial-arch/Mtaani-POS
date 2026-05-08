@@ -496,6 +496,9 @@ export default function MtaaniPOS() {
       if (idle >= SESSION_LIMIT_MS) {
         clearInterval(sessionCheck);
         warning('Session expired. You have been logged out for security.');
+        try { localStorage.removeItem('mtaani-pos-storage'); } catch {}
+        useStore.getState().resetSession();
+        db.resetTenantCaches();
         setCurrentUser(null);
         setActiveShift(null);
         setActiveBranchId(null);
@@ -614,8 +617,12 @@ export default function MtaaniPOS() {
     if (savedSettings) {
       setStoreName(savedSettings.storeName);
       setStoreLocation(savedSettings.location || 'Nairobi, Kenya');
+    } else if (!activeBusinessId) {
+      // When logged out, ensure we don't keep displaying the previous tenant name/location.
+      setStoreName('Mtaani Shop');
+      setStoreLocation('Nairobi, Kenya');
     }
-  }, [savedSettings]);
+  }, [savedSettings, activeBusinessId]);
 
   // Resolve active branch name for header display
   const activeBranchName = useLiveQuery(
@@ -673,6 +680,11 @@ export default function MtaaniPOS() {
       }
       
       if (activeBusinessId !== business.id) {
+         // Clear any previous tenant caches first to avoid stale UI due to id-collisions
+         // (e.g. settings id "core") while the new business syncs.
+         db.resetTenantCaches();
+         setStoreName('Mtaani Shop');
+         setStoreLocation('Nairobi, Kenya');
          setActiveBusinessId(business.id);
          await db.sync();
       }
@@ -830,6 +842,10 @@ export default function MtaaniPOS() {
   };
 
   const handleLogout = () => {
+    // Clear persisted session + tenant caches so next login cannot rehydrate stale business UI.
+    try { localStorage.removeItem('mtaani-pos-storage'); } catch {}
+    useStore.getState().resetSession();
+    db.resetTenantCaches();
     setCurrentUser(null);
     setActiveShift(null);
     setActiveBranchId(null);

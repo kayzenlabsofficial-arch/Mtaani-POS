@@ -358,6 +358,36 @@ class MtaaniCloudDB {
   expenseAccounts     = new CloudTable<ExpenseAccount>('expenseAccounts');
   financialAccounts   = new CloudTable<FinancialAccount>('financialAccounts');
 
+  /**
+   * Clear all tenant-scoped caches (everything except businesses).
+   * This prevents cross-tenant "id collisions" (e.g. settings id "core") from
+   * showing stale UI when switching businesses or after logout.
+   */
+  resetTenantCaches(): void {
+    this.users.reset();
+    this.branches.reset();
+    this.settings.reset();
+
+    // Branch-scoped / operational tables
+    this.products.reset();
+    this.transactions.reset();
+    this.cashPicks.reset();
+    this.endOfDayReports.reset();
+    this.stockMovements.reset();
+    this.customers.reset();
+    this.suppliers.reset();
+    this.supplierPayments.reset();
+    this.expenses.reset();
+    this.purchaseOrders.reset();
+    this.stockAdjustmentRequests.reset();
+    this.shifts.reset();
+    this.dailySummaries.reset();
+    this.creditNotes.reset();
+    this.categories.reset();
+    this.expenseAccounts.reset();
+    this.financialAccounts.reset();
+  }
+
   /** Load initial bootstrap data (businesses) from D1. Call once on app startup. */
   async init(): Promise<void> {
     // 1. Ensure remote tables exist

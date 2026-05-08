@@ -125,6 +125,16 @@ export class CloudTable<T extends { id: string }> {
 
   constructor(public readonly name: string) {}
 
+  /**
+   * Clears the local cache and marks table as not loaded.
+   * Useful when switching tenant context (business/branch) to avoid UI showing stale cached rows.
+   */
+  reset(): void {
+    this.cache.clear();
+    this.loaded = false;
+    emitChange();
+  }
+
   // ── Hydration ─────────────────────────────────────────────────────────────
 
   async hydrate(): Promise<void> {
