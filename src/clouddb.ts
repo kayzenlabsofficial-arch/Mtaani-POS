@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { getApiKey } from './runtimeConfig';
 
 // ── Global change event bus ────────────────────────────────────────────────
 // Any CloudTable mutation fires this so useLiveQuery hooks re-run.
@@ -24,19 +25,16 @@ function emitChange() {
 // circular dependency: clouddb → store → db → clouddb.
 
 const API = '/api/data';
-const API_KEY = import.meta.env.VITE_API_SECRET as string | undefined;
 
 async function d1Fetch(table: string, method: string, body?: any): Promise<any> {
   // Lazy import to avoid circular dependency with store.ts
   const { useStore } = await import('./store');
   const businessId = useStore.getState().activeBusinessId;
   const branchId = useStore.getState().activeBranchId;
-  if (!API_KEY) {
-    throw new Error('Missing VITE_API_SECRET. Configure it at build/deploy time to enable API access.');
-  }
+  const apiKey = await getApiKey();
   const headers: Record<string, string> = { 
     'Content-Type': 'application/json',
-    'X-API-Key': API_KEY
+    'X-API-Key': apiKey
   };
   
   if (businessId) {
@@ -83,11 +81,9 @@ async function d1Delete(table: string, id: string): Promise<void> {
   const { useStore } = await import('./store');
   const businessId = useStore.getState().activeBusinessId;
   const branchId = useStore.getState().activeBranchId;
-  if (!API_KEY) {
-    throw new Error('Missing VITE_API_SECRET. Configure it at build/deploy time to enable API access.');
-  }
+  const apiKey = await getApiKey();
   const headers: Record<string, string> = { 
-    'X-API-Key': API_KEY 
+    'X-API-Key': apiKey
   };
   
   if (!businessId && table !== 'system/setup' && table !== 'businesses') {

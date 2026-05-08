@@ -1,5 +1,6 @@
+import { getApiKey } from '../runtimeConfig';
+
 const API_BASE = '/api/mpesa';
-const API_KEY = import.meta.env.VITE_API_SECRET as string | undefined;
 
 export interface StkPushResponse {
   success?: boolean;
@@ -25,14 +26,12 @@ export const MpesaService = {
    */
   async triggerStkPush(phone: string, amount: number, reference: string = 'POS', businessId: string, branchId: string): Promise<StkPushResponse> {
     try {
-      if (!API_KEY) {
-        return { error: 'Missing VITE_API_SECRET. Configure it at build/deploy time to enable API access.' };
-      }
+      const apiKey = await getApiKey();
       const res = await fetch(`${API_BASE}/stkpush`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': API_KEY,
+          'X-API-Key': apiKey,
         },
         body: JSON.stringify({ phone, amount, reference, businessId, branchId })
       });
@@ -48,11 +47,9 @@ export const MpesaService = {
    */
   async checkStatus(checkoutRequestId: string): Promise<MpesaStatusResponse> {
     try {
-      if (!API_KEY) {
-        return { found: false, error: 'Missing VITE_API_SECRET. Configure it at build/deploy time to enable API access.' };
-      }
+      const apiKey = await getApiKey();
       const res = await fetch(`${API_BASE}/status/${checkoutRequestId}`, {
-        headers: { 'X-API-Key': API_KEY }
+        headers: { 'X-API-Key': apiKey }
       });
       return await res.json();
     } catch (err: any) {
