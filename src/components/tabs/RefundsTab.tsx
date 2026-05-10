@@ -5,6 +5,8 @@ import { db, type Transaction } from '../../db';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
+import { canPerform } from '../../utils/accessControl';
+import { recordAuditEvent } from '../../utils/auditLog';
 
 interface RefundsTabProps {
   setActiveTab: (tab: any) => void;
@@ -17,6 +19,7 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   const { success, error } = useToast();
 
   const activeBranchId = useStore(state => state.activeBranchId);
+  const currentUser = useStore(state => state.currentUser);
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   
   if (!allTransactions) {
@@ -35,11 +38,24 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   const handleRefund = async (t: Transaction, itemsToReturn?: { productId: string, quantity: number }[]) => {
     if (t.status !== 'PAID' && t.status !== 'PARTIAL_REFUND') return;
     if (isSaving) return;
+    if (!canPerform(currentUser, 'sale.refund.request')) {
+      error("You do not have permission to request refunds.");
+      return;
+    }
 
     setIsSaving(true);
     try {
         await db.transactions.update(t.id, { 
             status: 'PENDING_REFUND'
+        });
+        recordAuditEvent({
+          userId: currentUser?.id,
+          userName: currentUser?.name,
+          action: 'sale.refund.request',
+          entity: 'transaction',
+          entityId: t.id,
+          severity: 'WARN',
+          details: `Refund request submitted for Ksh ${(t.total || 0).toLocaleString()}`,
         });
         
         setSelectedRecord(null);

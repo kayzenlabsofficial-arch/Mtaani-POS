@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, ShoppingCart, Zap, AlertTriangle, Store, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Plus, RotateCcw, Tag as TagIcon, ScanLine, User, ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
@@ -30,6 +30,8 @@ export default function RegisterTab() {
   const [isSalesControlsOpen, setIsSalesControlsOpen] = useState(false);
   const [isCustomerControlsOpen, setIsCustomerControlsOpen] = useState(false);
   const [scanFeedback, setScanFeedback] = useState<{ found: boolean; name: string } | null>(null);
+  const scanBufferRef = useRef('');
+  const scanTimerRef = useRef<number | null>(null);
   const addToCart = useStore((state) => state.addToCart);
   const clearCart = useStore((state) => state.clearCart);
   const cart = useStore((state) => state.cart);
@@ -126,6 +128,33 @@ export default function RegisterTab() {
     }
     setTimeout(() => setScanFeedback(null), 3000);
   }, [handleAddToCart]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const activeTag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+
+      if (e.key === 'Enter') {
+        const code = scanBufferRef.current.trim();
+        scanBufferRef.current = '';
+        if (code.length >= 4) void handleScanResult(code);
+        return;
+      }
+      if (/^[a-zA-Z0-9\-]$/.test(e.key)) {
+        scanBufferRef.current += e.key;
+        if (scanTimerRef.current) window.clearTimeout(scanTimerRef.current);
+        scanTimerRef.current = window.setTimeout(() => {
+          scanBufferRef.current = '';
+        }, 120);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      if (scanTimerRef.current) window.clearTimeout(scanTimerRef.current);
+    };
+  }, [handleScanResult]);
 
   const lowStockProducts = (products || []).filter(p => {
     const vStock = calculateVirtualStock(p);

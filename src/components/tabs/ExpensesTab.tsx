@@ -7,6 +7,8 @@ import { useToast } from '../../context/ToastContext';
 import ExpenseModal from '../modals/ExpenseModal';
 import ExpenseAccountModal from '../modals/ExpenseAccountModal';
 import { BookOpen } from 'lucide-react';
+import { canPerform } from '../../utils/accessControl';
+import { recordAuditEvent } from '../../utils/auditLog';
 
 export default function ExpensesTab() {
   const [expenseSearch, setExpenseSearch] = useState("");
@@ -50,6 +52,10 @@ export default function ExpensesTab() {
           return;
       }
       if (!currentUser) return;
+      if (!canPerform(currentUser, 'expense.create')) {
+          error("You do not have permission to create expenses.");
+          return;
+      }
 
       setIsSaving(true);
       try {
@@ -65,6 +71,14 @@ export default function ExpensesTab() {
            source: expenseForm.source,
            branchId: activeBranchId!,
            businessId: activeBusinessId!
+        });
+        recordAuditEvent({
+          userId: currentUser.id,
+          userName: currentUser.name,
+          action: 'expense.create',
+          entity: 'expense',
+          severity: 'WARN',
+          details: `Created pending expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'Uncategorized'})`,
         });
         setIsExpenseModalOpen(false);
         setExpenseForm({ amount: '', category: '', description: '', source: 'TILL' });
@@ -82,6 +96,15 @@ export default function ExpensesTab() {
           setIsSaving(true);
           try {
             await db.expenses.delete(id);
+            recordAuditEvent({
+              userId: currentUser?.id,
+              userName: currentUser?.name,
+              action: 'expense.delete',
+              entity: 'expense',
+              entityId: id,
+              severity: 'CRITICAL',
+              details: 'Expense record deleted by admin',
+            });
             success("Expense deleted.");
           } catch (err: any) {
             error("Failed to delete expense: " + err.message);

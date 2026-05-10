@@ -15,6 +15,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { SearchableSelect } from '../shared/SearchableSelect';
+import { canPerform } from '../../utils/accessControl';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F43F5E'];
 
@@ -24,6 +25,18 @@ export default function ReportsTab() {
   const [isSharing, setIsSharing] = React.useState(false);
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  const currentUser = useStore(state => state.currentUser);
+
+  if (!canPerform(currentUser, 'report.view')) {
+    return (
+      <div className="p-8">
+        <div className="max-w-xl mx-auto bg-white border border-red-100 rounded-3xl p-6">
+          <h2 className="text-lg font-black text-slate-900">Access Restricted</h2>
+          <p className="text-sm text-slate-500 mt-2">Only managers and admins can view enterprise reports.</p>
+        </div>
+      </div>
+    );
+  }
 
   // Core Data Queries
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
