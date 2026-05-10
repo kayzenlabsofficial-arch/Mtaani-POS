@@ -210,7 +210,7 @@ export function useMtaaniPOS() {
     isLoggingIn, handleLogin,
     handleLogout, loginError,
     currentUser, isSystemAdmin,
-    activeBusinessId, activeBranchId,
+    activeBusinessId, activeBranchId, setActiveBranchId,
     handleCheckout,
     selectedCustomerId, setSelectedCustomerId,
     updateServiceWorker, needRefresh

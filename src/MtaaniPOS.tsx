@@ -46,7 +46,7 @@ export default function MtaaniPOS() {
     isLoggingIn, handleLogin,
     handleLogout, loginError,
     currentUser, isSystemAdmin,
-    activeBusinessId, activeBranchId,
+    activeBusinessId, activeBranchId, setActiveBranchId,
     updateServiceWorker, needRefresh
   } = useMtaaniPOS();
 

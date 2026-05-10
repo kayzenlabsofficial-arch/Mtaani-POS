@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
-import { TrendingUp, Smartphone, DollarSign, ConfirmationNumber, TrendingDown, ReceiptLong, LockOpen, Analytics, Payments, KeyboardReturn, Badge, Warning, Sync, Close } from '@mui/icons-material';
+import { TrendingUp, TrendingDown } from '@mui/icons-material';
 import { useLiveQuery } from '../../clouddb';
-import { db, type Transaction } from '../../db';
+import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area } from 'recharts';
-import NestedControlPanel from '../shared/NestedControlPanel';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
-// Mapping Material Symbols to MUI Icons (for easier React usage) or using span
 const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => (
   <span className={`material-symbols-outlined ${className}`}>{name}</span>
 );
@@ -16,6 +14,36 @@ interface DashboardTabProps {
   setActiveTab: (tab: any) => void;
   openExpenseModal: () => void;
 }
+
+const StatCard = ({ label, value, sub, trend, icon, color }: any) => (
+  <div className="bg-white border border-slate-100 rounded-2xl p-5 hover:shadow-md hover:shadow-slate-100 transition-all duration-300 flex flex-col gap-3">
+    <div className="flex items-start justify-between">
+      <div className={`w-10 h-10 rounded-xl ${color} flex items-center justify-center flex-shrink-0`}>
+        <MaterialIcon name={icon} className="text-white text-lg" />
+      </div>
+      <span className={`text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 ${trend >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+        <MaterialIcon name={trend >= 0 ? 'trending_up' : 'trending_down'} className="text-xs" />
+        {Math.abs(trend)}%
+      </span>
+    </div>
+    <div>
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
+      <p className="text-2xl font-black text-slate-900 tabular-nums">{value}</p>
+      <p className="text-[11px] text-slate-500 mt-1 font-medium">{sub}</p>
+    </div>
+  </div>
+);
+
+const chartData = [
+  { time: '08:00', sales: 4200 },
+  { time: '10:00', sales: 8100 },
+  { time: '12:00', sales: 15200 },
+  { time: '14:00', sales: 19800 },
+  { time: '16:00', sales: 12400 },
+  { time: '18:00', sales: 21000 },
+  { time: '20:00', sales: 14500 },
+  { time: '22:00', sales: 7200 },
+];
 
 export default function DashboardTab({ setActiveTab, openExpenseModal }: DashboardTabProps) {
   const [trendView, setTrendView] = useState<'DAY' | 'WEEK'>('DAY');
@@ -26,245 +54,211 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const activeBranch = branches?.find(b => b.id === activeBranchId);
 
   const transactions = useLiveQuery(
-    () => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).reverse().limit(10).toArray() : [],
-    [activeBranchId],
-    []
+    () => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).reverse().limit(8).toArray() : [],
+    [activeBranchId], []
   );
 
   const products = useLiveQuery(
     () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : [],
-    [activeBusinessId],
-    []
+    [activeBusinessId], []
   );
 
-  const lowStockItems = products?.filter(p => (p.stockQuantity || 0) <= (p.reorderPoint || 5)).slice(0, 3) || [];
+  const lowStockItems = products?.filter(p => (p.stockQuantity || 0) <= (p.reorderPoint || 5)).slice(0, 5) || [];
+  const totalRevenue = transactions?.reduce((a, t) => a + t.total, 0) || 0;
+
+  const quickActions = [
+    { id: 'REGISTER', label: 'New Sale', icon: 'point_of_sale', color: 'bg-primary' },
+    { id: 'REPORTS', label: 'Reports', icon: 'analytics', color: 'bg-violet-600' },
+    { fn: openExpenseModal, label: 'Add Expense', icon: 'payments', color: 'bg-rose-600' },
+    { id: 'REFUNDS', label: 'Refund', icon: 'keyboard_return', color: 'bg-amber-500' },
+    { id: 'CUSTOMERS', label: 'Customers', icon: 'group', color: 'bg-teal-600' },
+    { id: 'INVENTORY', label: 'Inventory', icon: 'inventory_2', color: 'bg-indigo-600' },
+  ];
 
   return (
-    <div className="animate-in fade-in space-y-lg pb-24">
+    <div className="space-y-6 pb-24 animate-in fade-in">
       
-      {/* Daily Sales Summary Bento Grid */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-gutter">
-        <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col justify-between hover:shadow-md transition-all">
-          <div>
-            <p className="font-mono text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-wider">TOTAL SALES</p>
-            <h2 className="text-2xl font-bold text-primary">142,580.00</h2>
-          </div>
-          <div className="mt-4 flex items-center gap-1 text-secondary">
-            <MaterialIcon name="trending_up" className="text-xs" />
-            <span className="font-mono text-[10px] font-medium">+12.4% from yesterday</span>
-          </div>
-        </div>
-        
-        <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col justify-between hover:shadow-md transition-all">
-          <div>
-            <p className="font-mono text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-wider">SALES COUNT</p>
-            <h2 className="text-2xl font-bold text-primary">342</h2>
-          </div>
-          <div className="mt-4 flex items-center gap-1 text-on-surface-variant">
-            <MaterialIcon name="confirmation_number" className="text-xs" />
-            <span className="font-mono text-[10px] font-medium">Busy at 2:00 PM</span>
-          </div>
-        </div>
-      </section>
+      {/* Greeting */}
+      <div>
+        <h2 className="text-xl font-black text-slate-900">
+          Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 17 ? 'Afternoon' : 'Evening'}, {currentUser?.name?.split(' ')[0]} 👋
+        </h2>
+        <p className="text-sm text-slate-500 mt-1">
+          {activeBranch?.name || 'Main Shop'} • {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+        </p>
+      </div>
 
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-gutter">
-        <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col justify-between hover:shadow-md transition-all">
-          <div>
-            <p className="font-mono text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-wider">AVERAGE SALE</p>
-            <h2 className="text-2xl font-bold text-primary">416.90</h2>
+      {/* KPI Grid — 2x2 */}
+      <div className="grid grid-cols-2 gap-4">
+        <StatCard
+          label="Total Sales"
+          value={`Ksh ${totalRevenue.toLocaleString()}`}
+          sub="Today's revenue"
+          trend={12.4}
+          icon="payments"
+          color="bg-primary"
+        />
+        <StatCard
+          label="Transactions"
+          value={transactions?.length || 0}
+          sub="Sales today"
+          trend={5.2}
+          icon="receipt_long"
+          color="bg-violet-600"
+        />
+        <StatCard
+          label="Avg. Sale"
+          value={`Ksh ${transactions?.length ? Math.round(totalRevenue / transactions.length).toLocaleString() : 0}`}
+          sub="Per transaction"
+          trend={-2.1}
+          icon="trending_up"
+          color="bg-amber-500"
+        />
+        <StatCard
+          label="Low Stock"
+          value={lowStockItems.length}
+          sub="Items need restocking"
+          trend={-lowStockItems.length}
+          icon="inventory"
+          color="bg-rose-600"
+        />
+      </div>
+
+      {/* Main content: Chart + Right Panel */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        {/* Chart */}
+        <div className="lg:col-span-8 bg-white border border-slate-100 rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-base font-black text-slate-900">Sales Performance</h3>
+              <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Revenue over time</p>
+            </div>
+            <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+              {(['DAY', 'WEEK'] as const).map(v => (
+                <button 
+                  key={v}
+                  onClick={() => setTrendView(v)}
+                  className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${trendView === v ? 'bg-white shadow text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  {v === 'DAY' ? 'Today' : 'Weekly'}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="mt-4 flex items-center gap-1 text-error">
-            <MaterialIcon name="trending_down" className="text-xs" />
-            <span className="font-mono text-[10px] font-medium">-2.1% from average</span>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#003d9b" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="#003d9b" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} dy={8} />
+                <YAxis hide />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', fontSize: '12px', fontWeight: 700 }}
+                  labelStyle={{ color: '#003d9b', fontWeight: 800 }}
+                  formatter={(v: any) => [`Ksh ${v.toLocaleString()}`, 'Sales']}
+                />
+                <Area type="monotone" dataKey="sales" stroke="#003d9b" strokeWidth={2.5} fill="url(#salesGrad)" dot={false} activeDot={{ r: 5, fill: '#003d9b', stroke: 'white', strokeWidth: 2 }} />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col justify-between hover:shadow-md transition-all">
-          <div>
-            <p className="font-mono text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-wider">CASH DRAWER</p>
-            <h2 className="text-2xl font-bold text-primary">84,200.00</h2>
-          </div>
-          <div className="mt-4 flex items-center gap-1 text-emerald-600">
-            <MaterialIcon name="payments" className="text-xs" />
-            <span className="font-mono text-[10px] font-medium">Ready for settlement</span>
-          </div>
-        </div>
-      </section>
-
-      {/* Main Content Grid */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
-        
-        {/* Left Column: Chart & Recent */}
-        <div className="lg:col-span-8 space-y-gutter">
+        {/* Right panel */}
+        <div className="lg:col-span-4 space-y-4">
           
-          {/* Sales Performance Chart Area */}
-          <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col h-[400px]">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold text-on-surface">Sales Performance</h3>
-              <div className="flex bg-surface-container p-1 rounded-md gap-1">
-                <button 
-                  onClick={() => setTrendView('DAY')}
-                  className={`px-6 py-2 font-mono text-[10px] font-bold uppercase tracking-widest rounded-md transition-all ${trendView === 'DAY' ? 'bg-white shadow-sm text-primary' : 'text-on-surface-variant hover:bg-white/50'}`}
+          {/* Quick Actions */}
+          <div className="bg-white border border-slate-100 rounded-2xl p-5">
+            <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-4">Quick Actions</h3>
+            <div className="grid grid-cols-3 gap-2">
+              {quickActions.map((action, i) => (
+                <button
+                  key={i}
+                  onClick={() => (action as any).fn ? (action as any).fn() : setActiveTab((action as any).id)}
+                  className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-slate-50 transition-all group"
                 >
-                  Today
+                  <div className={`w-10 h-10 ${action.color} rounded-xl flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform`}>
+                    <MaterialIcon name={action.icon} className="text-white text-lg" />
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight text-center">{action.label}</span>
                 </button>
-                <button 
-                  onClick={() => setTrendView('WEEK')}
-                  className={`px-6 py-2 font-mono text-[10px] font-bold uppercase tracking-widest rounded-md transition-all ${trendView === 'WEEK' ? 'bg-white shadow-sm text-primary' : 'text-on-surface-variant hover:bg-white/50'}`}
-                >
-                  Weekly
-                </button>
-              </div>
-            </div>
-            
-            <div className="flex-grow">
-               <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={[
-                    { time: '08:00', val: 4000 },
-                    { time: '10:00', val: 3000 },
-                    { time: '12:00', val: 9000 },
-                    { time: '14:00', val: 12000 },
-                    { time: '16:00', val: 8000 },
-                    { time: '18:00', val: 15000 },
-                    { time: '20:00', val: 11000 },
-                    { time: '22:00', val: 5000 },
-                  ]}>
-                    <defs>
-                      <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0052cc" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#0052cc" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e8ff" />
-                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#737685', fontSize: 10}} dy={10} />
-                    <YAxis hide />
-                    <Tooltip 
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                      labelStyle={{ fontWeight: 'bold', color: '#003d9b' }}
-                    />
-                    <Area type="monotone" dataKey="val" stroke="#003d9b" strokeWidth={3} fillOpacity={1} fill="url(#colorVal)" />
-                  </AreaChart>
-               </ResponsiveContainer>
+              ))}
             </div>
           </div>
 
-          {/* Recent Transactions */}
-          <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
-              <h3 className="text-sm font-bold text-on-surface uppercase tracking-wider">Recent Sales</h3>
-              <button onClick={() => setActiveTab('DOCUMENTS')} className="font-mono text-[10px] font-bold text-primary hover:underline">View All</button>
-            </div>
-            <div className="divide-y divide-outline-variant">
-              {transactions?.map((tx, idx) => (
-                <div key={tx.id} className="px-lg py-md flex items-center justify-between hover:bg-surface-container-low transition-colors group">
-                  <div className="flex items-center gap-md">
-                    <div className="w-10 h-10 rounded-md bg-surface-container flex items-center justify-center group-hover:bg-primary-container group-hover:text-white transition-colors">
-                      <MaterialIcon name="receipt_long" className="text-on-surface-variant group-hover:text-white" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-on-surface">#{tx.id.slice(-8).toUpperCase()}</p>
-                      <p className="font-mono text-[10px] text-on-surface-variant uppercase">
-                        {new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {tx.items.length} ITEMS
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold text-on-surface">{tx.total.toLocaleString()}</p>
-                    <span className={`px-sm py-[2px] text-[10px] font-mono rounded-full ${tx.status === 'PAID' ? 'bg-secondary-container text-on-secondary-container' : 'bg-error-container text-on-error-container'}`}>
-                      {tx.status}
+          {/* Low Stock Alert */}
+          {lowStockItems.length > 0 && (
+            <div className="bg-rose-50 border border-rose-100 rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-7 h-7 bg-rose-600 rounded-lg flex items-center justify-center">
+                  <MaterialIcon name="warning" className="text-white text-sm" />
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-black text-rose-900">Low Stock Alert</h4>
+                  <p className="text-[9px] font-medium text-rose-600">{lowStockItems.length} items need restocking</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {lowStockItems.map(item => (
+                  <div key={item.id} className="flex items-center justify-between py-1.5 border-t border-rose-100">
+                    <span className="text-[11px] font-medium text-rose-800 truncate mr-2">{item.name}</span>
+                    <span className="text-[10px] font-black text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full flex-shrink-0">
+                      {item.stockQuantity} left
                     </span>
                   </div>
+                ))}
+              </div>
+              <button onClick={() => setActiveTab('INVENTORY')} className="w-full mt-3 py-2 text-[10px] font-black text-rose-700 uppercase tracking-widest bg-white border border-rose-200 rounded-xl hover:bg-rose-600 hover:text-white hover:border-rose-600 transition-all">
+                Manage Stock
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Recent Transactions */}
+      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="text-sm font-black text-slate-900">Recent Transactions</h3>
+          <button onClick={() => setActiveTab('DOCUMENTS')} className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View All</button>
+        </div>
+        <div className="divide-y divide-slate-50">
+          {transactions?.map(tx => (
+            <div key={tx.id} className="px-6 py-3.5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+              <div className="flex items-center gap-4">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${tx.status === 'PAID' ? 'bg-emerald-100' : 'bg-amber-100'}`}>
+                  <MaterialIcon name={tx.paymentMethod === 'MPESA' ? 'smartphone' : tx.paymentMethod === 'CASH' ? 'payments' : 'credit_card'} className={`text-base ${tx.status === 'PAID' ? 'text-emerald-600' : 'text-amber-600'}`} />
                 </div>
-              ))}
-              {(!transactions || transactions.length === 0) && (
-                <div className="p-8 text-center text-on-surface-variant font-mono text-label-md">No recent activity</div>
-              )}
+                <div>
+                  <p className="text-[12px] font-bold text-slate-800">#{tx.id.slice(-8).toUpperCase()}</p>
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    {new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {tx.items.length} item{tx.items.length !== 1 ? 's' : ''}
+                    {tx.cashierName && ` • ${tx.cashierName}`}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className="text-[13px] font-black text-slate-900">Ksh {tx.total.toLocaleString()}</p>
+                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${tx.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {tx.status}
+                </span>
+              </div>
             </div>
-          </div>
+          ))}
+          {(!transactions || transactions.length === 0) && (
+            <div className="px-6 py-12 text-center">
+              <MaterialIcon name="receipt_long" className="text-slate-300 text-5xl" />
+              <p className="text-slate-400 text-sm font-medium mt-3">No transactions yet today</p>
+            </div>
+          )}
         </div>
+      </div>
 
-        {/* Right Column: Actions & Alerts */}
-        <div className="lg:col-span-4 space-y-gutter">
-          
-          {/* Quick Actions Grid Area */}
-          <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl">
-            <h3 className="text-sm font-bold text-on-surface mb-6 uppercase tracking-wider">Actions</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <button 
-                onClick={() => setActiveTab('REGISTER')}
-                className="flex flex-col items-center justify-center p-4 bg-surface-container-low border border-outline-variant rounded-xl hover:bg-primary-container hover:text-white group transition-all duration-200"
-              >
-                <MaterialIcon name="point_of_sale" className="mb-2 text-primary group-hover:text-white" />
-                <span className="font-mono text-[10px] font-bold">New Sale</span>
-              </button>
-              <button 
-                onClick={() => setActiveTab('REPORTS')}
-                className="flex flex-col items-center justify-center p-4 bg-surface-container-low border border-outline-variant rounded-xl hover:bg-primary-container hover:text-white group transition-all duration-200"
-              >
-                <MaterialIcon name="analytics" className="mb-2 text-primary group-hover:text-white" />
-                <span className="font-mono text-[10px] font-bold">Reports</span>
-              </button>
-              <button 
-                onClick={openExpenseModal}
-                className="flex flex-col items-center justify-center p-4 bg-surface-container-low border border-outline-variant rounded-xl hover:bg-primary-container hover:text-white group transition-all duration-200"
-              >
-                <MaterialIcon name="payments" className="mb-2 text-primary group-hover:text-white" />
-                <span className="font-mono text-[10px] font-bold">Expenses</span>
-              </button>
-              <button 
-                onClick={() => setActiveTab('REFUNDS')}
-                className="flex flex-col items-center justify-center p-4 bg-surface-container-low border border-outline-variant rounded-xl hover:bg-primary-container hover:text-white group transition-all duration-200"
-              >
-                <MaterialIcon name="keyboard_return" className="mb-2 text-primary group-hover:text-white" />
-                <span className="font-mono text-[10px] font-bold">Returns</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Active Register Info */}
-          <div className="bg-primary text-on-primary p-6 rounded-xl space-y-4 shadow-lg">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="font-mono text-[10px] opacity-80 uppercase tracking-widest">Branch</p>
-                <h4 className="text-lg font-bold">{activeBranch?.name || 'Main Shop'}</h4>
-              </div>
-              <MaterialIcon name="badge" className="text-white/80" />
-            </div>
-            <div className="pt-4 border-t border-white/20">
-              <div className="flex justify-between text-xs font-mono">
-                <span className="opacity-80">User:</span>
-                <span className="">{currentUser?.name}</span>
-              </div>
-              <div className="flex justify-between text-xs font-mono mt-1">
-                <span className="opacity-80">Device:</span>
-                <span className="">Active Node</span>
-              </div>
-            </div>
-            <button className="w-full py-3 bg-white text-primary rounded-lg font-mono text-[10px] font-bold hover:bg-opacity-90 transition-all active:scale-95">
-              Check Status
-            </button>
-          </div>
-
-          {/* Inventory Alert */}
-          <div className="bg-error-container text-on-error-container p-6 rounded-xl border border-error/10">
-            <div className="flex items-center gap-2 mb-1">
-              <MaterialIcon name="warning" className="text-error" />
-              <h4 className="text-xs font-bold uppercase tracking-wider">Low Stock</h4>
-            </div>
-            <p className="text-[11px] mb-4 opacity-90 font-medium">Some items are running low.</p>
-            <ul className="space-y-1 font-mono text-[10px]">
-              {lowStockItems.map(item => (
-                <li key={item.id} className="flex justify-between border-b border-error/5 pb-1">
-                  <span className="truncate mr-4">{item.name}</span> 
-                  <span className="font-bold text-error">{item.stockQuantity} Left</span>
-                </li>
-              ))}
-              {lowStockItems.length === 0 && <li className="text-center py-2 opacity-50">Stock levels are good</li>}
-            </ul>
-          </div>
-
-        </div>
-      </section>
     </div>
   );
 }
