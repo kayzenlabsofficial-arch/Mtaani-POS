@@ -42,24 +42,24 @@ export default function Sidebar({
 
   const navItems = [
     { 
-      id: 'ops', label: 'OPERATIONS', items: [
-        { id: 'REGISTER', label: 'POS Terminal', icon: 'point_of_sale' },
-        { id: 'DASHBOARD', label: 'Command Center', icon: 'dashboard' },
-        { id: 'CUSTOMERS', label: 'Clients', icon: 'group' },
+      id: 'ops', label: 'SALES', items: [
+        { id: 'REGISTER', label: 'Register', icon: 'point_of_sale' },
+        { id: 'DASHBOARD', label: 'Dashboard', icon: 'dashboard' },
+        { id: 'CUSTOMERS', label: 'Customers', icon: 'group' },
       ]
     },
     { 
-      id: 'inv', label: 'LOGISTICS', items: [
+      id: 'inv', label: 'STOCK', items: [
         { id: 'INVENTORY', label: 'Inventory', icon: 'inventory_2' },
         { id: 'SUPPLIERS', label: 'Suppliers', icon: 'local_shipping', hidden: !isAdminOrManager },
-        { id: 'PURCHASES', label: 'Procurement', icon: 'shopping_bag' },
+        { id: 'PURCHASES', label: 'Purchases', icon: 'shopping_bag' },
       ]
     },
     { 
-      id: 'fin', label: 'FINANCE', items: [
+      id: 'fin', label: 'RECORDS', items: [
         { id: 'EXPENSES', label: 'Expenses', icon: 'payments' },
-        { id: 'REPORTS', label: 'Sales Intel', icon: 'analytics', hidden: !isAdminOrManager },
-        { id: 'DOCUMENTS', label: 'Digital Archive', icon: 'receipt_long' },
+        { id: 'REPORTS', label: 'Reports', icon: 'analytics', hidden: !isAdminOrManager },
+        { id: 'DOCUMENTS', label: 'Receipts', icon: 'receipt_long' },
       ]
     }
   ];
@@ -73,7 +73,7 @@ export default function Sidebar({
         </div>
         <div>
           <h2 className="text-lg font-bold text-primary leading-tight">Mtaani POS</h2>
-          <p className="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest mt-0.5">Fleet Node TRM-01</p>
+          <p className="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest mt-0.5">Till TRM-01</p>
         </div>
       </div>
 
@@ -125,7 +125,7 @@ export default function Sidebar({
              className="flex flex-col items-center justify-center py-3 rounded-md border border-outline-variant hover:bg-error-container hover:text-error transition-all group"
            >
               <MaterialIcon name="logout" className="text-on-surface-variant group-hover:text-error text-xl" />
-              <span className="font-mono text-[9px] mt-1 text-on-surface-variant group-hover:text-error">EXIT</span>
+              <span className="font-mono text-[9px] mt-1 text-on-surface-variant group-hover:text-error">LOGOUT</span>
            </button>
         </div>
       </div>

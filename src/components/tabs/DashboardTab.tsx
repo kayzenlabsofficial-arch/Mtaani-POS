@@ -44,36 +44,36 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       
       {/* Daily Sales Summary Bento Grid */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
-        <div className="bg-surface-container-lowest border border-outline-variant p-lg rounded-md flex flex-col justify-between hover:shadow-md transition-all">
+        <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col justify-between hover:shadow-md transition-all">
           <div>
-            <p className="font-mono text-label-md text-on-surface-variant mb-xs">TOTAL SALES (KSH)</p>
-            <h2 className="text-3xl font-bold text-primary">142,580.00</h2>
+            <p className="font-mono text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-wider">TOTAL SALES</p>
+            <h2 className="text-2xl font-bold text-primary">142,580.00</h2>
           </div>
-          <div className="mt-md flex items-center gap-xs text-secondary">
-            <MaterialIcon name="trending_up" className="text-sm" />
-            <span className="font-mono text-label-md">+12.4% vs yesterday</span>
+          <div className="mt-4 flex items-center gap-1 text-secondary">
+            <MaterialIcon name="trending_up" className="text-xs" />
+            <span className="font-mono text-[10px] font-medium">+12.4% from yesterday</span>
           </div>
         </div>
         
-        <div className="bg-surface-container-lowest border border-outline-variant p-lg rounded-md flex flex-col justify-between hover:shadow-md transition-all">
+        <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col justify-between hover:shadow-md transition-all">
           <div>
-            <p className="font-mono text-label-md text-on-surface-variant mb-xs">TOTAL TRANSACTIONS</p>
-            <h2 className="text-3xl font-bold text-primary">342</h2>
+            <p className="font-mono text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-wider">SALES COUNT</p>
+            <h2 className="text-2xl font-bold text-primary">342</h2>
           </div>
-          <div className="mt-md flex items-center gap-xs text-on-surface-variant">
-            <MaterialIcon name="confirmation_number" className="text-sm" />
-            <span className="font-mono text-label-md">Peak at 14:00 PM</span>
+          <div className="mt-4 flex items-center gap-1 text-on-surface-variant">
+            <MaterialIcon name="confirmation_number" className="text-xs" />
+            <span className="font-mono text-[10px] font-medium">Busy at 2:00 PM</span>
           </div>
         </div>
 
-        <div className="bg-surface-container-lowest border border-outline-variant p-lg rounded-md flex flex-col justify-between hover:shadow-md transition-all">
+        <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col justify-between hover:shadow-md transition-all">
           <div>
-            <p className="font-mono text-label-md text-on-surface-variant mb-xs">AVG. TICKET VALUE</p>
-            <h2 className="text-3xl font-bold text-primary">416.90</h2>
+            <p className="font-mono text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-wider">AVERAGE SALE</p>
+            <h2 className="text-2xl font-bold text-primary">416.90</h2>
           </div>
-          <div className="mt-md flex items-center gap-xs text-error">
-            <MaterialIcon name="trending_down" className="text-sm" />
-            <span className="font-mono text-label-md">-2.1% vs average</span>
+          <div className="mt-4 flex items-center gap-1 text-error">
+            <MaterialIcon name="trending_down" className="text-xs" />
+            <span className="font-mono text-[10px] font-medium">-2.1% from average</span>
           </div>
         </div>
       </section>
@@ -85,9 +85,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         <div className="lg:col-span-8 space-y-gutter">
           
           {/* Sales Performance Chart Area */}
-          <div className="bg-surface-container-lowest border border-outline-variant p-lg rounded-md flex flex-col h-[400px]">
-            <div className="flex justify-between items-center mb-xl">
-              <h3 className="text-xl font-bold text-on-surface">Sales Performance</h3>
+          <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col h-[400px]">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-bold text-on-surface">Sales Performance</h3>
               <div className="flex bg-surface-container p-1 rounded-md">
                 <button 
                   onClick={() => setTrendView('DAY')}
@@ -136,10 +136,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           </div>
 
           {/* Recent Transactions */}
-          <div className="bg-surface-container-lowest border border-outline-variant rounded-md overflow-hidden">
-            <div className="px-lg py-md border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
-              <h3 className="text-base font-bold text-on-surface">Recent Transactions</h3>
-              <button onClick={() => setActiveTab('DOCUMENTS')} className="font-mono text-label-md text-primary hover:underline">View All</button>
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+              <h3 className="text-sm font-bold text-on-surface uppercase tracking-wider">Recent Sales</h3>
+              <button onClick={() => setActiveTab('DOCUMENTS')} className="font-mono text-[10px] font-bold text-primary hover:underline">View All</button>
             </div>
             <div className="divide-y divide-outline-variant">
               {transactions?.map((tx, idx) => (
@@ -174,79 +174,79 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         <div className="lg:col-span-4 space-y-gutter">
           
           {/* Quick Actions Grid Area */}
-          <div className="bg-surface-container-lowest border border-outline-variant p-lg rounded-md">
-            <h3 className="text-base font-bold text-on-surface mb-lg">Quick Actions</h3>
-            <div className="grid grid-cols-2 gap-md">
+          <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl">
+            <h3 className="text-sm font-bold text-on-surface mb-6 uppercase tracking-wider">Actions</h3>
+            <div className="grid grid-cols-2 gap-3">
               <button 
                 onClick={() => setActiveTab('REGISTER')}
-                className="flex flex-col items-center justify-center p-md bg-surface-container-low border border-outline-variant rounded-md hover:bg-primary-container hover:text-white group transition-all duration-200"
+                className="flex flex-col items-center justify-center p-4 bg-surface-container-low border border-outline-variant rounded-xl hover:bg-primary-container hover:text-white group transition-all duration-200"
               >
-                <MaterialIcon name="point_of_sale" className="mb-sm text-primary group-hover:text-white" />
-                <span className="font-mono text-label-md">New Sale</span>
+                <MaterialIcon name="point_of_sale" className="mb-2 text-primary group-hover:text-white" />
+                <span className="font-mono text-[10px] font-bold">New Sale</span>
               </button>
               <button 
                 onClick={() => setActiveTab('REPORTS')}
-                className="flex flex-col items-center justify-center p-md bg-surface-container-low border border-outline-variant rounded-md hover:bg-primary-container hover:text-white group transition-all duration-200"
+                className="flex flex-col items-center justify-center p-4 bg-surface-container-low border border-outline-variant rounded-xl hover:bg-primary-container hover:text-white group transition-all duration-200"
               >
-                <MaterialIcon name="analytics" className="mb-sm text-primary group-hover:text-white" />
-                <span className="font-mono text-label-md">Reports</span>
+                <MaterialIcon name="analytics" className="mb-2 text-primary group-hover:text-white" />
+                <span className="font-mono text-[10px] font-bold">Reports</span>
               </button>
               <button 
                 onClick={openExpenseModal}
-                className="flex flex-col items-center justify-center p-md bg-surface-container-low border border-outline-variant rounded-md hover:bg-primary-container hover:text-white group transition-all duration-200"
+                className="flex flex-col items-center justify-center p-4 bg-surface-container-low border border-outline-variant rounded-xl hover:bg-primary-container hover:text-white group transition-all duration-200"
               >
-                <MaterialIcon name="payments" className="mb-sm text-primary group-hover:text-white" />
-                <span className="font-mono text-label-md">Expenses</span>
+                <MaterialIcon name="payments" className="mb-2 text-primary group-hover:text-white" />
+                <span className="font-mono text-[10px] font-bold">Expenses</span>
               </button>
               <button 
                 onClick={() => setActiveTab('REFUNDS')}
-                className="flex flex-col items-center justify-center p-md bg-surface-container-low border border-outline-variant rounded-md hover:bg-primary-container hover:text-white group transition-all duration-200"
+                className="flex flex-col items-center justify-center p-4 bg-surface-container-low border border-outline-variant rounded-xl hover:bg-primary-container hover:text-white group transition-all duration-200"
               >
-                <MaterialIcon name="keyboard_return" className="mb-sm text-primary group-hover:text-white" />
-                <span className="font-mono text-label-md">Refunds</span>
+                <MaterialIcon name="keyboard_return" className="mb-2 text-primary group-hover:text-white" />
+                <span className="font-mono text-[10px] font-bold">Returns</span>
               </button>
             </div>
           </div>
 
           {/* Active Register Info */}
-          <div className="bg-primary text-on-primary p-lg rounded-md space-y-md shadow-lg">
+          <div className="bg-primary text-on-primary p-6 rounded-xl space-y-4 shadow-lg">
             <div className="flex justify-between items-start">
               <div>
-                <p className="font-mono text-[10px] opacity-80 uppercase tracking-widest">Active Station</p>
-                <h4 className="text-xl font-bold">{activeBranch?.name || 'Main Hub'}</h4>
+                <p className="font-mono text-[10px] opacity-80 uppercase tracking-widest">Branch</p>
+                <h4 className="text-lg font-bold">{activeBranch?.name || 'Main Shop'}</h4>
               </div>
               <MaterialIcon name="badge" className="text-white/80" />
             </div>
-            <div className="pt-md border-t border-white/20">
+            <div className="pt-4 border-t border-white/20">
               <div className="flex justify-between text-xs font-mono">
-                <span className="opacity-80">Cashier:</span>
+                <span className="opacity-80">User:</span>
                 <span className="">{currentUser?.name}</span>
               </div>
-              <div className="flex justify-between text-xs font-mono mt-xs">
-                <span className="opacity-80">Terminal:</span>
+              <div className="flex justify-between text-xs font-mono mt-1">
+                <span className="opacity-80">Till:</span>
                 <span className="">TRM-001</span>
               </div>
             </div>
-            <button className="w-full py-sm bg-white text-primary rounded-md font-mono text-label-md hover:bg-opacity-90 transition-all active:scale-95 font-bold">
-              System Audit
+            <button className="w-full py-3 bg-white text-primary rounded-lg font-mono text-[10px] font-bold hover:bg-opacity-90 transition-all active:scale-95">
+              Check Status
             </button>
           </div>
 
           {/* Inventory Alert */}
-          <div className="bg-error-container text-on-error-container p-lg rounded-md border border-error/10">
-            <div className="flex items-center gap-sm mb-xs">
+          <div className="bg-error-container text-on-error-container p-6 rounded-xl border border-error/10">
+            <div className="flex items-center gap-2 mb-1">
               <MaterialIcon name="warning" className="text-error" />
-              <h4 className="text-sm font-bold">Inventory Alerts</h4>
+              <h4 className="text-xs font-bold uppercase tracking-wider">Low Stock</h4>
             </div>
-            <p className="text-xs mb-md opacity-90 font-medium">Critical stock levels detected in {activeBranch?.name}.</p>
-            <ul className="space-y-xs font-mono text-[11px]">
+            <p className="text-[11px] mb-4 opacity-90 font-medium">Some items are running low.</p>
+            <ul className="space-y-1 font-mono text-[10px]">
               {lowStockItems.map(item => (
-                <li key={item.id} className="flex justify-between border-b border-error/5 pb-xs">
+                <li key={item.id} className="flex justify-between border-b border-error/5 pb-1">
                   <span className="truncate mr-4">{item.name}</span> 
                   <span className="font-bold text-error">{item.stockQuantity} Left</span>
                 </li>
               ))}
-              {lowStockItems.length === 0 && <li className="text-center py-2 opacity-50">All stock levels optimal</li>}
+              {lowStockItems.length === 0 && <li className="text-center py-2 opacity-50">Stock levels are good</li>}
             </ul>
           </div>
 

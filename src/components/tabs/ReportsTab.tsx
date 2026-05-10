@@ -37,8 +37,8 @@ export default function ReportsTab() {
            <ShieldAlert size={40} />
         </div>
         <div className="text-center">
-           <h2 className="text-xl font-black text-slate-900 tracking-tight">Access Restricted</h2>
-           <p className="text-sm font-bold text-slate-400 mt-1 uppercase tracking-widest">Enterprise Clearance Required</p>
+           <h2 className="text-xl font-bold text-slate-900 tracking-tight">Access Denied</h2>
+           <p className="text-sm font-bold text-slate-400 mt-1 uppercase tracking-widest">You don't have permission to view this</p>
         </div>
       </div>
     );
@@ -61,7 +61,7 @@ export default function ReportsTab() {
         <div className="w-20 h-20 bg-slate-50 rounded-[2.5rem] flex items-center justify-center animate-spin-slow">
           <BarChart3 size={40} className="text-slate-200" />
         </div>
-        <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Synthesizing Intelligence...</p>
+        <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest">Loading Reports...</p>
       </div>
     );
   }
@@ -178,8 +178,8 @@ export default function ReportsTab() {
       <div className="px-4 pt-2 mb-6 no-print">
         <div className="flex items-center justify-between mb-4">
            <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Intelligence</h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Enterprise Analytics & Insights</p>
+              <h2 className="text-xl font-bold text-slate-900 tracking-tight">Reports</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Sales and Profit analysis</p>
            </div>
            <div className="flex gap-2">
               <button 
@@ -199,20 +199,20 @@ export default function ReportsTab() {
         {isOpsPanelOpen && (
           <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
              <NestedControlPanel
-               title="Report Configuration"
-               subtitle="Adjust temporal scope and analytical focus"
+               title="Report Settings"
+               subtitle="Choose time period and filters"
                onClose={() => setIsOpsPanelOpen(false)}
              >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                    <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Temporal Scope</h4>
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Time Period</h4>
                       <div className="flex flex-wrap gap-2">
                         {[
-                          { id: 'TODAY', label: 'Day' },
+                          { id: 'TODAY', label: 'Today' },
                           { id: 'WEEK', label: 'Week' },
                           { id: 'MONTH', label: 'Month' },
                           { id: 'QUARTER', label: 'Quarter' },
-                          { id: 'ALL', label: 'Infinite' }
+                          { id: 'ALL', label: 'All Time' }
                         ].map(range => (
                           <button 
                             key={range.id} 
@@ -257,9 +257,9 @@ export default function ReportsTab() {
           <div className="lg:col-span-2 bg-white rounded-[2.5rem] p-8 border-2 border-slate-100 shadow-sm relative overflow-hidden group">
             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-bl-[100px] pointer-events-none -mr-8 -mt-8 group-hover:scale-110 transition-transform duration-500" />
             <div className="relative z-10">
-              <h3 className="font-black text-slate-900 text-lg flex items-center gap-3 mb-8">
+              <h3 className="font-bold text-slate-900 text-lg flex items-center gap-3 mb-8">
                 <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center"> <BarChart3 size={20} /> </div>
-                Revenue Growth Velocity
+                Sales Trend
               </h3>
               <div className="h-[320px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -283,9 +283,9 @@ export default function ReportsTab() {
           </div>
 
           <div className="bg-white rounded-[2.5rem] p-8 border-2 border-slate-100 shadow-sm">
-            <h3 className="font-black text-slate-900 text-lg flex items-center gap-3 mb-8">
+            <h3 className="font-bold text-slate-900 text-lg flex items-center gap-3 mb-8">
               <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center"> <PieIcon size={20} /> </div>
-              Expense Matrix
+              Expenses
             </h3>
             <div className="h-[260px] relative">
               <ResponsiveContainer width="100%" height="100%">
@@ -318,9 +318,9 @@ export default function ReportsTab() {
         {/* Audit & Category Performance */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <section className="bg-white rounded-[2.5rem] p-8 border-2 border-slate-100 shadow-sm">
-             <h3 className="font-black text-slate-900 text-lg flex items-center gap-3 mb-8">
+             <h3 className="font-bold text-slate-900 text-lg flex items-center gap-3 mb-8">
                 <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center"> <ShoppingBag size={20} /> </div>
-                Category Performance Intelligence
+                Category Sales
              </h3>
              <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -341,8 +341,8 @@ export default function ReportsTab() {
 
           <section className="bg-white rounded-[2.5rem] overflow-hidden border-2 border-slate-100 shadow-sm">
             <div className="px-8 py-6 border-b-2 border-slate-50 bg-slate-50/50">
-              <h3 className="text-lg font-black text-slate-900">Executive Audit Ledger</h3>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Target Compliance & Health Check</p>
+              <h3 className="text-lg font-bold text-slate-900">Summary Stats</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Performance Summary</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
@@ -365,20 +365,20 @@ export default function ReportsTab() {
           <div className="relative z-10">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 mb-12">
               <div>
-                <h3 className="text-3xl font-black tracking-tight flex items-center gap-4">
+                <h3 className="text-2xl font-bold tracking-tight flex items-center gap-4">
                   <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-indigo">
                     <Activity size={28} />
                   </div>
-                  SKU Lifecycle Pulse
+                  Product Analysis
                 </h3>
-                <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-3 opacity-60">High-Resolution Inventory Deep-Dive</p>
+                <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-3 opacity-60">Detailed product sales</p>
               </div>
               <div className="w-full md:w-96">
-                <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-3 ml-2">Identify SKU for Analysis</label>
+                <label className="block text-[10px] font-bold text-indigo-400 uppercase tracking-[0.2em] mb-3 ml-2">Select Product</label>
                 <SearchableSelect
                   value={selectedProductId || ''}
                   onChange={(v) => setSelectedProductId(v || null)}
-                  placeholder="Scan or select product SKU..."
+                  placeholder="Search for a product..."
                   options={allProducts.map(p => ({
                     value: p.id,
                     label: p.name,
@@ -418,7 +418,7 @@ export default function ReportsTab() {
             ) : (
               <div className="py-32 border-4 border-dashed border-white/5 rounded-[3rem] flex flex-col items-center justify-center text-slate-700">
                 <Box size={64} className="opacity-10 mb-6" />
-                <p className="text-[11px] font-black uppercase tracking-[0.3em] opacity-40">Intelligence Data Awaiting Selection</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.3em] opacity-40">Select a product to see details</p>
               </div>
             )}
           </div>

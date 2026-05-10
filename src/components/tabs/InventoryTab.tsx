@@ -54,7 +54,7 @@ export default function InventoryTab() {
           </div>
           <input 
             className="w-full pl-12 pr-4 py-4 bg-white border border-outline-variant rounded-md focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none font-medium transition-all shadow-sm"
-            placeholder="Search inventory by name, SKU, or category..."
+            placeholder="Search products by name or barcode..."
             value={inventorySearch}
             onChange={(e) => setInventorySearch(e.target.value)}
           />
@@ -62,12 +62,12 @@ export default function InventoryTab() {
 
         <div className="grid grid-cols-2 gap-md md:flex md:gap-md">
           <div className="bg-white border border-outline-variant p-lg rounded-md flex flex-col justify-center min-w-[200px] shadow-sm">
-            <span className="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Total Assets Value</span>
-            <span className="text-2xl font-bold text-primary tabular-nums">Ksh {totalValue.toLocaleString()}</span>
+            <span className="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Total Stock Value</span>
+            <span className="text-xl font-bold text-primary tabular-nums">Ksh {totalValue.toLocaleString()}</span>
           </div>
           <div className="bg-white border border-outline-variant p-lg rounded-md flex flex-col justify-center min-w-[200px] shadow-sm">
-            <span className="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Critical Restock</span>
-            <span className="text-2xl font-bold text-error tabular-nums">{lowStockCount} Items</span>
+            <span className="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Low Stock</span>
+            <span className="text-xl font-bold text-error tabular-nums">{lowStockCount} Items</span>
           </div>
         </div>
       </div>
@@ -78,7 +78,7 @@ export default function InventoryTab() {
           onClick={() => setSelectedCategory(null)}
           className={`px-6 py-2.5 rounded-full text-[11px] font-bold uppercase tracking-widest transition-all ${!selectedCategory ? 'bg-primary text-white shadow-md' : 'bg-white border border-outline-variant text-on-surface-variant'}`}
         >
-          All Units
+          All Categories
         </button>
         {categories?.map(cat => (
           <button
@@ -93,10 +93,10 @@ export default function InventoryTab() {
 
       {/* Inventory List Header */}
       <div className="hidden md:grid grid-cols-12 gap-8 px-6 py-4 bg-surface-container-low border border-outline-variant rounded-t-xl">
-        <div className="col-span-5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Global Product Catalog</div>
-        <div className="col-span-2 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Asset SKU</div>
-        <div className="col-span-2 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-center">Fleet Level</div>
-        <div className="col-span-2 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-right">Unit Liquidity</div>
+        <div className="col-span-5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Product</div>
+        <div className="col-span-2 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Barcode</div>
+        <div className="col-span-2 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-center">Stock Level</div>
+        <div className="col-span-2 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-right">Price</div>
         <div className="col-span-1"></div>
       </div>
 
@@ -154,7 +154,7 @@ export default function InventoryTab() {
         {(!products || products.length === 0) && (
           <div className="py-20 text-center opacity-30">
             <MaterialIcon name="inventory" className="text-6xl mb-4" />
-            <p className="text-lg font-bold">No assets found in current category</p>
+            <p className="text-lg font-bold">No products found</p>
           </div>
         )}
       </div>
@@ -170,19 +170,19 @@ export default function InventoryTab() {
       {/* Control Center Panel */}
       {isOpsPanelOpen && (
         <NestedControlPanel 
-          title="Fleet Operations" 
-          subtitle="Inventory Logistics" 
+          title="Stock Tools" 
+          subtitle="Manage your inventory" 
           onClose={() => setIsOpsPanelOpen(false)}
         >
            <div className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
                  <button className="flex flex-col items-center justify-center p-6 bg-white border border-outline-variant rounded-3xl hover:border-primary transition-all">
-                    <MaterialIcon name="add_circle" className="text-primary mb-2" />
-                    <span className="font-mono text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">Manual Audit</span>
+                     <MaterialIcon name="add_circle" className="text-primary mb-2" />
+                     <span className="font-mono text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">Stock Take</span>
                  </button>
                  <button className="flex flex-col items-center justify-center p-6 bg-white border border-outline-variant rounded-3xl hover:border-secondary transition-all">
-                    <MaterialIcon name="history" className="text-secondary mb-2" />
-                    <span className="font-mono text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">Node History</span>
+                     <MaterialIcon name="history" className="text-secondary mb-2" />
+                     <span className="font-mono text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">History</span>
                  </button>
               </div>
            </div>

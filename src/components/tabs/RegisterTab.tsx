@@ -140,12 +140,12 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
 
                 {/* Stock Status Pill */}
                 <div className="mt-auto pt-4 border-t border-slate-50 w-full flex items-center justify-between">
-                   <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${isOutOfStock ? 'bg-error' : isLowStock ? 'bg-amber-500' : 'bg-primary'}`} />
-                      <span className={`text-[10px] font-bold uppercase tracking-tight ${isOutOfStock ? 'text-error' : isLowStock ? 'text-amber-600' : 'text-primary'}`}>
-                        {isOutOfStock ? 'OUT OF STOCK' : isLowStock ? `${product.stockQuantity} LEFT` : 'IN STOCK'}
-                      </span>
-                   </div>
+                    <div className="flex items-center gap-1.5">
+                       <div className={`w-1.5 h-1.5 rounded-full ${isOutOfStock ? 'bg-error' : isLowStock ? 'bg-amber-500' : 'bg-primary'}`} />
+                       <span className={`text-[9px] font-bold uppercase tracking-wide ${isOutOfStock ? 'text-error' : isLowStock ? 'text-amber-600' : 'text-primary'}`}>
+                         {isOutOfStock ? 'Out of Stock' : isLowStock ? `${product.stockQuantity} Left` : 'In Stock'}
+                       </span>
+                    </div>
                 </div>
 
                 {/* Quick Add Indicator */}
@@ -172,33 +172,33 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
       {/* Control Center Panel */}
       {isControlCenterOpen && (
         <NestedControlPanel 
-          title="POS Tools" 
-          subtitle="Management & Insights" 
+          title="Tools" 
+          subtitle="Register Tools" 
           onClose={() => setIsControlCenterOpen(false)}
         >
           <div className="space-y-8">
             <div className="bg-surface-container-low p-6 rounded-3xl border border-outline-variant">
-               <h4 className="font-mono text-[10px] font-bold text-outline uppercase tracking-widest mb-4">Scanner Configuration</h4>
+               <h4 className="font-mono text-[9px] font-bold text-outline uppercase tracking-widest mb-4">Scanner</h4>
                <button 
                  onClick={() => setIsScannerOpen(!isScannerOpen)}
-                 className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${isScannerOpen ? 'bg-primary text-white border-primary shadow-lg' : 'bg-white border-outline-variant text-on-surface hover:border-primary/30'}`}
+                 className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${isScannerOpen ? 'bg-primary text-white border-primary shadow-lg' : 'bg-white border-outline-variant text-on-surface hover:border-primary/30'}`}
                >
                   <div className="flex items-center gap-3">
                      <MaterialIcon name="barcode_scanner" />
-                     <span className="font-bold text-sm">Active Barcode Node</span>
+                     <span className="font-bold text-sm">Use Scanner</span>
                   </div>
-                  <div className={`w-3 h-3 rounded-full ${isScannerOpen ? 'bg-white' : 'bg-outline-variant'}`} />
+                  <div className={`w-2.5 h-2.5 rounded-full ${isScannerOpen ? 'bg-white' : 'bg-outline-variant'}`} />
                </button>
             </div>
             
             <div className="grid grid-cols-2 gap-4">
-               <button className="flex flex-col items-center justify-center p-6 bg-white border border-outline-variant rounded-3xl hover:border-primary/30 transition-all">
+               <button className="flex flex-col items-center justify-center p-6 bg-white border border-outline-variant rounded-2xl hover:border-primary/30 transition-all">
                   <MaterialIcon name="payments" className="text-primary mb-2" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Daily Total</span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">Sales Today</span>
                </button>
-               <button className="flex flex-col items-center justify-center p-6 bg-white border border-outline-variant rounded-3xl hover:border-primary/30 transition-all">
+               <button className="flex flex-col items-center justify-center p-6 bg-white border border-outline-variant rounded-2xl hover:border-primary/30 transition-all">
                   <MaterialIcon name="history" className="text-secondary mb-2" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Recent Tx</span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">Recent Sales</span>
                </button>
             </div>
           </div>

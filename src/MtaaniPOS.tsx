@@ -111,17 +111,17 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
                 <div className="w-14 h-14 bg-primary rounded-2xl flex items-center justify-center shadow-lg shadow-primary/20">
                    <MaterialIcon name="shield_person" className="text-white text-3xl" />
                 </div>
-                <div>
-                   <h1 className="text-3xl font-black tracking-tight">System Manager</h1>
-                   <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Enterprise Root Override Node</p>
-                </div>
+                 <div>
+                    <h1 className="text-2xl font-black tracking-tight">System Admin</h1>
+                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-1">Management Dashboard</p>
+                 </div>
              </div>
              <div className="flex items-center gap-4">
                 <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-slate-900 border border-slate-800 rounded-full">
                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Global Master Link Active</span>
+                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Connected</span>
                 </div>
-                <button onClick={onLogout} className="px-8 py-3 bg-error/10 text-error border border-error/20 rounded-xl font-bold text-sm hover:bg-error hover:text-white transition-all">Sign Out Root</button>
+                <button onClick={onLogout} className="px-6 py-2 bg-error/10 text-error border border-error/20 rounded-xl font-bold text-xs hover:bg-error hover:text-white transition-all">Sign Out</button>
              </div>
           </div>
 
@@ -129,30 +129,30 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
              {/* Left Panel: Creation */}
              <div className="lg:col-span-1 space-y-8">
                 <div className="bg-slate-900 p-8 rounded-[2.5rem] border border-slate-800 shadow-xl">
-                   <h3 className="text-xl font-black mb-8 flex items-center gap-3">
+                   <h3 className="text-lg font-black mb-6 flex items-center gap-3">
                       <MaterialIcon name="add_business" className="text-primary" />
-                      Provision Tenant
+                      Add Business
                    </h3>
                    <form onSubmit={handleCreate} className="space-y-6">
                       <div className="space-y-2">
-                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2">Business Identity</label>
-                         <input type="text" placeholder="e.g. Mtaani Mart" className="w-full bg-slate-950 border border-slate-800 focus:border-primary rounded-2xl px-6 py-4 outline-none text-sm font-bold transition-all" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2">Business Name</label>
+                         <input type="text" placeholder="e.g. Mtaani Mart" className="w-full bg-slate-950 border border-slate-800 focus:border-primary rounded-xl px-5 py-3 outline-none text-sm font-bold transition-all" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
                       </div>
                       <div className="space-y-2">
-                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2">Unique Access Code</label>
-                         <input type="text" placeholder="e.g. MTAANI1" className="w-full bg-slate-950 border border-slate-800 focus:border-primary rounded-2xl px-6 py-4 outline-none text-sm font-bold transition-all" value={form.code} onChange={e => setForm({...form, code: e.target.value.toUpperCase()})} />
+                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2">Login Code</label>
+                         <input type="text" placeholder="e.g. MTAANI1" className="w-full bg-slate-950 border border-slate-800 focus:border-primary rounded-xl px-5 py-3 outline-none text-sm font-bold transition-all" value={form.code} onChange={e => setForm({...form, code: e.target.value.toUpperCase()})} />
                       </div>
-                      <button type="submit" className="w-full py-5 bg-primary hover:bg-primary-container rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 transition-all active:scale-[0.98]">Deploy Global Node</button>
+                      <button type="submit" className="w-full py-4 bg-primary hover:bg-primary-container rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 transition-all active:scale-[0.98]">Save Business</button>
                    </form>
                 </div>
 
                 <div className="bg-gradient-to-br from-slate-900 to-slate-950 p-8 rounded-[2.5rem] border border-slate-800">
                    <div className="flex items-center gap-4 mb-4 text-primary">
                       <MaterialIcon name="info" />
-                      <h4 className="text-sm font-bold uppercase tracking-widest">Root Protocol</h4>
+                      <h4 className="text-xs font-bold uppercase tracking-wider">Note</h4>
                    </div>
-                   <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                      As System Root, you possess absolute authority. Changes made here bypass local business constraints and affect the global D1 registry immediately.
+                   <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+                      As a system admin, you have full control. Changes made here will update the system immediately.
                    </p>
                 </div>
              </div>
@@ -174,19 +174,19 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
                       {businesses?.map(b => (
                          <div key={b.id} className="p-6 bg-slate-950 rounded-3xl border border-slate-800 flex justify-between items-center group hover:border-primary/50 transition-all">
                             <div className="flex items-center gap-5">
-                               <div className="w-14 h-14 rounded-2xl bg-slate-900 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
+                               <div className="w-12 h-12 rounded-xl bg-slate-900 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
                                   <MaterialIcon name="storefront" />
                                </div>
                                <div>
-                                  <p className="text-lg font-black">{b.name}</p>
-                                  <p className="text-[10px] text-slate-500 font-mono tracking-widest mt-1 uppercase">Node ID: {b.code}</p>
+                                  <p className="text-base font-black">{b.name}</p>
+                                  <p className="text-[10px] text-slate-500 font-mono tracking-widest mt-1 uppercase">Code: {b.code}</p>
                                </div>
                             </div>
                             <button 
                               onClick={() => setSelectedBiz(b)}
-                              className="px-6 py-3 bg-slate-900 hover:bg-primary text-primary hover:text-white border border-primary/20 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all"
+                              className="px-5 py-2 bg-slate-900 hover:bg-primary text-primary hover:text-white border border-primary/20 rounded-lg font-bold text-[10px] uppercase tracking-widest transition-all"
                             >
-                               Manage Control
+                               Manage
                             </button>
                          </div>
                       ))}
@@ -494,22 +494,22 @@ export default function MtaaniPOS() {
             <div className="w-16 h-16 bg-primary rounded-xl flex items-center justify-center mb-4 shadow-blue">
                <MaterialIcon name="store" className="text-white text-3xl" />
             </div>
-            <h1 className="text-3xl font-bold text-primary">Mtaani POS</h1>
-            <p className="text-on-surface-variant font-mono text-[10px] uppercase tracking-widest mt-2">Enterprise Access Node</p>
+            <h1 className="text-2xl font-bold text-primary">Mtaani POS</h1>
+            <p className="text-on-surface-variant font-mono text-[10px] uppercase tracking-widest mt-2">Log in to your account</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-1.5">
                <label className="text-[10px] font-bold text-outline uppercase tracking-widest ml-2">Business Code</label>
-               <input type="text" placeholder="Enter Entity ID" className="w-full bg-surface-container-low border border-outline-variant rounded-md px-6 py-4 text-sm font-bold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all" value={businessCode} onChange={(e) => setBusinessCode(e.target.value.toUpperCase())} />
+               <input type="text" placeholder="Enter Business Code" className="w-full bg-surface-container-low border border-outline-variant rounded-xl px-5 py-3 text-sm font-bold text-on-surface focus:border-primary outline-none transition-all" value={businessCode} onChange={(e) => setBusinessCode(e.target.value.toUpperCase())} />
             </div>
             <div className="space-y-1.5">
-               <label className="text-[10px] font-bold text-outline uppercase tracking-widest ml-2">Identity</label>
-               <input type="text" placeholder="Username" className="w-full bg-surface-container-low border border-outline-variant rounded-md px-6 py-4 text-sm font-bold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all" value={username} onChange={(e) => setUsername(e.target.value)} />
+               <label className="text-[10px] font-bold text-outline uppercase tracking-widest ml-2">Username</label>
+               <input type="text" placeholder="Enter Username" className="w-full bg-surface-container-low border border-outline-variant rounded-xl px-5 py-3 text-sm font-bold text-on-surface focus:border-primary outline-none transition-all" value={username} onChange={(e) => setUsername(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-               <label className="text-[10px] font-bold text-outline uppercase tracking-widest ml-2">Access Key</label>
-               <input type="password" placeholder="Password" className="w-full bg-surface-container-low border border-outline-variant rounded-md px-6 py-4 text-sm font-bold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all" value={password} onChange={(e) => setPassword(e.target.value)} />
+               <label className="text-[10px] font-bold text-outline uppercase tracking-widest ml-2">Password</label>
+               <input type="password" placeholder="Enter Password" className="w-full bg-surface-container-low border border-outline-variant rounded-xl px-5 py-3 text-sm font-bold text-on-surface focus:border-primary outline-none transition-all" value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
 
             {loginError && (
@@ -519,9 +519,9 @@ export default function MtaaniPOS() {
               </div>
             )}
 
-            <button type="submit" disabled={isLoggingIn} className="w-full py-4.5 bg-primary text-white rounded-md font-bold text-xs uppercase tracking-widest shadow-md hover:bg-primary-container active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50">
-               {isLoggingIn ? <MaterialIcon name="sync" className="animate-spin text-sm" /> : <MaterialIcon name="lock_open" className="text-sm" />}
-               Establish Connection
+            <button type="submit" disabled={isLoggingIn} className="w-full py-4 bg-primary text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-md hover:bg-primary-container active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50">
+               {isLoggingIn ? <MaterialIcon name="sync" className="animate-spin text-sm" /> : <MaterialIcon name="login" className="text-sm" />}
+               Log In
             </button>
           </form>
 
@@ -617,9 +617,9 @@ export default function MtaaniPOS() {
                  <div className="w-10 h-10 rounded-full border border-outline-variant overflow-hidden bg-surface-container cursor-pointer hover:ring-4 hover:ring-primary/10 transition-all" onClick={() => setIsProfileModalOpen(true)}>
                     <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuBanTVrDxgpc9k9_6zty19qXOLkfASYjRkPwQ_ImJ3zEw6tzpyfs7xlMCV1IitVdQ7l1jfwp4DlnS9ATDcQKEJWJ-uq0CWDgk5KkKbpEGNmzP4ld_l4eoeTKGNw70t2T7rIu_M2yTlJNVPd6UXlmcDvkMwlA4K3bf1CDnO8dRt5b1BYZ8b1jbVZ6N4yJQFXev6xV13LNa3awM1O2xkB3Hs7xcWlwHWy2RMXWZ-YWif-Jp2HhuiJRJxSswmn-zRE8ugFa13qjDYidMo" className="w-full h-full object-cover" />
                  </div>
-                 <h1 className="text-xl font-bold text-primary truncate max-w-[150px] md:max-w-none">
-                    {activeBranch?.name || 'Main Station'} • TRM-01
-                 </h1>
+                  <h1 className="text-lg font-bold text-primary truncate max-w-[150px] md:max-w-none">
+                     {activeBranch?.name || 'Main Shop'} • TRM-01
+                  </h1>
               </div>
               
               <div className="flex items-center gap-4">
@@ -663,13 +663,13 @@ export default function MtaaniPOS() {
              { id: 'MORE', label: 'More', icon: 'more_horiz' },
            ].map((item) => (
              <button 
-               key={item.id} 
-               onClick={() => { if (item.id === 'MORE') toggleMoreMenu(true); else navigateToTab(item.id as any); }} 
-               className={`flex flex-col items-center justify-center min-w-[72px] h-14 rounded-full transition-all duration-300 ${ (activeTab === item.id && item.id !== 'MORE') || (item.id === 'MORE' && isMoreMenuOpen) ? 'bg-primary-container text-white scale-110 shadow-lg' : 'text-on-surface-variant' }`}
-             >
-               <MaterialIcon name={item.icon} style={ (activeTab === item.id && item.id !== 'MORE') || (item.id === 'MORE' && isMoreMenuOpen) ? { fontVariationSettings: "'FILL' 1" } : {} } />
-               <span className="font-mono text-[9px] mt-1 font-bold uppercase tracking-tighter">{item.label}</span>
-             </button>
+                key={item.id} 
+                onClick={() => { if (item.id === 'MORE') toggleMoreMenu(true); else navigateToTab(item.id as any); }} 
+                className={`flex flex-col items-center justify-center min-w-[64px] h-12 rounded-2xl transition-all duration-300 ${ (activeTab === item.id && item.id !== 'MORE') || (item.id === 'MORE' && isMoreMenuOpen) ? 'bg-primary-container text-white scale-105 shadow-lg' : 'text-on-surface-variant' }`}
+              >
+                <MaterialIcon name={item.icon} style={ (activeTab === item.id && item.id !== 'MORE') || (item.id === 'MORE' && isMoreMenuOpen) ? { fontVariationSettings: "'FILL' 1" } : {} } />
+                <span className="font-mono text-[9px] mt-1 font-bold uppercase tracking-tight">{item.label}</span>
+              </button>
            ))}
         </nav>
 
@@ -694,34 +694,34 @@ export default function MtaaniPOS() {
             
             <div className="flex-1 overflow-y-auto no-scrollbar pb-8 space-y-10">
               <div className="space-y-4">
-                 <h4 className="font-mono text-[10px] font-bold text-outline uppercase tracking-widest ml-2">Operational Nodes</h4>
+                 <h4 className="font-mono text-[10px] font-bold text-outline uppercase tracking-widest ml-2">Quick Access</h4>
                  <div className="grid grid-cols-4 gap-4">
                     {[
-                      { id: 'CUSTOMERS', label: 'Clients', icon: 'group' },
+                      { id: 'CUSTOMERS', label: 'Customers', icon: 'group' },
                       { id: 'EXPENSES', label: 'Expenses', icon: 'payments' },
                       { id: 'REFUNDS', label: 'Returns', icon: 'keyboard_return' },
-                      { id: 'DOCUMENTS', label: 'Archive', icon: 'receipt_long' }
+                      { id: 'DOCUMENTS', label: 'Receipts', icon: 'receipt_long' }
                     ].map(item => (
                       <button key={item.id} onClick={() => navigateToTab(item.id as any)} className="flex flex-col items-center gap-3 p-2 group">
-                        <div className="w-14 h-14 rounded-2xl bg-surface-container flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all shadow-sm"> <MaterialIcon name={item.icon} /> </div>
-                        <span className="font-mono text-[9px] font-bold text-on-surface-variant uppercase tracking-tighter text-center">{item.label}</span>
+                        <div className="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all shadow-sm"> <MaterialIcon name={item.icon} /> </div>
+                        <span className="font-mono text-[9px] font-bold text-on-surface-variant uppercase tracking-tight text-center">{item.label}</span>
                       </button>
                     ))}
                  </div>
               </div>
 
               <div className="space-y-4">
-                 <h4 className="font-mono text-[10px] font-bold text-outline uppercase tracking-widest ml-2">Administration</h4>
+                 <h4 className="font-mono text-[10px] font-bold text-outline uppercase tracking-widest ml-2">Management</h4>
                  <div className="grid grid-cols-4 gap-4">
                     {[
-                      { id: 'SUPPLIERS', label: 'Vendors', icon: 'local_shipping' },
-                      { id: 'PURCHASES', label: 'Buying', icon: 'shopping_bag' },
-                      { id: 'REPORTS', label: 'Intel', icon: 'analytics' },
-                      { id: 'ADMIN_PANEL', label: 'System', icon: 'settings' }
+                      { id: 'SUPPLIERS', label: 'Suppliers', icon: 'local_shipping' },
+                      { id: 'PURCHASES', label: 'Purchases', icon: 'shopping_bag' },
+                      { id: 'REPORTS', label: 'Reports', icon: 'analytics' },
+                      { id: 'ADMIN_PANEL', label: 'Settings', icon: 'settings' }
                     ].map(item => (
                       <button key={item.id} onClick={() => navigateToTab(item.id as any)} className="flex flex-col items-center gap-3 p-2 group">
-                        <div className="w-14 h-14 rounded-2xl bg-surface-container flex items-center justify-center text-secondary group-hover:bg-secondary group-hover:text-white transition-all shadow-sm"> <MaterialIcon name={item.icon} /> </div>
-                        <span className="font-mono text-[9px] font-bold text-on-surface-variant uppercase tracking-tighter text-center">{item.label}</span>
+                        <div className="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center text-secondary group-hover:bg-secondary group-hover:text-white transition-all shadow-sm"> <MaterialIcon name={item.icon} /> </div>
+                        <span className="font-mono text-[9px] font-bold text-on-surface-variant uppercase tracking-tight text-center">{item.label}</span>
                       </button>
                     ))}
                  </div>
@@ -729,7 +729,7 @@ export default function MtaaniPOS() {
             </div>
 
             <div className="pt-8 border-t border-outline-variant flex gap-4 shrink-0">
-               <button onClick={handleLogout} className="flex-1 py-4.5 rounded-2xl bg-error-container text-error font-bold text-[10px] uppercase tracking-widest hover:bg-error hover:text-white transition-all shadow-sm">Sign Out Node</button>
+               <button onClick={handleLogout} className="flex-1 py-4 rounded-xl bg-error-container text-error font-bold text-[10px] uppercase tracking-widest hover:bg-error hover:text-white transition-all shadow-sm">Sign Out</button>
             </div>
           </div>
         </div>
