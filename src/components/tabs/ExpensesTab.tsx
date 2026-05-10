@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import { Search, Plus, FileMinus, Trash2, Wallet, Calendar, User, ChevronRight, X } from 'lucide-react';
+import { Search, Plus, FileMinus, Trash2, Wallet, Calendar, User, ChevronRight, X, SlidersHorizontal, TrendingDown, BookOpen, CreditCard, ChevronDown, PieChart, Activity } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import ExpenseModal from '../modals/ExpenseModal';
 import ExpenseAccountModal from '../modals/ExpenseAccountModal';
-import { BookOpen } from 'lucide-react';
 import { canPerform } from '../../utils/accessControl';
 import { recordAuditEvent } from '../../utils/auditLog';
+import NestedControlPanel from '../shared/NestedControlPanel';
 
 export default function ExpensesTab() {
   const [expenseSearch, setExpenseSearch] = useState("");
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [isOpsPanelOpen, setIsOpsPanelOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'TILL' | 'ACCOUNT' });
   const [isSaving, setIsSaving] = useState(false);
@@ -25,10 +26,9 @@ export default function ExpensesTab() {
 
   const allExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const expenseAccounts = useLiveQuery(() => db.expenseAccounts.toArray(), [], []) ;
-
-  // Need actualCashDrawer for validation
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const allCashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
@@ -124,96 +124,148 @@ export default function ExpensesTab() {
               <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
                   <FileMinus size={32} className="text-slate-300" />
               </div>
-              <p className="text-slate-400 font-black text-xs  ">Loading Ledger...</p>
+              <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Loading Financial Ledger...</p>
           </div>
       );
   }
 
   return (
-    <div className="p-6 pb-24 animate-in fade-in max-w-5xl mx-auto w-full">
-      <div className="flex justify-between items-end mb-8">
-          <div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Financial Outflow</h2>
-            <p className="text-slate-500 text-sm font-medium">Track operational costs and petty cash expenses.</p>
-         </div>
-         <div className="flex gap-2">
-            <button onClick={() => setIsAccountModalOpen(true)} className="bg-white text-slate-700 border border-slate-200 px-5 py-3.5 rounded-2xl shadow-sm active:scale-95 transition-all flex items-center gap-2 font-black text-xs  ">
-               <BookOpen size={18} /> Accounts
-            </button>
-            <button onClick={() => setIsExpenseModalOpen(true)} className="bg-orange-600 text-white px-5 py-3.5 rounded-2xl shadow-lg shadow-orange-600/20 active:scale-95 transition-all flex items-center gap-2 font-black text-xs  ">
-               <Plus size={18} /> New Expense
-            </button>
-         </div>
-      </div>
+    <div className="pb-24 animate-in fade-in w-full">
+      
+      {/* Financial Outflow Header */}
+      <div className="px-4 pt-2 mb-6">
+        <div className="flex items-center justify-between mb-4">
+           <div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">Financial Outflow</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Operational Cost Center</p>
+           </div>
+           <div className="flex gap-2">
+              <button 
+                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
+                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
+              >
+                <SlidersHorizontal size={18} />
+                <span className="text-[10px] font-black uppercase">Tools</span>
+              </button>
+              <button onClick={() => setIsExpenseModalOpen(true)} className="grad-orange text-white px-4 py-2.5 rounded-xl shadow-orange active:scale-95 transition-all flex items-center gap-2 font-black text-[10px] uppercase">
+                 <Plus size={18} /> Log Expense
+              </button>
+           </div>
+        </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-         <div className="bg-white rounded-2xl p-5 shadow-card border border-slate-100 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-green-50 text-green-600 flex items-center justify-center shadow-sm">
-               <Wallet size={24} />
-            </div>
-            <div>
-               <p className="text-slate-400 text-[10px] font-black   mb-0.5">Cash in Drawer</p>
-               <h3 className="text-xl font-black text-slate-900 leading-none">Ksh {actualCashDrawer.toLocaleString()}</h3>
-            </div>
-         </div>
-         <div className="bg-orange-600 rounded-2xl p-5 shadow-lg shadow-orange-600/20 flex items-center gap-4 text-white">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center shadow-sm">
-               <FileMinus size={24} />
-            </div>
-             <div>
-                <p className="text-orange-100 text-[10px] font-black   mb-0.5">Today's Till Outflow</p>
-                <h3 className="text-xl font-black leading-none">Ksh {todayTillExpenses.toLocaleString()}</h3>
-             </div>
-         </div>
-      </div>
-
-      <div className="relative mb-6">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-        <input 
-          type="text" 
-          placeholder="Search by category or description..." 
-          value={expenseSearch} 
-          onChange={(e) => setExpenseSearch(e.target.value)}
-          className="w-full pl-12 pr-4 py-4 bg-white rounded-xl border border-slate-200 text-sm text-slate-700 shadow-card focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 outline-none transition-all font-bold"
-        />
-      </div>
-
-      <div className="space-y-3">
-         {filteredExpenses.map(expense => (
-             <div key={expense.id} className="group bg-white p-4 rounded-xl border border-slate-100 shadow-card flex items-center justify-between hover:border-orange-200 transition-all cursor-default press">
-                <div className="flex items-center gap-4">
-                   <div className="w-14 h-14 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 shadow-sm shrink-0 group-hover:scale-105 transition-transform">
-                      <FileMinus size={22} />
+        {isOpsPanelOpen && (
+          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
+             <NestedControlPanel
+               title="Financial Operations"
+               subtitle="Monitor cash liquidity and categorized spending"
+               onClose={() => setIsOpsPanelOpen(false)}
+             >
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                   <div className="space-y-4">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Liquidity Monitor</h4>
+                      <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
+                         <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                            <Wallet size={20} />
+                         </div>
+                         <div>
+                            <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Cash in Drawer</p>
+                            <h3 className="text-xl font-black text-slate-900 leading-none">Ksh {actualCashDrawer.toLocaleString()}</h3>
+                         </div>
+                      </div>
                    </div>
-                   <div className="min-w-0">
-                      <h4 className="text-[15px] font-black text-slate-900 truncate">{expense.category}</h4>
-                      <p className="text-[11px] font-bold text-slate-400 mt-1 flex items-center gap-2 truncate">
-                         {expense.description || 'Petty cash expense'} 
-                         <span className="w-1 h-1 rounded-full bg-slate-300" />
-                         <span className="flex items-center gap-1"><Calendar size={10}/> {new Date(expense.timestamp).toLocaleDateString()}</span>
-                      </p>
+
+                   <div className="space-y-4">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Today's Burn</h4>
+                      <div className="grid grid-cols-2 gap-2">
+                         <div className="p-4 rounded-2xl border-2 border-rose-100 bg-rose-50 flex flex-col gap-1">
+                            <p className="text-[8px] font-black text-rose-400 uppercase">Till Outflow</p>
+                            <h4 className="text-sm font-black text-rose-600">Ksh {todayTillExpenses.toLocaleString()}</h4>
+                         </div>
+                         <div className="p-4 rounded-2xl border-2 border-indigo-100 bg-indigo-50 flex flex-col gap-1">
+                            <p className="text-[8px] font-black text-indigo-400 uppercase">Account Burn</p>
+                            <h4 className="text-sm font-black text-indigo-600">Ksh {todayAccountExpenses.toLocaleString()}</h4>
+                         </div>
+                      </div>
+                   </div>
+
+                   <div className="space-y-4">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Setup</h4>
+                      <button 
+                        onClick={() => { setIsAccountModalOpen(true); setIsOpsPanelOpen(false); }}
+                        className="w-full p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center justify-between hover:border-indigo-200 transition-all group"
+                      >
+                         <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                               <BookOpen size={16} />
+                            </div>
+                            <span className="text-[10px] font-black text-slate-900 uppercase">Expense Accounts</span>
+                         </div>
+                         <ChevronRight size={14} className="text-slate-300" />
+                      </button>
                    </div>
                 </div>
-                <div className="flex items-center gap-4 pl-3">
+             </NestedControlPanel>
+          </div>
+        )}
+      </div>
+
+      {/* Search Bar */}
+      <div className="px-4 mb-8">
+        <div className="relative group">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={20} />
+          <input 
+            type="text" 
+            placeholder="Search by category or description..." 
+            value={expenseSearch} 
+            onChange={(e) => setExpenseSearch(e.target.value)}
+            className="w-full pl-14 pr-4 py-4.5 bg-white rounded-[1.5rem] border-2 border-slate-100 text-sm font-bold text-slate-800 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/5 transition-all outline-none"
+          />
+          {expenseSearch && (
+            <button onClick={() => setExpenseSearch('')} className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Expense List */}
+      <div className="space-y-3 px-4">
+         {filteredExpenses.map(expense => (
+             <div key={expense.id} className="group bg-white p-5 rounded-[2rem] border-2 border-slate-100 shadow-sm flex items-center justify-between hover:border-orange-300 hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-default">
+                <div className="flex items-center gap-5 min-w-0">
+                   <div className="w-14 h-14 rounded-[1.25rem] bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 shadow-sm shrink-0 group-hover:scale-110 transition-transform">
+                      <FileMinus size={28} />
+                   </div>
+                   <div className="min-w-0">
+                      <h4 className="text-base font-black text-slate-900 truncate leading-tight">{expense.category}</h4>
+                      <div className="flex items-center gap-2.5 mt-1">
+                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate max-w-[120px] sm:max-w-none">{expense.description || 'General operational cost'}</span>
+                         <span className="w-1 h-1 rounded-full bg-slate-200 shrink-0" />
+                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Calendar size={10}/> {new Date(expense.timestamp).toLocaleDateString()}</span>
+                      </div>
+                   </div>
+                </div>
+                <div className="flex items-center gap-5 pl-4 border-l border-slate-50">
                    <div className="text-right">
-                      <p className="text-[10px] font-black text-slate-300   leading-none mb-1">Amount</p>
-                      <p className="text-[17px] font-black text-orange-600 tabular-nums">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Amount Paid</p>
+                      <h3 className="text-lg font-black text-orange-600 tabular-nums leading-none">
                          Ksh {expense.amount.toLocaleString()}
-                      </p>
-                      <p className="text-[8px] font-black text-slate-400 opacity-60">
-                         via {expense.source === 'TILL' ? 'TILL' : 'ACC'}
-                      </p>
-                      {expense.userName && (
-                        <p className="text-[9px] font-black text-blue-500  flex items-center justify-end gap-1 mt-0.5">
-                          <User size={8}/> {expense.userName}
-                        </p>
-                      )}
+                      </h3>
+                      <div className="flex items-center justify-end gap-1.5 mt-2">
+                         <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border ${expense.source === 'TILL' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`}>
+                            {expense.source === 'TILL' ? 'TILL' : 'ACC'}
+                         </span>
+                         {expense.userName && (
+                           <span className="text-[8px] font-black text-slate-400 uppercase flex items-center gap-1">
+                             <User size={8}/> {expense.userName.split(' ')[0]}
+                           </span>
+                         )}
+                      </div>
                    </div>
                    {isAdmin && (
                       <button 
                         onClick={() => handleDeleteExpense(expense.id)}
-                        className="w-10 h-10 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-all"
-                        title="Delete record"
+                        className="w-10 h-10 flex items-center justify-center rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white transition-all shadow-sm"
                       >
                          <Trash2 size={18} />
                       </button>
@@ -222,16 +274,17 @@ export default function ExpensesTab() {
              </div>
          ))}
          {filteredExpenses.length === 0 && (
-            <div className="py-20 text-center flex flex-col items-center slide-up">
-               <div className="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 text-slate-200">
-                 <FileMinus size={40} />
+            <div className="py-32 text-center flex flex-col items-center">
+               <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner text-slate-200">
+                 <FileMinus size={44} />
                </div>
-               <p className="text-slate-500 font-black text-sm  ">No Records</p>
-               <p className="text-slate-400 text-xs mt-1">Operational costs will appear here when logged.</p>
+               <p className="text-slate-500 font-black text-lg">No expense records found</p>
+               <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Logged operational costs will appear here</p>
             </div>
          )}
       </div>
 
+      {/* Modals */}
       <ExpenseModal 
         isOpen={isExpenseModalOpen}
         onClose={() => setIsExpenseModalOpen(false)}
@@ -250,4 +303,3 @@ export default function ExpensesTab() {
     </div>
   );
 }
-

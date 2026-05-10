@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
-import { Search, Plus, ClipboardList, PackagePlus, CheckSquare, Save, Trash2, Barcode } from 'lucide-react';
+import { Search, Plus, ClipboardList, PackagePlus, CheckSquare, Save, Trash2, Barcode, SlidersHorizontal, TrendingUp, ShoppingBag, Clock, ChevronRight, X, User, ArrowDownLeft, FileText } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Product, type PurchaseOrder, type Supplier, type Transaction } from '../../db';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { SearchableSelect } from '../shared/SearchableSelect';
+import NestedControlPanel from '../shared/NestedControlPanel';
 
 export default function PurchasesTab() {
-  const { error } = useToast();
+  const { error, success } = useToast();
   const currentUser = useStore(state => state.currentUser);
   const [purchaseSearch, setPurchaseSearch] = useState("");
   const [isPOModalOpen, setIsPOModalOpen] = useState(false);
   const [isReceivePOModalOpen, setIsReceivePOModalOpen] = useState(false);
+  const [isOpsPanelOpen, setIsOpsPanelOpen] = useState(false);
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
   const [selectedPOToEdit, setSelectedPOToEdit] = useState<PurchaseOrder | null>(null);
   const [selectedRecordForDetails, setSelectedRecordForDetails] = useState<any | null>(null);
@@ -29,6 +31,7 @@ export default function PurchasesTab() {
 
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  
   const allPurchaseOrders = useLiveQuery(() => activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const allSuppliers = useLiveQuery(
     () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
@@ -43,8 +46,13 @@ export default function PurchasesTab() {
 
   const filteredPurchases = allPurchaseOrders.filter(po => 
       po.invoiceNumber?.toLowerCase().includes(purchaseSearch.toLowerCase()) || 
-      allSuppliers.find(s => s.id === po.supplierId)?.company.toLowerCase().includes(purchaseSearch.toLowerCase())
-  );
+      allSuppliers.find(s => s.id === po.supplierId)?.company.toLowerCase().includes(purchaseSearch.toLowerCase()) ||
+      po.id.toLowerCase().includes(purchaseSearch.toLowerCase())
+  ).sort((a,b) => (b.orderDate || 0) - (a.orderDate || 0));
+
+  const pendingApproval = allPurchaseOrders.filter(po => po.approvalStatus === 'PENDING').length;
+  const awaitingArrival = allPurchaseOrders.filter(po => po.approvalStatus === 'APPROVED' && po.status !== 'RECEIVED').length;
+  const totalPurchases = allPurchaseOrders.reduce((sum, po) => sum + (po.totalAmount || 0), 0);
 
   const handleAddPoItem = () => {
      if (!poItemInput.productId || !poItemInput.qty || !poItemInput.cost) return;
@@ -104,7 +112,7 @@ export default function PurchasesTab() {
         setIsPOModalOpen(false);
         setPoForm({ supplierId: '' });
         setPoItems([]);
-        success("Purchase order saved.");
+        success("Purchase order saved successfully.");
       } catch (err: any) {
         error("Failed to save PO: " + err.message);
       } finally {
@@ -150,7 +158,7 @@ export default function PurchasesTab() {
       if (!selectedPO) return;
       if (isSaving) return;
       const invoiceNumber = receiveInvoices[selectedPO.id];
-      if (!invoiceNumber) return;
+      if (!invoiceNumber) return error("Invoice number is required");
 
       setIsSaving(true);
       try {
@@ -176,7 +184,7 @@ export default function PurchasesTab() {
                if (product) {
                    const newSell = receiveSellingPrices[item.productId];
                    await db.products.update(item.productId, {
-                       stockQuantity: product.stockQuantity + item.receivedQuantity,
+                       stockQuantity: (product.stockQuantity || 0) + item.receivedQuantity,
                        ...(newSell && newSell !== product.sellingPrice ? { sellingPrice: newSell } : {})
                    });
                    await db.stockMovements.add({
@@ -215,90 +223,174 @@ export default function PurchasesTab() {
       setSelectedRecordForDetails({ ...po, recordType: 'PURCHASE_ORDER' });
   };
 
-  const handleRefundStub = async (t: Transaction) => {
-      // Purchase orders don't support the sales refund flow
-      console.log("Refund not applicable for POs");
-  };
-
   return (
-    <div className="p-5 pb-8 animate-in fade-in max-w-5xl mx-auto w-full flex flex-col">
-      <div className="flex justify-between items-center mb-6 mt-2">
-         <div>
-           <h2 className="text-xl font-extrabold text-slate-900 mb-1">Purchases</h2>
-           <p className="text-sm text-slate-500">Manage supplier orders & stock receiving.</p>
-         </div>
-         <button onClick={() => { setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); setIsPOModalOpen(true); }} className="bg-slate-900 text-white p-3 rounded-2xl shadow-lg shadow-slate-900/20 active:scale-95 transition-transform flex items-center gap-2 font-bold text-sm">
-           <Plus size={18} /> New Order
-         </button>
+    <div className="pb-24 animate-in fade-in w-full">
+      
+      {/* Procurement Header */}
+      <div className="px-4 pt-2 mb-6">
+        <div className="flex items-center justify-between mb-4">
+           <div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">Procurement</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Order Management & Receiving</p>
+           </div>
+           <div className="flex gap-2">
+              <button 
+                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
+                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
+              >
+                <SlidersHorizontal size={18} />
+                <span className="text-[10px] font-black uppercase">Tools</span>
+              </button>
+              <button onClick={() => { setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); setIsPOModalOpen(true); }} className="grad-indigo text-white px-4 py-2.5 rounded-xl shadow-indigo active:scale-95 transition-all flex items-center gap-2 font-black text-[10px] uppercase">
+                 <Plus size={18} /> New Order
+              </button>
+           </div>
+        </div>
+
+        {isOpsPanelOpen && (
+          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
+             <NestedControlPanel
+               title="Procurement Control"
+               subtitle="Monitor orders and arrival velocity"
+               onClose={() => setIsOpsPanelOpen(false)}
+             >
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4 shadow-sm">
+                      <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+                         <Clock size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Pending Approval</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">{pendingApproval} Orders</h3>
+                      </div>
+                   </div>
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4 shadow-sm">
+                      <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+                         <ArrowDownLeft size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Awaiting Arrival</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">{awaitingArrival} Shipments</h3>
+                      </div>
+                   </div>
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4 shadow-sm">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                         <TrendingUp size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Total Volume</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">Ksh {totalPurchases.toLocaleString()}</h3>
+                      </div>
+                   </div>
+                </div>
+             </NestedControlPanel>
+          </div>
+        )}
       </div>
 
-      <div className="relative mb-4">
-        <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
-        <input 
-          type="text" placeholder="Search orders..." value={purchaseSearch} onChange={(e) => setPurchaseSearch(e.target.value)}
-          className="w-full pl-11 pr-4 py-3 bg-white rounded-2xl border border-slate-200 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all font-medium"
-        />
+      {/* Search Bar */}
+      <div className="px-4 mb-8">
+        <div className="relative group">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={20} />
+          <input 
+            type="text" 
+            placeholder="Search by vendor, PO # or invoice number..." 
+            value={purchaseSearch} 
+            onChange={(e) => setPurchaseSearch(e.target.value)}
+            className="w-full pl-14 pr-4 py-4.5 bg-white rounded-[1.5rem] border-2 border-slate-100 text-sm font-bold text-slate-800 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/5 transition-all outline-none"
+          />
+          {purchaseSearch && (
+            <button onClick={() => setPurchaseSearch('')} className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all">
+              <X size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="space-y-2 pb-24">
-         {filteredPurchases.map(po => (
-            <div 
+      {/* PO List */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 px-4">
+         {filteredPurchases.map(po => {
+            const supplier = allSuppliers?.find(s => s.id === po.supplierId);
+            const isRecv = po.status === 'RECEIVED';
+            const isAppr = po.approvalStatus === 'APPROVED';
+
+            return (
+              <div 
                 key={po.id} 
-                onClick={() => {
-                    if (po.approvalStatus === 'PENDING') {
-                        initEditPO(po);
-                    } else {
-                        handleDetailsClick(po);
-                    }
-                }} 
-                className={`bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between transition-transform active:scale-[0.98] cursor-pointer hover:border-slate-300`}>
-               <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 
-                    ${po.status === 'RECEIVED' ? 'bg-green-50 border border-green-100 text-green-600' : 
-                      (po.approvalStatus === 'APPROVED' ? 'bg-blue-50 border border-blue-100 text-blue-600' : 'bg-orange-50 border border-orange-100 text-orange-600')}`}>
-                     {po.status === 'RECEIVED' ? <PackagePlus size={18} /> : (po.approvalStatus === 'APPROVED' ? <CheckSquare size={18} /> : <ClipboardList size={18} />)}
-                  </div>
-                  <div>
-                     <h4 className="text-sm font-bold text-slate-900">{allSuppliers?.find(s => s.id === po.supplierId)?.company || 'Unknown Supplier'}</h4>
-                     <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
-                        {po.id.startsWith('PO-') ? '' : 'PO #'}{po.id.startsWith('PO-') ? po.id : po.id.split('-')[0].toUpperCase()} • {new Date(po.orderDate).toLocaleDateString()}
-                        {po.approvalStatus === 'PENDING' && <span className="ml-2 text-orange-600 font-bold">(Needs Admin Approval)</span>}
-                     </div>
-                  </div>
-               </div>
-               <div className="text-right flex flex-col items-end gap-1">
-                  <div className="text-sm font-black text-slate-900">
-                     Ksh {po.totalAmount.toLocaleString()}
-                  </div>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded  
-                    ${po.status === 'RECEIVED' ? 'bg-green-100 text-green-700' : 
-                      (po.approvalStatus === 'APPROVED' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700')}`}>
-                     {po.status === 'RECEIVED' ? 'RECEIVED' : (po.approvalStatus === 'APPROVED' ? 'APPROVED' : 'AWAITING APPROVAL')}
-                  </span>
-               </div>
-            </div>
-         ))}
+                onClick={() => po.approvalStatus === 'PENDING' ? initEditPO(po) : handleDetailsClick(po)} 
+                className="group bg-white p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col gap-5 hover:border-indigo-300 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden"
+              >
+                <div className="flex justify-between items-start">
+                   <div className={`w-14 h-14 rounded-[1.25rem] flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform ${
+                     isRecv ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
+                     isAppr ? 'bg-blue-50 text-blue-600 border border-blue-100' : 
+                     'bg-amber-50 text-amber-600 border border-amber-100'
+                   }`}>
+                      {isRecv ? <PackagePlus size={28} /> : (isAppr ? <CheckSquare size={28} /> : <ClipboardList size={28} />)}
+                   </div>
+                   <div className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+                     isRecv ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
+                     isAppr ? 'bg-blue-50 text-blue-600 border border-blue-100' : 
+                     'bg-amber-50 text-amber-600 border border-amber-100'
+                   }`}>
+                      <div className={`w-1.5 h-1.5 rounded-full ${isRecv ? 'bg-emerald-500' : isAppr ? 'bg-blue-500' : 'bg-amber-500 animate-pulse'}`} />
+                      {isRecv ? 'RECEIVED' : (isAppr ? 'APPROVED' : 'PENDING')}
+                   </div>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                   <h4 className="text-base font-black text-slate-900 truncate mb-1 leading-tight">{supplier?.company || 'Unknown Supplier'}</h4>
+                   <div className="flex items-center gap-2 mb-4">
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100 flex items-center gap-1.5 uppercase tracking-tighter">
+                         <FileText size={12} /> {po.poNumber || po.id}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-300">|</span>
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(po.orderDate).toLocaleDateString()}</span>
+                   </div>
+                   
+                   <div className="flex items-end justify-between pt-4 border-t border-slate-50">
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Order Value</p>
+                         <h3 className="text-lg font-black text-slate-900 leading-none">Ksh {po.totalAmount.toLocaleString()}</h3>
+                      </div>
+                      <ChevronRight size={20} className="text-slate-200 group-hover:text-indigo-400 transition-colors" />
+                   </div>
+                </div>
+              </div>
+            );
+         })}
+         
          {filteredPurchases.length === 0 && (
-            <div className="py-10 text-center text-slate-400 flex flex-col items-center">
-               <ClipboardList size={40} className="mb-3 opacity-20" />
-               <p className="text-sm">No purchase orders found.</p>
+            <div className="col-span-full py-32 text-center flex flex-col items-center">
+               <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner text-slate-200">
+                 <ClipboardList size={44} />
+               </div>
+               <p className="text-slate-500 font-black text-lg">No procurement records found</p>
+               <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Orders and stock arrivals will appear here</p>
             </div>
          )}
       </div>
 
-      {/* Purchase Order Modal */}
+      {/* PO Modal */}
       {isPOModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPOModalOpen(false)} />
-          <div className="bg-white w-full max-w-lg rounded-xl shadow-elevated relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200 overflow-hidden max-h-[90vh]">
-            <h2 className="text-xl font-black text-slate-900 mb-2 flex items-center gap-2">
-               <ClipboardList className="text-blue-600" /> {selectedPOToEdit ? 'Edit Purchase Order' : 'New Purchase Order'}
-            </h2>
-            <p className="text-sm text-slate-500 mb-4">{selectedPOToEdit ? 'Modify the requested items.' : 'Create a new order to send to a supplier.'}</p>
-            
-            <div className="space-y-4 mb-4 flex-1 overflow-y-auto no-scrollbar">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pb-safe">
+           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPOModalOpen(false)} />
+           <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[2.5rem] shadow-elevated relative z-10 flex flex-col p-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto no-scrollbar">
+              <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8 sm:hidden shrink-0" />
+              
+              <div className="flex items-center gap-4 mb-8 shrink-0">
+                 <div className="w-12 h-12 grad-indigo rounded-2xl flex items-center justify-center text-white shadow-indigo">
+                   <ClipboardList size={24} />
+                 </div>
                  <div>
-                    <label className="block text-xs font-bold text-slate-500  mb-1.5">Supplier</label>
+                   <h2 className="text-xl font-black text-slate-900 tracking-tight">{selectedPOToEdit ? 'Edit Purchase Order' : 'New Procurement Order'}</h2>
+                   <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Supply Chain Request</p>
+                 </div>
+              </div>
+
+              <div className="space-y-6 mb-10">
+                 <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Select Registered Vendor</label>
                     <SearchableSelect
                       value={poForm.supplierId}
                       onChange={(v) => setPoForm({ supplierId: v })}
@@ -308,147 +400,183 @@ export default function PurchasesTab() {
                         label: `${s.company} (${s.name})`,
                         keywords: `${s.company} ${s.name}`,
                       }))}
+                      buttonClassName="rounded-2xl px-6 py-4.5 font-black text-slate-900 bg-slate-50 border-transparent hover:border-slate-200"
                     />
                  </div>
                  
-                 <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 space-y-3">
-                    <label className="block text-xs font-bold text-slate-500 ">Add Item to Order</label>
-                    <div className="flex flex-col gap-2">
+                 <div className="bg-slate-50 rounded-[2rem] p-6 border-2 border-slate-100 space-y-4">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">SKU Selection</h4>
+                    <div className="relative group">
                        <input 
                            type="text" 
                            value={poItemInput.search} 
                            onChange={e => setPoItemInput({...poItemInput, search: e.target.value, productId: ''})} 
-                           placeholder="Search product to add..." 
-                           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" 
+                           placeholder="Search product by name or barcode..." 
+                           className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl pl-12 pr-4 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" 
                        />
+                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={18} />
+                       
                        {poItemInput.search && !poItemInput.productId && (
-                          <div className="bg-white border border-slate-200 rounded-lg shadow-sm max-h-40 overflow-y-auto mt-1">
-                             {allProducts?.filter(p => p.name.toLowerCase().includes(poItemInput.search.toLowerCase())).slice(0, 3).map(p => (
-                                <div key={p.id} onClick={() => handleSelectPoProduct(p)} className="px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">{p.name}</div>
+                          <div className="absolute top-full left-0 right-0 z-10 bg-white border-2 border-slate-100 rounded-2xl shadow-xl mt-2 max-h-60 overflow-y-auto no-scrollbar animate-in slide-in-from-top-2">
+                             {allProducts?.filter(p => p.name.toLowerCase().includes(poItemInput.search.toLowerCase()) || p.barcode.includes(poItemInput.search)).slice(0, 5).map(p => (
+                                <div key={p.id} onClick={() => handleSelectPoProduct(p)} className="px-5 py-4 text-sm font-bold text-slate-700 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center justify-between">
+                                   <span>{p.name}</span>
+                                   <span className="text-[10px] text-slate-400 font-mono">{p.barcode}</span>
+                                </div>
                              ))}
-                             {allProducts?.filter(p => p.name.toLowerCase().includes(poItemInput.search.toLowerCase())).length === 0 && (
-                                <div className="px-3 py-2 text-sm text-slate-500 italic">No exact matches found</div>
-                             )}
                           </div>
                        )}
                     </div>
+
                     {poItemInput.productId && (
-                       <div className="flex gap-2">
-                          <input type="number" placeholder="Qty" value={poItemInput.qty} onChange={e => setPoItemInput({...poItemInput, qty: e.target.value})} className="w-[60px] min-w-0 shrink border border-slate-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-blue-500" />
-                          <input type="number" placeholder="Unit Cost" value={poItemInput.cost} onChange={e => setPoItemInput({...poItemInput, cost: e.target.value})} className="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
-                          <button onClick={handleAddPoItem} className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-bold text-sm flex items-center justify-center gap-1 transition-colors"><Plus size={16}/> Add</button>
+                       <div className="flex gap-3 animate-in zoom-in-95">
+                          <div className="flex-1">
+                             <input type="number" placeholder="Qty" value={poItemInput.qty} onChange={e => setPoItemInput({...poItemInput, qty: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm text-center" />
+                          </div>
+                          <div className="flex-[2] relative">
+                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300">KSH</span>
+                             <input type="number" placeholder="Unit Cost" value={poItemInput.cost} onChange={e => setPoItemInput({...poItemInput, cost: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl pl-12 pr-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" />
+                          </div>
+                          <button onClick={handleAddPoItem} className="w-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-indigo active:scale-95 transition-all">
+                             <Plus size={24}/>
+                          </button>
                        </div>
                     )}
                  </div>
 
                  {poItems.length > 0 && (
-                    <div className="mt-4">
-                       <h3 className="text-xs font-bold text-slate-500  mb-2">Order Items</h3>
-                       <div className="space-y-2">
+                    <div className="space-y-3">
+                       <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Order Line Items</h3>
+                       <div className="space-y-2 max-h-[300px] overflow-y-auto no-scrollbar">
                           {poItems.map((item, idx) => (
-                             <div key={idx} className="flex justify-between items-center bg-white border border-slate-200 p-2 rounded-lg text-sm">
-                                <div>
-                                   <div className="font-semibold">{item.name}</div>
-                                   <div className="text-xs text-slate-500">{item.expectedQuantity} units @ Ksh {item.unitCost}</div>
+                             <div key={idx} className="flex items-center justify-between bg-white border-2 border-slate-50 p-4 rounded-2xl shadow-sm group">
+                                <div className="min-w-0">
+                                   <div className="text-sm font-black text-slate-900 truncate leading-tight">{item.name}</div>
+                                   <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight mt-0.5">{item.expectedQuantity} units × Ksh {item.unitCost}</div>
                                 </div>
-                                <div className="font-bold">Ksh {(item.expectedQuantity * item.unitCost).toLocaleString()}</div>
-                                <button onClick={() => setPoItems(poItems.filter((_, i) => i !== idx))} className="text-red-500 p-1"><Trash2 size={14}/></button>
+                                <div className="flex items-center gap-4">
+                                   <div className="text-right">
+                                      <div className="text-sm font-black text-indigo-600">Ksh {(item.expectedQuantity * item.unitCost).toLocaleString()}</div>
+                                   </div>
+                                   <button onClick={() => setPoItems(poItems.filter((_, i) => i !== idx))} className="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-500 hover:text-white">
+                                      <Trash2 size={14}/>
+                                   </button>
+                                </div>
                              </div>
                           ))}
                        </div>
-                       <div className="flex justify-between items-center text-sm font-black mt-3 pt-3 border-t border-slate-200">
-                          <span>Total amount</span>
-                          <span>Ksh {poItems.reduce((acc, item) => acc + (item.expectedQuantity * item.unitCost), 0).toLocaleString()}</span>
+                       <div className="flex justify-between items-center px-6 py-5 bg-indigo-50 rounded-2xl border-2 border-indigo-100 mt-4">
+                          <span className="text-[11px] font-black text-indigo-900 uppercase tracking-widest">Total Valuation</span>
+                          <span className="text-xl font-black text-indigo-600">Ksh {poItems.reduce((acc, item) => acc + (item.expectedQuantity * item.unitCost), 0).toLocaleString()}</span>
                        </div>
                     </div>
                  )}
-            </div>
+              </div>
 
-            <div className="flex gap-3 mt-auto pt-4">
-               <button onClick={() => { setIsPOModalOpen(false); setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); }} className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors">Cancel</button>
-               <button onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0} className="flex-[2] bg-blue-600 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95"><Save size={16}/> {selectedPOToEdit ? 'Save Changes' : 'Create Order'}</button>
-            </div>
-          </div>
+              <div className="flex gap-4 mt-auto pt-6 border-t border-slate-50">
+                 <button onClick={() => { setIsPOModalOpen(false); setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); }} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
+                   Dismiss
+                 </button>
+                 <button onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0} className="flex-[2] grad-indigo text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-indigo press flex items-center justify-center gap-3">
+                   <Save size={18}/>
+                   {selectedPOToEdit ? 'Commit Changes' : 'Publish Order'}
+                 </button>
+              </div>
+           </div>
         </div>
       )}
 
-      {/* Receive Purchase Order Modal */}
+      {/* Receive PO Modal */}
       {isReceivePOModalOpen && selectedPO && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsReceivePOModalOpen(false)} />
-          <div className="bg-white w-full max-w-lg rounded-xl shadow-elevated relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200 overflow-hidden max-h-[90vh]">
-            <h2 className="text-xl font-black text-slate-900 mb-2 flex items-center gap-2">
-               <PackagePlus className="text-green-600" /> Receive Order
-            </h2>
-            <p className="text-sm text-slate-500 mb-4">Confirm received quantities and specify invoice number to update stock.</p>
-            
-            <div className="space-y-4 mb-4 flex-1 overflow-y-auto no-scrollbar">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pb-safe">
+           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsReceivePOModalOpen(false)} />
+           <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[2.5rem] shadow-elevated relative z-10 flex flex-col p-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto no-scrollbar">
+              <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8 sm:hidden shrink-0" />
+              
+              <div className="flex items-center gap-4 mb-8 shrink-0">
+                 <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center text-white shadow-emerald">
+                   <PackagePlus size={24} />
+                 </div>
                  <div>
-                    <label className="block text-xs font-bold text-slate-500  mb-1.5">Supplier Invoice Number</label>
-                    <input type="text" value={receiveInvoices[selectedPO.id] || ''} onChange={e => setReceiveInvoices({...receiveInvoices, [selectedPO.id]: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-green-500" placeholder="e.g. INV-2023-001" />
+                   <h2 className="text-xl font-black text-slate-900 tracking-tight">Receive Stock Shipment</h2>
+                   <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Inventory Intake Confirmation</p>
+                 </div>
+              </div>
+
+              <div className="space-y-6 mb-10">
+                 <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Vendor Invoice Number</label>
+                    <input type="text" value={receiveInvoices[selectedPO.id] || ''} onChange={e => setReceiveInvoices({...receiveInvoices, [selectedPO.id]: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 focus:bg-white rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="e.g. INV/2026/001" />
                  </div>
 
-                 <div className="mt-4">
-                    <h3 className="text-xs font-bold text-slate-500  mb-2">Items to Receive</h3>
-                    <div className="space-y-3">
+                 <div className="space-y-3">
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Line Item Verification</h3>
+                    <div className="space-y-4">
                         {selectedPO.items.map((item, idx) => (
-                           <div key={idx} className="bg-white border border-slate-200 p-3 rounded-lg text-sm flex flex-col gap-3">
-                              <div className="flex justify-between items-start">
-                                 <div>
-                                    <div className="font-semibold text-slate-900">{item.name}</div>
-                                    <div className="text-xs text-slate-500">Ordered: {item.expectedQuantity} @ Ksh {item.unitCost}</div>
+                           <div key={idx} className="bg-slate-50 border-2 border-slate-100 p-5 rounded-[2rem] shadow-inner">
+                              <div className="flex justify-between items-start mb-4">
+                                 <div className="min-w-0">
+                                    <div className="text-sm font-black text-slate-900 truncate leading-tight">{item.name}</div>
+                                    <div className="text-[9px] font-bold text-slate-400 uppercase mt-1 tracking-tight">Expect: {item.expectedQuantity} @ Ksh {item.unitCost}</div>
                                  </div>
-                                 <div className="w-20 shrink-0">
-                                    <label className="block text-[9px]  font-bold text-slate-400 mb-1">Recv Qty</label>
+                                 <div className="w-24">
+                                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Actual Recv</label>
                                     <input 
                                         type="number" 
                                         value={receiveQuantities[item.productId] ?? item.expectedQuantity} 
                                         onChange={e => setReceiveQuantities({...receiveQuantities, [item.productId]: Number(e.target.value)})} 
-                                        className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold focus:outline-none focus:border-green-500 text-center" 
+                                        className="w-full bg-white border-2 border-transparent focus:border-emerald-500 rounded-xl px-2 py-2 text-sm font-black text-slate-900 outline-none text-center shadow-sm" 
                                     />
                                  </div>
                               </div>
-                              <div className="flex gap-2 pt-2 border-t border-slate-100">
-                                 <div className="flex-1">
-                                    <label className="block text-[9px]  font-bold text-slate-400 mb-1">Actual Unit Cost</label>
+                              <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-200/50">
+                                 <div>
+                                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Verified Unit Cost</label>
                                     <input 
                                         type="number" 
                                         value={receiveUnitCosts[item.productId] ?? item.unitCost} 
                                         onChange={e => setReceiveUnitCosts({...receiveUnitCosts, [item.productId]: Number(e.target.value)})} 
-                                        className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-semibold focus:outline-none focus:border-green-500" 
+                                        className="w-full bg-white border-2 border-transparent focus:border-emerald-500 rounded-xl px-4 py-2 text-[11px] font-black text-slate-900 outline-none shadow-sm" 
                                     />
                                  </div>
-                                 <div className="flex-1">
-                                    <label className="block text-[9px]  font-bold text-slate-400 mb-1">Update Sell Price</label>
+                                 <div>
+                                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Update Sell Price</label>
                                     <input 
                                         type="number" 
                                         value={receiveSellingPrices[item.productId] ?? ''} 
                                         onChange={e => setReceiveSellingPrices({...receiveSellingPrices, [item.productId]: Number(e.target.value)})} 
-                                        className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-semibold focus:outline-none focus:border-blue-500" 
+                                        className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-2 text-[11px] font-black text-slate-900 outline-none shadow-sm" 
+                                        placeholder="No change"
                                     />
                                  </div>
                               </div>
                            </div>
                         ))}
-                     </div>
+                    </div>
                  </div>
-            </div>
+              </div>
 
-            <div className="flex gap-3 mt-auto pt-4">
-               <button onClick={() => setIsReceivePOModalOpen(false)} className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors">Cancel</button>
-               <button onClick={handleReceivePO} disabled={!receiveInvoices[selectedPO.id]} className="flex-[2] bg-green-600 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-green-600/20 active:scale-95"><CheckSquare size={16}/> Receive Stock</button>
-            </div>
-          </div>
+              <div className="flex gap-4 mt-auto pt-6 border-t border-slate-50">
+                 <button onClick={() => setIsReceivePOModalOpen(false)} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
+                   Dismiss
+                 </button>
+                 <button onClick={handleReceivePO} disabled={!receiveInvoices[selectedPO.id] || isSaving} className="flex-[2] bg-emerald-600 text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-emerald press flex items-center justify-center gap-3">
+                   {isSaving ? <Loader2 size={18} className="animate-spin" /> : <CheckSquare size={18}/>}
+                   {isSaving ? 'Processing...' : 'Confirm Arrival'}
+                 </button>
+              </div>
+           </div>
         </div>
       )}
 
       <DocumentDetailsModal 
         selectedRecord={selectedRecordForDetails} 
         setSelectedRecord={setSelectedRecordForDetails} 
-        handleRefund={handleRefundStub}
+        handleRefund={async () => {}}
         onReceive={initReceivePO}
       />
     </div>
   );
 }
 
+const Loader2 = ({ size, className }: { size: number, className?: string }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>;

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Plus, RotateCcw } from 'lucide-react';
+import { Search, Plus, RotateCcw, SlidersHorizontal, ChevronRight, X, ArrowLeftRight, Clock, ShieldCheck, Activity } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction } from '../../db';
 import { useToast } from '../../context/ToastContext';
@@ -7,6 +7,7 @@ import { useStore } from '../../store';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { canPerform } from '../../utils/accessControl';
 import { recordAuditEvent } from '../../utils/auditLog';
+import NestedControlPanel from '../shared/NestedControlPanel';
 
 interface RefundsTabProps {
   setActiveTab: (tab: any) => void;
@@ -15,6 +16,7 @@ interface RefundsTabProps {
 export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   const [refundSearch, setRefundSearch] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
+  const [isOpsPanelOpen, setIsOpsPanelOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const { success, error } = useToast();
 
@@ -24,16 +26,23 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   
   if (!allTransactions) {
     return (
-        <div className="p-10 text-center text-slate-400 font-bold   animate-pulse flex flex-col items-center justify-center min-h-[40vh]">
-            <RotateCcw size={40} className="mb-4 opacity-20" />
-            Loading returns...
+        <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
+            <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
+                <RotateCcw size={32} className="text-slate-300" />
+            </div>
+            <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Auditing Returns...</p>
         </div>
     );
   }
 
-  const sortedTransactions = [...(allTransactions || [])].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-  const refundedTransactions = sortedTransactions.filter(t => (t.status === 'REFUNDED' || t.status === 'PARTIAL_REFUND') && t.id.toLowerCase().includes(refundSearch.toLowerCase()))
-    .map(t => ({ ...t, recordType: 'SALE' as const }));
+  const sortedTransactions = [...(allTransactions || [])].sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+  const refundedTransactions = sortedTransactions.filter(t => 
+    (t.status === 'REFUNDED' || t.status === 'PARTIAL_REFUND') && 
+    (t.id.toLowerCase().includes(refundSearch.toLowerCase()) || (t.cashierName?.toLowerCase().includes(refundSearch.toLowerCase())))
+  ).map(t => ({ ...t, recordType: 'SALE' as const }));
+
+  const totalRefundedValue = refundedTransactions.reduce((sum, t) => sum + (t.total || 0), 0);
+  const pendingRequests = sortedTransactions.filter(t => t.status === 'PENDING_REFUND').length;
 
   const handleRefund = async (t: Transaction, itemsToReturn?: { productId: string, quantity: number }[]) => {
     if (t.status !== 'PAID' && t.status !== 'PARTIAL_REFUND') return;
@@ -68,51 +77,132 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   };
 
   return (
-    <div className="p-5 pb-8 animate-in fade-in max-w-5xl mx-auto w-full flex flex-col">
-      <div className="flex justify-between items-center mb-6 mt-2">
-         <div>
-           <h2 className="text-xl font-extrabold text-slate-900 mb-1">Returns</h2>
-           <p className="text-sm text-slate-500">View and manage returned items.</p>
-         </div>
-         <button onClick={() => setActiveTab('DOCUMENTS')} className="bg-blue-600 text-white p-3 rounded-2xl shadow-lg shadow-blue-600/20 active:scale-95 transition-transform flex items-center gap-2 font-bold text-sm">
-           <Plus size={18} /> New Return
-         </button>
+    <div className="pb-24 animate-in fade-in w-full">
+      
+      {/* Returns Header */}
+      <div className="px-4 pt-2 mb-6">
+        <div className="flex items-center justify-between mb-4">
+           <div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">Returns & Refunds</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Audit Trail & Reversal Management</p>
+           </div>
+           <div className="flex gap-2">
+              <button 
+                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
+                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
+              >
+                <SlidersHorizontal size={18} />
+                <span className="text-[10px] font-black uppercase">Tools</span>
+              </button>
+              <button onClick={() => setActiveTab('DOCUMENTS')} className="grad-blue text-white px-4 py-2.5 rounded-xl shadow-blue active:scale-95 transition-all flex items-center gap-2 font-black text-[10px] uppercase">
+                 <Plus size={18} /> Initiate Return
+              </button>
+           </div>
+        </div>
+
+        {isOpsPanelOpen && (
+          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
+             <NestedControlPanel
+               title="Returns Intelligence"
+               subtitle="Monitor reversal volume and pending approvals"
+               onClose={() => setIsOpsPanelOpen(false)}
+             >
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+                         <RotateCcw size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Total Returns</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">{refundedTransactions.length}</h3>
+                      </div>
+                   </div>
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
+                         <Clock size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Pending Approval</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">{pendingRequests}</h3>
+                      </div>
+                   </div>
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                         <Activity size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Reversal Value</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">Ksh {totalRefundedValue.toLocaleString()}</h3>
+                      </div>
+                   </div>
+                </div>
+             </NestedControlPanel>
+          </div>
+        )}
       </div>
 
-      <div className="relative mb-4">
-        <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
-        <input 
-          type="text" placeholder="Search receipts..." value={refundSearch} onChange={(e) => setRefundSearch(e.target.value)}
-          className="w-full pl-11 pr-4 py-3 bg-white rounded-2xl border border-slate-200 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all font-medium"
-        />
+      {/* Search Bar */}
+      <div className="px-4 mb-8">
+        <div className="relative group">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={20} />
+          <input 
+            type="text" 
+            placeholder="Search by receipt # or cashier..." 
+            value={refundSearch} 
+            onChange={(e) => setRefundSearch(e.target.value)}
+            className="w-full pl-14 pr-4 py-4.5 bg-white rounded-[1.5rem] border-2 border-slate-100 text-sm font-bold text-slate-800 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/5 transition-all outline-none"
+          />
+          {refundSearch && (
+            <button onClick={() => setRefundSearch('')} className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all">
+              <X size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="space-y-2 pb-24">
+      {/* Refunds List */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 px-4">
          {refundedTransactions.map(t => (
-            <div key={t.id} onClick={() => setSelectedRecord(t)} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between active:scale-[0.98] transition-transform cursor-pointer">
-               <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 shrink-0">
-                     <RotateCcw size={18} />
-                  </div>
-                  <div>
-                     <h4 className="text-sm font-bold text-slate-900">Receipt #{t.id.split('-')[0].toUpperCase()}</h4>
-                     <div className="text-[11px] font-semibold text-slate-500 mt-0.5">{new Date(t.timestamp).toLocaleString()}</div>
-                  </div>
-               </div>
-               <div className="text-right flex flex-col items-end gap-1">
-                  <div className="text-sm font-black text-slate-900">
-                     Ksh {t.total.toLocaleString()}
-                  </div>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded  ${t.status === 'REFUNDED' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                     {t.status}
-                  </span>
-               </div>
+            <div 
+              key={t.id} 
+              onClick={() => setSelectedRecord(t)} 
+              className="group bg-white p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col gap-4 hover:border-orange-300 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden"
+            >
+              <div className="flex justify-between items-start">
+                 <div className="w-12 h-12 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 shadow-sm group-hover:scale-110 transition-transform">
+                    <RotateCcw size={24} />
+                 </div>
+                 <div className="text-right">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Refunded Amount</p>
+                    <h3 className="text-lg font-black text-orange-600 leading-none">Ksh {t.total.toLocaleString()}</h3>
+                 </div>
+              </div>
+
+              <div className="flex-1 min-w-0">
+                 <h4 className="text-sm font-black text-slate-900 truncate mb-1">Receipt #{t.id.split('-')[0].toUpperCase()}</h4>
+                 <div className="flex items-center gap-2 mb-4">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(t.timestamp).toLocaleDateString()}</span>
+                    <span className="w-1 h-1 rounded-full bg-slate-200" />
+                    <span className="text-[10px] font-bold text-slate-400 truncate max-w-[120px]">Cashier: {t.cashierName || 'System'}</span>
+                 </div>
+                 
+                 <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                    <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter ${t.status === 'REFUNDED' ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>
+                       {t.status}
+                    </span>
+                    <ChevronRight size={18} className="text-slate-200 group-hover:text-orange-400 transition-colors" />
+                 </div>
+              </div>
             </div>
          ))}
+         
          {refundedTransactions.length === 0 && (
-            <div className="py-10 text-center text-slate-400 flex flex-col items-center">
-               <RotateCcw size={40} className="mb-3 opacity-20" />
-               <p className="text-sm">No refunded transactions found.</p>
+            <div className="col-span-full py-32 text-center flex flex-col items-center">
+               <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner text-slate-200">
+                 <ArrowLeftRight size={44} />
+               </div>
+               <p className="text-slate-500 font-black text-lg">No return records found</p>
+               <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Processed returns will appear here</p>
             </div>
          )}
       </div>

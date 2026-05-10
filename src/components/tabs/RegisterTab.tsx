@@ -1,10 +1,11 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Search, ShoppingCart, Zap, AlertTriangle, Store, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Plus, RotateCcw, Tag as TagIcon, ScanLine, User, ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { Search, ShoppingCart, Zap, AlertTriangle, Store, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Plus, RotateCcw, Tag as TagIcon, ScanLine, User, ChevronDown, SlidersHorizontal, Trash2, BadgePercent, ChevronRight, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import BarcodeScanner from '../shared/BarcodeScanner';
 import { SearchableSelect } from '../shared/SearchableSelect';
+import NestedControlPanel from '../shared/NestedControlPanel';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Tag: TagIcon, Store
@@ -27,11 +28,12 @@ export default function RegisterTab() {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [isSalesControlsOpen, setIsSalesControlsOpen] = useState(false);
-  const [isCustomerControlsOpen, setIsCustomerControlsOpen] = useState(false);
+  const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
   const [scanFeedback, setScanFeedback] = useState<{ found: boolean; name: string } | null>(null);
+  
   const scanBufferRef = useRef('');
   const scanTimerRef = useRef<number | null>(null);
+  
   const scannerDebounceMs = React.useMemo(() => {
     try {
       const raw = localStorage.getItem('mtaani_hardware_profile_v1');
@@ -42,26 +44,37 @@ export default function RegisterTab() {
       return 120;
     }
   }, []);
-  const addToCart = useStore((state) => state.addToCart);
-  const clearCart = useStore((state) => state.clearCart);
-  const cart = useStore((state) => state.cart);
-  const { success: toastSuccess, error: toastError } = useStore.getState ? {} : {};
-  const { selectedCustomerId, setSelectedCustomerId, activeBusinessId, activeBranchId, activeShift, isAdmin } = useStore();
+
+  const { 
+    addToCart, 
+    clearCart, 
+    cart, 
+    selectedCustomerId, 
+    setSelectedCustomerId, 
+    activeBusinessId, 
+    activeBranchId, 
+    activeShift, 
+    isAdmin 
+  } = useStore();
+
   const allProducts = useLiveQuery(
     () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId, activeBranchId],
     []
   );
-  const allCustomers = useLiveQuery(() => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
+  
+  const allCustomers = useLiveQuery(
+    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), 
+    [activeBusinessId], 
+    []
+  );
+  
   const selectedCustomer = allCustomers?.find(c => c.id === selectedCustomerId);
 
   const products = useLiveQuery(
     () => {
       if (!activeBusinessId || !activeBranchId) return Promise.resolve([]);
       let query = db.products.where('businessId').equals(activeBusinessId);
-      
-      // If branch-specific stock is needed, we could filter by branchId here
-      // .and(p => !p.branchId || p.branchId === activeBranchId)
       
       if (selectedCategory !== 'All') {
         return query.filter(p => p.category === selectedCategory && (!searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode.includes(searchQuery))).toArray();
@@ -93,26 +106,16 @@ export default function RegisterTab() {
 
   const calculateVirtualStock = (product: any) => {
       if (!product.isBundle || !product.components?.length) return product.stockQuantity || 0;
-      
-      // If we are still loading products, return a placeholder
       if (!allProducts || allProducts.length === 0) return 0;
 
       let minStock = Infinity;
       for (const comp of product.components) {
-         // Fix: Use String comparison to handle cases where ID might be Number vs String
          const freshComp = allProducts.find(p => String(p.id) === String(comp.productId));
-         
-         if (!freshComp) {
-            return 0; // Component missing
-         }
-         
+         if (!freshComp) return 0;
          const compQty = Number(comp.quantity) || 0;
          if (compQty <= 0) continue;
-
-         // Check if component is also a bundle (recursive)
          const availableStock = freshComp.isBundle ? calculateVirtualStock(freshComp) : (Number(freshComp.stockQuantity) || 0);
          const possible = Math.floor(availableStock / compQty);
-         
          if (possible < minStock) minStock = possible;
       }
       return minStock === Infinity ? 0 : minStock;
@@ -139,7 +142,6 @@ export default function RegisterTab() {
       } else {
         handleAddToCart(found);
         setScanFeedback({ found: true, name: found.name });
-        // DO NOT close scanner — allow continuous scanning
       }
     } else {
       setScanFeedback({ found: false, name: `No product with barcode: ${barcode}` });
@@ -180,206 +182,183 @@ export default function RegisterTab() {
   });
 
   return (
-    <div className="pb-4 bg-transparent min-h-full text-slate-800">
+    <div className="pb-4 bg-transparent min-h-full">
       
-      {/* Shift Warning */}
-      {!activeShift && !isAdmin && (
-        <div className="mx-4 mt-4 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
-          <div className="w-8 h-8 bg-blue-600 text-white rounded-xl flex items-center justify-center shrink-0 shadow-blue">
-            <ShoppingCart size={16} />
-          </div>
-          <div>
-            <p className="text-xs font-black text-blue-900">Shift Required</p>
-            <p className="text-[10px] font-bold text-blue-600  ">Please open a shift in the Command Center to start selling.</p>
-          </div>
-        </div>
-      )}
-
-
-      {/* Inline Scanner */}
-      {isScannerOpen && (
-        <div className="px-4 animate-in slide-in-from-top duration-300">
-           <BarcodeScanner 
-             isInline={true}
-             onScan={handleScanResult}
-             onClose={() => setIsScannerOpen(false)}
-           />
-        </div>
-      )}
-      {/* Customer Selection */}
-      <div className="px-4 pt-4">
-        <div className="relative group">
-          <div className={`flex items-center gap-3 p-3 rounded-2xl border-2 transition-all cursor-pointer ${
-            selectedCustomer ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100 hover:border-slate-200'
-          }`}>
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-              selectedCustomer ? 'bg-blue-600 text-white shadow-blue' : 'bg-slate-50 text-slate-400'
-            }`}>
-              <User size={18} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <SearchableSelect
-                value={selectedCustomerId ?? ''}
-                onChange={(v) => setSelectedCustomerId(v || null)}
-                placeholder="Walk-in customer"
-                options={(allCustomers || []).map(c => ({
-                  value: c.id,
-                  label: `${c.name} (${c.phone})`,
-                  keywords: `${c.name} ${c.phone}`,
-                }))}
-                className="w-full"
-                buttonClassName="bg-transparent border-none p-0 rounded-none text-sm font-black text-slate-900"
-                searchInputClassName="bg-white"
-                menuClassName="mt-3"
-              />
-               <p className="text-[10px] font-bold text-slate-400   leading-none mt-1">
-                 {selectedCustomer ? `Ksh ${selectedCustomer.balance.toLocaleString()} balance` : 'Select client to link sale'}
-               </p>
-            </div>
-          </div>
-        </div>
-      </div>
-      {/* Search bar */}
-      <div className="px-4 pt-3 pb-2">
-        <div className="relative flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input
-              type="text"
-              placeholder="Search products..."
-              className="w-full pl-11 pr-4 py-3.5 bg-white rounded-2xl border border-slate-200 text-sm text-slate-800 font-medium shadow-card focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-all"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-lg font-bold leading-none">
-                ×
-              </button>
-            )}
-          </div>
-          <button
-            onClick={() => setIsScannerOpen(true)}
-            className="shrink-0 w-12 h-12 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/30 hover:bg-blue-700 active:scale-95 transition-all"
-            title="Scan Barcode"
-          >
-            <ScanLine size={20} />
-          </button>
+      {/* Control Center Header */}
+      <div className="px-4 pt-2">
+        <div className="flex items-center justify-between mb-4">
+           <h2 className="text-xl font-black text-slate-900 tracking-tight">Register</h2>
+           <button 
+             onClick={() => setIsControlCenterOpen(!isControlCenterOpen)}
+             className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isControlCenterOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
+           >
+             <SlidersHorizontal size={18} />
+             <span className="text-[10px] font-black uppercase">Controls</span>
+           </button>
         </div>
 
-        {/* Scan feedback toast */}
-        {scanFeedback && (
-          <div className={`mt-2 px-4 py-2.5 rounded-xl flex items-center gap-2 text-sm font-bold animate-in slide-in-from-top-2 duration-200 ${
-            scanFeedback.found
-              ? 'bg-green-50 border border-green-200 text-green-700'
-              : 'bg-red-50 border border-red-200 text-red-700'
-          }`}>
-            {scanFeedback.found ? <Zap size={16} /> : <AlertTriangle size={16} />}
-            {scanFeedback.name}
+        {isControlCenterOpen && (
+          <div className="mb-4 animate-in slide-in-from-top-2 duration-300">
+             <NestedControlPanel
+               title="Register Configuration"
+               subtitle="Manage scanner, customers, and active session"
+               onClose={() => setIsControlCenterOpen(false)}
+             >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div className="space-y-4">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Customer Context</h4>
+                      <div className={`flex items-center gap-3 p-3 rounded-2xl border-2 transition-all ${selectedCustomer ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-transparent'}`}>
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${selectedCustomer ? 'bg-indigo-600 text-white shadow-indigo' : 'bg-white text-slate-300'}`}>
+                          <User size={18} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <SearchableSelect
+                            value={selectedCustomerId ?? ''}
+                            onChange={(v) => setSelectedCustomerId(v || null)}
+                            placeholder="Walk-in customer"
+                            options={(allCustomers || []).map(c => ({
+                              value: c.id,
+                              label: `${c.name} (${c.phone})`,
+                              keywords: `${c.name} ${c.phone}`,
+                            }))}
+                            className="w-full"
+                            buttonClassName="bg-transparent border-none p-0 rounded-none text-sm font-black text-slate-900"
+                            searchInputClassName="bg-white"
+                          />
+                          {selectedCustomer && <p className="text-[9px] font-bold text-indigo-600 mt-0.5">Ksh {selectedCustomer.balance.toLocaleString()} balance</p>}
+                        </div>
+                        {selectedCustomer && (
+                          <button onClick={() => setSelectedCustomerId(null)} className="w-8 h-8 rounded-lg bg-white/50 text-indigo-600 flex items-center justify-center hover:bg-white transition-all">
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                   </div>
+
+                   <div className="space-y-4">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Session Actions</h4>
+                      <div className="grid grid-cols-2 gap-2">
+                         <button 
+                           onClick={() => { setIsScannerOpen(true); setIsControlCenterOpen(false); }}
+                           className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 border-slate-100 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group"
+                         >
+                            <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                               <ScanLine size={18} />
+                            </div>
+                            <span className="text-[10px] font-black text-slate-900">OPEN SCANNER</span>
+                         </button>
+                         <button 
+                           onClick={() => { if(confirm("Clear current cart?")) clearCart(); }}
+                           disabled={cart.length === 0}
+                           className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 border-slate-100 hover:border-rose-300 hover:bg-rose-50/30 transition-all group disabled:opacity-40 disabled:hover:border-slate-100 disabled:hover:bg-transparent"
+                         >
+                            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                               <RotateCcw size={18} />
+                            </div>
+                            <span className="text-[10px] font-black text-slate-900">CLEAR CART</span>
+                         </button>
+                      </div>
+                   </div>
+                </div>
+             </NestedControlPanel>
           </div>
         )}
       </div>
 
-      {/* Nested controls for cleaner mobile and cashier flow */}
-      <div className="px-4 pb-3 space-y-2">
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          <button
-            onClick={() => setIsSalesControlsOpen(v => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center">
-                <SlidersHorizontal size={16} />
-              </div>
-              <div>
-                <p className="text-xs font-black text-slate-900">Sales Controls</p>
-                <p className="text-[10px] font-bold text-slate-400">Scanner, cart reset, quick actions</p>
-              </div>
-            </div>
-            <ChevronDown size={16} className={`text-slate-400 transition-transform ${isSalesControlsOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {isSalesControlsOpen && (
-            <div className="border-t border-slate-100 p-3 grid grid-cols-2 gap-2 bg-slate-50">
-              <button
-                onClick={() => setIsScannerOpen(true)}
-                className="px-3 py-2.5 rounded-xl bg-blue-600 text-white text-[10px] font-black hover:bg-blue-700 transition-colors"
-              >
-                Open Scanner
+      {/* Shift Warning */}
+      {!activeShift && !isAdmin && (
+        <div className="mx-4 mb-4 bg-indigo-50 border border-indigo-200 rounded-2xl px-5 py-4 flex items-center gap-4 animate-in fade-in slide-in-from-top-2">
+          <div className="w-12 h-12 bg-indigo-600 text-white rounded-[1.25rem] flex items-center justify-center shrink-0 shadow-indigo ring-4 ring-indigo-500/10">
+            <ShoppingCart size={20} />
+          </div>
+          <div>
+            <p className="text-sm font-black text-indigo-900">Shift Required</p>
+            <p className="text-[10px] font-bold text-indigo-600 mt-0.5 uppercase tracking-wide">Please open a shift in the Dashboard to start selling.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Inline Scanner */}
+      {isScannerOpen && (
+        <div className="px-4 mb-4 animate-in slide-in-from-top-4 duration-300">
+           <div className="rounded-[2.5rem] overflow-hidden border-2 border-indigo-600 shadow-indigo ring-8 ring-indigo-500/5">
+              <BarcodeScanner 
+                isInline={true}
+                onScan={handleScanResult}
+                onClose={() => setIsScannerOpen(false)}
+              />
+           </div>
+        </div>
+      )}
+
+      {/* Search and Filters */}
+      <div className="px-4 pb-4">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1 group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={20} />
+            <input
+              type="text"
+              placeholder="Search products by name or barcode..."
+              className="w-full pl-12 pr-4 py-4 bg-white rounded-[1.5rem] border-2 border-slate-100 text-sm text-slate-800 font-bold shadow-sm focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/5 transition-all"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all">
+                <X size={14} />
               </button>
-              <button
-                onClick={() => clearCart()}
-                disabled={cart.length === 0}
-                className="px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-[10px] font-black disabled:opacity-50"
-              >
-                Clear Cart
-              </button>
-            </div>
-          )}
+            )}
+          </div>
+          
+          <div className="flex overflow-x-auto gap-2 no-scrollbar pb-1 md:pb-0">
+            {categories.map(cat => {
+              const cfg = getCategoryConfig(cat);
+              const isActive = selectedCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-wider whitespace-nowrap transition-all border-2 press ${
+                    isActive
+                      ? `${cfg.bg} text-white ${cfg.border} shadow-lg shadow-black/5`
+                      : `bg-white border-slate-100 text-slate-400 hover:border-slate-200 hover:bg-slate-50`
+                  }`}
+                >
+                  <cfg.icon size={16} className={isActive ? 'text-white' : cfg.color} />
+                  {cat}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          <button
-            onClick={() => setIsCustomerControlsOpen(v => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                <User size={16} />
-              </div>
-              <div>
-                <p className="text-xs font-black text-slate-900">Customer Controls</p>
-                <p className="text-[10px] font-bold text-slate-400">Select, clear, and quick customer context</p>
-              </div>
-            </div>
-            <ChevronDown size={16} className={`text-slate-400 transition-transform ${isCustomerControlsOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {isCustomerControlsOpen && (
-            <div className="border-t border-slate-100 p-3 bg-slate-50">
-              <button
-                onClick={() => setSelectedCustomerId(null)}
-                disabled={!selectedCustomerId}
-                className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-[10px] font-black disabled:opacity-50"
-              >
-                Clear Customer Link
-              </button>
-            </div>
-          )}
-        </div>
+        {/* Scan feedback toast */}
+        {scanFeedback && (
+          <div className={`mt-3 px-5 py-3 rounded-2xl flex items-center gap-3 text-xs font-black animate-in slide-in-from-top-2 duration-200 shadow-sm border-2 ${
+            scanFeedback.found
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+              : 'bg-rose-50 border-rose-200 text-rose-700'
+          }`}>
+            {scanFeedback.found ? <Check size={18} /> : <AlertTriangle size={18} />}
+            <span className="uppercase tracking-wide">{scanFeedback.name}</span>
+          </div>
+        )}
       </div>
 
       {/* Critical low stock warning */}
       {lowStockProducts.length > 0 && (
-        <div className="mx-4 mb-2 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2.5 flex items-center gap-2.5">
-          <AlertTriangle size={16} className="text-amber-600 shrink-0" />
-          <span className="text-xs font-bold text-amber-800">
-            {lowStockProducts.length} item{lowStockProducts.length > 1 ? 's' : ''} critically low (≤5 units): {lowStockProducts.map(p => p.name).join(', ')}
-          </span>
+        <div className="mx-4 mb-4 bg-amber-50 border-2 border-amber-100 rounded-2xl px-5 py-3 flex items-center gap-3">
+          <div className="w-8 h-8 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center shrink-0">
+             <AlertTriangle size={16} />
+          </div>
+          <p className="text-[10px] font-black text-amber-800 uppercase tracking-wide">
+            {lowStockProducts.length} item{lowStockProducts.length > 1 ? 's' : ''} critically low stock (≤5 units)
+          </p>
         </div>
       )}
 
-      {/* Category Filters */}
-      <div className="flex overflow-x-auto gap-2 px-4 pb-3 no-scrollbar">
-        {categories.map(cat => {
-          const cfg = getCategoryConfig(cat);
-          const isActive = selectedCategory === cat;
-          return (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border press ${
-                isActive
-                  ? `${cfg.bg} text-white ${cfg.border} shadow-md`
-                  : `bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50`
-              }`}
-            >
-              <cfg.icon size={14} className={isActive ? 'text-white' : cfg.color} />
-              {cat}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Product List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 px-4 pb-8">
+      {/* Product Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 px-4 pb-32">
         {(products || []).map(product => {
           const cfg = getCategoryConfig(product.category);
           const displayStock = calculateVirtualStock(product);
@@ -394,81 +373,91 @@ export default function RegisterTab() {
             <div
               key={product.id}
               onClick={() => !isOutOfStock && handleAddToCart(product)}
-              className={`group bg-white rounded-2xl border flex items-center p-3 gap-3 transition-all relative overflow-hidden
-                ${isOutOfStock ? 'opacity-50 grayscale cursor-not-allowed border-slate-100' : 'cursor-pointer hover:border-blue-300 hover:shadow-sm active:scale-[0.98] border-slate-200'}
-                ${isFlashing ? 'add-flash' : ''}
+              className={`group bg-white rounded-[2rem] border-2 flex flex-col p-5 gap-4 transition-all relative overflow-hidden
+                ${isOutOfStock ? 'opacity-50 grayscale cursor-not-allowed border-slate-100' : 'cursor-pointer border-slate-100 hover:border-indigo-300 hover:shadow-xl hover:-translate-y-1 active:scale-[0.98]'}
+                ${isFlashing ? 'ring-4 ring-indigo-500/20 bg-indigo-50/30' : ''}
               `}
             >
-
-              {/* Info section */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                   <h4 className="text-sm font-black text-slate-800 truncate group-hover:text-blue-600 transition-colors">
-                     {product.name}
-                   </h4>
-                   {product.taxCategory === 'C' && (
-                     <span className="text-[7px] font-black bg-green-50 text-green-600 px-1 py-0.5 rounded border border-green-100 tracking-tighter  whitespace-nowrap">
-                       Tax-free
-                     </span>
-                   )}
-                </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                   <span className="text-[12px] font-black text-slate-900 tabular-nums">
-                     Ksh {product.sellingPrice.toLocaleString()} / {product.unit || 'pcs'}
-                   </span>
-                    <span className={`text-[10px] font-bold ${
-                      isOutOfStock ? 'text-red-500' :
-                      isCritical  ? 'text-red-500' :
-                      isLow       ? 'text-amber-600' :
-                                    'text-slate-400'
-                    }`}>
-                      • {isOutOfStock ? 'Out of stock' : `${displayStock} ${product.unit || 'pcs'} left`}
-                    </span>
+              <div className="flex justify-between items-start">
+                 <div className={`w-12 h-12 rounded-[1.25rem] flex items-center justify-center ${cfg.light} ${cfg.color} group-hover:scale-110 transition-transform`}>
+                    <cfg.icon size={24} />
                  </div>
-                 {product.isBundle && (
-                    <div className="mt-1 flex flex-wrap gap-1">
-                       {product.components?.map((c: any, i: number) => {
-                          const p = allProducts?.find(x => String(x.id) === String(c.productId));
-                          const hasStock = p ? p.stockQuantity >= c.quantity : false;
-                          return (
-                             <span key={i} className={`text-[8px] px-1.5 py-0.5 rounded-md font-bold border ${hasStock ? 'bg-slate-50 text-slate-400 border-slate-100' : 'bg-red-50 text-red-500 border-red-100'}`}>
-                                {p?.name || '??'}: {p?.stockQuantity || 0}
-                             </span>
-                          );
-                       })}
-                    </div>
+                 {qtyInCart > 0 && (
+                   <div className="bg-indigo-600 text-white text-[10px] font-black min-w-[24px] h-6 px-2 rounded-full flex items-center justify-center border-2 border-white shadow-indigo animate-bounce-in">
+                      {qtyInCart}
+                   </div>
                  )}
               </div>
 
-              {/* Add Button */}
-              {!isOutOfStock && (
-                <div className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isFlashing ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600'}`}>
-                   {isFlashing ? <Zap size={16} /> : <Plus size={20} />}
-                   {qtyInCart > 0 && (
-                     <span className="absolute -top-1.5 -right-1.5 bg-blue-600 text-white text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center border border-white shadow-sm">
-                        {qtyInCart}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                   <h4 className="text-base font-black text-slate-900 truncate leading-tight">
+                     {product.name}
+                   </h4>
+                   {product.taxCategory === 'C' && (
+                     <span className="shrink-0 bg-emerald-100 text-emerald-700 text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-tighter">
+                       E-Tax
                      </span>
                    )}
                 </div>
+                
+                <div className="flex items-baseline gap-1.5 mb-3">
+                   <span className="text-lg font-black text-slate-900">
+                     Ksh {product.sellingPrice.toLocaleString()}
+                   </span>
+                   <span className="text-[10px] font-bold text-slate-400">/ {product.unit || 'pcs'}</span>
+                </div>
+
+                <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                  isOutOfStock ? 'bg-rose-50 text-rose-600' :
+                  isCritical  ? 'bg-rose-50 text-rose-600' :
+                  isLow       ? 'bg-amber-50 text-amber-600' :
+                                'bg-slate-50 text-slate-500'
+                }`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${
+                    isOutOfStock ? 'bg-rose-500' :
+                    isCritical  ? 'bg-rose-500 animate-pulse' :
+                    isLow       ? 'bg-amber-500' :
+                                  'bg-slate-300'
+                  }`} />
+                  {isOutOfStock ? 'Out of Stock' : `${displayStock} in stock`}
+                </div>
+              </div>
+
+              {product.isBundle && (
+                 <div className="mt-auto pt-4 border-t border-slate-50 flex flex-wrap gap-2">
+                    {product.components?.map((c: any, i: number) => {
+                       const p = allProducts?.find(x => String(x.id) === String(c.productId));
+                       const hasStock = p ? p.stockQuantity >= c.quantity : false;
+                       return (
+                          <div key={i} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border ${hasStock ? 'bg-slate-50 border-slate-100' : 'bg-rose-50 border-rose-100'}`}>
+                             <span className={`text-[8px] font-black ${hasStock ? 'text-slate-500' : 'text-rose-600'}`}>
+                                {p?.name || 'Item'}: {p?.stockQuantity || 0}
+                             </span>
+                          </div>
+                       );
+                    })}
+                 </div>
               )}
-              
-              {/* Flashing Overlay */}
-              {isFlashing && (
-                <div className="absolute inset-0 bg-blue-600/5 animate-pulse rounded-2xl pointer-events-none" />
-              )}
+
+              <button className={`mt-4 w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+                isOutOfStock ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-900 text-white hover:bg-indigo-600 shadow-lg active:scale-95'
+              }`}>
+                 {isFlashing ? <Zap size={14} className="animate-pulse" /> : <Plus size={16} />}
+                 {isOutOfStock ? 'Unavailable' : 'Add to sale'}
+              </button>
             </div>
           );
         })}
 
-        {/* Empty state */}
         {(products || []).length === 0 && (
-          <div className="col-span-full py-16 text-center flex flex-col items-center">
-            <div className="w-20 h-20 bg-slate-100 rounded-3xl flex items-center justify-center mb-4">
-              <Search size={32} className="text-slate-300" />
+          <div className="col-span-full py-24 text-center flex flex-col items-center">
+            <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner">
+              <Search size={40} className="text-slate-200" />
             </div>
-            <p className="text-slate-500 font-bold text-sm">No products found</p>
-            <p className="text-slate-400 text-xs mt-1">
-              {searchQuery ? `Try a different search term` : `Add products in Inventory`}
+            <p className="text-slate-500 font-black text-lg">No results found</p>
+            <p className="text-slate-400 text-xs mt-1 font-bold uppercase tracking-widest">
+              Try adjusting your filters or search terms
             </p>
           </div>
         )}

@@ -2,15 +2,25 @@
 @import "tailwindcss";
 
 :root {
-  --brand-primary: #1e40af;
-  --brand-primary-glow: rgba(30, 64, 175, 0.2);
+  --brand-primary: #6366f1;
+  --brand-primary-dark: #4f46e5;
+  --brand-primary-glow: rgba(99, 102, 241, 0.2);
+  --brand-secondary: #0ea5e9;
+  --brand-accent: #f43f5e;
   --brand-dark: #0f172a;
-  --brand-surface: #f1f5f9;
+  --brand-surface: #f8fafc;
   --brand-card: #ffffff;
-  --radius-card: 14px;
-  --radius-xl: 18px;
-  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-elevated: 0 10px 24px rgba(15, 23, 42, 0.12), 0 4px 10px rgba(15, 23, 42, 0.08);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --shadow-premium: 0 0 0 1px rgba(0,0,0,0.05), 0 10px 30px -10px rgba(0,0,0,0.1);
 }
 
 *, *::before, *::after {
@@ -29,10 +39,8 @@ body {
   font-family: 'Manrope', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color: #0f172a;
-  background:
-    radial-gradient(circle at 12% 0%, rgba(30, 64, 175, 0.06), transparent 36%),
-    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  color: #1e293b;
+  background: #f8fafc;
 }
 
 button, input, select, textarea {

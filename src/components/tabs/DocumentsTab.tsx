@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { Search, CheckCircle2, FileText, RotateCcw, Receipt, ArrowUpRight, ArrowDownLeft, Wallet, Landmark, ClipboardList, CalendarCheck, Activity, ShoppingBag, Clock } from 'lucide-react';
+import { Search, CheckCircle2, FileText, RotateCcw, Receipt, ArrowUpRight, ArrowDownLeft, Wallet, Landmark, ClipboardList, CalendarCheck, Activity, ShoppingBag, Clock, SlidersHorizontal, ChevronRight, X, FileSearch, Archive, ShieldCheck } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction } from '../../db';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import AdminApprovals from './AdminApprovals';
 import { useStore } from '../../store';
+import NestedControlPanel from '../shared/NestedControlPanel';
 
 export default function DocumentsTab() {
   const [docSearch, setDocSearch] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
   const [filterType, setFilterType] = useState<'ALL' | 'APPROVALS' | 'SALES' | 'EXPENSES' | 'SUPPLIER_PAYMENTS' | 'INVOICES' | 'SHIFTS' | 'DAILY'>('ALL');
+  const [isOpsPanelOpen, setIsOpsPanelOpen] = useState(false);
 
   const activeBranchId = useStore(state => state.activeBranchId);
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
@@ -19,7 +21,6 @@ export default function DocumentsTab() {
   const allReports = useLiveQuery(() => activeBranchId ? db.endOfDayReports.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
   const allDailySummaries = useLiveQuery(() => activeBranchId ? db.dailySummaries.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
 
-  // Unify all records into a single timeline
   const unifiedRecords: any[] = [
     ...(allTransactions || []).map(t => ({ ...t, recordType: 'SALE' as const })),
     ...(allExpenses || []).map(e => ({ ...e, recordType: 'EXPENSE' as const, total: e.amount })),
@@ -31,24 +32,18 @@ export default function DocumentsTab() {
 
   if (!allTransactions || !allExpenses || !allSupplierPayments || !allPurchaseOrders || !allReports || !allDailySummaries) {
       return (
-        <div className="p-10 text-center text-slate-400 font-bold   animate-pulse flex flex-col items-center justify-center min-h-[40vh]">
-           <Receipt size={40} className="mb-4 opacity-20" />
-           Loading records...
+        <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
+           <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
+              <FileSearch size={32} className="text-slate-300" />
+           </div>
+           <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Hydrating Ledger...</p>
         </div>
       );
   }
 
   const handleRefund = async (t: Transaction, itemsToReturn?: { productId: string, quantity: number }[]) => {
     if (t.status !== 'PAID' && t.status !== 'PARTIAL_REFUND') return;
-
-    // For accountability, we still need to know which items are being requested for refund
-    // For now, let's update the transaction status to PENDING_REFUND
-    // The admin will process the actual stock return during approval
-    
-    await db.transactions.update(t.id, { 
-        status: 'PENDING_REFUND'
-    });
-    
+    await db.transactions.update(t.id, { status: 'PENDING_REFUND' });
     setSelectedRecord(null);
     alert("Refund request sent to Admin for approval.");
   };
@@ -71,105 +66,202 @@ export default function DocumentsTab() {
   });
 
   return (
-    <div className="p-5 pb-8 animate-in fade-in max-w-5xl mx-auto w-full h-full flex flex-col">
-      <div className="flex justify-between items-center mb-6 mt-2">
-         <div>
-           <h2 className="text-xl font-extrabold text-slate-900 mb-1">Business Records</h2>
-           <p className="text-sm text-slate-500">History of all financial activities.</p>
-         </div>
+    <div className="pb-24 animate-in fade-in w-full">
+      
+      {/* Archive Header */}
+      <div className="px-4 pt-2 mb-6">
+        <div className="flex items-center justify-between mb-4">
+           <div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">Digital Archive</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Universal Business Records</p>
+           </div>
+           <div className="flex gap-2">
+              <button 
+                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
+                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
+              >
+                <SlidersHorizontal size={18} />
+                <span className="text-[10px] font-black uppercase">Tools</span>
+              </button>
+           </div>
+        </div>
+
+        {isOpsPanelOpen && (
+          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
+             <NestedControlPanel
+               title="Archive Controls"
+               subtitle="Filter and verify business milestones"
+               onClose={() => setIsOpsPanelOpen(false)}
+             >
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+                         <Receipt size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Total Records</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">{unifiedRecords.length}</h3>
+                      </div>
+                   </div>
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+                         <Activity size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Approval Flow</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">Active</h3>
+                      </div>
+                   </div>
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                         <ShieldCheck size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Audit Status</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">Verified</h3>
+                      </div>
+                   </div>
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                         <Archive size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Storage</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">Cloud</h3>
+                      </div>
+                   </div>
+                </div>
+             </NestedControlPanel>
+          </div>
+        )}
       </div>
 
-      <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar py-1">
-         {[
-           { id: 'ALL', label: 'All Activity' },
-           { id: 'APPROVALS', label: 'Pending Approvals' },
-           { id: 'SALES', label: 'Sales' },
-           { id: 'EXPENSES', label: 'Expenses' },
-           { id: 'SUPPLIER_PAYMENTS', label: 'Payments' },
-           { id: 'INVOICES', label: 'Invoices' },
-           { id: 'SHIFTS', label: 'Shift Reports' },
-           { id: 'DAILY', label: 'Daily Summaries' }
-         ].map(type => (
-           <button 
-             key={type.id} 
-             onClick={() => setFilterType(type.id as any)}
-             className={`px-4 py-2 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${filterType === type.id ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200'}`}
-           >
-             {type.label}
-           </button>
-         ))}
+      {/* Filter Tabs */}
+      <div className="px-4 mb-6">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar py-2">
+           {[
+             { id: 'ALL', label: 'Universal Feed' },
+             { id: 'APPROVALS', label: 'Pending Approvals' },
+             { id: 'SALES', label: 'Sales Orders' },
+             { id: 'EXPENSES', label: 'Operational Costs' },
+             { id: 'SUPPLIER_PAYMENTS', label: 'Settlements' },
+             { id: 'INVOICES', label: 'Vendor Invoices' },
+             { id: 'SHIFTS', label: 'Shift Reports' },
+             { id: 'DAILY', label: 'Master Summary' }
+           ].map(type => (
+             <button 
+               key={type.id} 
+               onClick={() => setFilterType(type.id as any)}
+               className={`px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border-2 press ${filterType === type.id ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-200'}`}
+             >
+               {type.label}
+             </button>
+           ))}
+        </div>
       </div>
 
       {filterType !== 'APPROVALS' && (
-        <div className="relative mb-4">
-          <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
-          <input 
-            type="text" placeholder="Search by ID, reference or notes..." value={docSearch} onChange={(e) => setDocSearch(e.target.value)}
-            className="w-full pl-11 pr-4 py-3 bg-white rounded-2xl border border-slate-200 text-sm text-slate-700 shadow-sm focus:border-slate-500 focus:ring-4 focus:ring-slate-500/10 outline-none transition-all font-medium"
-          />
+        <div className="px-4 mb-8">
+          <div className="relative group">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={20} />
+            <input 
+              type="text" 
+              placeholder="Search by ID, reference, or amount..." 
+              value={docSearch} 
+              onChange={(e) => setDocSearch(e.target.value)}
+              className="w-full pl-14 pr-4 py-4.5 bg-white rounded-[1.5rem] border-2 border-slate-100 text-sm font-bold text-slate-800 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/5 transition-all outline-none"
+            />
+            {docSearch && (
+              <button onClick={() => setDocSearch('')} className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all">
+                <X size={14} />
+              </button>
+            )}
+          </div>
         </div>
       )}
 
       {filterType === 'APPROVALS' ? (
-         <div className="flex-1 overflow-y-auto no-scrollbar -mx-5 px-5 pb-24">
+         <div className="px-4 animate-in slide-in-from-bottom-4 duration-500">
             <AdminApprovals />
          </div>
       ) : (
-        <div className="flex-1 overflow-y-auto no-scrollbar space-y-2 pb-24">
-           {filteredDocs.map(r => (
-            <div key={r.id} onClick={() => setSelectedRecord(r)} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between active:scale-[0.98] transition-transform cursor-pointer">
-               <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 
-                    ${r.recordType === 'SALE' ? (r.status === 'PAID' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600') : 
-                      r.recordType === 'EXPENSE' ? 'bg-orange-50 text-orange-600' : 
-                      r.recordType === 'SUPPLIER_PAYMENT' ? 'bg-purple-50 text-purple-600' :
-                      r.recordType === 'CLOSE_DAY_REPORT' ? 'bg-slate-900 text-white' :
-                      r.recordType === 'DAILY_SUMMARY' ? 'bg-blue-600 text-white' :
-                      'bg-blue-50 text-blue-600'}`}>
-                      {r.recordType === 'SALE' ? (r.status === 'PAID' ? <CheckCircle2 size={18} /> : <FileText size={18} />) : 
-                       r.recordType === 'EXPENSE' ? <Wallet size={18} /> : 
-                       r.recordType === 'SUPPLIER_PAYMENT' ? <Landmark size={18} /> :
-                       r.recordType === 'CLOSE_DAY_REPORT' ? <CalendarCheck size={18} /> :
-                       <ClipboardList size={18} />}
-                  </div>
-                  <div>
-                     <h4 className="text-sm font-bold text-slate-900">
-                       {r.recordType === 'SALE' ? `Receipt #${r.id.split('-')[0].toUpperCase()}` : 
-                        r.recordType === 'EXPENSE' ? `Expense: ${r.category}` : 
-                        r.recordType === 'SUPPLIER_PAYMENT' ? 'Payment to Supplier' :
-                        r.recordType === 'CLOSE_DAY_REPORT' ? `Shift Close Report` :
-                        r.recordType === 'DAILY_SUMMARY' ? `Master Business Summary` :
-                        `Invoice #${r.invoiceNumber || r.id.split('-')[0].toUpperCase()}`}
-                     </h4>
-                     <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
-                       {new Date(r.timestamp).toLocaleString()} {r.description || r.reference ? ` • ${r.description || r.reference}` : ''}
-                       {r.userName && <span className="ml-2 text-blue-600 font-bold">(@{r.userName})</span>}
-                       {r.cashierName && <span className="ml-2 text-indigo-600 font-bold">(@{r.cashierName})</span>}
-                     </div>
-                  </div>
-               </div>
-               <div className="text-right flex flex-col items-end gap-1">
-                  <div className="text-sm font-black text-slate-900">
-                     Ksh {(r.total || 0).toLocaleString()}
-                  </div>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded   
-                    ${r.recordType === 'SALE' ? 'bg-slate-100 text-slate-600' : 
-                      r.recordType === 'EXPENSE' ? 'bg-orange-100 text-orange-700' : 
-                      r.recordType === 'SUPPLIER_PAYMENT' ? 'bg-purple-100 text-purple-700' :
-                      'bg-blue-100 text-blue-700'}`}>
-                     {r.recordType === 'SALE' ? r.status : 
-                      r.recordType === 'PURCHASE_ORDER' ? (r.paymentStatus || 'UNPAID') :
-                      r.recordType === 'CLOSE_DAY_REPORT' ? 'FINALIZED' :
-                      r.recordType === 'DAILY_SUMMARY' ? 'DAY CLOSED' :
-                      r.recordType.replace('_', ' ')}
-                  </span>
-               </div>
-            </div>
-         ))}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 px-4">
+           {filteredDocs.map(r => {
+             const isSale = r.recordType === 'SALE';
+             const isExp = r.recordType === 'EXPENSE';
+             const isPay = r.recordType === 'SUPPLIER_PAYMENT';
+             const isShift = r.recordType === 'CLOSE_DAY_REPORT';
+             const isDaily = r.recordType === 'DAILY_SUMMARY';
+
+             return (
+              <div 
+                key={r.id} 
+                onClick={() => setSelectedRecord(r)} 
+                className="group bg-white p-5 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col gap-4 hover:border-indigo-300 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden"
+              >
+                <div className="flex justify-between items-start">
+                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform ${
+                     isSale ? 'bg-emerald-50 text-emerald-600' : 
+                     isExp ? 'bg-orange-50 text-orange-600' : 
+                     isPay ? 'bg-purple-50 text-purple-600' :
+                     isShift ? 'bg-slate-900 text-white' :
+                     isDaily ? 'bg-indigo-600 text-white' :
+                     'bg-blue-50 text-blue-600'
+                   }`}>
+                      {isSale ? <Receipt size={24} /> : 
+                       isExp ? <Wallet size={24} /> : 
+                       isPay ? <Landmark size={24} /> :
+                       isShift ? <CalendarCheck size={24} /> :
+                       <ClipboardList size={24} />}
+                   </div>
+                   <div className="text-right">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Value</p>
+                      <h3 className="text-lg font-black text-slate-900 leading-none">Ksh {(r.total || 0).toLocaleString()}</h3>
+                   </div>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                   <h4 className="text-sm font-black text-slate-900 truncate mb-1">
+                     {isSale ? `Receipt #${r.id.split('-')[0].toUpperCase()}` : 
+                      isExp ? `Expense: ${r.category}` : 
+                      isPay ? 'Supplier Settlement' :
+                      isShift ? `Shift Closure` :
+                      isDaily ? `Business Summary` :
+                      `Invoice #${r.invoiceNumber || r.id.split('-')[0].toUpperCase()}`}
+                   </h4>
+                   <div className="flex items-center gap-2 mb-4">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(r.timestamp).toLocaleDateString()}</span>
+                      <span className="w-1 h-1 rounded-full bg-slate-200" />
+                      <span className="text-[10px] font-bold text-slate-400 truncate max-w-[120px]">{r.description || r.reference || 'Automated entry'}</span>
+                   </div>
+                   
+                   <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                      <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter ${
+                        isSale ? 'bg-slate-100 text-slate-600' : 
+                        isExp ? 'bg-orange-50 text-orange-600' : 
+                        isPay ? 'bg-purple-50 text-purple-600' :
+                        'bg-blue-50 text-blue-600'
+                      }`}>
+                         {isSale ? r.status : 
+                          r.recordType === 'PURCHASE_ORDER' ? (r.paymentStatus || 'UNPAID') :
+                          isShift ? 'FINALIZED' :
+                          isDaily ? 'MASTERED' :
+                          r.recordType.replace('_', ' ')}
+                      </span>
+                      <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-400 transition-colors" />
+                   </div>
+                </div>
+              </div>
+             );
+           })}
+           
            {filteredDocs.length === 0 && (
-              <div className="py-10 text-center text-slate-400 flex flex-col items-center">
-                 <Receipt size={40} className="mb-3 opacity-20" />
-                 <p className="text-sm">No records found.</p>
+              <div className="col-span-full py-32 text-center flex flex-col items-center">
+                 <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner text-slate-200">
+                   <Archive size={44} />
+                 </div>
+                 <p className="text-slate-500 font-black text-lg">No records matched your filter</p>
+                 <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Adjust search or filter parameters</p>
               </div>
            )}
         </div>

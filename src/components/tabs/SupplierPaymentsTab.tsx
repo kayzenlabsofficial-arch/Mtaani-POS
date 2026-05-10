@@ -1,24 +1,27 @@
 import React, { useState } from 'react';
-import { Search, DollarSign, Wallet, ArrowUpRight, Clock, Landmark, CreditCard, Banknote, Building2, Receipt } from 'lucide-react';
+import { Search, DollarSign, Wallet, ArrowUpRight, Clock, Landmark, CreditCard, Banknote, Building2, Receipt, SlidersHorizontal, ArrowDownLeft, ChevronRight, X, TrendingUp, History, Tag } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Supplier } from '../../db';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
+import NestedControlPanel from '../shared/NestedControlPanel';
 
 export default function SupplierPaymentsTab({ financialAccounts }: { financialAccounts: any[] }) {
   const [paySearch, setPaySearch] = useState("");
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isOpsPanelOpen, setIsOpsPanelOpen] = useState(false);
   const [activeHistoryTab, setActiveHistoryTab] = useState<'PAYMENTS' | 'CREDITS'>('PAYMENTS');
   const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<Supplier | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const { success, error } = useToast();
+  
   const paymentSupplierId = useStore(state => state.paymentSupplierId);
   const setPaymentSupplierId = useStore(state => state.setPaymentSupplierId);
 
-  // Live Queries
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  
   const allSuppliers = useLiveQuery(
     () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],
@@ -38,8 +41,8 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
       s.name.toLowerCase().includes(paySearch.toLowerCase())
   );
 
-  const sortedPayments = [...allPayments].sort((a,b) => b.timestamp - a.timestamp);
-  const sortedCredits = [...allCreditNotes].sort((a,b) => b.timestamp - a.timestamp);
+  const sortedPayments = [...allPayments].sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const sortedCredits = [...allCreditNotes].sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   const openPaymentModal = (s: Supplier) => {
       setSelectedSupplierForPayment(s);
@@ -61,7 +64,6 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
     
     setIsSaving(true);
     try {
-        // ── FIX C5: Check ACCOUNT balance BEFORE recording to prevent negative balances ──
         if ((payment as any).source === 'ACCOUNT' && (payment as any).accountId) {
            const account = await db.financialAccounts.get((payment as any).accountId);
            if (!account) { error('Selected account not found.'); return; }
@@ -85,7 +87,6 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
           businessId: activeBusinessId!
         });
 
-        // Deduct from Financial Account if source is ACCOUNT
         if ((payment as any).source === 'ACCOUNT' && (payment as any).accountId) {
            const account = await db.financialAccounts.get((payment as any).accountId);
            if (account) {
@@ -93,7 +94,6 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
            }
         }
 
-        // Allocation logic for multiple invoices
         if (payment.purchaseOrderIds && payment.purchaseOrderIds.length > 0) {
             let remainingPool = payment.amount;
             for (const poId of payment.purchaseOrderIds) {
@@ -130,152 +130,212 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
 
   const getMethodIcon = (method: string) => {
     switch (method) {
-      case 'MPESA': return <CreditCard size={14} />;
-      case 'BANK': return <Building2 size={14} />;
-      case 'CHEQUE': return <Receipt size={14} />;
-      default: return <Banknote size={14} />;
+      case 'MPESA': return <CreditCard size={18} />;
+      case 'BANK': return <Building2 size={18} />;
+      case 'CHEQUE': return <Receipt size={18} />;
+      default: return <Banknote size={18} />;
     }
   }
 
   return (
-    <div className="p-5 pb-8 animate-in fade-in max-w-5xl mx-auto w-full flex flex-col">
-      <div className="flex justify-between items-center mb-6 mt-2">
-         <div>
-           <h2 className="text-xl font-extrabold text-slate-900 mb-1">Supplier Payments</h2>
-           <p className="text-sm text-slate-500">Manage vendor debt and payment logs.</p>
-         </div>
+    <div className="pb-24 animate-in fade-in w-full">
+      
+      {/* Financial Settlement Header */}
+      <div className="px-4 pt-2 mb-6">
+        <div className="flex items-center justify-between mb-4">
+           <div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">Debt Settlement</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Vendor Payables & Credits</p>
+           </div>
+           <div className="flex gap-2">
+              <button 
+                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
+                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
+              >
+                <SlidersHorizontal size={18} />
+                <span className="text-[10px] font-black uppercase">Tools</span>
+              </button>
+           </div>
+        </div>
+
+        {isOpsPanelOpen && (
+          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
+             <NestedControlPanel
+               title="Settlement Controls"
+               subtitle="Monitor liability and credit availability"
+               onClose={() => setIsOpsPanelOpen(false)}
+             >
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                   <div className="p-5 rounded-[2rem] border-2 border-rose-100 bg-rose-50 flex items-center gap-4 relative overflow-hidden group">
+                      <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-rose group-hover:scale-110 transition-transform">
+                         <DollarSign size={24} />
+                      </div>
+                      <div className="relative z-10">
+                         <p className="text-[9px] font-black text-rose-400 uppercase mb-0.5">Total Payables</p>
+                         <h3 className="text-xl font-black text-rose-900 leading-none">Ksh {totalDebt.toLocaleString()}</h3>
+                      </div>
+                   </div>
+
+                   <div className="p-5 rounded-[2rem] border-2 border-indigo-100 bg-indigo-50 flex items-center gap-4 relative overflow-hidden group">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-indigo group-hover:scale-110 transition-transform">
+                         <Tag size={24} />
+                      </div>
+                      <div className="relative z-10">
+                         <p className="text-[9px] font-black text-indigo-400 uppercase mb-0.5">Available Credits</p>
+                         <h3 className="text-xl font-black text-indigo-900 leading-none">Ksh {totalPendingCredit.toLocaleString()}</h3>
+                      </div>
+                   </div>
+
+                   <div className="p-5 rounded-[2rem] border-2 border-slate-100 bg-white flex items-center gap-4 group">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                         <History size={24} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Active Vendors</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">{suppliersOwed.length} Creditors</h3>
+                      </div>
+                   </div>
+                </div>
+             </NestedControlPanel>
+          </div>
+        )}
       </div>
 
-      {/* Debt Summary Card */}
-      <div className="bg-red-600 rounded-3xl p-6 text-white shadow-xl shadow-red-600/20 mb-6 relative overflow-hidden">
-         <div className="relative z-10">
-            <p className="text-red-100 text-xs font-bold   mb-1">Total Outstanding Debt</p>
-            <h3 className="text-4xl font-black mb-1">Ksh {totalDebt.toLocaleString()}</h3>
-            <p className="text-red-100/80 text-[10px] font-medium italic">Owed to {suppliersOwed.length} active suppliers</p>
-         </div>
-         <Wallet className="absolute -right-4 -bottom-4 w-32 h-32 text-red-500 opacity-20" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1">
-         {/* Left Side: Pending Payables */}
-         <div className="flex flex-col">
-            <h3 className="text-sm font-black text-slate-900 mb-3 flex items-center gap-2">
-               <ArrowUpRight size={16} className="text-red-500" /> Pending Balances
-            </h3>
-            <div className="relative mb-3">
-              <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-              <input 
-                type="text" placeholder="Filter vendors..." value={paySearch} onChange={(e) => setPaySearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-white rounded-xl border border-slate-200 text-xs font-semibold focus:border-red-500 focus:outline-none transition-all"
-              />
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 px-4">
+         
+         {/* Left: Payables List (3 cols) */}
+         <div className="lg:col-span-3 space-y-6">
+            <div className="flex items-center justify-between mb-4 px-2">
+               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <ArrowDownLeft size={14} className="text-rose-500" /> Outstanding Balances
+               </h3>
+               <div className="relative w-48">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <input 
+                    type="text" 
+                    placeholder="Filter vendors..." 
+                    value={paySearch} 
+                    onChange={(e) => setPaySearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 bg-white rounded-xl border-2 border-slate-100 text-[10px] font-black text-slate-700 focus:border-rose-500 outline-none transition-all"
+                  />
+               </div>
             </div>
-            <div className="space-y-2 pb-4">
-               {filteredOwed.length === 0 ? (
-                  <div className="bg-white/50 border border-dashed border-slate-200 rounded-2xl py-10 text-center">
-                     <p className="text-xs text-slate-400 font-bold ">No pending debts</p>
-                  </div>
-               ) : (
-                  filteredOwed.map(s => (
-                     <div key={s.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-                        <div>
-                           <h4 className="text-sm font-bold text-slate-900">{s.company}</h4>
-                           <p className="text-[10px] font-bold text-red-600 mt-1  tracking-tight">Ksh {s.balance.toLocaleString()} Due</p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+               {filteredOwed.map(s => (
+                  <div key={s.id} className="group bg-white p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col gap-5 hover:border-rose-300 hover:shadow-xl hover:-translate-y-1 transition-all">
+                     <div className="flex justify-between items-start">
+                        <div className="w-12 h-12 rounded-[1.25rem] bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-600 group-hover:scale-110 transition-transform">
+                           <Building2 size={24} />
                         </div>
-                        <button 
-                          onClick={() => openPaymentModal(s)}
-                          className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black   hover:bg-green-600 transition-colors shadow-md active:scale-95"
-                        >
-                          Record Pay
-                        </button>
+                        <div className="text-right">
+                           <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Due Balance</p>
+                           <h3 className="text-lg font-black text-rose-600">Ksh {s.balance.toLocaleString()}</h3>
+                        </div>
                      </div>
-                  ))
+                     
+                     <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-black text-slate-900 truncate">{s.company}</h4>
+                        <p className="text-[10px] font-bold text-slate-400 mt-0.5">{s.name}</p>
+                     </div>
+
+                     <button 
+                        onClick={() => openPaymentModal(s)}
+                        className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-lg press flex items-center justify-center gap-2"
+                     >
+                        <DollarSign size={16} /> Record Settlement
+                     </button>
+                  </div>
+               ))}
+               
+               {filteredOwed.length === 0 && (
+                  <div className="col-span-full py-20 bg-slate-50 border-2 border-dashed border-slate-100 rounded-[2.5rem] flex flex-col items-center justify-center text-slate-300">
+                     <CheckCircle2 size={48} className="mb-4 opacity-20" />
+                     <p className="text-xs font-black uppercase tracking-widest opacity-40">Zero Outstanding Liabilities</p>
+                  </div>
                )}
             </div>
          </div>
 
-          {/* Right Side: Activity History */}
-          <div className="flex flex-col">
-             <div className="flex border-b border-slate-200 mb-4">
-                <button 
-                  onClick={() => setActiveHistoryTab('PAYMENTS')}
-                  className={`pb-3 px-4 text-[10px] font-black transition-all relative ${activeHistoryTab === 'PAYMENTS' ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-400'}`}
-                >
-                  Payment History
-                </button>
-                <button 
-                  onClick={() => setActiveHistoryTab('CREDITS')}
-                  className={`pb-3 px-4 text-[10px] font-black transition-all relative ${activeHistoryTab === 'CREDITS' ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-400'}`}
-                >
-                  Credit Notes {pendingCredits.length > 0 && <span className="ml-1 bg-red-100 text-red-600 px-1 rounded-full">{pendingCredits.length}</span>}
-                </button>
-             </div>
+         {/* Right: History Feed (2 cols) */}
+         <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white rounded-[2.5rem] border-2 border-slate-100 shadow-sm overflow-hidden flex flex-col min-h-[600px]">
+               <div className="flex bg-slate-50 p-2 border-b-2 border-slate-100">
+                  <button 
+                    onClick={() => setActiveHistoryTab('PAYMENTS')}
+                    className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeHistoryTab === 'PAYMENTS' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    Payments
+                  </button>
+                  <button 
+                    onClick={() => setActiveHistoryTab('CREDITS')}
+                    className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeHistoryTab === 'CREDITS' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    Credits {pendingCredits.length > 0 && <span className="ml-1 bg-rose-500 text-white px-2 py-0.5 rounded-full text-[8px]">{pendingCredits.length}</span>}
+                  </button>
+               </div>
 
-             <div className="space-y-2 pb-24 h-full overflow-y-auto no-scrollbar">
-                {activeHistoryTab === 'PAYMENTS' ? (
-                   sortedPayments.length === 0 ? (
-                      <div className="bg-white/50 border border-dashed border-slate-200 rounded-2xl py-10 text-center">
-                         <p className="text-xs text-slate-400 font-bold  ">No history yet</p>
-                      </div>
-                   ) : (
-                      sortedPayments.map(p => {
+               <div className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
+                  {activeHistoryTab === 'PAYMENTS' ? (
+                     sortedPayments.map(p => {
                         const vendor = allSuppliers.find(s => s.id === p.supplierId);
                         return (
-                           <div key={p.id} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between border-l-4 border-l-green-500">
-                              <div className="flex items-center gap-3">
-                                 <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center text-green-600">
+                           <div key={p.id} className="p-4 bg-white border-2 border-slate-50 rounded-2xl flex items-center justify-between group hover:border-emerald-200 transition-all">
+                              <div className="flex items-center gap-4">
+                                 <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
                                     {getMethodIcon(p.paymentMethod)}
                                  </div>
-                                 <div>
-                                    <h4 className="text-[11px] font-bold text-slate-900">{vendor?.company || 'Unknown Vendor'}</h4>
-                                    <div className="flex flex-col gap-0.5 mt-0.5">
-                                        <p className="text-[9px] font-semibold text-slate-500">{new Date(p.timestamp).toLocaleDateString()} • {p.reference || 'No ref'}</p>
-                                        {p.transactionCode && (
-                                            <div className="flex items-center gap-1">
-                                                <Landmark size={8} className="text-blue-500" />
-                                                <span className="text-[9px] font-bold text-blue-600  tracking-tight">{p.transactionCode}</span>
-                                            </div>
-                                        )}
+                                 <div className="min-w-0">
+                                    <h4 className="text-[11px] font-black text-slate-900 truncate leading-tight">{vendor?.company || 'Unknown Vendor'}</h4>
+                                    <div className="flex items-center gap-2 mt-1">
+                                       <span className="text-[9px] font-bold text-slate-400 uppercase">{new Date(p.timestamp).toLocaleDateString()}</span>
+                                       <span className="w-1 h-1 rounded-full bg-slate-200" />
+                                       <span className="text-[9px] font-black text-indigo-500 uppercase">{p.paymentMethod}</span>
                                     </div>
                                  </div>
                               </div>
-                              <div className="text-right">
-                                 <p className="text-xs font-black text-slate-900">Ksh {p.amount.toLocaleString()}</p>
-                                 <p className="text-[8px] font-bold text-green-600  ">SENT</p>
+                              <div className="text-right pl-4">
+                                 <p className="text-xs font-black text-slate-900 tabular-nums leading-none">Ksh {p.amount.toLocaleString()}</p>
+                                 {p.transactionCode && <p className="text-[8px] font-bold text-emerald-500 mt-1 uppercase truncate max-w-[80px]">{p.transactionCode}</p>}
                               </div>
                            </div>
                         );
-                      })
-                   )
-                ) : (
-                   sortedCredits.length === 0 ? (
-                      <div className="bg-white/50 border border-dashed border-slate-200 rounded-2xl py-10 text-center">
-                         <p className="text-xs text-slate-400 font-bold  ">No credit notes found</p>
-                      </div>
-                   ) : (
-                      sortedCredits.map(cn => {
+                     })
+                  ) : (
+                     sortedCredits.map(cn => {
                         const vendor = allSuppliers.find(s => s.id === cn.supplierId);
+                        const isPend = cn.status === 'PENDING';
                         return (
-                           <div key={cn.id} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between border-l-4 border-l-blue-500">
-                              <div className="flex items-center gap-3">
-                                 <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-                                    <ArrowUpRight size={14} />
+                           <div key={cn.id} className="p-4 bg-white border-2 border-slate-50 rounded-2xl flex items-center justify-between group hover:border-blue-200 transition-all">
+                              <div className="flex items-center gap-4">
+                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform ${isPend ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
+                                    <ArrowUpRight size={18} />
                                  </div>
-                                 <div>
-                                    <h4 className="text-[11px] font-bold text-slate-900">{vendor?.company || 'Unknown Vendor'}</h4>
-                                    <p className="text-[9px] font-semibold text-slate-500">{new Date(cn.timestamp).toLocaleDateString()} • {cn.reference || 'Credit'}</p>
+                                 <div className="min-w-0">
+                                    <h4 className="text-[11px] font-black text-slate-900 truncate leading-tight">{vendor?.company || 'Unknown Vendor'}</h4>
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">{new Date(cn.timestamp).toLocaleDateString()}</p>
                                  </div>
                               </div>
-                              <div className="text-right">
-                                 <p className="text-xs font-black text-blue-600">Ksh {cn.amount.toLocaleString()}</p>
-                                 <p className={`text-[8px] font-bold ${cn.status === 'ALLOCATED' ? 'text-green-600' : 'text-orange-500'}`}>{cn.status}</p>
+                              <div className="text-right pl-4">
+                                 <p className="text-xs font-black text-slate-900 tabular-nums leading-none">Ksh {cn.amount.toLocaleString()}</p>
+                                 <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border mt-1 inline-block ${isPend ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                    {cn.status}
+                                 </span>
                               </div>
                            </div>
                         );
-                      })
-                   )
-                )}
-             </div>
-          </div>
+                     })
+                  )}
+                  
+                  {(activeHistoryTab === 'PAYMENTS' ? sortedPayments : sortedCredits).length === 0 && (
+                     <div className="py-20 text-center flex flex-col items-center opacity-30">
+                        <History size={40} className="mb-4" />
+                        <p className="text-[10px] font-black uppercase tracking-widest">No activity log found</p>
+                     </div>
+                  )}
+               </div>
+            </div>
+         </div>
       </div>
 
       <SupplierPaymentModal 
@@ -288,3 +348,5 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
     </div>
   );
 }
+
+const CheckCircle2 = ({ size, className }: { size: number, className?: string }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>;

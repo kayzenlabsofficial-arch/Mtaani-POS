@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { MapPin, Plus, Pencil, Power, Phone, Hash, Building2, CheckCircle2, XCircle, Trash2, Smartphone } from 'lucide-react';
+import { MapPin, Plus, Pencil, Power, Phone, Hash, Building2, CheckCircle2, XCircle, Trash2, Smartphone, SlidersHorizontal, ChevronRight, X, ShieldCheck, Globe, Activity, Landmark } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Branch } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { SearchableSelect } from '../shared/SearchableSelect';
+import NestedControlPanel from '../shared/NestedControlPanel';
 
 export default function BranchManagementTab() {
   const activeBusinessId = useStore(state => state.activeBusinessId);
@@ -23,6 +24,7 @@ export default function BranchManagementTab() {
   };
 
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isOpsPanelOpen, setIsOpsPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
@@ -142,280 +144,311 @@ export default function BranchManagementTab() {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200">
-        <div>
-          <h3 className="text-sm font-extrabold text-slate-900">Branch Locations</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Manage store locations sharing this POS.</p>
+    <div className="pb-24 animate-in fade-in w-full">
+      
+      {/* Network Header */}
+      <div className="pt-2 mb-6">
+        <div className="flex items-center justify-between mb-4">
+           <div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">Distribution Network</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Multi-Branch Deployment & Configuration</p>
+           </div>
+           <div className="flex gap-2">
+              <button 
+                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
+                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
+              >
+                <SlidersHorizontal size={18} />
+                <span className="text-[10px] font-black uppercase">Fleet Tools</span>
+              </button>
+              <button onClick={openNew} className="grad-blue text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 px-6 py-4 rounded-2xl transition-all shadow-blue press">
+                 <Plus size={18} /> Deploy New Node
+              </button>
+           </div>
         </div>
-        <button
-          onClick={openNew}
-          className="bg-blue-600 text-white font-bold text-xs flex items-center gap-2 px-4 py-2.5 rounded-xl transition-transform active:scale-95 shadow-lg shadow-blue-600/20"
-        >
-          <Plus size={14} /> Add Branch
-        </button>
-      </div>
 
-      {/* Branch cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {(branches || []).map(branch => (
-          <div
-            key={branch.id}
-            className={`bg-white rounded-2xl border p-4 flex flex-col gap-3 transition-all ${branch.isActive ? 'border-slate-200' : 'border-slate-100 opacity-60'}`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${branch.isActive ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
-                   <Building2 size={20} />
+        {isOpsPanelOpen && (
+          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
+             <NestedControlPanel
+               title="Network Intelligence"
+               subtitle="Monitor branch performance and connectivity"
+               onClose={() => setIsOpsPanelOpen(false)}
+             >
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+                         <Globe size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Global Nodes</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">{branches?.length} Stations</h3>
+                      </div>
+                   </div>
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                         <CheckCircle2 size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Online Fleet</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">{(branches || []).filter(b => b.isActive).length} Active</h3>
+                      </div>
+                   </div>
+                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                         <Activity size={20} />
+                      </div>
+                      <div>
+                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">System Sync</p>
+                         <h3 className="text-xl font-black text-slate-900 leading-none">Real-time</h3>
+                      </div>
+                   </div>
                 </div>
-                <div>
-                  <p className="font-black text-sm text-slate-900 leading-tight">{branch.name}</p>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <MapPin size={10} className="text-slate-400" />
-                    <span className="text-xs text-slate-500 font-medium">{branch.location}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-1.5">
-                <button
-                  onClick={() => openEdit(branch)}
-                  className="w-8 h-8 rounded-xl bg-slate-50 text-slate-500 flex items-center justify-center hover:bg-blue-50 hover:text-blue-600 transition-all"
-                  title="Edit branch"
-                >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  onClick={() => toggleActive(branch)}
-                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${branch.isActive ? 'bg-green-50 text-green-600 hover:bg-red-50 hover:text-red-600' : 'bg-slate-100 text-slate-400 hover:bg-green-50 hover:text-green-600'}`}
-                  title={branch.isActive ? 'Deactivate branch' : 'Activate branch'}
-                >
-                  <Power size={14} />
-                </button>
-                {isAdmin && (
-                  <button
-                    onClick={() => handleDelete(branch)}
-                    className="w-8 h-8 rounded-xl bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all"
-                    title="Delete branch"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Branch metadata pills */}
-            <div className="flex flex-wrap gap-1.5">
-              {branch.isActive ? (
-                <span className="flex items-center gap-1 text-[9px] font-black bg-green-50 text-green-700 px-2 py-1 rounded-full border border-green-100">
-                  <CheckCircle2 size={9} /> Active
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-[9px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded-full">
-                  <XCircle size={9} /> Inactive
-                </span>
-              )}
-              {branch.phone && (
-                <span className="flex items-center gap-1 text-[9px] font-bold text-slate-600 bg-slate-50 px-2 py-1 rounded-full border border-slate-100">
-                  <Phone size={9} /> {branch.phone}
-                </span>
-              )}
-              {branch.tillNumber && (
-                <span className="flex items-center gap-1 text-[9px] font-bold text-slate-600 bg-slate-50 px-2 py-1 rounded-full border border-slate-100">
-                  <Hash size={9} /> Till: {branch.tillNumber}
-                </span>
-              )}
-              {branch.kraPin && (
-                <span className="flex items-center gap-1 text-[9px] font-bold text-slate-600 bg-slate-50 px-2 py-1 rounded-full border border-slate-100">
-                  KRA: {branch.kraPin}
-                </span>
-              )}
-            </div>
-          </div>
-        ))}
-
-        {/* Empty state */}
-        {(branches || []).length === 0 && (
-          <div className="col-span-full bg-white rounded-2xl border border-dashed border-slate-200 p-8 text-center">
-            <div className="w-14 h-14 bg-blue-50 text-blue-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
-              <Building2 size={28} />
-            </div>
-            <p className="text-sm font-bold text-slate-600">No branches yet</p>
-            <p className="text-xs text-slate-400 mt-1">Add your first location to get started.</p>
+             </NestedControlPanel>
           </div>
         )}
       </div>
 
-      {/* Add / Edit Form Modal */}
+      {/* Branch Node Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {(branches || []).map(branch => (
+          <div
+            key={branch.id}
+            className={`group bg-white p-6 rounded-[2.5rem] border-2 transition-all flex flex-col gap-5 hover:shadow-xl hover:-translate-y-1 relative overflow-hidden ${branch.isActive ? 'border-slate-100 hover:border-indigo-300' : 'border-slate-50 opacity-60'}`}
+          >
+            <div className="flex items-start justify-between relative z-10">
+              <div className="flex items-center gap-4">
+                <div className={`w-14 h-14 rounded-[1.25rem] flex items-center justify-center shrink-0 shadow-sm group-hover:scale-110 transition-transform ${branch.isActive ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                   <Building2 size={28} />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-base font-black text-slate-900 truncate leading-tight">{branch.name}</h4>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <MapPin size={12} className="text-slate-300" />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{branch.location}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex flex-col gap-1.5">
+                 <button onClick={() => openEdit(branch)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all">
+                    <Pencil size={18} />
+                 </button>
+                 <button onClick={() => toggleActive(branch)} className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${branch.isActive ? 'bg-emerald-50 text-emerald-600 hover:bg-rose-50 hover:text-rose-600' : 'bg-slate-100 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>
+                    <Power size={18} />
+                 </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 relative z-10">
+              {branch.isActive ? (
+                <span className="flex items-center gap-1.5 text-[9px] font-black bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-full border border-emerald-100 uppercase tracking-tighter">
+                  <CheckCircle2 size={10} /> Operational
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-[9px] font-black bg-slate-100 text-slate-500 px-3 py-1.5 rounded-full uppercase tracking-tighter">
+                  <XCircle size={10} /> Suspended
+                </span>
+              )}
+              {branch.tillNumber && (
+                <span className="flex items-center gap-1.5 text-[9px] font-black text-slate-400 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100 uppercase tracking-widest">
+                  <Hash size={10} /> {branch.tillNumber}
+                </span>
+              )}
+              {branch.kraPin && (
+                <span className="flex items-center gap-1.5 text-[9px] font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 uppercase tracking-widest">
+                  KRA Verified
+                </span>
+              )}
+            </div>
+
+            <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-slate-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+        ))}
+
+        {(branches || []).length === 0 && (
+          <div className="col-span-full py-32 text-center flex flex-col items-center">
+             <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner text-slate-200">
+               <Globe size={44} />
+             </div>
+             <p className="text-slate-500 font-black text-lg">No branch nodes deployed</p>
+             <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Initiate deployment to expand your network</p>
+          </div>
+        )}
+      </div>
+
+      {/* Form Modal */}
       {isFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFormOpen(false)} />
-          <div className="relative w-full max-w-xl bg-white rounded-3xl shadow-elevated p-8 animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 z-10 max-h-[90vh] overflow-y-auto no-scrollbar">
+        <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center p-4">
+          <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setIsFormOpen(false)} />
+          <div className="relative w-full max-w-2xl bg-white rounded-[3rem] shadow-2xl p-10 animate-in slide-in-from-bottom-10 duration-500 z-10 max-h-[90vh] overflow-y-auto no-scrollbar">
             
-            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-5">
-              <Building2 size={24} />
-            </div>
-            <h3 className="text-lg font-black text-slate-900 mb-1">
-              {editingId ? 'Edit Branch' : 'New Branch'}
-            </h3>
-            <p className="text-xs text-slate-500 mb-6">
-              {editingId ? 'Update branch details below.' : 'Add a new store location to your network.'}
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Branch Name *</label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
-                  placeholder="e.g. Westlands Branch"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Location / Area *</label>
-                <input
-                  type="text"
-                  value={form.location}
-                  onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
-                  placeholder="e.g. Westlands, Nairobi"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Phone</label>
-                  <input
-                    type="tel"
-                    value={form.phone}
-                    onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
-                    placeholder="0700..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Till No.</label>
-                  <input
-                    type="text"
-                    value={form.tillNumber}
-                    onChange={e => setForm(f => ({ ...f, tillNumber: e.target.value }))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
-                    placeholder="123456"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">KRA PIN (optional)</label>
-                <input
-                  type="text"
-                  value={form.kraPin}
-                  onChange={e => setForm(f => ({ ...f, kraPin: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
-                  placeholder="P0012345678X"
-                />
-              </div>
-
-              <div className="pt-4 border-t border-slate-100">
-                 <h4 className="text-[10px] font-black text-blue-600   mb-4 flex items-center gap-2">
-                   <Smartphone size={12} /> Daraja API Integration (M-Pesa)
-                 </h4>
-                 <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">M-Pesa Env</label>
-                      <SearchableSelect
-                        value={form.mpesaEnv}
-                        onChange={(v) => setForm(f => ({ ...f, mpesaEnv: v as any }))}
-                        options={[
-                          { value: 'sandbox', label: 'Sandbox (Testing)', keywords: 'sandbox test testing' },
-                          { value: 'production', label: 'Production (Live)', keywords: 'production live' },
-                        ]}
-                        size="sm"
-                        buttonClassName="bg-blue-50/50 border-blue-100 text-blue-900 focus:border-blue-500"
-                        searchInputClassName="bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">M-Pesa Type</label>
-                      <SearchableSelect
-                        value={form.mpesaType}
-                        onChange={(v) => setForm(f => ({ ...f, mpesaType: v as any }))}
-                        options={[
-                          { value: 'paybill', label: 'Paybill', keywords: 'paybill' },
-                          { value: 'buygoods', label: 'Buy Goods (Till)', keywords: 'buy goods till' },
-                        ]}
-                        size="sm"
-                        buttonClassName="bg-blue-50/50 border-blue-100 text-blue-900 focus:border-blue-500"
-                        searchInputClassName="bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Consumer Key</label>
-                      <input
-                        type="text"
-                        value={form.mpesaConsumerKey}
-                        onChange={e => setForm(f => ({ ...f, mpesaConsumerKey: e.target.value }))}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
-                        placeholder="App Key"
-                      />
-                    </div>
-                 </div>
-                 <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Store Number</label>
-                      <input
-                        type="text"
-                        value={form.mpesaStoreNumber}
-                        onChange={e => setForm(f => ({ ...f, mpesaStoreNumber: e.target.value }))}
-                        className={`w-full border rounded-xl px-4 py-3 text-sm font-bold transition-colors focus:outline-none ${form.mpesaType === 'buygoods' ? 'bg-blue-50 border-blue-200 text-slate-900 focus:border-blue-500' : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'}`}
-                        placeholder="Required for Till"
-                        disabled={form.mpesaType !== 'buygoods'}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">LNM Passkey</label>
-                      <input
-                        type="password"
-                        value={form.mpesaPasskey}
-                        onChange={e => setForm(f => ({ ...f, mpesaPasskey: e.target.value }))}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
-                        placeholder="Online Passkey"
-                      />
-                    </div>
-                 </div>
-                 <div className="space-y-4">
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400   mb-1.5 ml-1">Consumer Secret</label>
-                      <input
-                        type="password"
-                        value={form.mpesaConsumerSecret}
-                        onChange={e => setForm(f => ({ ...f, mpesaConsumerSecret: e.target.value }))}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500 transition-colors"
-                        placeholder="App Secret"
-                      />
-                    </div>
-                 </div>
-              </div>
+            <div className="flex justify-between items-start mb-8">
+               <div className="flex items-center gap-5">
+                  <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-[1.5rem] flex items-center justify-center shadow-sm">
+                    <Building2 size={32} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900">
+                      {editingId ? 'Node Configuration' : 'Node Deployment'}
+                    </h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                      {editingId ? 'Syncing Station Parameters' : 'Provisioning New Fleet Member'}
+                    </p>
+                  </div>
+               </div>
+               <button onClick={() => setIsFormOpen(false)} className="p-3 bg-slate-50 text-slate-400 hover:text-slate-600 rounded-2xl transition-all"><X size={20}/></button>
             </div>
 
-            <div className="flex gap-3 mt-7">
-              <button
-                onClick={() => { setIsFormOpen(false); setEditingId(null); setForm(BLANK); }}
-                className="flex-1 py-4 bg-slate-100 text-slate-700 font-bold text-[10px]   rounded-2xl hover:bg-slate-200 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={!form.name.trim() || !form.location.trim() || saving}
-                className="flex-[2] py-4 bg-blue-600 text-white font-bold text-[10px]   rounded-2xl disabled:opacity-50 shadow-lg shadow-blue-600/20 active:scale-95 transition-all"
-              >
-                {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Create Branch'}
-              </button>
+            <div className="space-y-8">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Node Identity *</label>
+                    <input
+                      type="text"
+                      value={form.name}
+                      onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                      className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm"
+                      placeholder="e.g. Waterfront Branch"
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Physical Location *</label>
+                    <input
+                      type="text"
+                      value={form.location}
+                      onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
+                      className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm"
+                      placeholder="e.g. Karen, Nairobi"
+                    />
+                  </div>
+               </div>
+
+               <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Secure Link Phone</label>
+                    <input
+                      type="tel"
+                      value={form.phone}
+                      onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                      className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm"
+                      placeholder="07..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa Till #</label>
+                    <input
+                      type="text"
+                      value={form.tillNumber}
+                      onChange={e => setForm(f => ({ ...f, tillNumber: e.target.value }))}
+                      className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm"
+                      placeholder="123456"
+                    />
+                  </div>
+                  <div className="col-span-2 lg:col-span-1">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">KRA Tax PIN</label>
+                    <input
+                      type="text"
+                      value={form.kraPin}
+                      onChange={e => setForm(f => ({ ...f, kraPin: e.target.value }))}
+                      className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm"
+                      placeholder="P00..."
+                    />
+                  </div>
+               </div>
+
+               <div className="p-8 bg-indigo-50/50 rounded-[2.5rem] border-2 border-indigo-100">
+                  <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <Smartphone size={14} /> Daraja API Settlement Protocol
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                     <div>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Environment</label>
+                       <SearchableSelect
+                         value={form.mpesaEnv}
+                         onChange={(v) => setForm(f => ({ ...f, mpesaEnv: v as any }))}
+                         options={[
+                           { value: 'sandbox', label: 'Sandbox (Staging)', keywords: 'sandbox test testing' },
+                           { value: 'production', label: 'Production (Live)', keywords: 'production live' },
+                         ]}
+                         buttonClassName="rounded-2xl px-6 py-4.5 font-black text-slate-900 bg-white border-transparent"
+                       />
+                     </div>
+                     <div>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Channel Type</label>
+                       <SearchableSelect
+                         value={form.mpesaType}
+                         onChange={(v) => setForm(f => ({ ...f, mpesaType: v as any }))}
+                         options={[
+                           { value: 'paybill', label: 'Paybill Hub', keywords: 'paybill' },
+                           { value: 'buygoods', label: 'Buy Goods (Till)', keywords: 'buy goods till' },
+                         ]}
+                         buttonClassName="rounded-2xl px-6 py-4.5 font-black text-slate-900 bg-white border-transparent"
+                       />
+                     </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                     <div>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">App Consumer Key</label>
+                       <input
+                         type="text"
+                         value={form.mpesaConsumerKey}
+                         onChange={e => setForm(f => ({ ...f, mpesaConsumerKey: e.target.value }))}
+                         className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm"
+                         placeholder="Consumer Key"
+                       />
+                     </div>
+                     <div>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">App Consumer Secret</label>
+                       <input
+                         type="password"
+                         value={form.mpesaConsumerSecret}
+                         onChange={e => setForm(f => ({ ...f, mpesaConsumerSecret: e.target.value }))}
+                         className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm"
+                         placeholder="Consumer Secret"
+                       />
+                     </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                     <div>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Store Number</label>
+                       <input
+                         type="text"
+                         value={form.mpesaStoreNumber}
+                         onChange={e => setForm(f => ({ ...f, mpesaStoreNumber: e.target.value }))}
+                         className={`w-full border-2 rounded-2xl px-6 py-4.5 text-sm font-black transition-all outline-none ${form.mpesaType === 'buygoods' ? 'bg-white border-transparent focus:border-indigo-500 text-slate-900' : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'}`}
+                         placeholder="Required for Till"
+                         disabled={form.mpesaType !== 'buygoods'}
+                       />
+                     </div>
+                     <div>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">LNM Online Passkey</label>
+                       <input
+                         type="password"
+                         value={form.mpesaPasskey}
+                         onChange={e => setForm(f => ({ ...f, mpesaPasskey: e.target.value }))}
+                         className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm"
+                         placeholder="STK Passkey"
+                       />
+                     </div>
+                  </div>
+               </div>
+            </div>
+
+            <div className="flex gap-4 mt-12">
+               <button
+                 onClick={() => { setIsFormOpen(false); setEditingId(null); setForm(BLANK); }}
+                 className="flex-1 py-5 bg-white text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-2xl border-2 border-slate-100 press"
+               >
+                 Abort Changes
+               </button>
+               <button
+                 onClick={handleSave}
+                 disabled={!form.name.trim() || !form.location.trim() || saving}
+                 className="flex-[2] grad-blue text-white font-black text-[10px] uppercase tracking-widest rounded-2xl shadow-blue press disabled:opacity-50"
+               >
+                 {saving ? 'Syncing...' : editingId ? 'Update Node Fleet' : 'Initiate Deployment'}
+               </button>
             </div>
           </div>
         </div>
@@ -423,4 +456,3 @@ export default function BranchManagementTab() {
     </div>
   );
 }
-
