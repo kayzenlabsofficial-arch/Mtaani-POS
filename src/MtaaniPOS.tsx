@@ -244,12 +244,8 @@ export default function MtaaniPOS() {
     if (isLoggingIn) return;
     setLoginError("");
 
-    if (isLockedOut()) {
-      setLoginError("Account locked. Please try again in 30 minutes.");
-      return;
-    }
-
-    if (username === process.env.ROOT_USERNAME && password === process.env.ROOT_PASSWORD) {
+    const isRoot = username === process.env.ROOT_USERNAME && password === process.env.ROOT_PASSWORD;
+    if (isRoot) {
       login({ id: 'root', name: 'System Root', role: 'ROOT' } as any);
       return;
     }
@@ -259,12 +255,18 @@ export default function MtaaniPOS() {
       return;
     }
 
+    const lockoutStatus = isLockedOut(businessCode);
+    if (lockoutStatus.locked) {
+      const mins = Math.ceil(lockoutStatus.secondsLeft / 60);
+      setLoginError(`Account locked for this business. Try again in ${mins} minute${mins !== 1 ? 's' : ''}.`);
+      return;
+    }
+
     setIsLoggingIn(true);
     try {
       const biz = await db.businesses.where('code').equals(businessCode.trim().toUpperCase()).first();
       if (!biz) {
         setLoginError("Business not found. Please check your code.");
-        recordFailedAttempt();
         return;
       }
 
@@ -274,14 +276,14 @@ export default function MtaaniPOS() {
         .first();
 
       if (user && await verifyPassword(password, user.password)) {
-        resetAttempts();
+        resetAttempts(businessCode);
         setActiveBusinessId(biz.id);
         if (user.branchId) setActiveBranchId(user.branchId);
         login(user);
         success(`Welcome back, ${user.name}!`);
       } else {
         setLoginError("Invalid username or password.");
-        recordFailedAttempt();
+        recordFailedAttempt(businessCode);
       }
     } catch (err) {
       setLoginError("Connection failed. Please try again.");

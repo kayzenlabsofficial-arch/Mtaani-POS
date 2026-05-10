@@ -81,7 +81,7 @@ async function verifyPasswordSHA256(plain: string, stored: string): Promise<bool
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MAX_ATTEMPTS = 5;
-const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
+const LOCKOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 interface AttemptRecord {
   count: number;
