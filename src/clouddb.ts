@@ -63,7 +63,7 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
   
   if (businessId) {
     headers['X-Business-ID'] = businessId;
-  } else if (table !== 'businesses' && !table.startsWith('system')) {
+  } else if (table !== 'businesses' && table !== 'loginAttempts' && !table.startsWith('system')) {
     throw new Error('Business ID missing for ' + method + ' ' + table);
   }
   

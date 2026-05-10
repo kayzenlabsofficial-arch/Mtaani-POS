@@ -433,6 +433,11 @@ export default function MtaaniPOS() {
         return;
       }
 
+      // Establish context before querying tenant-scoped tables
+      setActiveBusinessId(biz.id);
+      // Wait a tiny bit for the store to update (optional, but safer for concurrent ops)
+      await new Promise(r => setTimeout(r, 0));
+
       const user = await db.users
         .where('[businessId+name]')
         .equals([biz.id, username.toLowerCase()])
@@ -440,11 +445,12 @@ export default function MtaaniPOS() {
 
       if (user && await verifyPassword(password, user.password)) {
         await resetAttempts(businessCode);
-        setActiveBusinessId(biz.id);
         if (user.branchId) setActiveBranchId(user.branchId);
         login(user);
         success(`Welcome back, ${user.name}!`);
       } else {
+        // Clear context if login fails
+        setActiveBusinessId(null);
         setLoginError("Invalid username or password.");
         await recordFailedAttempt(businessCode);
       }
