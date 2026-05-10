@@ -67,7 +67,7 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
       await db.businesses.add({
         id: newBusinessId,
         name: form.name,
-        code: form.code.toUpperCase(),
+        code: trimmedCode,
         isActive: 1,
         updated_at: Date.now()
       } as any);
@@ -140,7 +140,7 @@ function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
                       </div>
                       <div className="space-y-2">
                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2">Unique Access Code</label>
-                         <input type="text" placeholder="e.g. MTAANI1" className="w-full bg-slate-950 border border-slate-800 focus:border-primary rounded-2xl px-6 py-4 outline-none text-sm font-bold transition-all" value={form.code} onChange={e => setForm({...form, code: e.target.value})} />
+                         <input type="text" placeholder="e.g. MTAANI1" className="w-full bg-slate-950 border border-slate-800 focus:border-primary rounded-2xl px-6 py-4 outline-none text-sm font-bold transition-all" value={form.code} onChange={e => setForm({...form, code: e.target.value.toUpperCase()})} />
                       </div>
                       <button type="submit" className="w-full py-5 bg-primary hover:bg-primary-container rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 transition-all active:scale-[0.98]">Deploy Global Node</button>
                    </form>
@@ -438,9 +438,11 @@ export default function MtaaniPOS() {
       // Wait a tiny bit for the store to update (optional, but safer for concurrent ops)
       await new Promise(r => setTimeout(r, 0));
 
+      const normalizedUsername = username.trim().toLowerCase();
       const user = await db.users
-        .where('[businessId+name]')
-        .equals([biz.id, username.toLowerCase()])
+        .where('businessId')
+        .equals(biz.id)
+        .and(u => String(u.name || '').trim().toLowerCase() === normalizedUsername)
         .first();
 
       if (user && await verifyPassword(password, user.password)) {
@@ -499,7 +501,7 @@ export default function MtaaniPOS() {
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-1.5">
                <label className="text-[10px] font-bold text-outline uppercase tracking-widest ml-2">Business Code</label>
-               <input type="text" placeholder="Enter Entity ID" className="w-full bg-surface-container-low border border-outline-variant rounded-md px-6 py-4 text-sm font-bold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all" value={businessCode} onChange={(e) => setBusinessCode(e.target.value)} />
+               <input type="text" placeholder="Enter Entity ID" className="w-full bg-surface-container-low border border-outline-variant rounded-md px-6 py-4 text-sm font-bold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all" value={businessCode} onChange={(e) => setBusinessCode(e.target.value.toUpperCase())} />
             </div>
             <div className="space-y-1.5">
                <label className="text-[10px] font-bold text-outline uppercase tracking-widest ml-2">Identity</label>

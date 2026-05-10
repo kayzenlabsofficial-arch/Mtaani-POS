@@ -221,6 +221,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       const items = Array.isArray(body) ? body : [body];
       if (items.length === 0) return new Response(JSON.stringify({ success: true, count: 0 }), { headers: jsonHeaders() });
 
+      // Normalize business code to uppercase at write time.
+      if (table === 'businesses') {
+        items.forEach(item => {
+          if (typeof item?.code === 'string') item.code = item.code.trim().toUpperCase();
+        });
+      }
+
       if (!UNSCOPED_TABLES.has(table)) {
         if (!businessId) {
           return new Response(JSON.stringify({ error: 'X-Business-ID header required for POST' }), { status: 400, headers: jsonHeaders() });
