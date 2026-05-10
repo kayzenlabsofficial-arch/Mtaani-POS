@@ -73,7 +73,7 @@ export default function Sidebar({
         </div>
         <div>
           <h2 className="text-lg font-bold text-primary leading-tight">Mtaani POS</h2>
-          <p className="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest mt-0.5">Till TRM-01</p>
+          <p className="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest mt-0.5">Secure Cloud POS</p>
         </div>
       </div>
 

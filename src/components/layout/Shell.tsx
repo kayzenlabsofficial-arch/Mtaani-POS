@@ -4,17 +4,52 @@ const MaterialIcon = ({ name, className = "", style = {} }: { name: string, clas
   <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>
 );
 
-export function TopHeader({ activeBranch, isSyncing, onSync, isOnline, onOpenProfile }: any) {
+export function TopHeader({ 
+  activeBusiness, 
+  activeBranch, 
+  branches, 
+  onBranchChange, 
+  isSyncing, 
+  onSync, 
+  isOnline, 
+  onOpenProfile,
+  currentUser
+}: any) {
+  const isAdmin = currentUser?.role === 'ADMIN';
+
   return (
-    <header className="w-full top-0 sticky bg-background border-b border-outline-variant z-50">
-       <div className="flex items-center justify-between px-6 py-3 w-full md:px-12">
+    <header className="w-full top-0 sticky bg-white border-b border-outline-variant z-50 shadow-sm">
+       <div className="flex items-center justify-between px-6 py-4 w-full md:px-12">
           <div className="flex items-center gap-4">
-             <div className="w-10 h-10 rounded-full border border-outline-variant overflow-hidden bg-surface-container cursor-pointer hover:ring-4 hover:ring-primary/10 transition-all" onClick={onOpenProfile}>
+             <div className="w-12 h-12 rounded-2xl border border-outline-variant overflow-hidden bg-surface-container cursor-pointer hover:ring-4 hover:ring-primary/10 transition-all flex-shrink-0" onClick={onOpenProfile}>
                 <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuBanTVrDxgpc9k9_6zty19qXOLkfASYjRkPwQ_ImJ3zEw6tzpyfs7xlMCV1IitVdQ7l1jfwp4DlnS9ATDcQKEJWJ-uq0CWDgk5KkKbpEGNmzP4ld_l4eoeTKGNw70t2T7rIu_M2yTlJNVPd6UXlmcDvkMwlA4K3bf1CDnO8dRt5b1BYZ8b1jbVZ6N4yJQFXev6xV13LNa3awM1O2xkB3Hs7xcWlwHWy2RMXWZ-YWif-Jp2HhuiJRJxSswmn-zRE8ugFa13qjDYidMo" className="w-full h-full object-cover" />
              </div>
-              <h1 className="text-lg font-bold text-primary truncate max-w-[150px] md:max-w-none">
-                 {activeBranch?.name || 'Main Shop'} • TRM-01
-              </h1>
+              <div className="flex flex-col min-w-0">
+                 <h1 className="text-sm font-black text-slate-900 truncate uppercase tracking-tight">
+                    {activeBusiness?.name || 'Mtaani POS'}
+                 </h1>
+                 
+                 {isAdmin ? (
+                   <div className="relative flex items-center gap-1 group">
+                      <select 
+                        value={activeBranch?.id} 
+                        onChange={(e) => onBranchChange(e.target.value)}
+                        className="appearance-none bg-transparent text-[10px] font-bold text-primary uppercase tracking-widest outline-none pr-4 cursor-pointer"
+                      >
+                         {branches?.map((b: any) => (
+                           <option key={b.id} value={b.id} className="text-slate-900">{b.name}</option>
+                         ))}
+                      </select>
+                      <div className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2">
+                         <MaterialIcon name="expand_more" className="text-xs text-primary" />
+                      </div>
+                   </div>
+                 ) : (
+                   <p className="text-[10px] font-bold text-primary uppercase tracking-widest truncate">
+                      {activeBranch?.name || 'Main Shop'}
+                   </p>
+                 )}
+              </div>
           </div>
           
           <div className="flex items-center gap-4">

@@ -52,6 +52,7 @@ export default function MtaaniPOS() {
 
   const branches = useLiveQuery(() => activeBusinessId ? db.branches.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
   const activeBranch = branches?.find(b => b.id === activeBranchId);
+  const activeBusiness = useLiveQuery(() => activeBusinessId ? db.businesses.get(activeBusinessId) : Promise.resolve(undefined), [activeBusinessId]);
 
   const [expenseForm, setExpenseForm] = useState({
     description: '',
@@ -96,11 +97,15 @@ export default function MtaaniPOS() {
       
       <div className="flex-1 flex flex-col min-w-0 relative h-full">
         <TopHeader 
+          activeBusiness={activeBusiness}
           activeBranch={activeBranch}
+          branches={branches}
+          onBranchChange={setActiveBranchId}
           isSyncing={isSyncing}
           onSync={handleSync}
           isOnline={isOnline}
           onOpenProfile={() => setIsProfileModalOpen(true)}
+          currentUser={currentUser}
         />
 
         <main className="flex-1 overflow-y-auto no-scrollbar relative p-6 md:p-12">

@@ -43,7 +43,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     <div className="animate-in fade-in space-y-lg pb-24">
       
       {/* Daily Sales Summary Bento Grid */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-gutter">
         <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col justify-between hover:shadow-md transition-all">
           <div>
             <p className="font-mono text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-wider">TOTAL SALES</p>
@@ -65,7 +65,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
             <span className="font-mono text-[10px] font-medium">Busy at 2:00 PM</span>
           </div>
         </div>
+      </section>
 
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-gutter">
         <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col justify-between hover:shadow-md transition-all">
           <div>
             <p className="font-mono text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-wider">AVERAGE SALE</p>
@@ -74,6 +76,17 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           <div className="mt-4 flex items-center gap-1 text-error">
             <MaterialIcon name="trending_down" className="text-xs" />
             <span className="font-mono text-[10px] font-medium">-2.1% from average</span>
+          </div>
+        </div>
+
+        <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col justify-between hover:shadow-md transition-all">
+          <div>
+            <p className="font-mono text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-wider">CASH DRAWER</p>
+            <h2 className="text-2xl font-bold text-primary">84,200.00</h2>
+          </div>
+          <div className="mt-4 flex items-center gap-1 text-emerald-600">
+            <MaterialIcon name="payments" className="text-xs" />
+            <span className="font-mono text-[10px] font-medium">Ready for settlement</span>
           </div>
         </div>
       </section>
@@ -88,16 +101,16 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-xl flex flex-col h-[400px]">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-bold text-on-surface">Sales Performance</h3>
-              <div className="flex bg-surface-container p-1 rounded-md">
+              <div className="flex bg-surface-container p-1 rounded-md gap-1">
                 <button 
                   onClick={() => setTrendView('DAY')}
-                  className={`px-md py-xs font-mono text-label-md rounded transition-all ${trendView === 'DAY' ? 'bg-white shadow-sm text-primary' : 'text-on-surface-variant hover:bg-white/50'}`}
+                  className={`px-6 py-2 font-mono text-[10px] font-bold uppercase tracking-widest rounded-md transition-all ${trendView === 'DAY' ? 'bg-white shadow-sm text-primary' : 'text-on-surface-variant hover:bg-white/50'}`}
                 >
                   Today
                 </button>
                 <button 
                   onClick={() => setTrendView('WEEK')}
-                  className={`px-md py-xs font-mono text-label-md rounded transition-all ${trendView === 'WEEK' ? 'bg-white shadow-sm text-primary' : 'text-on-surface-variant hover:bg-white/50'}`}
+                  className={`px-6 py-2 font-mono text-[10px] font-bold uppercase tracking-widest rounded-md transition-all ${trendView === 'WEEK' ? 'bg-white shadow-sm text-primary' : 'text-on-surface-variant hover:bg-white/50'}`}
                 >
                   Weekly
                 </button>
@@ -223,8 +236,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 <span className="">{currentUser?.name}</span>
               </div>
               <div className="flex justify-between text-xs font-mono mt-1">
-                <span className="opacity-80">Till:</span>
-                <span className="">TRM-001</span>
+                <span className="opacity-80">Device:</span>
+                <span className="">Active Node</span>
               </div>
             </div>
             <button className="w-full py-3 bg-white text-primary rounded-lg font-mono text-[10px] font-bold hover:bg-opacity-90 transition-all active:scale-95">
