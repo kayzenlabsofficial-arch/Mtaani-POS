@@ -5,6 +5,7 @@ import { db, type Transaction } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
+import NestedControlPanel from '../shared/NestedControlPanel';
 
 interface DashboardTabProps {
   setActiveTab: (tab: any) => void;
@@ -19,6 +20,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const [reportedCash, setReportedCash] = useState("");
   const [isDailySummaryOpen, setIsDailySummaryOpen] = useState(false);
   const [isOpsControlsOpen, setIsOpsControlsOpen] = useState(false);
+  const [isCashOpsOpen, setIsCashOpsOpen] = useState(true);
+  const [isShiftOpsOpen, setIsShiftOpsOpen] = useState(true);
+  const [isExceptionOpsOpen, setIsExceptionOpsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const isAdmin = useStore(state => state.isAdmin);
   const isManager = useStore(state => state.isManager);
@@ -163,6 +167,22 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const pendingBankingCount = shiftCashPicks.filter(p => p.status === 'PENDING').length;
   const isCloseDayBlocked = pendingBankingCount > 0;
   const unbankedCash = shiftCashPicks.filter(p => p.status === 'PENDING').reduce((sum, p) => sum + p.amount, 0);
+  const closeDayRows = [
+    { label: 'Gross Sales (All Methods)', value: todaySales },
+    { label: 'Cash Sales', value: cashTotal },
+    { label: 'M-Pesa Sales', value: mpesaTotal * -1 },
+    { label: 'Banked Pickups', value: totalPickedAmount * -1 },
+    { label: 'Supplier Payments (Till)', value: shiftTillPayments * -1 },
+    { label: 'Refunds Processed', value: shiftRefunds * -1 },
+    { label: 'Till Expenses', value: shiftTillExpenses * -1 },
+  ];
+  const dayTotals = {
+    sales: (todaysReports || []).reduce((s: number, r) => s + (Number(r.totalSales) || 0), 0),
+    variance: (todaysReports || []).reduce((s: number, r) => s + (Number(r.difference) || 0), 0),
+    expenses: (todaysReports || []).reduce((s: number, r) => s + (Number(r.totalExpenses) || 0), 0),
+    banked: (todaysReports || []).reduce((s: number, r) => s + (Number(r.totalPicks) || 0), 0),
+    tax: (todaysReports || []).reduce((s: number, r) => s + (Number(r.taxTotal) || 0), 0),
+  };
 
   // Chart Data logic
   let chartData: any[] = [];
@@ -625,48 +645,82 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       {/* Daily actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
          <div className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm flex flex-col gap-3">
-            <button onClick={() => setIsOpsControlsOpen(v => !v)} className="w-full flex items-center justify-between">
-              <h3 className="text-sm font-extrabold text-slate-900 flex justify-between">
-                Operations controls
-              </h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-orange-600 bg-orange-100 px-2 py-0.5 rounded-md font-bold">{pendingQuotes} quotes</span>
-                <ChevronRight size={14} className={`text-slate-400 transition-transform ${isOpsControlsOpen ? 'rotate-90' : ''}`} />
-              </div>
-            </button>
-            {isOpsControlsOpen && <div className="grid grid-cols-2 gap-2 h-full items-end mt-2">
-               {!isAdmin && (
-                 <button onClick={() => setIsPickCashOpen(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-slate-200 flex flex-col items-center justify-center gap-1">
-                    <ArrowUpRight size={16} /> Pick cash
-                 </button>
-               )}
-               <button onClick={openExpenseModal} disabled={!activeShift} className="bg-orange-50 hover:bg-orange-100 text-orange-700 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-orange-200 flex flex-col items-center justify-center gap-1 disabled:opacity-50">
-                  <FileMinus size={16} /> Expense
-               </button>
-               <button onClick={() => setActiveTab('REFUNDS')} disabled={!activeShift} className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-blue-200 flex flex-col items-center justify-center gap-1 disabled:opacity-50">
-                  <RotateCcw size={16} /> Refund
-               </button>
-               {!isAdmin && (
-                 activeShift ? (
-                   <button onClick={() => setIsCloseDayOpen(true)} className="bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-slate-900/10 flex flex-col items-center justify-center gap-1 relative overflow-hidden">
-                      <CalendarCheck size={16} /> Close shift
-                      {isCloseDayBlocked && <div className="absolute inset-0 bg-red-600/20 backdrop-blur-[1px] flex items-center justify-center"><Lock size={12} className="text-red-600" /></div>}
-                   </button>
-                 ) : (
-                    <button onClick={handleOpenShift} className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center gap-1">
-                       <Activity size={16} /> Open shift
+            <NestedControlPanel
+              title="Operations Controls"
+              subtitle="Shift, cash drawer and exception workflows"
+              badge={<span className="text-[10px] text-orange-600 bg-orange-100 px-2 py-0.5 rounded-md font-bold">{pendingQuotes} quotes</span>}
+              isOpen={isOpsControlsOpen}
+              onToggle={() => setIsOpsControlsOpen(v => !v)}
+            >
+              <div className="space-y-2">
+                <NestedControlPanel
+                  title="Cash Drawer Controls"
+                  subtitle="Money movement and till expenditure"
+                  icon={<Banknote size={16} />}
+                  isOpen={isCashOpsOpen}
+                  onToggle={() => setIsCashOpsOpen(v => !v)}
+                  level={1}
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    {!isAdmin && (
+                      <button onClick={() => setIsPickCashOpen(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-slate-200 flex flex-col items-center justify-center gap-1">
+                        <ArrowUpRight size={16} /> Pick cash
+                      </button>
+                    )}
+                    <button onClick={openExpenseModal} disabled={!activeShift} className="bg-orange-50 hover:bg-orange-100 text-orange-700 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-orange-200 flex flex-col items-center justify-center gap-1 disabled:opacity-50">
+                      <FileMinus size={16} /> Expense
                     </button>
-                 )
-               )}
-               <button 
-                  onClick={() => setIsDailySummaryOpen(true)} 
-                  disabled={!!existingDailySummary || !isAdmin}
-                  className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-               >
-                  {existingDailySummary ? <CheckCircle2 size={16} /> : <TrendingUp size={16} />}
-                  {existingDailySummary ? 'Day Closed' : 'Close day'}
-               </button>
-            </div>}
+                  </div>
+                </NestedControlPanel>
+
+                <NestedControlPanel
+                  title="Shift Controls"
+                  subtitle="Open/close cashier sessions and day books"
+                  icon={<CalendarCheck size={16} />}
+                  isOpen={isShiftOpsOpen}
+                  onToggle={() => setIsShiftOpsOpen(v => !v)}
+                  level={1}
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    {!isAdmin && (
+                      activeShift ? (
+                        <button onClick={() => setIsCloseDayOpen(true)} className="bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-slate-900/10 flex flex-col items-center justify-center gap-1 relative overflow-hidden">
+                          <CalendarCheck size={16} /> Close shift
+                          {isCloseDayBlocked && <div className="absolute inset-0 bg-red-600/20 backdrop-blur-[1px] flex items-center justify-center"><Lock size={12} className="text-red-600" /></div>}
+                        </button>
+                      ) : (
+                        <button onClick={handleOpenShift} className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center gap-1">
+                          <Activity size={16} /> Open shift
+                        </button>
+                      )
+                    )}
+                    <button
+                      onClick={() => setIsDailySummaryOpen(true)}
+                      disabled={!!existingDailySummary || !isAdmin}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-3 rounded-2xl transition-colors text-center shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {existingDailySummary ? <CheckCircle2 size={16} /> : <TrendingUp size={16} />}
+                      {existingDailySummary ? 'Day Closed' : 'Close day'}
+                    </button>
+                  </div>
+                </NestedControlPanel>
+
+                <NestedControlPanel
+                  title="Exception Controls"
+                  subtitle="Refund and correction actions"
+                  icon={<RotateCcw size={16} />}
+                  isOpen={isExceptionOpsOpen}
+                  onToggle={() => setIsExceptionOpsOpen(v => !v)}
+                  level={1}
+                >
+                  <div className="grid grid-cols-1 gap-2">
+                    <button onClick={() => setActiveTab('REFUNDS')} disabled={!activeShift} className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-blue-200 flex flex-col items-center justify-center gap-1 disabled:opacity-50">
+                      <RotateCcw size={16} /> Refund
+                    </button>
+                  </div>
+                </NestedControlPanel>
+              </div>
+            </NestedControlPanel>
          </div>
 
          {/* Inventory Tracker */}
@@ -751,22 +805,49 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       {isCloseDayOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsCloseDayOpen(false)} />
-          <div className="bg-white w-full max-w-sm rounded-xl shadow-elevated relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
-            <h2 className="text-xl font-black text-slate-900 mb-2 flex items-center gap-2"><div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center"><CalendarCheck size={18} /></div> Z-Report / Close shift</h2>
-            <p className="text-sm text-slate-500 mb-6 flex items-center gap-1">Finalizing <span className="font-bold text-slate-900">{activeShift?.cashierName}</span>'s active shift ledger.</p>
-             <div className="space-y-2 mb-6 text-sm">
-
-                <div className="flex justify-between text-slate-500"><span>Total Sales (All Methods)</span><span className="font-bold text-slate-900">Ksh {todaySales.toLocaleString()}</span></div>
-                <div className="flex justify-between text-slate-500"><span>Cash Sales Only</span><span className="font-bold text-green-600">Ksh {cashTotal.toLocaleString()}</span></div>
-                <div className="flex justify-between text-slate-500"><span>M-Pesa Receipts</span><span className="font-bold text-blue-600">- Ksh {mpesaTotal.toLocaleString()}</span></div>
-                <div className="flex justify-between text-slate-500"><span>Total Banked (Picks)</span><span className="font-bold text-slate-600">- Ksh {totalPickedAmount.toLocaleString()}</span></div>
-                <div className="flex justify-between text-slate-500"><span>Supplier Payments (Till)</span><span className="font-bold text-slate-600">- Ksh {shiftTillPayments.toLocaleString()}</span></div>
-                <div className="flex justify-between text-slate-500"><span>Refunds Processed</span><span className="font-bold text-amber-600">- Ksh {shiftRefunds.toLocaleString()}</span></div>
-                <div className="flex justify-between text-slate-500"><span>Expenses (Till)</span><span className="font-bold text-red-600">- Ksh {shiftTillExpenses.toLocaleString()}</span></div>
-                <div className="border-t border-dashed border-slate-200 my-2 pt-2 flex justify-between text-slate-900 font-black">
-                   <span>Cash in Till (Expected)</span>
-                   <span>Ksh {expectedCashDrawer.toLocaleString()}</span>
-                </div>
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-elevated relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
+            <h2 className="text-xl font-black text-slate-900 mb-1 flex items-center gap-2"><div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center"><CalendarCheck size={18} /></div> Z-Report / Close Shift</h2>
+            <p className="text-sm text-slate-500 mb-4">Finalizing <span className="font-bold text-slate-900">{activeShift?.cashierName}</span> shift ledger with branch-grade controls.</p>
+            <div className="overflow-hidden rounded-2xl border border-slate-200 mb-4">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-slate-500 font-black uppercase tracking-wide">Metric</th>
+                    <th className="px-4 py-2 text-right text-slate-500 font-black uppercase tracking-wide">Amount (Ksh)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {closeDayRows.map((row) => (
+                    <tr key={row.label} className="border-b border-slate-100 last:border-b-0">
+                      <td className="px-4 py-2 text-slate-700 font-semibold">{row.label}</td>
+                      <td className={`px-4 py-2 text-right font-black ${row.value < 0 ? 'text-slate-600' : 'text-slate-900'}`}>
+                        {row.value < 0 ? '-' : ''}{Math.abs(row.value).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-slate-900 text-white">
+                    <td className="px-4 py-2 font-black uppercase tracking-wide">Expected Till Cash</td>
+                    <td className="px-4 py-2 text-right font-black">{expectedCashDrawer.toLocaleString()}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-wide mb-2">Collection mix</p>
+              <div className="h-3 bg-slate-200 rounded-full overflow-hidden flex">
+                <div
+                  className="bg-green-500 h-full"
+                  style={{ width: `${Math.max(0, Math.min(100, (cashTotal / Math.max(1, cashTotal + mpesaTotal)) * 100))}%` }}
+                />
+                <div
+                  className="bg-blue-500 h-full"
+                  style={{ width: `${Math.max(0, Math.min(100, (mpesaTotal / Math.max(1, cashTotal + mpesaTotal)) * 100))}%` }}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between text-[10px] font-bold text-slate-500">
+                <span>Cash {((cashTotal / Math.max(1, cashTotal + mpesaTotal)) * 100).toFixed(1)}%</span>
+                <span>M-Pesa {((mpesaTotal / Math.max(1, cashTotal + mpesaTotal)) * 100).toFixed(1)}%</span>
+              </div>
             </div>
             
             <div className="flex gap-3">
@@ -793,7 +874,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       {isDailySummaryOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsDailySummaryOpen(false)} />
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
              <div className="p-6 bg-blue-600 text-white text-center">
                 <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
                    <TrendingUp size={24} />
@@ -806,12 +887,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 <div className="grid grid-cols-2 gap-4">
                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                       <p className="text-[10px] font-black text-slate-400  mb-1">Total Sales (Today)</p>
-                      <p className="text-lg font-black text-slate-900">Ksh {(todaysReports || []).reduce((s: number, r) => s + (Number(r.totalSales) || 0), 0).toLocaleString()}</p>
+                      <p className="text-lg font-black text-slate-900">Ksh {dayTotals.sales.toLocaleString()}</p>
                    </div>
                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                       <p className="text-[10px] font-black text-slate-400  mb-1">Total Variance</p>
-                      <p className={`text-lg font-black ${(todaysReports || []).reduce((s: number, r) => s + (Number(r.difference) || 0), 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                         Ksh {(todaysReports || []).reduce((s: number, r) => s + (Number(r.difference) || 0), 0).toLocaleString()}
+                      <p className={`text-lg font-black ${dayTotals.variance < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                         Ksh {dayTotals.variance.toLocaleString()}
                       </p>
                    </div>
                 </div>
@@ -832,17 +913,29 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                    ))}
                 </div>
 
-                <div className="bg-slate-900 text-white p-5 rounded-2xl space-y-3">
-                    <div className="flex justify-between text-xs font-bold opacity-60 text-[9px]">
-                       <span>Aggregated metrics</span>
-                      <span>Amount</span>
-                   </div>
-                   <div className="flex justify-between text-sm font-bold"><span>Total Expenses</span><span>- Ksh {(todaysReports || []).reduce((s: number, r) => s + (Number(r.totalExpenses) || 0), 0).toLocaleString()}</span></div>
-                   <div className="flex justify-between text-sm font-bold"><span>Total Banked</span><span>- Ksh {(todaysReports || []).reduce((s: number, r) => s + (Number(r.totalPicks) || 0), 0).toLocaleString()}</span></div>
-                   <div className="pt-2 border-t border-white/10 flex justify-between items-end">
-                      <span className="text-sm font-black   text-slate-400">Total VAT (16%)</span>
-                      <span className="text-xl font-black">Ksh {(todaysReports || []).reduce((s: number, r) => s + (Number(r.taxTotal) || 0), 0).toLocaleString()}</span>
-                   </div>
+                <div className="overflow-hidden rounded-2xl border border-slate-200">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-slate-500 font-black uppercase tracking-wide">Daily Consolidated Metrics</th>
+                        <th className="px-4 py-2 text-right text-slate-500 font-black uppercase tracking-wide">Amount (Ksh)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-4 py-2 font-semibold text-slate-700">Total Expenses</td>
+                        <td className="px-4 py-2 text-right font-black text-slate-900">-{dayTotals.expenses.toLocaleString()}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-4 py-2 font-semibold text-slate-700">Total Banked</td>
+                        <td className="px-4 py-2 text-right font-black text-slate-900">-{dayTotals.banked.toLocaleString()}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-2 font-semibold text-slate-700">Total VAT (16%)</td>
+                        <td className="px-4 py-2 text-right font-black text-slate-900">{dayTotals.tax.toLocaleString()}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
              </div>
 

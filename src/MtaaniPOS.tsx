@@ -1793,79 +1793,111 @@ export default function MtaaniPOS() {
       {completedTransaction && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setCompletedTransaction(null)} />
-          <div className="bg-white w-full max-w-sm rounded-3xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 h-full max-h-[90vh]">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 h-full max-h-[90vh]">
              <div className="flex-1 overflow-y-auto custom-scrollbar">
                 <div id="printable-receipt" className="print-receipt-80mm">
-                  <div className="p-8 bg-green-50/50 border-b border-green-100 flex flex-col items-center text-center">
-                    <div className="w-16 h-16 bg-green-100 text-green-600 rounded-3xl flex items-center justify-center mb-4 shadow-sm">
-                        <ReceiptText size={32} />
+                  <div className="p-7 bg-slate-50 border-b border-slate-200">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h2 className="text-lg font-black text-slate-900">{storeName}</h2>
+                        <p className="text-[11px] text-slate-500 font-semibold">{storeLocation}</p>
+                      </div>
+                      <div className="w-11 h-11 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                        <ReceiptText size={20} />
+                      </div>
                     </div>
-                    <h2 className="text-xl font-black text-slate-900 tracking-tight ">{storeName}</h2>
-                    <p className="text-[10px] font-bold text-slate-400 mt-1">Sales receipt</p>
-                    
-                    <div className="flex flex-col items-center gap-1 mt-4 text-[10px] text-slate-400 font-bold  ">
-                        <span>{new Date(completedTransaction.timestamp).toLocaleString('en-KE')}</span>
-                        <span>Ref: #{completedTransaction.id.split('-')[0].toUpperCase()}</span>
-                        <span className="text-slate-900 mt-1">Cashier: {completedTransaction.cashierName}</span>
+                    <div className="grid grid-cols-2 gap-2 mt-4 text-[10px]">
+                      <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                        <p className="text-slate-400 font-bold uppercase">Receipt No</p>
+                        <p className="text-slate-900 font-black">#{completedTransaction.id.split('-')[0].toUpperCase()}</p>
+                      </div>
+                      <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                        <p className="text-slate-400 font-bold uppercase">Date/Time</p>
+                        <p className="text-slate-900 font-black">{new Date(completedTransaction.timestamp).toLocaleString('en-KE')}</p>
+                      </div>
+                      <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                        <p className="text-slate-400 font-bold uppercase">Cashier</p>
+                        <p className="text-slate-900 font-black">{completedTransaction.cashierName}</p>
+                      </div>
+                      <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                        <p className="text-slate-400 font-bold uppercase">Payment</p>
+                        <p className="text-slate-900 font-black">{completedTransaction.paymentMethod}</p>
+                      </div>
                     </div>
-                    
-                    <div className="mt-4 px-3 py-1 bg-green-100 text-green-700 text-[9px] font-bold rounded-full">
-                        Paid via {completedTransaction.paymentMethod?.toLowerCase()}
-                        {completedTransaction.mpesaCode && ` • Code: ${completedTransaction.mpesaCode}`}
-                    </div>
-                    {completedTransaction.paymentMethod === 'MPESA' && completedTransaction.mpesaCustomer && (
-                       <p className="text-[9px] font-bold text-slate-500 mt-2">Customer: {completedTransaction.mpesaCustomer}</p>
+                    {completedTransaction.mpesaCode && (
+                      <p className="mt-3 text-[10px] font-bold text-blue-700 bg-blue-100 inline-flex px-2.5 py-1 rounded-full">
+                        M-Pesa Code: {completedTransaction.mpesaCode}
+                      </p>
                     )}
                   </div>
 
-                  <div className="p-6 space-y-6">
-                    <div className="space-y-4">
-                        {completedTransaction.items.map((item, i) => (
-                          <div key={i} className="flex justify-between items-start gap-4 text-sm">
-                              <div className="flex-1 min-w-0">
-                                <p className="font-bold text-slate-800 leading-tight truncate">{item.name}</p>
-                                <p className="text-slate-500 text-[10px] mt-0.5 font-bold">{item.quantity} x Ksh {item.snapshotPrice.toLocaleString()}</p>
-                              </div>
-                              <span className="font-black text-slate-900 shrink-0">Ksh {(item.quantity * item.snapshotPrice).toLocaleString()}</span>
-                          </div>
-                        ))}
+                  <div className="p-6 space-y-5">
+                    <div className="overflow-hidden rounded-2xl border border-slate-200">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 border-b border-slate-200">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-slate-500 font-black uppercase">Item</th>
+                            <th className="px-3 py-2 text-right text-slate-500 font-black uppercase">Qty</th>
+                            <th className="px-3 py-2 text-right text-slate-500 font-black uppercase">Unit</th>
+                            <th className="px-3 py-2 text-right text-slate-500 font-black uppercase">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {completedTransaction.items.map((item, i) => (
+                            <tr key={i} className="border-b border-slate-100 last:border-b-0">
+                              <td className="px-3 py-2 font-semibold text-slate-700">{item.name}</td>
+                              <td className="px-3 py-2 text-right font-bold text-slate-900">{item.quantity}</td>
+                              <td className="px-3 py-2 text-right font-bold text-slate-600">{item.snapshotPrice.toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right font-black text-slate-900">{(item.quantity * item.snapshotPrice).toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
 
-                    <div className="pt-4 border-t border-dashed border-slate-200 space-y-2">
-                        <div className="flex justify-between text-xs font-bold text-slate-500  tracking-tight">
-                          <span>Subtotal</span>
-                          <span>Ksh {completedTransaction.subtotal.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between text-xs font-bold text-slate-500  tracking-tight">
-                          <span>Tax (16%)</span>
-                          <span>Ksh {completedTransaction.tax.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between items-end pt-2">
-                          <span className="text-sm font-bold text-slate-400">Total paid</span>
-                          <span className="text-2xl font-black text-slate-900">Ksh {completedTransaction.total.toLocaleString()}</span>
-                        </div>
-                        
-                        {(completedTransaction.paymentMethod === 'CASH' || completedTransaction.paymentMethod === 'MPESA') && completedTransaction.amountTendered !== undefined && (
-                          <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
-                            <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                                <span>Amount paid ({completedTransaction.paymentMethod})</span>
-                                <span>Ksh {completedTransaction.amountTendered.toLocaleString()}</span>
-                            </div>
+                    <div className="overflow-hidden rounded-2xl border border-slate-200">
+                      <table className="w-full text-xs">
+                        <tbody>
+                          <tr className="border-b border-slate-100">
+                            <td className="px-3 py-2 font-semibold text-slate-600">Subtotal</td>
+                            <td className="px-3 py-2 text-right font-black text-slate-900">Ksh {completedTransaction.subtotal.toLocaleString()}</td>
+                          </tr>
+                          <tr className="border-b border-slate-100">
+                            <td className="px-3 py-2 font-semibold text-slate-600">VAT (16%)</td>
+                            <td className="px-3 py-2 text-right font-black text-slate-900">Ksh {completedTransaction.tax.toLocaleString()}</td>
+                          </tr>
+                          <tr className="bg-slate-900 text-white">
+                            <td className="px-3 py-2 font-black uppercase">Total Paid</td>
+                            <td className="px-3 py-2 text-right font-black">Ksh {completedTransaction.total.toLocaleString()}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {(completedTransaction.paymentMethod === 'CASH' || completedTransaction.paymentMethod === 'MPESA') && completedTransaction.amountTendered !== undefined && (
+                      <div className="overflow-hidden rounded-2xl border border-slate-200">
+                        <table className="w-full text-xs">
+                          <tbody>
+                            <tr className="border-b border-slate-100">
+                              <td className="px-3 py-2 font-semibold text-slate-600">Amount Tendered ({completedTransaction.paymentMethod})</td>
+                              <td className="px-3 py-2 text-right font-black text-slate-900">Ksh {completedTransaction.amountTendered.toLocaleString()}</td>
+                            </tr>
                             {completedTransaction.paymentMethod === 'CASH' && (
-                              <div className="flex justify-between items-center text-green-700 bg-green-50 p-3 rounded-2xl border border-green-100">
-                                  <span className="text-[10px] font-bold">Change given</span>
-                                  <span className="text-lg font-black italic">Ksh {(completedTransaction.changeGiven || 0).toLocaleString()}</span>
-                              </div>
+                              <tr className="bg-green-50">
+                                <td className="px-3 py-2 font-semibold text-green-700">Change</td>
+                                <td className="px-3 py-2 text-right font-black text-green-700">Ksh {(completedTransaction.changeGiven || 0).toLocaleString()}</td>
+                              </tr>
                             )}
-                          </div>
-                        )}
-                    </div>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
 
-                    <div className="text-center pt-4">
-                        <p className="text-[10px] text-slate-400 font-bold   leading-relaxed">
-                          Cashier: {completedTransaction.cashierName}<br/>
-                          Thank you for shopping with us!
-                        </p>
+                    <div className="text-center border-t border-dashed border-slate-200 pt-4">
+                      <p className="text-[10px] text-slate-500 font-bold leading-relaxed">
+                        Thank you for shopping with us.<br />
+                        Keep this receipt for returns and audit reference.
+                      </p>
                     </div>
                   </div>
                 </div>
