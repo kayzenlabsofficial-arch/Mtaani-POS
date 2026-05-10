@@ -11,8 +11,10 @@ const ALLOWED_TABLES = new Set([
   'branches', 'businesses', 'system', 'expenseAccounts', 'financialAccounts', 'loginAttempts'
 ]);
 
-// Global tables: shared across all branches, isolated by businessId only
-const GLOBAL_TABLES = new Set(['businesses', 'users', 'branches', 'settings', 'expenseAccounts', 'financialAccounts', 'customers', 'suppliers', 'loginAttempts', 'products', 'categories']);
+// Global tables: shared across branches, isolated by businessId
+const GLOBAL_TABLES = new Set(['users', 'branches', 'settings', 'expenseAccounts', 'financialAccounts', 'customers', 'suppliers', 'products', 'categories']);
+// Truly unscoped tables: not filtered by businessId/branchId
+const UNSCOPED_TABLES = new Set(['businesses', 'loginAttempts']);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -175,12 +177,21 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       return new Response(JSON.stringify({ error: 'Table not allowed' }), { status: 400, headers: jsonHeaders() });
     }
 
+    if (table === 'loginAttempts') {
+      // Defensive migration for environments where /system/setup has not run yet.
+      await env.DB.prepare('CREATE TABLE IF NOT EXISTS loginAttempts (id TEXT PRIMARY KEY, count INTEGER DEFAULT 0, lockedUntil INTEGER, updated_at INTEGER)').run();
+    }
+
     // ── GET ──────────────────────────────────────────────────────────────────
     if (request.method === 'GET') {
       if (table === 'businesses') {
         // Only allow listing businesses if the API key is the master secret
         // In a real production system, this would be restricted to a super-admin token
         const { results } = await env.DB.prepare(`SELECT id, name, code, isActive FROM businesses`).all();
+        return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
+      }
+      if (table === 'loginAttempts') {
+        const { results } = await env.DB.prepare(`SELECT * FROM loginAttempts`).all();
         return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
       }
 
@@ -210,7 +221,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       const items = Array.isArray(body) ? body : [body];
       if (items.length === 0) return new Response(JSON.stringify({ success: true, count: 0 }), { headers: jsonHeaders() });
 
-      if (table !== 'businesses') {
+      if (!UNSCOPED_TABLES.has(table)) {
         if (!businessId) {
           return new Response(JSON.stringify({ error: 'X-Business-ID header required for POST' }), { status: 400, headers: jsonHeaders() });
         }
@@ -253,6 +264,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         const batch = cascadeTables.map(t => env.DB.prepare(`DELETE FROM ${t} WHERE businessId = ?`).bind(id));
         batch.push(env.DB.prepare(`DELETE FROM businesses WHERE id = ?`).bind(id));
         await env.DB.batch(batch);
+      } else if (table === 'loginAttempts') {
+        await env.DB.prepare(`DELETE FROM loginAttempts WHERE id = ?`).bind(id).run();
       } else if (GLOBAL_TABLES.has(table)) {
         if (!businessId) return new Response(JSON.stringify({ error: 'X-Business-ID required for DELETE' }), { status: 400, headers: jsonHeaders() });
         await env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ?`).bind(id, businessId).run();

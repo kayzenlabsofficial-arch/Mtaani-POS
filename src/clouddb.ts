@@ -145,7 +145,7 @@ async function d1Delete(table: string, id: string): Promise<void> {
     'X-API-Key': apiKey
   };
   
-  if (!businessId && table !== 'system/setup' && table !== 'businesses') {
+  if (!businessId && table !== 'system/setup' && table !== 'businesses' && table !== 'loginAttempts') {
     throw new Error("Business ID missing. Please log in again.");
   }
 
