@@ -767,7 +767,7 @@ export default function InventoryTab() {
                        </button>
                     </div>
                     <div className="bg-slate-50 rounded-2xl p-4 h-48 border border-slate-100">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                             <BarChart data={performanceData}>
                                 <XAxis dataKey="date" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
                                 <YAxis hide />

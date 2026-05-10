@@ -251,7 +251,7 @@ export default function ReportsTab() {
               <BarChart3 size={20} className="text-blue-500"/> Revenue & Profit Growth
             </h3>
             <div className="h-[320px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <ComposedChart data={salesTrendData}>
                   <defs>
                     <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
@@ -278,7 +278,7 @@ export default function ReportsTab() {
               <PieIcon size={20} className="text-orange-500"/> Expense Distribution
             </h3>
             <div className="h-[260px] relative">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <PieChart>
                   <Pie data={expenseData} innerRadius={70} outerRadius={95} paddingAngle={8} dataKey="value" stroke="none">
                     {expenseData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
@@ -310,7 +310,7 @@ export default function ReportsTab() {
                 <ShoppingBag size={20} className="text-emerald-500"/> Category Intelligence
              </h3>
              <div className="h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                    <BarChart data={categoryData} layout="vertical" margin={{ left: 30, right: 30 }}>
                       <XAxis type="number" hide />
                       <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748B', fontWeight: 800}} width={100} />
@@ -359,7 +359,7 @@ export default function ReportsTab() {
               <Clock size={20} className="text-orange-500"/> Traffic & Sales Heatmap (Daily Average)
            </h3>
            <div className="h-[200px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                  <AreaChart data={hourlySales}>
                     <XAxis dataKey="hour" tickFormatter={(h) => `${h}:00`} axisLine={false} tickLine={false} tick={{fontSize: 9, fill: '#94a3b8'}} />
                     <Tooltip contentStyle={{ borderRadius: '16px', border: 'none' }} />

@@ -541,7 +541,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
             <h3 className="text-sm font-extrabold text-slate-900 mb-4">Payment method split</h3>
             <div className="h-[180px] w-full flex items-center">
                <div className="w-1/2 h-full">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                      <PieChart>
                         <Pie
                            data={paymentData}
