@@ -5,7 +5,7 @@ import { db, type Supplier } from '../../db';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
-import NestedControlPanel from '../shared/NestedControlPanel';
+
 
 export default function SupplierPaymentsTab({ financialAccounts }: { financialAccounts: any[] }) {
   const [paySearch, setPaySearch] = useState("");

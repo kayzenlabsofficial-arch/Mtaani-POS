@@ -4,7 +4,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
-import NestedControlPanel from '../shared/NestedControlPanel';
+
 
 export default function SettingsTab({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
   const isAdmin = useStore((state) => state.isAdmin);

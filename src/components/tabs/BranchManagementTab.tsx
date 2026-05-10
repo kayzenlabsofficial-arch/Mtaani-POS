@@ -5,7 +5,7 @@ import { db, type Branch } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { SearchableSelect } from '../shared/SearchableSelect';
-import NestedControlPanel from '../shared/NestedControlPanel';
+
 
 export default function BranchManagementTab() {
   const activeBusinessId = useStore(state => state.activeBusinessId);

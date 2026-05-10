@@ -12,7 +12,7 @@ import AdminApprovals from './AdminApprovals';
 import BranchManagementTab from './BranchManagementTab';
 import { useToast } from '../../context/ToastContext';
 import { type Category } from '../../db';
-import NestedControlPanel from '../shared/NestedControlPanel';
+
 
 const ICON_OPTIONS = [
   { name: 'Utensils', icon: Utensils },

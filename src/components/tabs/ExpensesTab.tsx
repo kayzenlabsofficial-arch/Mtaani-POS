@@ -8,7 +8,7 @@ import ExpenseModal from '../modals/ExpenseModal';
 import ExpenseAccountModal from '../modals/ExpenseAccountModal';
 import { canPerform } from '../../utils/accessControl';
 import { recordAuditEvent } from '../../utils/auditLog';
-import NestedControlPanel from '../shared/NestedControlPanel';
+
 
 export default function ExpensesTab() {
   const [expenseSearch, setExpenseSearch] = useState("");

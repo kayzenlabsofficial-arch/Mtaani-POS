@@ -5,7 +5,7 @@ import { db, type Customer } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { MpesaService } from '../../services/mpesa';
-import NestedControlPanel from '../shared/NestedControlPanel';
+
 
 export default function CustomersTab() {
   const [customerSearch, setCustomerSearch] = useState("");

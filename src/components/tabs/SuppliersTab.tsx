@@ -6,7 +6,7 @@ import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 import SupplierLedgerModal from '../modals/SupplierLedgerModal';
-import NestedControlPanel from '../shared/NestedControlPanel';
+
 
 export default function SuppliersTab({ setActiveTab, financialAccounts }: { setActiveTab?: (tab: string) => void, financialAccounts: any[] }) {
   const [supplierSearch, setSupplierSearch] = useState("");

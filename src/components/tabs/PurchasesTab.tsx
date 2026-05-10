@@ -6,7 +6,7 @@ import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { SearchableSelect } from '../shared/SearchableSelect';
-import NestedControlPanel from '../shared/NestedControlPanel';
+
 
 export default function PurchasesTab() {
   const { error, success } = useToast();
