@@ -7,9 +7,13 @@ import { useToast } from '../../context/ToastContext';
 import { SearchableSelect } from '../shared/SearchableSelect';
 
 export default function BranchManagementTab() {
-  const branches = useLiveQuery(() => db.branches.toArray(), [], []);
-  const isAdmin = useStore(state => state.isAdmin);
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  const branches = useLiveQuery(
+    () => activeBusinessId ? db.branches.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
+  const isAdmin = useStore(state => state.isAdmin);
   const { success, error, warning } = useToast();
 
   const BLANK: Omit<Branch, 'id' | 'updated_at'> = {

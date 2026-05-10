@@ -30,8 +30,16 @@ export default function PurchasesTab() {
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const allPurchaseOrders = useLiveQuery(() => activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
-  const allSuppliers = useLiveQuery(() => db.suppliers.toArray(), [], []) ;
-  const allProducts = useLiveQuery(() => db.products.toArray(), [], []) ;
+  const allSuppliers = useLiveQuery(
+    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
+  const allProducts = useLiveQuery(
+    () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
+    []
+  );
 
   const filteredPurchases = allPurchaseOrders.filter(po => 
       po.invoiceNumber?.toLowerCase().includes(purchaseSearch.toLowerCase()) || 

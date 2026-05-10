@@ -19,7 +19,11 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
   // Live Queries
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
-  const allSuppliers = useLiveQuery(() => db.suppliers.toArray(), [], []) ;
+  const allSuppliers = useLiveQuery(
+    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
   const allPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const allCreditNotes = useLiveQuery(() => activeBranchId ? db.creditNotes.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
 

@@ -20,7 +20,11 @@ export default function CustomersTab() {
   const [mpesaRequestId, setMpesaRequestId] = useState('');
   const [repaymentAmount, setRepaymentAmount] = useState('');
 
-  const allCustomers = useLiveQuery(() => db.customers.toArray(), [], []) ;
+  const allCustomers = useLiveQuery(
+    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
 
   if (!allCustomers) {
       return (

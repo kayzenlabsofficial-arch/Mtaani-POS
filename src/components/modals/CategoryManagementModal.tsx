@@ -32,7 +32,11 @@ const COLOR_OPTIONS = [
 export default function CategoryManagementModal({ isOpen, onClose }: CategoryManagementModalProps) {
   const { success, error, warning } = useToast();
   const activeBusinessId = useStore(state => state.activeBusinessId);
-  const categories = useLiveQuery(() => db.categories.toArray(), [], []);
+  const categories = useLiveQuery(
+    () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', iconName: 'Package', color: 'slate' });

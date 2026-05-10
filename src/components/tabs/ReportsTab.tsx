@@ -40,7 +40,11 @@ export default function ReportsTab() {
 
   // Core Data Queries
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
-  const allProducts = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
+  const allProducts = useLiveQuery(
+    () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
+    []
+  );
   const allExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
   const allSuppliers = useLiveQuery(() => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
   const allPurchases = useLiveQuery(() => activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
@@ -121,6 +125,7 @@ export default function ReportsTab() {
   const grossProfit = totalRevenue - estimatedCOGS - totalTax;
   const netProfit = grossProfit - totalExpenseAmount;
   const averageBasket = filteredTransactions.length > 0 ? totalRevenue / filteredTransactions.length : 0;
+  const topProducts = Object.values(productPerf).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
   const topProductShare = topProducts.length > 0 && totalRevenue > 0 ? (topProducts[0].revenue / totalRevenue) * 100 : 0;
   const lowStockCount = allProducts.filter(p => (p.stockQuantity || 0) <= 5).length;
   const creditTransactions = filteredTransactions.filter(t => t.paymentMethod === 'CREDIT').length;
@@ -141,7 +146,6 @@ export default function ReportsTab() {
     value: filteredExpenses.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0)
   })).sort((a,b) => b.value - a.value).slice(0, 5);
 
-  const topProducts = Object.values(productPerf).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
   const topCashiers = Object.entries(cashierPerf).map(([name, data]) => ({ name, ...data })).sort((a,b) => b.revenue - a.revenue);
 
   // Individual Product Pulse

@@ -69,7 +69,11 @@ export default function RegisterTab() {
     []
   );
 
-  const dbCategories = useLiveQuery(() => db.categories.toArray(), [], []);
+  const dbCategories = useLiveQuery(
+    () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
   
   const categories = ['All', ...(dbCategories?.map(c => c.name) || [])];
 
@@ -123,7 +127,7 @@ export default function RegisterTab() {
   }, [addToCart]);
 
   const handleScanResult = useCallback(async (barcode: string) => {
-    const all = await db.products.toArray();
+    const all = allProducts || [];
     const found = all.find(p => p.barcode === barcode || p.barcode.trim() === barcode.trim());
     if (found) {
       if (found.stockQuantity <= 0) {
@@ -137,7 +141,7 @@ export default function RegisterTab() {
       setScanFeedback({ found: false, name: `No product with barcode: ${barcode}` });
     }
     setTimeout(() => setScanFeedback(null), 3000);
-  }, [handleAddToCart]);
+  }, [handleAddToCart, allProducts]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

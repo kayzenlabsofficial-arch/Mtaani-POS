@@ -53,8 +53,16 @@ export default function InventoryTab() {
     []
   );
 
-  const allProducts = useLiveQuery(() => db.products.toArray(), [], []);
-  const categories = useLiveQuery(() => db.categories.toArray(), [], []);
+  const allProducts = useLiveQuery(
+    () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
+    []
+  );
+  const categories = useLiveQuery(
+    () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId], []) || [];
 
   const performanceData = React.useMemo(() => {

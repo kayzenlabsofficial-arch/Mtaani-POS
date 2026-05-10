@@ -38,15 +38,31 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   const { success, error, warning } = useToast();
   
   // Category Management State
-  const categories = useLiveQuery(() => db.categories.toArray(), [], []);
+  const categories = useLiveQuery(
+    () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [categoryForm, setCategoryForm] = useState({ name: '', iconName: 'Package', color: 'slate' });
   
   // User Management State
-  const users = useLiveQuery(() => db.users.toArray(), [], []);
-  const activeShifts = useLiveQuery(() => db.shifts.where('status').equals('OPEN').toArray(), [], []);
-  const branches = useLiveQuery(() => db.branches.toArray(), [], []);
+  const users = useLiveQuery(
+    () => activeBusinessId ? db.users.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
+  const activeShifts = useLiveQuery(
+    () => activeBusinessId ? db.shifts.where('status').equals('OPEN').and(s => s.businessId === activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
+  const branches = useLiveQuery(
+    () => activeBusinessId ? db.branches.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
   const activeBranchId = useStore(state => state.activeBranchId);
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', password: '', role: 'CASHIER' as 'CASHIER' | 'ADMIN', branchId: '' });
@@ -54,7 +70,11 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   const [editingPassword, setEditingPassword] = useState('');
 
   // Financial Management State
-  const financialAccounts = useLiveQuery(() => db.financialAccounts.toArray(), [], []);
+  const financialAccounts = useLiveQuery(
+    () => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
   const [isAddingFinAccount, setIsAddingFinAccount] = useState(false);
   const [finAccountForm, setFinAccountForm] = useState({ name: '', type: 'BANK' as 'BANK' | 'MPESA' | 'CASH', accountNumber: '', balance: 0, branchId: '' });
   const [depositState, setDepositState] = useState<{ accountId: string | null, amount: string }>({ accountId: null, amount: '' });

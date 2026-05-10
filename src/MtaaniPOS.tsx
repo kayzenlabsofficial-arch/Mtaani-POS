@@ -319,7 +319,11 @@ export default function MtaaniPOS() {
   const totalPickedAmount = todayCashPicks.reduce((acc, p) => acc + (p.amount || 0), 0);
   const actualCashDrawer = cashTotal - totalPickedAmount - todayTillExpenses - todayTillPayments;
 
-  const products = useLiveQuery(() => db.products.toArray(), [], []) ;
+  const products = useLiveQuery(
+    () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
+    []
+  );
 
   const handleSaveExpense = async () => {
       if (isSaving) return;
@@ -714,7 +718,7 @@ export default function MtaaniPOS() {
          await db.sync();
       }
       
-      const allUsers = await db.users.toArray();
+      const allUsers = await db.users.where('businessId').equals(business.id).toArray();
       const matchedUser = allUsers.find(u => 
         u.name.toLowerCase() === rawUser.toLowerCase() && 
         u.businessId === business.id
@@ -723,7 +727,7 @@ export default function MtaaniPOS() {
 
       if (matchedUser && isValid) {
         resetAttempts(rawCode); 
-        const allBranches = await db.branches.toArray();
+        const allBranches = await db.branches.where('businessId').equals(business.id).toArray();
         const active = allBranches.filter(b => b.isActive);
         setPendingUser(matchedUser);
         setAvailableBranches(active);
@@ -1935,7 +1939,12 @@ export default function MtaaniPOS() {
 
 function CustomerSelectionModal({ isOpen, onClose, onSelect }: { isOpen: boolean, onClose: () => void, onSelect: (c: any) => void }) {
   const [search, setSearch] = useState("");
-  const customers = useLiveQuery(() => db.customers.toArray(), [], []);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
+  const customers = useLiveQuery(
+    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
   const filtered = (customers || []).filter(c => 
     c.name.toLowerCase().includes(search.toLowerCase()) || 
     c.phone.includes(search)

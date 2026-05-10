@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ShieldAlert, KeyRound, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
+import { useStore } from '../../store';
 
 interface AdminVerificationModalProps {
   actionDescription: string;
@@ -12,8 +13,12 @@ interface AdminVerificationModalProps {
 export default function AdminVerificationModal({ actionDescription, onSuccess, onCancel }: AdminVerificationModalProps) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
-
-  const allUsers = useLiveQuery(() => db.users.toArray(), [], []);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
+  const allUsers = useLiveQuery(
+    () => activeBusinessId ? db.users.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
 
   const handleVerify = () => {
     const adminUser = allUsers?.find(u => u.role === 'ADMIN' && u.pin === pin);
