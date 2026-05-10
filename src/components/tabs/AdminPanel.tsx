@@ -12,6 +12,7 @@ import AdminApprovals from './AdminApprovals';
 import BranchManagementTab from './BranchManagementTab';
 import { useToast } from '../../context/ToastContext';
 import { type Category } from '../../db';
+import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 
 
 const ICON_OPTIONS = [
@@ -37,6 +38,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   const [activeAdminTab, setActiveAdminTab] = useState<'SETTINGS' | 'APPROVALS' | 'USERS' | 'CATEGORIES' | 'BRANCHES' | 'FINANCE'>('USERS');
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const { success, error, warning } = useToast();
+  const scrollRef = useHorizontalScroll();
   
   // Category Management State
   const categories = useLiveQuery(
@@ -318,8 +320,8 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
       </div>
 
       {/* Admin Nav Tabs */}
-      <div className="px-4 mb-8">
-        <div className="bg-white/50 backdrop-blur-md p-2 rounded-[2rem] border-2 border-slate-100 flex overflow-x-auto no-scrollbar gap-1.5">
+      <div className="mb-8">
+        <div ref={scrollRef} className="bg-white/50 backdrop-blur-md p-2 rounded-[2rem] border-2 border-slate-100 flex overflow-x-auto no-scrollbar gap-1.5">
             {[
               { id: 'USERS', label: 'Staff', icon: Users },
               { id: 'BRANCHES', label: 'Branches', icon: Building2 },

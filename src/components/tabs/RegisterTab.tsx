@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
+import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import BarcodeScanner from '../shared/BarcodeScanner';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
@@ -131,6 +132,7 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const scrollRef = useHorizontalScroll();
 
   // ✅ Only require activeBusinessId — branch does not filter products
   const { addToCart, activeBusinessId } = useStore();
@@ -233,7 +235,7 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
       </div>
 
       {/* Category pills */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar flex-shrink-0">
+      <div ref={scrollRef} className="flex items-center gap-2 overflow-x-auto no-scrollbar flex-shrink-0">
         {categories.map(cat => (
           <button
             key={cat}

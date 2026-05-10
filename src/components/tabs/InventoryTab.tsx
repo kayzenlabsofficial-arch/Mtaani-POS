@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
+import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>
@@ -28,7 +29,7 @@ export default function InventoryTab() {
   const [sortBy, setSortBy] = useState<'name' | 'stock' | 'price'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
-
+  const scrollRef = useHorizontalScroll();
   const activeBusinessId = useStore(s => s.activeBusinessId);
 
   const products = useLiveQuery(
@@ -136,7 +137,7 @@ export default function InventoryTab() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+        <div ref={scrollRef} className="flex items-center gap-2 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setSelectedCategory(null)}
             className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border flex-shrink-0 ${

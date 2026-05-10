@@ -3,14 +3,15 @@ import { Search, CheckCircle2, FileText, RotateCcw, Receipt, ArrowUpRight, Arrow
 import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction } from '../../db';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
-import AdminApprovals from './AdminApprovals';
 import { useStore } from '../../store';
+import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 
 
 export default function DocumentsTab() {
   const [docSearch, setDocSearch] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
   const [filterType, setFilterType] = useState<'ALL' | 'APPROVALS' | 'SALES' | 'EXPENSES' | 'SUPPLIER_PAYMENTS' | 'INVOICES' | 'SHIFTS' | 'DAILY'>('ALL');
+  const scrollRef = useHorizontalScroll();
 
   const activeBranchId = useStore(state => state.activeBranchId);
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
@@ -82,7 +83,7 @@ export default function DocumentsTab() {
       </div>
 
       {/* Filter Tabs */}
-      <div className="mb-6 overflow-x-auto no-scrollbar pb-2">
+      <div ref={scrollRef} className="mb-6 overflow-x-auto no-scrollbar pb-2">
         <div className="flex gap-2 min-w-max">
            {[
              { id: 'ALL', label: 'Universal Feed' },
