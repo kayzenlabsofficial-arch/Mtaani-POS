@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Search, ShoppingCart, Zap, AlertTriangle, Store, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Plus, RotateCcw, Tag as TagIcon, ScanLine, User } from 'lucide-react';
+import { Search, ShoppingCart, Zap, AlertTriangle, Store, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Plus, RotateCcw, Tag as TagIcon, ScanLine, User, ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
@@ -27,6 +27,8 @@ export default function RegisterTab() {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isSalesControlsOpen, setIsSalesControlsOpen] = useState(false);
+  const [isCustomerControlsOpen, setIsCustomerControlsOpen] = useState(false);
   const [scanFeedback, setScanFeedback] = useState<{ found: boolean; name: string } | null>(null);
   const addToCart = useStore((state) => state.addToCart);
   const clearCart = useStore((state) => state.clearCart);
@@ -228,6 +230,73 @@ export default function RegisterTab() {
             {scanFeedback.name}
           </div>
         )}
+      </div>
+
+      {/* Nested controls for cleaner mobile and cashier flow */}
+      <div className="px-4 pb-3 space-y-2">
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+          <button
+            onClick={() => setIsSalesControlsOpen(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center">
+                <SlidersHorizontal size={16} />
+              </div>
+              <div>
+                <p className="text-xs font-black text-slate-900">Sales Controls</p>
+                <p className="text-[10px] font-bold text-slate-400">Scanner, cart reset, quick actions</p>
+              </div>
+            </div>
+            <ChevronDown size={16} className={`text-slate-400 transition-transform ${isSalesControlsOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {isSalesControlsOpen && (
+            <div className="border-t border-slate-100 p-3 grid grid-cols-2 gap-2 bg-slate-50">
+              <button
+                onClick={() => setIsScannerOpen(true)}
+                className="px-3 py-2.5 rounded-xl bg-blue-600 text-white text-[10px] font-black hover:bg-blue-700 transition-colors"
+              >
+                Open Scanner
+              </button>
+              <button
+                onClick={() => clearCart()}
+                disabled={cart.length === 0}
+                className="px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-[10px] font-black disabled:opacity-50"
+              >
+                Clear Cart
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+          <button
+            onClick={() => setIsCustomerControlsOpen(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                <User size={16} />
+              </div>
+              <div>
+                <p className="text-xs font-black text-slate-900">Customer Controls</p>
+                <p className="text-[10px] font-bold text-slate-400">Select, clear, and quick customer context</p>
+              </div>
+            </div>
+            <ChevronDown size={16} className={`text-slate-400 transition-transform ${isCustomerControlsOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {isCustomerControlsOpen && (
+            <div className="border-t border-slate-100 p-3 bg-slate-50">
+              <button
+                onClick={() => setSelectedCustomerId(null)}
+                disabled={!selectedCustomerId}
+                className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-[10px] font-black disabled:opacity-50"
+              >
+                Clear Customer Link
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Critical low stock warning */}

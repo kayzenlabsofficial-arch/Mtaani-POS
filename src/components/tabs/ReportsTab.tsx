@@ -27,11 +27,11 @@ export default function ReportsTab() {
 
   // Core Data Queries
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
-  const allProducts = useLiveQuery(() => db.products.toArray(), [], []);
+  const allProducts = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
   const allExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
-  const allSuppliers = useLiveQuery(() => db.suppliers.toArray(), [], []);
+  const allSuppliers = useLiveQuery(() => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
   const allPurchases = useLiveQuery(() => activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
-  const allUsers = useLiveQuery(() => db.users.toArray(), [], []);
+  const allUsers = useLiveQuery(() => activeBusinessId ? db.users.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
 
   if (!allTransactions || !allProducts || !allExpenses || !allSuppliers) {
     return (
@@ -107,6 +107,10 @@ export default function ReportsTab() {
   const totalExpenseAmount = filteredExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
   const grossProfit = totalRevenue - estimatedCOGS - totalTax;
   const netProfit = grossProfit - totalExpenseAmount;
+  const averageBasket = filteredTransactions.length > 0 ? totalRevenue / filteredTransactions.length : 0;
+  const topProductShare = topProducts.length > 0 && totalRevenue > 0 ? (topProducts[0].revenue / totalRevenue) * 100 : 0;
+  const lowStockCount = allProducts.filter(p => (p.stockQuantity || 0) <= 5).length;
+  const creditTransactions = filteredTransactions.filter(t => t.paymentMethod === 'CREDIT').length;
 
   // Chart Data Formatting
   const salesTrendData = Array.from({ length: 7 }).map((_, i) => {
@@ -194,6 +198,34 @@ export default function ReportsTab() {
           <StatCard title="Gross Margin" value={((grossProfit / (totalRevenue || 1)) * 100)} unit="%" icon={<Layers size={20}/>} color="indigo" subtitle="Product profitability" />
           <StatCard title="Op. Efficiency" value={((netProfit / (totalRevenue || 1)) * 100)} unit="%" icon={<Activity size={20}/>} color="purple" subtitle="Retention of revenue" />
         </div>
+
+        {/* Executive Summary Table */}
+        <section className="bg-white rounded-[32px] border border-slate-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+            <h3 className="text-sm font-black text-slate-900">Executive Summary</h3>
+            <p className="text-[10px] font-bold text-slate-500">Formal decision metrics for management and audits.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[680px]">
+              <thead className="bg-white">
+                <tr className="text-[10px] uppercase tracking-wider text-slate-500">
+                  <th className="px-6 py-3 font-black">Metric</th>
+                  <th className="px-6 py-3 font-black">Value</th>
+                  <th className="px-6 py-3 font-black">Target</th>
+                  <th className="px-6 py-3 font-black">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-sm">
+                <SummaryRow metric="Net Profit" value={`Ksh ${Math.floor(netProfit).toLocaleString()}`} target="Positive" ok={netProfit >= 0} />
+                <SummaryRow metric="Gross Margin" value={`${((grossProfit / (totalRevenue || 1)) * 100).toFixed(1)}%`} target="> 25%" ok={((grossProfit / (totalRevenue || 1)) * 100) >= 25} />
+                <SummaryRow metric="Average Basket Size" value={`Ksh ${Math.floor(averageBasket).toLocaleString()}`} target="Trend up monthly" ok={averageBasket > 0} />
+                <SummaryRow metric="Top Product Revenue Share" value={`${topProductShare.toFixed(1)}%`} target="< 40% concentration" ok={topProductShare < 40} />
+                <SummaryRow metric="Critical Low-Stock SKUs" value={String(lowStockCount)} target="< 10 SKUs" ok={lowStockCount < 10} />
+                <SummaryRow metric="Credit Sales Exposure" value={`${creditTransactions} transactions`} target="Policy controlled" ok={creditTransactions <= Math.max(5, filteredTransactions.length * 0.25)} />
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         {/* High-Level Trends */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -444,5 +476,20 @@ function StatCard({ title, value, unit, icon, color, subtitle }: StatCardProps) 
       <h3 className="text-xl font-black text-slate-900">{unit !== '%' ? 'Ksh ' : ''}{Math.floor(value).toLocaleString()}{unit || ''}</h3>
       <p className="text-[10px] font-bold text-slate-500 mt-1 opacity-70">{subtitle}</p>
     </div>
+  );
+}
+
+function SummaryRow({ metric, value, target, ok }: { metric: string; value: string; target: string; ok: boolean }) {
+  return (
+    <tr>
+      <td className="px-6 py-3 font-black text-slate-900">{metric}</td>
+      <td className="px-6 py-3 font-bold text-slate-700">{value}</td>
+      <td className="px-6 py-3 text-slate-500 font-bold">{target}</td>
+      <td className="px-6 py-3">
+        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+          {ok ? 'Within target' : 'Attention required'}
+        </span>
+      </td>
+    </tr>
   );
 }
