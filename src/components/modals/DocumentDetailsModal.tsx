@@ -190,7 +190,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setSelectedRecord(null)} />
-      <div className="bg-white w-full max-w-2xl h-full sm:h-[90vh] sm:rounded-[32px] shadow-2xl relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
+      <div className="bg-white w-full max-w-2xl h-full sm:h-[90vh] sm:rounded-2xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
          
          {/* Scrollable Content Area */}
          <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -509,7 +509,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                        </div>
 
                        {/* VARIANCE SECTION */}
-                       <div className={`p-5 rounded-[24px] border-2 ${(Number(selectedRecord.difference) || 0) === 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                       <div className={`p-5 rounded-xl border-2 ${(Number(selectedRecord.difference) || 0) === 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                           <div className="flex items-center gap-3 mb-2">
                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${(Number(selectedRecord.difference) || 0) === 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                                 {(Number(selectedRecord.difference) || 0) === 0 ? <CheckCircle2 size={24}/> : <AlertTriangle size={24}/>}
@@ -706,3 +706,4 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     </div>
   );
 }
+

@@ -183,7 +183,7 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
   st(doc, slate600);
   doc.text(location, TW / 2, y, { align: 'center' });
   y += 4;
-  doc.text(`Cashier: ${safeStr(r.cashierName)}`, TW / 2, y, { align: 'center' });
+  doc.text(`Cashier: ${safeStr(r.cashierName)} | Branch: ${safeStr(r.branchId, 'MAIN')}`, TW / 2, y, { align: 'center' });
   y += 8;
   
   // Info
@@ -199,6 +199,9 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
   const ref = safeStr(r.invoiceNumber || (r.id || '').split('-')[0], 'SALE').toUpperCase();
   doc.text(`REF: ${ref}`, TM, y);
   doc.text(new Date(r.timestamp).toLocaleString('en-KE'), TW - TM, y, { align: 'right' });
+  y += 5;
+  doc.text(`Status: ${safeStr(r.status, 'PAID')}`, TM, y);
+  doc.text(`Method: ${safeStr(r.paymentMethod, 'CASH')}`, TW - TM, y, { align: 'right' });
   y += 5;
   
   sd(doc, slate900);
@@ -280,6 +283,15 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
     st(doc, slate600);
     row('M-Pesa Cust', r.mpesaCustomer);
   }
+  y += 2;
+  sd(doc, slate100);
+  doc.setLineWidth(0.15);
+  doc.line(TM, y, TW - TM, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  st(doc, slate600);
+  doc.text('Return policy: returns accepted with valid receipt only.', TW / 2, y, { align: 'center' });
   
   y += 8;
   doc.setFont('helvetica', 'italic');
@@ -412,76 +424,98 @@ function buildRemittance(r: any, supplierName?: string, bizName?: string): Blob 
 
 // ─── Thermal Report (80mm) ───────────────────────────────────────────────────
 function buildReport(r: any, bizName = 'MTAANI POS'): Blob {
-  const TW = 80;
-  const TM = 4;
-  const items = [
-    ['Gross Sales',        ksh(r.grossSales ?? r.totalSales)],
-    ['M-Pesa Sales',       ksh(r.mpesaSales)],
-    ['Cash Sales',         ksh(safe(r.grossSales ?? r.totalSales) - safe(r.mpesaSales))],
-    ['Total Expenses',     `- ${ksh(r.totalExpenses)}`],
-    ['Cash Bankings',      `- ${ksh(r.totalPicks)}`],
-    ['VAT (16%)',          ksh(r.taxTotal)],
-  ];
-  
-  const totalH = 40 + (items.length * 7) + 40;
-  const doc = new jsPDF({ unit: 'mm', format: [TW, totalH] });
-  let y = 8;
-
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const isDaily = r.recordType === 'DAILY_SUMMARY';
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  st(doc, slate900);
-  doc.text(bizName.toUpperCase(), TW / 2, y, { align: 'center' });
-  y += 5;
+  const ref = safeStr((r.id || '').split('-')[0], 'RPT').toUpperCase();
+  let y = banner(
+    doc,
+    isDaily ? 'Daily Business Summary' : 'Shift End Reconciliation',
+    ref,
+    new Date(r.timestamp).toLocaleString('en-KE'),
+    bizName
+  );
+  y = hLine(doc, y);
+  y = kvRow(doc, 'Report Type', isDaily ? 'Daily Summary' : 'Shift Close (Z-Reading)', y);
+  y = kvRow(doc, 'Branch', safeStr(r.branchId, 'MAIN'), y);
+  y = kvRow(doc, 'Prepared By', safeStr(r.cashierName, 'System'), y);
+  y += 4;
 
-  doc.setFontSize(10);
-  doc.text(isDaily ? 'DAILY BUSINESS AUDIT' : 'SHIFT Z-READING', TW / 2, y, { align: 'center' });
+  const grossSales = safe(r.grossSales ?? r.totalSales);
+  const cashSales = safe(r.cashSales ?? (grossSales - safe(r.mpesaSales)));
+  const mpesaSales = safe(r.mpesaSales);
+  const expenses = safe(r.totalExpenses);
+  const banked = safe(r.totalPicks);
+  const taxTotal = safe(r.taxTotal);
+  const expected = safe(r.expectedCash);
+  const reported = safe(r.reportedCash || expected);
+  const diff = safe(r.difference ?? r.totalVariance);
+
+  y = table(
+    doc,
+    ['Financial Line', 'Amount', 'Direction', 'Note'],
+    [70, 36, 24, 52],
+    [
+      ['Gross Sales', ksh(grossSales), 'IN', 'Sales before deductions'],
+      ['Cash Sales', ksh(cashSales), 'IN', 'Cash receipts'],
+      ['M-Pesa Sales', ksh(mpesaSales), 'IN', 'Mobile money receipts'],
+      ['Expenses', ksh(expenses), 'OUT', 'Operational outflow'],
+      ['Banked / Cash Picks', ksh(banked), 'OUT', 'Transferred from till'],
+      ['VAT (16%)', ksh(taxTotal), 'TAX', 'Tax component']
+    ],
+    y
+  );
+
+  y = bigTotal(doc, 'NET SALES', ksh(safe(r.totalSales ?? grossSales)), y, slate900);
+
+  const paymentBase = Math.max(grossSales, 1);
+  const cashPct = Math.max(0, Math.min(100, (cashSales / paymentBase) * 100));
+  const mpesaPct = Math.max(0, Math.min(100, (mpesaSales / paymentBase) * 100));
+  const chartX = M;
+  const chartW = W;
+  const barW = chartW - 48;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  st(doc, slate900);
+  doc.text('PAYMENT MIX', chartX, y);
+  y += 6;
+
+  sf(doc, slate100);
+  doc.rect(chartX + 32, y - 3.5, barW, 4, 'F');
+  sf(doc, green);
+  doc.rect(chartX + 32, y - 3.5, (barW * cashPct) / 100, 4, 'F');
+  st(doc, slate600);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text('Cash', chartX, y);
+  doc.text(`${cashPct.toFixed(1)}%`, chartX + chartW, y, { align: 'right' });
   y += 8;
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  st(doc, slate400);
-  const ref = safeStr((r.id || '').split('-')[0], 'RPT').toUpperCase();
-  doc.text(`REF: ${ref}`, TM, y);
-  doc.text(new Date(r.timestamp).toLocaleString('en-KE'), TW - TM, y, { align: 'right' });
-  y += 6;
+  sf(doc, slate100);
+  doc.rect(chartX + 32, y - 3.5, barW, 4, 'F');
+  sf(doc, blue);
+  doc.rect(chartX + 32, y - 3.5, (barW * mpesaPct) / 100, 4, 'F');
+  st(doc, slate600);
+  doc.text('M-Pesa', chartX, y);
+  doc.text(`${mpesaPct.toFixed(1)}%`, chartX + chartW, y, { align: 'right' });
+  y += 10;
 
-  sd(doc, slate900);
-  doc.setLineWidth(0.3);
-  doc.line(TM, y, TW - TM, y);
-  y += 6;
+  y = table(
+    doc,
+    ['Reconciliation', 'Expected', 'Reported', 'Variance'],
+    [70, 40, 40, 40],
+    [[
+      isDaily ? 'Business Day Close' : 'Shift Till Close',
+      ksh(expected),
+      ksh(reported),
+      ksh(diff)
+    ]],
+    y
+  );
 
-  items.forEach(item => {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    st(doc, slate600);
-    doc.text(item[0], TM, y);
-    st(doc, slate900);
-    doc.text(item[1], TW - TM, y, { align: 'right' });
-    y += 6;
-  });
-
-  y += 2;
-  doc.line(TM, y, TW - TM, y);
-  y += 6;
-
-  const variance = safe(r.difference ?? r.totalVariance);
-  const varOk = variance === 0;
-  
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  st(doc, varOk ? green : red);
-  doc.text(varOk ? '✓ BALANCED' : '⚠ VARIANCE', TM, y);
-  doc.text(ksh(Math.abs(variance)), TW - TM, y, { align: 'right' });
-  y += 6;
-
-  if (r.cashierName) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    st(doc, slate400);
-    doc.text(`Generated by: ${r.cashierName}`, TW / 2, y + 6, { align: 'center' });
-  }
-
+  const ok = diff === 0;
+  y = bigTotal(doc, ok ? 'STATUS: BALANCED' : 'STATUS: VARIANCE FOUND', ksh(Math.abs(diff)), y, ok ? green : red);
+  footer(doc);
   return doc.output('blob');
 }
 
@@ -638,3 +672,4 @@ export async function generateAndDownloadStatement(s: any, invoices: any[], paym
     const blob = buildStatementPDF(s, invoices, payments, creditNotes);
     download(blob, `Statement-${s.company}`);
 }
+

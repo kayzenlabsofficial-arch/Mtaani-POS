@@ -111,7 +111,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pb-safe">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="bg-white w-full max-w-sm rounded-[28px] shadow-2xl relative z-10 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+      <div className="bg-white w-full max-w-sm rounded-2xl shadow-elevated relative z-10 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
         
         {/* Header */}
         <div className="p-5 pb-0 flex justify-between items-center">
@@ -311,3 +311,4 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
     </div>
   );
 }
+

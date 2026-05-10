@@ -166,7 +166,7 @@ export default function CustomersTab() {
           placeholder="Search by name or mobile number..." 
           value={customerSearch} 
           onChange={(e) => setCustomerSearch(e.target.value)}
-          className="w-full pl-12 pr-4 py-4 bg-white rounded-[20px] border border-slate-200 text-sm text-slate-700 shadow-card focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all font-bold"
+          className="w-full pl-12 pr-4 py-4 bg-white rounded-xl border border-slate-200 text-sm text-slate-700 shadow-card focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all font-bold"
         />
       </div>
 
@@ -175,7 +175,7 @@ export default function CustomersTab() {
             <div 
               key={customer.id} 
               onClick={() => openEditCustomer(customer)} 
-              className="group bg-white p-5 rounded-[28px] border border-slate-100 shadow-card flex items-center justify-between hover:border-blue-200 transition-all cursor-pointer press"
+              className="group bg-white p-5 rounded-2xl border border-slate-100 shadow-card flex items-center justify-between hover:border-blue-200 transition-all cursor-pointer press"
             >
                <div className="flex items-center gap-4">
                   <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-sm shrink-0  font-black text-lg group-hover:scale-105 transition-transform">
@@ -200,7 +200,7 @@ export default function CustomersTab() {
          
          {filteredCustomers.length === 0 && (
             <div className="col-span-full py-20 text-center flex flex-col items-center slide-up">
-               <div className="w-20 h-20 bg-slate-50 rounded-[32px] flex items-center justify-center mb-4 text-slate-200">
+               <div className="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 text-slate-200">
                  <Users size={40} />
                </div>
                <p className="text-slate-500 font-black text-sm  ">No Clients Found</p>
@@ -213,7 +213,7 @@ export default function CustomersTab() {
       {isCustomerModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pb-safe">
            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsCustomerModalOpen(false)} />
-           <div className="bg-white w-full max-w-sm rounded-t-[40px] sm:rounded-[32px] shadow-elevated relative z-10 flex flex-col p-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300">
+           <div className="bg-white w-full max-w-sm rounded-t-[40px] sm:rounded-2xl shadow-elevated relative z-10 flex flex-col p-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300">
               <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8 sm:hidden shrink-0" />
               
               <div className="flex items-center gap-4 mb-8">
@@ -308,3 +308,4 @@ export default function CustomersTab() {
     </div>
   );
 }
+

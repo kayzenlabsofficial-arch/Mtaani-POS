@@ -147,7 +147,7 @@ export default function ExpensesTab() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-         <div className="bg-white rounded-[28px] p-5 shadow-card border border-slate-100 flex items-center gap-4">
+         <div className="bg-white rounded-2xl p-5 shadow-card border border-slate-100 flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-green-50 text-green-600 flex items-center justify-center shadow-sm">
                <Wallet size={24} />
             </div>
@@ -156,7 +156,7 @@ export default function ExpensesTab() {
                <h3 className="text-xl font-black text-slate-900 leading-none">Ksh {actualCashDrawer.toLocaleString()}</h3>
             </div>
          </div>
-         <div className="bg-orange-600 rounded-[28px] p-5 shadow-lg shadow-orange-600/20 flex items-center gap-4 text-white">
+         <div className="bg-orange-600 rounded-2xl p-5 shadow-lg shadow-orange-600/20 flex items-center gap-4 text-white">
             <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center shadow-sm">
                <FileMinus size={24} />
             </div>
@@ -174,13 +174,13 @@ export default function ExpensesTab() {
           placeholder="Search by category or description..." 
           value={expenseSearch} 
           onChange={(e) => setExpenseSearch(e.target.value)}
-          className="w-full pl-12 pr-4 py-4 bg-white rounded-[20px] border border-slate-200 text-sm text-slate-700 shadow-card focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 outline-none transition-all font-bold"
+          className="w-full pl-12 pr-4 py-4 bg-white rounded-xl border border-slate-200 text-sm text-slate-700 shadow-card focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 outline-none transition-all font-bold"
         />
       </div>
 
       <div className="space-y-3">
          {filteredExpenses.map(expense => (
-             <div key={expense.id} className="group bg-white p-4 rounded-[24px] border border-slate-100 shadow-card flex items-center justify-between hover:border-orange-200 transition-all cursor-default press">
+             <div key={expense.id} className="group bg-white p-4 rounded-xl border border-slate-100 shadow-card flex items-center justify-between hover:border-orange-200 transition-all cursor-default press">
                 <div className="flex items-center gap-4">
                    <div className="w-14 h-14 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 shadow-sm shrink-0 group-hover:scale-105 transition-transform">
                       <FileMinus size={22} />
@@ -223,7 +223,7 @@ export default function ExpensesTab() {
          ))}
          {filteredExpenses.length === 0 && (
             <div className="py-20 text-center flex flex-col items-center slide-up">
-               <div className="w-20 h-20 bg-slate-50 rounded-[32px] flex items-center justify-center mb-4 text-slate-200">
+               <div className="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 text-slate-200">
                  <FileMinus size={40} />
                </div>
                <p className="text-slate-500 font-black text-sm  ">No Records</p>
@@ -250,3 +250,4 @@ export default function ExpensesTab() {
     </div>
   );
 }
+

@@ -32,6 +32,16 @@ export default function RegisterTab() {
   const [scanFeedback, setScanFeedback] = useState<{ found: boolean; name: string } | null>(null);
   const scanBufferRef = useRef('');
   const scanTimerRef = useRef<number | null>(null);
+  const scannerDebounceMs = React.useMemo(() => {
+    try {
+      const raw = localStorage.getItem('mtaani_hardware_profile_v1');
+      if (!raw) return 120;
+      const parsed = JSON.parse(raw);
+      return Number(parsed.scannerDebounceMs) || 120;
+    } catch {
+      return 120;
+    }
+  }, []);
   const addToCart = useStore((state) => state.addToCart);
   const clearCart = useStore((state) => state.clearCart);
   const cart = useStore((state) => state.cart);
@@ -146,7 +156,7 @@ export default function RegisterTab() {
         if (scanTimerRef.current) window.clearTimeout(scanTimerRef.current);
         scanTimerRef.current = window.setTimeout(() => {
           scanBufferRef.current = '';
-        }, 120);
+        }, scannerDebounceMs);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -154,7 +164,7 @@ export default function RegisterTab() {
       window.removeEventListener('keydown', onKeyDown);
       if (scanTimerRef.current) window.clearTimeout(scanTimerRef.current);
     };
-  }, [handleScanResult]);
+  }, [handleScanResult, scannerDebounceMs]);
 
   const lowStockProducts = (products || []).filter(p => {
     const vStock = calculateVirtualStock(p);

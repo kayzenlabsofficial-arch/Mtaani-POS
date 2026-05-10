@@ -1047,7 +1047,7 @@ export default function MtaaniPOS() {
   if (!currentUser) {
     return (
       <div className="min-h-screen grad-blue flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-white/20">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-elevated overflow-hidden border border-white/20">
           <div className="p-10 text-center">
             <div className="w-20 h-20 bg-blue-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-sm">
               <Store size={40} className="text-blue-600" />
@@ -1290,7 +1290,7 @@ export default function MtaaniPOS() {
       {isMoreMenuOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in" onClick={() => toggleMoreMenu(false)} />
-          <div className="relative w-full max-w-xl bg-white rounded-t-[2.5rem] shadow-2xl flex flex-col p-8 animate-in slide-in-from-bottom duration-300 max-h-[85vh]">
+          <div className="relative w-full max-w-xl bg-white rounded-t-[2.5rem] shadow-elevated flex flex-col p-8 animate-in slide-in-from-bottom duration-300 max-h-[85vh]">
             <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6 shrink-0" />
             
             <div className="flex items-center justify-between mb-8 shrink-0">
@@ -1409,7 +1409,7 @@ export default function MtaaniPOS() {
           ${!isCartOpen && activeTab === 'REGISTER' ? 'hidden lg:flex' : 'flex'}
         `}>
           <div className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm lg:hidden ${!isCartOpen ? 'hidden' : ''}`} onClick={() => toggleCart(false)} />
-          <div className={`relative w-full max-w-md lg:max-w-none bg-white h-full shadow-2xl lg:shadow-none flex flex-col animate-in slide-in-from-right duration-300 lg:animate-none`}>
+          <div className={`relative w-full max-w-md lg:max-w-none bg-white h-full shadow-elevated lg:shadow-none flex flex-col animate-in slide-in-from-right duration-300 lg:animate-none`}>
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
                <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600">
@@ -1617,7 +1617,7 @@ export default function MtaaniPOS() {
       {isCashModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsCashModalOpen(false)} />
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl relative z-10 flex flex-col p-8 animate-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-elevated relative z-10 flex flex-col p-8 animate-in zoom-in-95 duration-200">
             <div className="w-16 h-16 bg-green-50 text-green-600 rounded-3xl flex items-center justify-center mb-6 mx-auto">
               <Banknote size={32} />
             </div>
@@ -1673,7 +1673,7 @@ export default function MtaaniPOS() {
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => {
             if (mpesaState !== 'POLLING') setIsMpesaModalOpen(false);
           }} />
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl relative z-10 flex flex-col p-8 animate-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-elevated relative z-10 flex flex-col p-8 animate-in zoom-in-95 duration-200">
             <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6 mx-auto">
               <Smartphone size={32} />
             </div>
@@ -1789,7 +1789,7 @@ export default function MtaaniPOS() {
       {completedTransaction && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setCompletedTransaction(null)} />
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 h-full max-h-[90vh]">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 h-full max-h-[90vh]">
              <div className="flex-1 overflow-y-auto custom-scrollbar">
                 <div id="printable-receipt" className="print-receipt-80mm">
                   <div className="p-8 bg-green-50/50 border-b border-green-100 flex flex-col items-center text-center">
@@ -1944,7 +1944,7 @@ function CustomerSelectionModal({ isOpen, onClose, onSelect }: { isOpen: boolean
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+      <div className="relative w-full max-w-md bg-white rounded-3xl shadow-elevated flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
         <div className="p-8 border-b border-slate-100 flex items-center justify-between">
           <div>
             <h3 className="text-xl font-black text-slate-900">Select Customer</h3>
@@ -2013,3 +2013,4 @@ function BranchOptions({ activeBranchId }: { activeBranchId: string | null }) {
     </>
   );
 }
+

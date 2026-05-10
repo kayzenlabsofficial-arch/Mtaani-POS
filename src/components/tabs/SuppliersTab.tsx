@@ -177,13 +177,13 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
 
       {/* Supplier Stats */}
       <div className="grid grid-cols-2 gap-4 mb-8">
-         <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
+         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
             <p className="text-[10px] font-black text-slate-400   mb-1">Total Payables</p>
             <p className="text-2xl font-black text-red-600 tracking-tight">
                Ksh {allSuppliers.reduce((acc, s) => acc + (s.balance || 0), 0).toLocaleString()}
             </p>
          </div>
-         <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
+         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
             <p className="text-[10px] font-black text-slate-400   mb-1">Active Vendors</p>
             <p className="text-2xl font-black text-slate-900 tracking-tight">
                {allSuppliers.length}
@@ -198,7 +198,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
           placeholder="Search by company or primary contact..." 
           value={supplierSearch} 
           onChange={(e) => setSupplierSearch(e.target.value)}
-          className="w-full pl-12 pr-4 py-4 bg-white rounded-[20px] border border-slate-200 text-sm text-slate-700 shadow-card focus:border-slate-800 focus:ring-4 focus:ring-slate-800/10 outline-none transition-all font-bold"
+          className="w-full pl-12 pr-4 py-4 bg-white rounded-xl border border-slate-200 text-sm text-slate-700 shadow-card focus:border-slate-800 focus:ring-4 focus:ring-slate-800/10 outline-none transition-all font-bold"
         />
       </div>
 
@@ -207,7 +207,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
             <div 
               key={supplier.id} 
               onClick={() => { setSelectedSupplierForLedger(supplier); setIsLedgerModalOpen(true); }} 
-              className="group bg-white p-5 rounded-[28px] border border-slate-100 shadow-card flex items-center justify-between hover:border-slate-800/30 transition-all cursor-pointer press gap-3"
+              className="group bg-white p-5 rounded-2xl border border-slate-100 shadow-card flex items-center justify-between hover:border-slate-800/30 transition-all cursor-pointer press gap-3"
             >
                <div className="flex items-center gap-4 min-w-0">
                   <div className="w-14 h-14 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform shrink-0">
@@ -242,7 +242,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
          
          {filteredSuppliers.length === 0 && (
             <div className="col-span-full py-20 text-center flex flex-col items-center slide-up">
-               <div className="w-20 h-20 bg-slate-50 rounded-[32px] flex items-center justify-center mb-4 text-slate-200">
+               <div className="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 text-slate-200">
                  <Truck size={40} />
                </div>
                <p className="text-slate-500 font-black text-sm  ">No Vendors</p>
@@ -272,7 +272,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
       {isSupplierModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pb-safe">
            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsSupplierModalOpen(false)} />
-           <div className="bg-white w-full max-w-sm rounded-t-[40px] sm:rounded-[32px] shadow-elevated relative z-10 flex flex-col p-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300">
+           <div className="bg-white w-full max-w-sm rounded-t-[40px] sm:rounded-2xl shadow-elevated relative z-10 flex flex-col p-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300">
               <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8 sm:hidden shrink-0" />
               
               <div className="flex items-center gap-4 mb-8">
@@ -336,3 +336,4 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
     </div>
   );
 }
+

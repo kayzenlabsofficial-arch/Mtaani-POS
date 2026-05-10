@@ -21,7 +21,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
+      <div className="bg-white w-full max-w-sm rounded-xl shadow-elevated relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
         <h2 className="text-xl font-black text-slate-900 mb-2 flex items-center gap-2">
            <FileMinus className="text-orange-600" /> Add Expense
         </h2>
@@ -160,3 +160,4 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
     </div>
   );
 }
+

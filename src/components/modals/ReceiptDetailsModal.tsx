@@ -49,7 +49,7 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedReceipt(null)} />
-      <div className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+      <div className="bg-white w-full max-w-sm rounded-xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
          <div id="printable-content" className="print-receipt-80mm">
            <div className="p-6 bg-white sm:bg-slate-50 border-b border-slate-100 flex flex-col items-center">
                <ReceiptText size={32} className="text-slate-400 mb-2 no-print" />
@@ -168,3 +168,4 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
     </div>
   );
 }
+

@@ -73,7 +73,7 @@ export default function ProfileModal({ isOpen, onClose, currentUser }: ProfileMo
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
       
-      <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+      <div className="bg-white w-full max-w-sm rounded-3xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
         <div className="p-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-200 text-blue-600 shadow-sm">
@@ -164,3 +164,4 @@ export default function ProfileModal({ isOpen, onClose, currentUser }: ProfileMo
     </div>
   );
 }
+

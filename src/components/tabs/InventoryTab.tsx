@@ -359,7 +359,7 @@ export default function InventoryTab() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 gap-4 mb-6">
-         <div className="bg-white rounded-[28px] p-5 shadow-card border border-slate-100 flex items-center gap-4">
+         <div className="bg-white rounded-2xl p-5 shadow-card border border-slate-100 flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-sm">
                <Package size={24} />
             </div>
@@ -368,7 +368,7 @@ export default function InventoryTab() {
                <h3 className="text-xl font-black text-slate-900 leading-none">{allProducts.length}</h3>
             </div>
          </div>
-         <div className={`bg-white rounded-[28px] p-5 shadow-card border flex items-center gap-4 transition-colors ${lowStock.length > 0 ? 'border-amber-200' : 'border-slate-100'}`}>
+         <div className={`bg-white rounded-2xl p-5 shadow-card border flex items-center gap-4 transition-colors ${lowStock.length > 0 ? 'border-amber-200' : 'border-slate-100'}`}>
             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm transition-colors ${lowStock.length > 0 ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600'}`}>
                <AlertCircle size={24} />
             </div>
@@ -377,7 +377,7 @@ export default function InventoryTab() {
                <h3 className={`text-xl font-black leading-none transition-colors ${lowStock.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{lowStock.length}</h3>
             </div>
          </div>
-         <div className="bg-white rounded-[28px] p-5 shadow-card border border-slate-100 flex items-center gap-4 col-span-2">
+         <div className="bg-white rounded-2xl p-5 shadow-card border border-slate-100 flex items-center gap-4 col-span-2">
             <div className="w-12 h-12 rounded-2xl bg-green-50 text-green-600 flex items-center justify-center shadow-sm">
                <DollarSign size={24} />
             </div>
@@ -394,7 +394,7 @@ export default function InventoryTab() {
         <input 
           type="text" 
           placeholder="Filter by name, category or barcode..."
-          className="w-full pl-12 pr-4 py-4 bg-white rounded-[20px] border border-slate-200 text-sm text-slate-700 shadow-card focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all font-bold"
+          className="w-full pl-12 pr-4 py-4 bg-white rounded-xl border border-slate-200 text-sm text-slate-700 shadow-card focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all font-bold"
           value={inventorySearch}
           onChange={(e) => setInventorySearch(e.target.value)}
         />
@@ -412,7 +412,7 @@ export default function InventoryTab() {
               <div 
                 key={product.id} 
                 onClick={() => openProductDetails(product)} 
-                className="group bg-white p-4 rounded-[24px] border border-slate-100 shadow-card flex items-center justify-between hover:border-blue-200 transition-all cursor-pointer press"
+                className="group bg-white p-4 rounded-xl border border-slate-100 shadow-card flex items-center justify-between hover:border-blue-200 transition-all cursor-pointer press"
               >
                 <div className="flex items-center gap-4">
                    <div className={`w-14 h-14 rounded-2xl ${cfg.light} border border-slate-100 flex items-center justify-center shadow-sm shrink-0 group-hover:scale-105 transition-transform`}>
@@ -453,7 +453,7 @@ export default function InventoryTab() {
          
          {filteredInventory.length === 0 && (
             <div className="py-20 text-center flex flex-col items-center slide-up">
-               <div className="w-20 h-20 bg-slate-50 rounded-[32px] flex items-center justify-center mb-4 transition-transform hover:rotate-12 cursor-default">
+               <div className="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 transition-transform hover:rotate-12 cursor-default">
                  <Search size={40} className="text-slate-200" />
                </div>
                <p className="text-slate-500 font-black text-sm  ">No Matches</p>
@@ -466,7 +466,7 @@ export default function InventoryTab() {
       {isProductModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pb-safe">
            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsProductModalOpen(false)} />
-           <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[32px] shadow-elevated relative z-10 flex flex-col p-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto custom-scrollbar">
+           <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-2xl shadow-elevated relative z-10 flex flex-col p-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto custom-scrollbar">
               <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8 sm:hidden shrink-0" />
               
               <div className="flex items-center justify-between mb-8 shrink-0">
@@ -693,7 +693,7 @@ export default function InventoryTab() {
       {selectedProductForDetails && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pb-safe">
            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedProductForDetails(null)} />
-           <div className="bg-white w-full max-w-md rounded-t-[40px] sm:rounded-[32px] shadow-elevated relative z-10 flex flex-col pt-8 pb-10 px-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300 max-h-[90vh]">
+           <div className="bg-white w-full max-w-md rounded-t-[40px] sm:rounded-2xl shadow-elevated relative z-10 flex flex-col pt-8 pb-10 px-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300 max-h-[90vh]">
               <button 
                 onClick={() => setSelectedProductForDetails(null)}
                 className="absolute top-8 right-8 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors sm:hidden"
@@ -724,7 +724,7 @@ export default function InventoryTab() {
               </div>
 
               {/* Summary Card */}
-              <div className="grad-blue rounded-[28px] p-6 text-white shadow-blue mb-8 shrink-0 relative overflow-hidden">
+              <div className="grad-blue rounded-2xl p-6 text-white shadow-blue mb-8 shrink-0 relative overflow-hidden">
                  <Package className="absolute -right-6 -bottom-6 w-32 h-32 text-white/10 rotate-12" />
                  <div className="relative z-10">
                    <div className="flex justify-between items-start mb-4">
@@ -820,7 +820,7 @@ export default function InventoryTab() {
        {isQuickAdjustOpen && selectedProductForDetails && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsQuickAdjustOpen(false)} />
-             <div className="bg-white w-full max-w-sm rounded-[28px] shadow-elevated relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
+             <div className="bg-white w-full max-w-sm rounded-2xl shadow-elevated relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
                 <div className="flex items-center gap-3 mb-6">
                     <div className="w-10 h-10 bg-blue-50 text-blue-600 flex items-center justify-center rounded-xl">
                         <Settings size={20} />
@@ -887,3 +887,4 @@ export default function InventoryTab() {
     </div>
   );
 }
+

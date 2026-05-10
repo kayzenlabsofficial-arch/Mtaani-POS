@@ -28,7 +28,7 @@ export default function AdminVerificationModal({ actionDescription, onSuccess, o
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onCancel} />
-      <div className="bg-white w-full max-w-xs rounded-[24px] shadow-2xl relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+      <div className="bg-white w-full max-w-xs rounded-xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
          <div className="p-6 border-b border-red-100 bg-red-50/50 flex flex-col items-center text-center">
             <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center mb-3">
                <ShieldAlert size={28} />
@@ -83,3 +83,4 @@ export default function AdminVerificationModal({ actionDescription, onSuccess, o
     </div>
   );
 }
+

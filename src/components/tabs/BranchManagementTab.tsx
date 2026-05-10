@@ -246,7 +246,7 @@ export default function BranchManagementTab() {
       {isFormOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFormOpen(false)} />
-          <div className="relative w-full max-w-xl bg-white rounded-[2.5rem] shadow-2xl p-8 animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 z-10 max-h-[90vh] overflow-y-auto no-scrollbar">
+          <div className="relative w-full max-w-xl bg-white rounded-3xl shadow-elevated p-8 animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 z-10 max-h-[90vh] overflow-y-auto no-scrollbar">
             
             <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-5">
               <Building2 size={24} />
@@ -419,3 +419,4 @@ export default function BranchManagementTab() {
     </div>
   );
 }
+

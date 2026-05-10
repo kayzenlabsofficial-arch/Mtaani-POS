@@ -282,7 +282,7 @@ export default function PurchasesTab() {
       {isPOModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPOModalOpen(false)} />
-          <div className="bg-white w-full max-w-lg rounded-[24px] shadow-2xl relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200 overflow-hidden max-h-[90vh]">
+          <div className="bg-white w-full max-w-lg rounded-xl shadow-elevated relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200 overflow-hidden max-h-[90vh]">
             <h2 className="text-xl font-black text-slate-900 mb-2 flex items-center gap-2">
                <ClipboardList className="text-blue-600" /> {selectedPOToEdit ? 'Edit Purchase Order' : 'New Purchase Order'}
             </h2>
@@ -368,7 +368,7 @@ export default function PurchasesTab() {
       {isReceivePOModalOpen && selectedPO && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsReceivePOModalOpen(false)} />
-          <div className="bg-white w-full max-w-lg rounded-[24px] shadow-2xl relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200 overflow-hidden max-h-[90vh]">
+          <div className="bg-white w-full max-w-lg rounded-xl shadow-elevated relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200 overflow-hidden max-h-[90vh]">
             <h2 className="text-xl font-black text-slate-900 mb-2 flex items-center gap-2">
                <PackagePlus className="text-green-600" /> Receive Order
             </h2>
@@ -443,3 +443,4 @@ export default function PurchasesTab() {
     </div>
   );
 }
+

@@ -122,13 +122,13 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 pb-safe">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md no-print" onClick={onClose} />
       
-      <div className="bg-white w-full max-w-2xl h-full sm:h-[85vh] sm:rounded-[32px] shadow-2xl relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
+      <div className="bg-white w-full max-w-2xl h-full sm:h-[85vh] sm:rounded-2xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
          
          {/* Ledger Header */}
          <div id="printable-content" className="print-document-a4 h-full flex flex-col">
             <div className="p-6 sm:p-8 pb-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
                 <div className="flex items-center gap-4 sm:gap-5 min-w-0">
-                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-[18px] sm:rounded-[24px] bg-slate-900 text-white flex items-center justify-center shadow-lg shrink-0 no-print">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-[18px] sm:rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-lg shrink-0 no-print">
                         <Truck size={24} className="sm:hidden" />
                         <Truck size={32} className="hidden sm:block" />
                     </div>
@@ -312,7 +312,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
       {isAddCreditNoteOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-900/40" onClick={() => setIsAddCreditNoteOpen(false)} />
-            <div className="bg-white w-full max-w-xs rounded-[28px] shadow-2xl relative z-10 p-6 animate-in zoom-in-95">
+            <div className="bg-white w-full max-w-xs rounded-2xl shadow-elevated relative z-10 p-6 animate-in zoom-in-95">
                 <h3 className="text-lg font-black text-slate-900 mb-6 flex items-center gap-2"><div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center"><AlertCircle size={18}/></div> Create Credit</h3>
                 <div className="space-y-4 mb-6">
                     <div>
@@ -362,3 +362,4 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
     </div>
   );
 }
+

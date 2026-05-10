@@ -18,6 +18,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const [isCloseDayOpen, setIsCloseDayOpen] = useState(false);
   const [reportedCash, setReportedCash] = useState("");
   const [isDailySummaryOpen, setIsDailySummaryOpen] = useState(false);
+  const [isOpsControlsOpen, setIsOpsControlsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const isAdmin = useStore(state => state.isAdmin);
   const isManager = useStore(state => state.isManager);
@@ -399,7 +400,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
       {/* Admin: Active Shifts Overview */}
       {(isAdmin || isManager) && (activeShiftsQuery?.length || 0) > 0 && (
-        <div className="mb-6 bg-white p-5 rounded-[2.5rem] border border-slate-200 shadow-card">
+        <div className="mb-6 bg-white p-5 rounded-3xl border border-slate-200 shadow-card">
            <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                  <Activity size={18} className="text-blue-600" /> Active Cashier Sessions
@@ -616,11 +617,16 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       {/* Daily actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
          <div className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm flex flex-col gap-3">
-            <h3 className="text-sm font-extrabold text-slate-900 flex justify-between">
-               Daily actions
-               <span className="text-xs text-orange-600 bg-orange-100 px-2 py-0.5 rounded-md font-bold">{pendingQuotes} quotes</span>
-            </h3>
-            <div className="grid grid-cols-2 gap-2 h-full items-end mt-2">
+            <button onClick={() => setIsOpsControlsOpen(v => !v)} className="w-full flex items-center justify-between">
+              <h3 className="text-sm font-extrabold text-slate-900 flex justify-between">
+                Operations controls
+              </h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-orange-600 bg-orange-100 px-2 py-0.5 rounded-md font-bold">{pendingQuotes} quotes</span>
+                <ChevronRight size={14} className={`text-slate-400 transition-transform ${isOpsControlsOpen ? 'rotate-90' : ''}`} />
+              </div>
+            </button>
+            {isOpsControlsOpen && <div className="grid grid-cols-2 gap-2 h-full items-end mt-2">
                {!isAdmin && (
                  <button onClick={() => setIsPickCashOpen(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold py-3 rounded-2xl transition-colors text-center border border-slate-200 flex flex-col items-center justify-center gap-1">
                     <ArrowUpRight size={16} /> Pick cash
@@ -652,7 +658,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                   {existingDailySummary ? <CheckCircle2 size={16} /> : <TrendingUp size={16} />}
                   {existingDailySummary ? 'Day Closed' : 'Close day'}
                </button>
-            </div>
+            </div>}
          </div>
 
          {/* Inventory Tracker */}
@@ -711,7 +717,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       {isPickCashOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPickCashOpen(false)} />
-          <div className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-sm rounded-xl shadow-elevated relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
             <h2 className="text-xl font-bold text-slate-900 mb-2">Pick cash</h2>
             <p className="text-sm text-slate-500 mb-6">Remove cash from the drawer for deposit.</p>
             <div className="bg-blue-50 p-4 rounded-xl mb-6 border border-blue-100 flex justify-between items-center text-blue-900">
@@ -737,7 +743,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       {isCloseDayOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsCloseDayOpen(false)} />
-          <div className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-sm rounded-xl shadow-elevated relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
             <h2 className="text-xl font-black text-slate-900 mb-2 flex items-center gap-2"><div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center"><CalendarCheck size={18} /></div> Z-Report / Close shift</h2>
             <p className="text-sm text-slate-500 mb-6 flex items-center gap-1">Finalizing <span className="font-bold text-slate-900">{activeShift?.cashierName}</span>'s active shift ledger.</p>
              <div className="space-y-2 mb-6 text-sm">
@@ -779,7 +785,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       {isDailySummaryOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsDailySummaryOpen(false)} />
-          <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
              <div className="p-6 bg-blue-600 text-white text-center">
                 <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
                    <TrendingUp size={24} />
@@ -842,3 +848,4 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     </div>
   );
 }
+

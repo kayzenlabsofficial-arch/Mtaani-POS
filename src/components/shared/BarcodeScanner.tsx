@@ -205,7 +205,7 @@ export default function BarcodeScanner({ onScan, onClose, isInline = false }: Ba
   }, [startCamera, stopAll]);
 
   const content = (
-    <div className={`flex flex-col overflow-hidden ${isInline ? 'bg-slate-900 rounded-3xl shadow-lg mb-4' : 'bg-slate-900 rounded-t-[2.5rem] sm:rounded-[2.5rem] w-full max-w-sm shadow-2xl relative'}`}>
+    <div className={`flex flex-col overflow-hidden ${isInline ? 'bg-slate-900 rounded-3xl shadow-lg mb-4' : 'bg-slate-900 rounded-t-[2.5rem] sm:rounded-3xl w-full max-w-sm shadow-elevated relative'}`}>
 
       {/* Header */}
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
@@ -355,3 +355,4 @@ export default function BarcodeScanner({ onScan, onClose, isInline = false }: Ba
     </div>
   );
 }
+

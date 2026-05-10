@@ -49,7 +49,7 @@ export default function ReportsTab() {
   if (!allTransactions || !allProducts || !allExpenses || !allSuppliers) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <div className="w-20 h-20 bg-slate-50 rounded-[40px] flex items-center justify-center animate-pulse">
+        <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center animate-pulse">
           <BarChart3 size={40} className="text-slate-200" />
         </div>
         <p className="text-slate-400 font-black text-xs uppercase tracking-[0.2em]">Synthesizing Intelligence...</p>
@@ -213,7 +213,7 @@ export default function ReportsTab() {
         </div>
 
         {/* Executive Summary Table */}
-        <section className="bg-white rounded-[32px] border border-slate-200 overflow-hidden">
+        <section className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
             <h3 className="text-sm font-black text-slate-900">Executive Summary</h3>
             <p className="text-[10px] font-bold text-slate-500">Formal decision metrics for management and audits.</p>
@@ -242,7 +242,7 @@ export default function ReportsTab() {
 
         {/* High-Level Trends */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 bg-white rounded-[40px] p-8 border border-slate-100 shadow-card relative">
+          <div className="lg:col-span-2 bg-white rounded-3xl p-8 border border-slate-100 shadow-card relative">
             <h3 className="font-black text-slate-900 text-lg flex items-center gap-2 mb-8">
               <BarChart3 size={20} className="text-blue-500"/> Revenue & Profit Growth
             </h3>
@@ -269,7 +269,7 @@ export default function ReportsTab() {
             </div>
           </div>
 
-          <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-card">
+          <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-card">
             <h3 className="font-black text-slate-900 text-lg flex items-center gap-2 mb-8">
               <PieIcon size={20} className="text-orange-500"/> Expense Distribution
             </h3>
@@ -301,7 +301,7 @@ export default function ReportsTab() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           
           {/* Category Performance */}
-          <section className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-card">
+          <section className="bg-white rounded-3xl p-8 border border-slate-100 shadow-card">
              <h3 className="font-black text-slate-900 text-lg flex items-center gap-2 mb-8">
                 <ShoppingBag size={20} className="text-emerald-500"/> Category Intelligence
              </h3>
@@ -323,7 +323,7 @@ export default function ReportsTab() {
           </section>
 
           {/* Cashier Leaderboard */}
-          <section className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-card">
+          <section className="bg-white rounded-3xl p-8 border border-slate-100 shadow-card">
              <h3 className="font-black text-slate-900 text-lg flex items-center gap-2 mb-8">
                 <Users size={20} className="text-blue-500"/> Team Performance
              </h3>
@@ -350,7 +350,7 @@ export default function ReportsTab() {
         </div>
 
         {/* Peak Hours Heatmap */}
-        <section className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-card">
+        <section className="bg-white rounded-3xl p-8 border border-slate-100 shadow-card">
            <h3 className="font-black text-slate-900 text-lg flex items-center gap-2 mb-8">
               <Clock size={20} className="text-orange-500"/> Traffic & Sales Heatmap (Daily Average)
            </h3>
@@ -366,7 +366,7 @@ export default function ReportsTab() {
         </section>
 
         {/* Product Pulse - Searchable Deep Dive */}
-        <section className="bg-slate-900 rounded-[48px] p-10 text-white shadow-elevated overflow-hidden relative group">
+        <section className="bg-slate-900 rounded-3xl p-10 text-white shadow-elevated overflow-hidden relative group">
           <div className="absolute -top-24 -right-24 w-96 h-96 bg-blue-600/10 rounded-full blur-[100px] pointer-events-none group-hover:bg-blue-600/20 transition-all duration-700" />
           
           <div className="relative z-10">
@@ -392,7 +392,7 @@ export default function ReportsTab() {
                       label: p.name,
                       keywords: `${p.name} ${p.barcode || ''} ${p.category || ''}`,
                     }))}
-                    buttonClassName="bg-white/10 border-white/10 hover:border-blue-500/50 rounded-[20px] pl-5 pr-6 py-4 text-sm font-black text-white"
+                    buttonClassName="bg-white/10 border-white/10 hover:border-blue-500/50 rounded-xl pl-5 pr-6 py-4 text-sm font-black text-white"
                     valueTextClassName="text-white"
                     placeholderTextClassName="text-slate-400"
                     searchInputClassName="bg-white"
@@ -404,25 +404,25 @@ export default function ReportsTab() {
 
             {selectedProduct ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-in slide-in-from-bottom-8 duration-500">
-                 <div className="bg-white/5 backdrop-blur-sm border border-white/10 p-8 rounded-[32px] hover:bg-white/10 transition-all">
+                 <div className="bg-white/5 backdrop-blur-sm border border-white/10 p-8 rounded-2xl hover:bg-white/10 transition-all">
                     <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.2em] mb-6 flex items-center gap-2"><Layers size={12}/> Volume Sold</p>
                     <div className="flex items-baseline gap-2"><h4 className="text-5xl font-black tabular-nums">{productStats.totalQty}</h4><span className="text-sm font-bold text-slate-500">{selectedProduct.unit || 'Units'}</span></div>
                  </div>
-                 <div className="bg-white/5 backdrop-blur-sm border border-white/10 p-8 rounded-[32px] hover:bg-white/10 transition-all">
+                 <div className="bg-white/5 backdrop-blur-sm border border-white/10 p-8 rounded-2xl hover:bg-white/10 transition-all">
                     <p className="text-purple-400 text-[10px] font-black uppercase tracking-[0.2em] mb-6 flex items-center gap-2"><TrendingUp size={12}/> Revenue</p>
                     <h4 className="text-4xl font-black tabular-nums">Ksh {productStats.totalRevenue.toLocaleString()}</h4>
                  </div>
-                 <div className="bg-white/5 backdrop-blur-sm border border-white/10 p-8 rounded-[32px] hover:bg-white/10 transition-all">
+                 <div className="bg-white/5 backdrop-blur-sm border border-white/10 p-8 rounded-2xl hover:bg-white/10 transition-all">
                     <p className="text-orange-400 text-[10px] font-black uppercase tracking-[0.2em] mb-6 flex items-center gap-2"><Package size={12}/> Current Stock</p>
                     <h4 className={`text-4xl font-black tabular-nums ${selectedProduct.stockQuantity < 10 ? 'text-red-400' : 'text-white'}`}>{selectedProduct.stockQuantity}</h4>
                  </div>
-                 <div className="bg-blue-600 p-8 rounded-[32px] shadow-lg shadow-blue-600/20 flex flex-col justify-between">
+                 <div className="bg-blue-600 p-8 rounded-2xl shadow-lg shadow-blue-600/20 flex flex-col justify-between">
                     <div><p className="text-blue-200 text-[10px] font-black uppercase tracking-[0.2em] mb-2">Profit Contribution</p><h4 className="text-2xl font-black truncate">Ksh {(productPerf[selectedProduct.id]?.profit || 0).toLocaleString()}</h4></div>
                     <div className="text-[10px] font-black bg-white/20 px-3 py-1 rounded-full w-fit">NET MARGIN: {(( (productPerf[selectedProduct.id]?.profit || 0) / (productStats.totalRevenue || 1) ) * 100).toFixed(1)}%</div>
                  </div>
               </div>
             ) : (
-              <div className="py-24 border-2 border-dashed border-white/10 rounded-[32px] flex flex-col items-center justify-center text-slate-500">
+              <div className="py-24 border-2 border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center text-slate-500">
                 <Box size={48} className="opacity-10 mb-4" />
                 <p className="text-xs font-black uppercase tracking-widest opacity-40">Awaiting Selection</p>
               </div>
@@ -435,7 +435,7 @@ export default function ReportsTab() {
           <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 ml-2 flex items-center gap-2">
             <BarChart3 size={14} /> Performance Leaderboard (Top 5 Products)
           </h3>
-          <div className="bg-white rounded-[40px] border border-slate-100 shadow-card overflow-hidden">
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-card overflow-hidden">
              {topProducts.length > 0 ? (
                <div className="divide-y divide-slate-50">
                   {topProducts.map((p, idx) => (
@@ -481,7 +481,7 @@ function StatCard({ title, value, unit, icon, color, subtitle }: StatCardProps) 
   };
 
   return (
-    <div className={`p-6 rounded-[32px] border-2 bg-white hover:shadow-lg transition-all`}>
+    <div className={`p-6 rounded-2xl border-2 bg-white hover:shadow-lg transition-all`}>
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${colors[color]}`}>
         {icon}
       </div>
@@ -506,3 +506,4 @@ function SummaryRow({ metric, value, target, ok }: { metric: string; value: stri
     </tr>
   );
 }
+
