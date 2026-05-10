@@ -88,28 +88,26 @@ interface AttemptRecord {
   lockedUntil: number | null;
 }
 
-function getKey(businessCode: string) {
-  return `mtaani_login_attempts_${businessCode.toUpperCase()}`;
-}
+import { db, type LoginAttempt } from './db';
 
-export function getAttemptRecord(businessCode: string): AttemptRecord {
+export async function getAttemptRecord(businessCode: string): Promise<LoginAttempt> {
   try {
-    const raw = localStorage.getItem(getKey(businessCode));
-    if (raw) return JSON.parse(raw);
+    const rec = await db.loginAttempts.get(businessCode.toUpperCase());
+    if (rec) return rec;
   } catch {}
-  return { count: 0, lockedUntil: null };
+  return { id: businessCode.toUpperCase(), count: 0, lockedUntil: null };
 }
 
-export function isLockedOut(businessCode: string): { locked: boolean; secondsLeft: number } {
-  const rec = getAttemptRecord(businessCode);
+export async function isLockedOut(businessCode: string): Promise<{ locked: boolean; secondsLeft: number }> {
+  const rec = await getAttemptRecord(businessCode);
   if (rec.lockedUntil && Date.now() < rec.lockedUntil) {
     return { locked: true, secondsLeft: Math.ceil((rec.lockedUntil - Date.now()) / 1000) };
   }
   return { locked: false, secondsLeft: 0 };
 }
 
-export function recordFailedAttempt(businessCode: string): void {
-  const rec = getAttemptRecord(businessCode);
+export async function recordFailedAttempt(businessCode: string): Promise<void> {
+  const rec = await getAttemptRecord(businessCode);
   // Reset if previous lockout has expired
   if (rec.lockedUntil && Date.now() >= rec.lockedUntil) {
     rec.count = 0;
@@ -119,11 +117,11 @@ export function recordFailedAttempt(businessCode: string): void {
   if (rec.count >= MAX_ATTEMPTS) {
     rec.lockedUntil = Date.now() + LOCKOUT_MS;
   }
-  localStorage.setItem(getKey(businessCode), JSON.stringify(rec));
+  await db.loginAttempts.put({ ...rec, id: businessCode.toUpperCase(), updated_at: Date.now() });
 }
 
-export function resetAttempts(businessCode: string): void {
-  localStorage.removeItem(getKey(businessCode));
+export async function resetAttempts(businessCode: string): Promise<void> {
+  await db.loginAttempts.delete(businessCode.toUpperCase());
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

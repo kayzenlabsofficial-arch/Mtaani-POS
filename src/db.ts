@@ -341,8 +341,18 @@ export interface PurchaseOrder {
 
 // ── CloudDB ────────────────────────────────────────────────────────────────
 
+export interface LoginAttempt {
+  id: string; // Business Code
+  count: number;
+  lockedUntil: number | null;
+  updated_at?: number;
+}
+
 class MtaaniCloudDB {
+
   businesses          = new CloudTable<Business>('businesses');
+  loginAttempts       = new CloudTable<LoginAttempt>('loginAttempts');
+
   products            = new CloudTable<Product>('products');
   transactions        = new CloudTable<Transaction>('transactions');
   cashPicks           = new CloudTable<CashPick>('cashPicks');
@@ -392,6 +402,8 @@ class MtaaniCloudDB {
     this.categories.reset();
     this.expenseAccounts.reset();
     this.financialAccounts.reset();
+    this.loginAttempts.reset();
+
   }
 
   /** Load initial bootstrap data (businesses) from D1. Call once on app startup. */
@@ -441,7 +453,9 @@ class MtaaniCloudDB {
         this.creditNotes.reload(),
         this.categories.reload(),
         this.expenseAccounts.reload(),
-        this.financialAccounts.reload()
+        this.financialAccounts.reload(),
+        this.loginAttempts.reload()
+
       );
     }
 

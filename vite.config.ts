@@ -39,8 +39,8 @@ export default defineConfig(({mode}) => {
     ],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.ROOT_USERNAME': JSON.stringify(env.ROOT_USERNAME || 'mtaani_root'),
-      'process.env.ROOT_PASSWORD': JSON.stringify(env.ROOT_PASSWORD || 'mtaani@2024'),
+      'process.env.ROOT_USERNAME': JSON.stringify(env.ROOT_USERNAME),
+      'process.env.ROOT_PASSWORD': JSON.stringify(env.ROOT_PASSWORD),
       'process.env.DEFAULT_BUSINESS_CODE': JSON.stringify(env.DEFAULT_BUSINESS_CODE || 'MTAANI01'),
       '__BUILD_DATE__': JSON.stringify(new Date().toLocaleString('en-GB', { 
         day: '2-digit', month: 'short', year: 'numeric', 

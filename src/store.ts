@@ -14,6 +14,9 @@ interface POSState {
   activeShift: any | null;
   activeBranchId: string | null;
   activeBusinessId: string | null;
+  isSystemAdmin: boolean;
+  login: (user: User) => void;
+  logout: () => void;
   addToCart: (product: Product) => void;
   removeFromCart: (productId: string) => void;
   updateQuantity: (productId: string, delta: number) => void;
@@ -38,6 +41,7 @@ const initialState = {
   activeShift: null as any | null,
   activeBranchId: null as string | null,
   activeBusinessId: null as string | null,
+  isSystemAdmin: false,
   paymentSupplierId: null as string | null,
   selectedCustomerId: null as string | null,
 };
@@ -53,7 +57,19 @@ export const useStore = create<POSState>()(
       setCurrentUser: (user) => set({ 
         currentUser: user, 
         isAdmin: user?.role === 'ADMIN',
-        isManager: user?.role === 'MANAGER'
+        isManager: user?.role === 'MANAGER',
+        isSystemAdmin: user?.role === 'ROOT'
+      }),
+      login: (user) => set({ 
+        currentUser: user, 
+        isAdmin: user?.role === 'ADMIN',
+        isManager: user?.role === 'MANAGER',
+        isSystemAdmin: user?.role === 'ROOT'
+      }),
+      logout: () => set({ 
+        ...initialState,
+        activeBusinessId: null,
+        activeBranchId: null
       }),
       setActiveShift: (activeShift) => set({ activeShift }),
       addToCart: (product) => set((state) => {
