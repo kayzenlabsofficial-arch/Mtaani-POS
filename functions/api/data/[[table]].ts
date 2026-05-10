@@ -8,11 +8,11 @@ const ALLOWED_TABLES = new Set([
   'endOfDayReports', 'stockMovements', 'expenses', 'customers',
   'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries',
   'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories',
-  'branches', 'businesses', 'system', 'expenseAccounts', 'financialAccounts'
+  'branches', 'businesses', 'system', 'expenseAccounts', 'financialAccounts', 'loginAttempts'
 ]);
 
 // Global tables: shared across all branches, isolated by businessId only
-const GLOBAL_TABLES = new Set(['businesses', 'users', 'branches', 'settings', 'expenseAccounts', 'financialAccounts', 'customers', 'suppliers']);
+const GLOBAL_TABLES = new Set(['businesses', 'users', 'branches', 'settings', 'expenseAccounts', 'financialAccounts', 'customers', 'suppliers', 'loginAttempts', 'products', 'categories']);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -66,6 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(busines
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp);
 CREATE INDEX IF NOT EXISTS idx_stockmovements_product ON stockMovements(productId);
+CREATE TABLE IF NOT EXISTS loginAttempts (id TEXT PRIMARY KEY, count INTEGER DEFAULT 0, lockedUntil INTEGER, updated_at INTEGER);
 `;
 
 function serializeValue(v: any): any {

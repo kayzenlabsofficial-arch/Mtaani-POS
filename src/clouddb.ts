@@ -194,6 +194,13 @@ export class CloudTable<T extends { id: string }> {
 
   async hydrate(): Promise<void> {
     try {
+      const { useStore } = await import('./store');
+      const businessId = useStore.getState().activeBusinessId;
+      
+      if (!businessId && this.name !== 'businesses' && this.name !== 'loginAttempts' && !this.name.startsWith('system')) {
+        return;
+      }
+
       const rows: T[] = await d1Fetch(this.name, 'GET');
       // Only clear and update if we successfully got data
       this.cache.clear();
@@ -567,4 +574,3 @@ export function stopBackgroundSync() {
   if (syncTimer) clearInterval(syncTimer);
   syncTimer = null;
 }
-
