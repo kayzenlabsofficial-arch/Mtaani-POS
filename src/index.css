@@ -1,26 +1,42 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
+@theme {
+  --color-primary: #003d9b;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #0052cc;
+  --color-on-primary-container: #c4d2ff;
+  --color-secondary: #285ab9;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #709bfe;
+  --color-on-secondary-container: #003179;
+  --color-tertiary: #004483;
+  --color-tertiary-container: #005bac;
+  --color-background: #f9f9ff;
+  --color-on-background: #041b3c;
+  --color-surface: #f9f9ff;
+  --color-on-surface: #041b3c;
+  --color-surface-variant: #d7e2ff;
+  --color-on-surface-variant: #434654;
+  --color-outline: #737685;
+  --color-outline-variant: #c3c6d6;
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+
+  --font-hanken: "Hanken Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+}
+
 :root {
-  --brand-primary: #6366f1;
-  --brand-primary-dark: #4f46e5;
-  --brand-primary-glow: rgba(99, 102, 241, 0.2);
-  --brand-secondary: #0ea5e9;
-  --brand-accent: #f43f5e;
-  --brand-dark: #0f172a;
-  --brand-surface: #f8fafc;
-  --brand-card: #ffffff;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
-  --radius-2xl: 32px;
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
-  --shadow-premium: 0 0 0 1px rgba(0,0,0,0.05), 0 10px 30px -10px rgba(0,0,0,0.1);
+  --background: #f9f9ff;
+  --on-background: #041b3c;
 }
 
 *, *::before, *::after {
@@ -32,15 +48,15 @@ html, body, #root {
   width: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden; /* We handle scrolling in the main component */
+  overflow: hidden;
 }
 
 body {
-  font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+  font-family: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color: #1e293b;
-  background: #f8fafc;
+  color: var(--on-background);
+  background: var(--background);
 }
 
 button, input, select, textarea {
