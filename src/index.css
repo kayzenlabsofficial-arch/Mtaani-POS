@@ -22,6 +22,11 @@
   --color-error: #ba1a1a;
   --color-error-container: #ffdad6;
   --color-on-error-container: #93000a;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f3f6ff;
+  --color-surface-container: #e9efff;
+  --color-surface-container-high: #dee7ff;
+  --color-surface-container-highest: #d4dfff;
 
   --font-hanken: "Hanken Grotesk", sans-serif;
   --font-mono: "JetBrains Mono", monospace;

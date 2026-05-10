@@ -1,10 +1,10 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import BarcodeScanner from '../shared/BarcodeScanner';
-import { SearchableSelect } from '../shared/SearchableSelect';
 import NestedControlPanel from '../shared/NestedControlPanel';
+import { ProductCard } from '../shared/ProductCard';
 
 const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => (
   <span className={`material-symbols-outlined ${className}`}>{name}</span>
@@ -47,7 +47,7 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
   );
   
   const categories = ['All', ...(dbCategories?.map(c => c.name) || [])];
-
+  
   const handleAddToCart = (product: any) => {
     if ((product.stockQuantity || 0) <= 0) return;
     addToCart(product);
@@ -111,54 +111,14 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
       {/* Main Grid Section */}
       <div className="flex-1 overflow-y-auto no-scrollbar pb-32">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-          {products?.map(product => {
-            const isOutOfStock = (product.stockQuantity || 0) <= 0;
-            const isLowStock = !isOutOfStock && (product.stockQuantity || 0) <= (product.reorderPoint || 5);
-            
-            return (
-              <div 
-                key={product.id}
-                onClick={() => !isOutOfStock && handleAddToCart(product)}
-                className={`bg-white rounded-3xl p-6 border-2 transition-all group relative cursor-pointer flex flex-col items-start ${recentlyAdded.has(product.id) ? 'scale-95 border-primary shadow-inner' : 'border-slate-50 hover:border-primary/30 hover:shadow-xl hover:-translate-y-1'}`}
-              >
-                {/* Product Icon/Image Node */}
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 transition-colors ${isOutOfStock ? 'bg-surface-container text-outline' : 'bg-surface-container-low text-primary group-hover:bg-primary group-hover:text-white'}`}>
-                  <MaterialIcon name="inventory_2" className="text-2xl" />
-                </div>
-
-                {/* Metadata Tags */}
-                <div className="flex flex-wrap gap-2 mb-2">
-                   {product.isTaxable && (
-                     <span className="text-[9px] font-bold bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded-full uppercase tracking-tighter">VAT</span>
-                   )}
-                   <span className="text-[9px] font-bold bg-surface-container text-on-surface-variant px-2 py-0.5 rounded-full uppercase tracking-tighter">{product.category}</span>
-                </div>
-
-                {/* Name & Pricing */}
-                <h3 className="text-base font-bold text-on-surface leading-tight mb-1 truncate w-full">{product.name}</h3>
-                <p className="text-lg font-bold text-primary mb-4 tabular-nums">Ksh {product.sellingPrice.toLocaleString()}</p>
-
-                {/* Stock Status Pill */}
-                <div className="mt-auto pt-4 border-t border-slate-50 w-full flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                       <div className={`w-1.5 h-1.5 rounded-full ${isOutOfStock ? 'bg-error' : isLowStock ? 'bg-amber-500' : 'bg-primary'}`} />
-                       <span className={`text-[9px] font-bold uppercase tracking-wide ${isOutOfStock ? 'text-error' : isLowStock ? 'text-amber-600' : 'text-primary'}`}>
-                         {isOutOfStock ? 'Out of Stock' : isLowStock ? `${product.stockQuantity} Left` : 'In Stock'}
-                       </span>
-                    </div>
-                </div>
-
-                {/* Quick Add Indicator */}
-                {!isOutOfStock && (
-                  <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center shadow-lg">
-                      <MaterialIcon name="add" className="text-lg" />
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {products?.map(product => (
+            <ProductCard 
+              key={product.id} 
+              product={product} 
+              onAdd={handleAddToCart} 
+              recentlyAdded={recentlyAdded.has(product.id)} 
+            />
+          ))}
         </div>
 
         {(!products || products.length === 0) && (
