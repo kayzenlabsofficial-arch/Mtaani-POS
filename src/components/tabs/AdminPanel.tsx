@@ -35,7 +35,6 @@ const COLOR_OPTIONS = [
 
 export default function AdminPanel({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
   const [activeAdminTab, setActiveAdminTab] = useState<'SETTINGS' | 'APPROVALS' | 'USERS' | 'CATEGORIES' | 'BRANCHES' | 'FINANCE'>('USERS');
-  const [isOpsPanelOpen, setIsOpsPanelOpen] = useState(false);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const { success, error, warning } = useToast();
   
@@ -304,93 +303,18 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   return (
     <div className="pb-24 animate-in fade-in w-full">
       
-      {/* Admin Panel Header */}
-      <div className="px-4 pt-2 mb-6">
-        <div className="flex items-center justify-between mb-4">
-           <div>
-              <h2 className="text-xl font-bold text-slate-900 tracking-tight">Admin Panel</h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Manage your business settings</p>
-           </div>
-           <div className="flex gap-2">
-              <button 
-                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
-                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
-              >
-                <SlidersHorizontal size={18} />
-                <span className="text-[10px] font-bold uppercase">Devices</span>
-              </button>
-           </div>
-        </div>
-
-        {isOpsPanelOpen && (
-          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
-             <NestedControlPanel
-               title="Device Status"
-               subtitle="Monitor active terminals"
-               onClose={() => setIsOpsPanelOpen(false)}
-             >
-                <div className="space-y-6">
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
-                         <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                            <Monitor size={20} />
-                         </div>
-                         <div>
-                            <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Active Terminals</p>
-                            <h3 className="text-xl font-black text-slate-900 leading-none">{deviceSyncRows.length}</h3>
-                         </div>
-                      </div>
-                      <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
-                         <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
-                            <Globe size={20} />
-                         </div>
-                         <div>
-                            <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Global Status</p>
-                            <h3 className="text-xl font-black text-slate-900 leading-none">Healthy</h3>
-                         </div>
-                      </div>
-                      <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
-                         <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                            <Activity size={20} />
-                         </div>
-                         <div>
-                            <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Sync Velocity</p>
-                            <h3 className="text-xl font-black text-slate-900 leading-none">High</h3>
-                         </div>
-                      </div>
-                   </div>
-
-                   <div className="bg-slate-50 p-6 rounded-[2.5rem] border-2 border-slate-100">
-                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 ml-2">Active Devices</h4>
-                      {deviceSyncError ? (
-                        <div className="bg-rose-50 border-2 border-rose-100 p-4 rounded-2xl flex items-center gap-3 text-rose-600 text-[10px] font-black uppercase">
-                           <ShieldAlert size={16} /> {deviceSyncError}
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                           {deviceSyncRows.map((r, idx) => {
-                              const last = r.lastSyncAt ? new Date(Number(r.lastSyncAt)) : null;
-                              const online = last ? (Date.now() - last.getTime() < 60000) : false;
-                              return (
-                                <div key={idx} className="bg-white p-4 rounded-2xl border-2 border-slate-100 flex justify-between items-center group hover:border-indigo-300 transition-all">
-                                   <div>
-                                      <p className="text-[11px] font-bold text-slate-900 leading-tight">{r.cashierName || 'Staff Member'}</p>
-                                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">{r.deviceId.split('-')[0]}...{r.deviceId.slice(-4)}</p>
-                                   </div>
-                                   <div className="text-right">
-                                      <div className={`w-2 h-2 rounded-full mb-1 ml-auto ${online ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
-                                      <p className="text-[8px] font-black text-slate-400 uppercase">{last ? last.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'N/A'}</p>
-                                   </div>
-                                </div>
-                              );
-                           })}
-                        </div>
-                      )}
-                   </div>
-                </div>
-             </NestedControlPanel>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">Admin Panel</h2>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-[10px] font-bold text-slate-500">{deviceSyncRows.length} Terminals</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-emerald-600">Healthy</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-indigo-600">High Sync Velocity</span>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Admin Nav Tabs */}

@@ -24,7 +24,6 @@ export default function BranchManagementTab() {
   };
 
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [isOpsPanelOpen, setIsOpsPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
@@ -146,66 +145,24 @@ export default function BranchManagementTab() {
   return (
     <div className="pb-24 animate-in fade-in w-full">
       
-      {/* Network Header */}
-      <div className="pt-2 mb-6">
-        <div className="flex items-center justify-between mb-4">
-           <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Distribution Network</h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Multi-Branch Deployment & Configuration</p>
-           </div>
-           <div className="flex gap-2">
-              <button 
-                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
-                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
-              >
-                <SlidersHorizontal size={18} />
-                <span className="text-[10px] font-black uppercase">Fleet Tools</span>
-              </button>
-              <button onClick={openNew} className="grad-blue text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 px-6 py-4 rounded-2xl transition-all shadow-blue press">
-                 <Plus size={18} /> Deploy New Node
-              </button>
-           </div>
-        </div>
-
-        {isOpsPanelOpen && (
-          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
-             <NestedControlPanel
-               title="Network Intelligence"
-               subtitle="Monitor branch performance and connectivity"
-               onClose={() => setIsOpsPanelOpen(false)}
-             >
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
-                         <Globe size={20} />
-                      </div>
-                      <div>
-                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Global Nodes</p>
-                         <h3 className="text-xl font-black text-slate-900 leading-none">{branches?.length} Stations</h3>
-                      </div>
-                   </div>
-                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                         <CheckCircle2 size={20} />
-                      </div>
-                      <div>
-                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Online Fleet</p>
-                         <h3 className="text-xl font-black text-slate-900 leading-none">{(branches || []).filter(b => b.isActive).length} Active</h3>
-                      </div>
-                   </div>
-                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                         <Activity size={20} />
-                      </div>
-                      <div>
-                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">System Sync</p>
-                         <h3 className="text-xl font-black text-slate-900 leading-none">Real-time</h3>
-                      </div>
-                   </div>
-                </div>
-             </NestedControlPanel>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">Distribution Network</h2>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-[10px] font-bold text-slate-500">{branches?.length} Nodes</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-emerald-600">{(branches || []).filter(b => b.isActive).length} Active</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-indigo-600">Real-time Sync</span>
           </div>
-        )}
+        </div>
+        <button
+          onClick={openNew}
+          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
+        >
+          <Plus size={18} /> Deploy New Node
+        </button>
       </div>
 
       {/* Branch Node Grid */}

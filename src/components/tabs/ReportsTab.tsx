@@ -16,15 +16,13 @@ import { db } from '../../db';
 import { useStore } from '../../store';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { canPerform } from '../../utils/accessControl';
-import NestedControlPanel from '../shared/NestedControlPanel';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 
 export default function ReportsTab() {
-  const [dateRange, setDateRange] = React.useState<'TODAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'ALL'>('ALL');
+  const [dateRange, setDateRange] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'ALL'>('TODAY');
   const [selectedProductId, setSelectedProductId] = React.useState<string | null>(null);
-  const [isSharing, setIsSharing] = React.useState(false);
-  const [isOpsPanelOpen, setIsOpsPanelOpen] = React.useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
@@ -163,7 +161,6 @@ export default function ReportsTab() {
       if ((window as any).shareDocument) {
         await (window as any).shareDocument('report-content', `Intelligence-Report-${dateRange}-${new Date().toISOString().split('T')[0]}`, false);
       }
-      success("Report exported successfully");
     } catch (err) {
       console.error("Report share failed", err);
     } finally {
@@ -172,77 +169,44 @@ export default function ReportsTab() {
   };
 
   return (
-    <div className="pb-24 animate-in fade-in w-full">
+    <div className="pb-24 animate-in fade-in w-full px-4">
       
-      {/* Intelligence Header */}
-      <div className="px-4 pt-2 mb-6 no-print">
-        <div className="flex items-center justify-between mb-4">
-           <div>
-              <h2 className="text-xl font-bold text-slate-900 tracking-tight">Reports</h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Sales and Profit analysis</p>
-           </div>
-           <div className="flex gap-2">
-              <button 
-                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
-                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
-              >
-                <SlidersHorizontal size={18} />
-                <span className="text-[10px] font-black uppercase">Filters</span>
-              </button>
-              <button onClick={handleShareReport} disabled={isSharing} className="grad-blue text-white px-4 py-2.5 rounded-xl shadow-blue active:scale-95 transition-all flex items-center gap-2 font-black text-[10px] uppercase">
-                 {isSharing ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
-                 {isSharing ? 'Working...' : 'Export'}
-              </button>
-           </div>
-        </div>
-
-        {isOpsPanelOpen && (
-          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
-             <NestedControlPanel
-               title="Report Settings"
-               subtitle="Choose time period and filters"
-               onClose={() => setIsOpsPanelOpen(false)}
-             >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                   <div className="space-y-4">
-                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Time Period</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {[
-                          { id: 'TODAY', label: 'Today' },
-                          { id: 'WEEK', label: 'Week' },
-                          { id: 'MONTH', label: 'Month' },
-                          { id: 'QUARTER', label: 'Quarter' },
-                          { id: 'ALL', label: 'All Time' }
-                        ].map(range => (
-                          <button 
-                            key={range.id} 
-                            onClick={() => setDateRange(range.id as any)}
-                            className={`px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border-2 transition-all press ${dateRange === range.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-200'}`}
-                          >
-                            {range.label}
-                          </button>
-                        ))}
-                      </div>
-                   </div>
-
-                   <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Quick Exports</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                         <button className="flex items-center justify-center gap-2 p-4 rounded-2xl border-2 border-slate-100 bg-white hover:border-blue-300 transition-all font-black text-[9px] uppercase tracking-widest text-slate-600">
-                            <FileText size={16} className="text-blue-500" /> PDF Summary
-                         </button>
-                         <button className="flex items-center justify-center gap-2 p-4 rounded-2xl border-2 border-slate-100 bg-white hover:border-emerald-300 transition-all font-black text-[9px] uppercase tracking-widest text-slate-600">
-                            <Download size={16} className="text-emerald-500" /> Excel Data
-                         </button>
-                      </div>
-                   </div>
-                </div>
-             </NestedControlPanel>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">Financial Reports</h2>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-[10px] font-bold text-slate-500">{filteredTransactions.length} orders processed</span>
+            <span className="text-slate-300">·</span>
+            <span className={`text-[10px] font-bold ${netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>Net: Ksh {netProfit.toLocaleString()}</span>
           </div>
-        )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+             {[
+               { id: 'TODAY', label: 'Today' },
+               { id: 'WEEK', label: 'Week' },
+               { id: 'MONTH', label: 'Month' },
+               { id: 'QUARTER', label: 'Quarter' },
+               { id: 'ALL', label: 'All' }
+             ].map(range => (
+               <button 
+                 key={range.id} 
+                 onClick={() => setDateRange(range.id as any)}
+                 className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${dateRange === range.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+               >
+                 {range.label}
+               </button>
+             ))}
+          </div>
+          <button onClick={handleShareReport} disabled={isSharing} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-50 active:scale-[0.98] transition-all">
+             {isSharing ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+             <span className="hidden sm:inline">{isSharing ? 'Exporting...' : 'Export PDF'}</span>
+          </button>
+        </div>
       </div>
 
-      <div id="report-content" className="space-y-8 px-4">
+      <div id="report-content" className="space-y-8">
         
         {/* Global Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

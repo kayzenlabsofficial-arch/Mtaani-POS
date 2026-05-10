@@ -16,7 +16,6 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
   });
 
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isOpsPanelOpen, setIsOpsPanelOpen] = useState(false);
   const [openSection, setOpenSection] = useState<'IDENTITY' | 'HARDWARE' | 'SYSTEM' | 'SECURITY'>('IDENTITY');
   const [openHardwareSub, setOpenHardwareSub] = useState<'SCANNER' | 'PRINTER' | 'DRAWER'>('SCANNER');
   const [hardwareProfile, setHardwareProfile] = useState({
@@ -94,63 +93,18 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
   return (
     <div className="pb-24 animate-in fade-in w-full">
       
-      {/* Settings Header */}
-      <div className="pt-2 mb-6">
-        <div className="flex items-center justify-between mb-4 px-2">
-           <div>
-              <h2 className="text-xl font-bold text-slate-900 tracking-tight">Settings</h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">System and Hardware</p>
-           </div>
-           <div className="flex gap-2">
-              <button 
-                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
-                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
-              >
-                <SlidersHorizontal size={18} />
-                <span className="text-[10px] font-bold uppercase">Status</span>
-              </button>
-           </div>
-        </div>
-
-        {isOpsPanelOpen && (
-          <div className="mb-6 animate-in slide-in-from-top-2 duration-300 px-2">
-             <NestedControlPanel
-               title="System Status"
-               subtitle="App version and connection status"
-               onClose={() => setIsOpsPanelOpen(false)}
-             >
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
-                         <Cpu size={20} />
-                      </div>
-                      <div>
-                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Runtime</p>
-                         <h3 className="text-xl font-black text-slate-900 leading-none">Enterprise</h3>
-                      </div>
-                   </div>
-                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                         <ShieldCheck size={20} />
-                      </div>
-                      <div>
-                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Security</p>
-                         <h3 className="text-xl font-black text-slate-900 leading-none">Hardened</h3>
-                      </div>
-                   </div>
-                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                         <Activity size={20} />
-                      </div>
-                      <div>
-                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Integrity</p>
-                         <h3 className="text-xl font-black text-slate-900 leading-none">Verified</h3>
-                      </div>
-                   </div>
-                </div>
-             </NestedControlPanel>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">System Settings</h2>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-[10px] font-bold text-slate-500">Business Identity</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-emerald-600">Hardware Profile</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-indigo-600">Enterprise Runtime</span>
           </div>
-        )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

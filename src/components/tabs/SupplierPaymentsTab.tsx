@@ -10,7 +10,6 @@ import NestedControlPanel from '../shared/NestedControlPanel';
 export default function SupplierPaymentsTab({ financialAccounts }: { financialAccounts: any[] }) {
   const [paySearch, setPaySearch] = useState("");
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [isOpsPanelOpen, setIsOpsPanelOpen] = useState(false);
   const [activeHistoryTab, setActiveHistoryTab] = useState<'PAYMENTS' | 'CREDITS'>('PAYMENTS');
   const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<Supplier | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -140,83 +139,36 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
   return (
     <div className="pb-24 animate-in fade-in w-full">
       
-      {/* Financial Settlement Header */}
-      <div className="px-4 pt-2 mb-6">
-        <div className="flex items-center justify-between mb-4">
-           <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Debt Settlement</h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Vendor Payables & Credits</p>
-           </div>
-           <div className="flex gap-2">
-              <button 
-                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
-                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
-              >
-                <SlidersHorizontal size={18} />
-                <span className="text-[10px] font-black uppercase">Tools</span>
-              </button>
-           </div>
-        </div>
-
-        {isOpsPanelOpen && (
-          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
-             <NestedControlPanel
-               title="Settlement Controls"
-               subtitle="Monitor liability and credit availability"
-               onClose={() => setIsOpsPanelOpen(false)}
-             >
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                   <div className="p-5 rounded-[2rem] border-2 border-rose-100 bg-rose-50 flex items-center gap-4 relative overflow-hidden group">
-                      <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-rose group-hover:scale-110 transition-transform">
-                         <DollarSign size={24} />
-                      </div>
-                      <div className="relative z-10">
-                         <p className="text-[9px] font-black text-rose-400 uppercase mb-0.5">Total Payables</p>
-                         <h3 className="text-xl font-black text-rose-900 leading-none">Ksh {totalDebt.toLocaleString()}</h3>
-                      </div>
-                   </div>
-
-                   <div className="p-5 rounded-[2rem] border-2 border-indigo-100 bg-indigo-50 flex items-center gap-4 relative overflow-hidden group">
-                      <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-indigo group-hover:scale-110 transition-transform">
-                         <Tag size={24} />
-                      </div>
-                      <div className="relative z-10">
-                         <p className="text-[9px] font-black text-indigo-400 uppercase mb-0.5">Available Credits</p>
-                         <h3 className="text-xl font-black text-indigo-900 leading-none">Ksh {totalPendingCredit.toLocaleString()}</h3>
-                      </div>
-                   </div>
-
-                   <div className="p-5 rounded-[2rem] border-2 border-slate-100 bg-white flex items-center gap-4 group">
-                      <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-                         <History size={24} />
-                      </div>
-                      <div>
-                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Active Vendors</p>
-                         <h3 className="text-xl font-black text-slate-900 leading-none">{suppliersOwed.length} Creditors</h3>
-                      </div>
-                   </div>
-                </div>
-             </NestedControlPanel>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">Debt Settlement</h2>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-[10px] font-bold text-rose-600">Payables: Ksh {totalDebt.toLocaleString()}</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-indigo-600">Credits: Ksh {totalPendingCredit.toLocaleString()}</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-slate-500">{suppliersOwed.length} Creditors</span>
           </div>
-        )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 px-4">
          
          {/* Left: Payables List (3 cols) */}
          <div className="lg:col-span-3 space-y-6">
-            <div className="flex items-center justify-between mb-4 px-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                   <ArrowDownLeft size={14} className="text-rose-500" /> Outstanding Balances
                </h3>
-               <div className="relative w-48">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+               <div className="relative group sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={14} />
                   <input 
                     type="text" 
                     placeholder="Filter vendors..." 
                     value={paySearch} 
                     onChange={(e) => setPaySearch(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 bg-white rounded-xl border-2 border-slate-100 text-[10px] font-black text-slate-700 focus:border-rose-500 outline-none transition-all"
+                    className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-primary/15 focus:border-primary outline-none shadow-sm transition-all"
                   />
                </div>
             </div>

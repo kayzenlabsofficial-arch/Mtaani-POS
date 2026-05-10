@@ -13,7 +13,6 @@ import NestedControlPanel from '../shared/NestedControlPanel';
 export default function ExpensesTab() {
   const [expenseSearch, setExpenseSearch] = useState("");
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
-  const [isOpsPanelOpen, setIsOpsPanelOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'TILL' | 'ACCOUNT' });
   const [isSaving, setIsSaving] = useState(false);
@@ -132,96 +131,47 @@ export default function ExpensesTab() {
   return (
     <div className="pb-24 animate-in fade-in w-full">
       
-      {/* Financial Outflow Header */}
-      <div className="px-4 pt-2 mb-6">
-        <div className="flex items-center justify-between mb-4">
-           <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Financial Outflow</h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Operational Cost Center</p>
-           </div>
-           <div className="flex gap-2">
-              <button 
-                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
-                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
-              >
-                <SlidersHorizontal size={18} />
-                <span className="text-[10px] font-black uppercase">Tools</span>
-              </button>
-              <button onClick={() => setIsExpenseModalOpen(true)} className="grad-orange text-white px-4 py-2.5 rounded-xl shadow-orange active:scale-95 transition-all flex items-center gap-2 font-black text-[10px] uppercase">
-                 <Plus size={18} /> Log Expense
-              </button>
-           </div>
-        </div>
-
-        {isOpsPanelOpen && (
-          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
-             <NestedControlPanel
-               title="Financial Operations"
-               subtitle="Monitor cash liquidity and categorized spending"
-               onClose={() => setIsOpsPanelOpen(false)}
-             >
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                   <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Liquidity Monitor</h4>
-                      <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4">
-                         <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                            <Wallet size={20} />
-                         </div>
-                         <div>
-                            <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Cash in Drawer</p>
-                            <h3 className="text-xl font-black text-slate-900 leading-none">Ksh {actualCashDrawer.toLocaleString()}</h3>
-                         </div>
-                      </div>
-                   </div>
-
-                   <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Today's Burn</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                         <div className="p-4 rounded-2xl border-2 border-rose-100 bg-rose-50 flex flex-col gap-1">
-                            <p className="text-[8px] font-black text-rose-400 uppercase">Till Outflow</p>
-                            <h4 className="text-sm font-black text-rose-600">Ksh {todayTillExpenses.toLocaleString()}</h4>
-                         </div>
-                         <div className="p-4 rounded-2xl border-2 border-indigo-100 bg-indigo-50 flex flex-col gap-1">
-                            <p className="text-[8px] font-black text-indigo-400 uppercase">Account Burn</p>
-                            <h4 className="text-sm font-black text-indigo-600">Ksh {todayAccountExpenses.toLocaleString()}</h4>
-                         </div>
-                      </div>
-                   </div>
-
-                   <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Setup</h4>
-                      <button 
-                        onClick={() => { setIsAccountModalOpen(true); setIsOpsPanelOpen(false); }}
-                        className="w-full p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center justify-between hover:border-indigo-200 transition-all group"
-                      >
-                         <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-                               <BookOpen size={16} />
-                            </div>
-                            <span className="text-[10px] font-black text-slate-900 uppercase">Expense Accounts</span>
-                         </div>
-                         <ChevronRight size={14} className="text-slate-300" />
-                      </button>
-                   </div>
-                </div>
-             </NestedControlPanel>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">Expenses</h2>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-[10px] font-bold text-slate-500">Till: Ksh {todayTillExpenses.toLocaleString()}</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-slate-500">Account: Ksh {todayAccountExpenses.toLocaleString()}</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-emerald-600">Drawer: Ksh {actualCashDrawer.toLocaleString()}</span>
           </div>
-        )}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setIsAccountModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-50 active:scale-[0.98] transition-all self-start"
+          >
+            <BookOpen size={16} /> Setup Accounts
+          </button>
+          <button
+            onClick={() => setIsExpenseModalOpen(true)}
+            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
+          >
+            <Plus size={18} /> Log Expense
+          </button>
+        </div>
       </div>
 
       {/* Search Bar */}
-      <div className="px-4 mb-8">
+      <div className="mb-6">
         <div className="relative group">
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={20} />
-          <input 
-            type="text" 
-            placeholder="Search by category or description..." 
-            value={expenseSearch} 
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={16} />
+          <input
+            type="text"
+            placeholder="Search by category or description..."
+            value={expenseSearch}
             onChange={(e) => setExpenseSearch(e.target.value)}
-            className="w-full pl-14 pr-4 py-4.5 bg-white rounded-[1.5rem] border-2 border-slate-100 text-sm font-bold text-slate-800 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/5 transition-all outline-none"
+            className="w-full pl-10 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/15 focus:border-primary outline-none shadow-sm transition-all"
           />
           {expenseSearch && (
-            <button onClick={() => setExpenseSearch('')} className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all">
+            <button onClick={() => setExpenseSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
               <X size={14} />
             </button>
           )}
@@ -229,7 +179,7 @@ export default function ExpensesTab() {
       </div>
 
       {/* Expense List */}
-      <div className="space-y-3 px-4">
+      <div className="space-y-3">
          {filteredExpenses.map(expense => (
              <div key={expense.id} className="group bg-white p-5 rounded-[2rem] border-2 border-slate-100 shadow-sm flex items-center justify-between hover:border-orange-300 hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-default">
                 <div className="flex items-center gap-5 min-w-0">

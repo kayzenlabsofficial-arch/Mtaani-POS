@@ -10,7 +10,6 @@ import NestedControlPanel from '../shared/NestedControlPanel';
 export default function CustomersTab() {
   const [customerSearch, setCustomerSearch] = useState("");
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
-  const [isCRMToolsOpen, setIsCRMToolsOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
   const [isSaving, setIsSaving] = useState(false);
@@ -156,81 +155,43 @@ export default function CustomersTab() {
   return (
     <div className="pb-24 animate-in fade-in w-full">
       
-      {/* CRM Header */}
-      <div className="px-4 pt-2 mb-6">
-        <div className="flex items-center justify-between mb-4">
-           <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Client Directory</h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">CRM & Relationship Management</p>
-           </div>
-           <div className="flex gap-2">
-              <button 
-                onClick={() => setIsCRMToolsOpen(!isCRMToolsOpen)}
-                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isCRMToolsOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
-              >
-                <SlidersHorizontal size={18} />
-                <span className="text-[10px] font-black uppercase">Tools</span>
-              </button>
-              <button onClick={openAddCustomer} className="grad-blue text-white px-4 py-2.5 rounded-xl shadow-blue active:scale-95 transition-all flex items-center gap-2 font-black text-[10px] uppercase">
-                 <Plus size={18} /> New Client
-              </button>
-           </div>
-        </div>
-
-        {isCRMToolsOpen && (
-          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
-             <NestedControlPanel
-               title="CRM Analytics & Operations"
-               subtitle="Manage customer debt and high-value relationships"
-               onClose={() => setIsCRMToolsOpen(false)}
-             >
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4 shadow-sm">
-                      <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
-                         <UserCheck size={20} />
-                      </div>
-                      <div>
-                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Total Clients</p>
-                         <h3 className="text-xl font-black text-slate-900 leading-none">{activeClients}</h3>
-                      </div>
-                   </div>
-                   <div className={`p-4 rounded-2xl border-2 flex items-center gap-4 shadow-sm transition-all ${totalCredit > 0 ? 'bg-rose-50 border-rose-100' : 'bg-white border-slate-100'}`}>
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${totalCredit > 0 ? 'bg-rose-600 text-white shadow-rose' : 'bg-slate-100 text-slate-400'}`}>
-                         <CreditCard size={20} />
-                      </div>
-                      <div>
-                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Outstanding Debt</p>
-                         <h3 className={`text-xl font-black ${totalCredit > 0 ? 'text-rose-600' : 'text-slate-900'}`}>Ksh {totalCredit.toLocaleString()}</h3>
-                      </div>
-                   </div>
-                   <div className="p-4 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-4 shadow-sm">
-                      <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
-                         <TrendingUp size={20} />
-                      </div>
-                      <div>
-                         <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">High Value (10K+)</p>
-                         <h3 className="text-xl font-black text-slate-900 leading-none">{highValueClients} Clients</h3>
-                      </div>
-                   </div>
-                </div>
-             </NestedControlPanel>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">Client Directory</h2>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-[10px] font-bold text-slate-500">{activeClients} clients</span>
+            <span className="text-slate-300">·</span>
+            <span className={`text-[10px] font-bold ${totalCredit > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+              Ksh {totalCredit.toLocaleString()} debt
+            </span>
+            <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-amber-600">
+              {highValueClients} High-Value
+            </span>
           </div>
-        )}
+        </div>
+        <button
+          onClick={openAddCustomer}
+          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
+        >
+          <Plus size={18} /> Add New Client
+        </button>
       </div>
 
       {/* Search Bar */}
-      <div className="px-4 mb-8">
+      <div className="mb-6">
         <div className="relative group">
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={20} />
-          <input 
-            type="text" 
-            placeholder="Search by client name or mobile number..." 
-            value={customerSearch} 
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={16} />
+          <input
+            type="text"
+            placeholder="Search by client name or mobile number..."
+            value={customerSearch}
             onChange={(e) => setCustomerSearch(e.target.value)}
-            className="w-full pl-14 pr-4 py-4.5 bg-white rounded-[1.5rem] border-2 border-slate-100 text-sm font-bold text-slate-800 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/5 transition-all outline-none"
+            className="w-full pl-10 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/15 focus:border-primary outline-none shadow-sm transition-all"
           />
           {customerSearch && (
-            <button onClick={() => setCustomerSearch('')} className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all">
+            <button onClick={() => setCustomerSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
               <X size={14} />
             </button>
           )}
@@ -238,7 +199,7 @@ export default function CustomersTab() {
       </div>
 
       {/* Client List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 px-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
          {filteredCustomers.map(customer => (
             <div 
               key={customer.id} 
