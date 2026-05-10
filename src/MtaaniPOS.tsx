@@ -249,7 +249,7 @@ export default function MtaaniPOS() {
       return;
     }
 
-    if (username === 'mtaani_root' && password === 'mtaani@2024') {
+    if (username === process.env.ROOT_USERNAME && password === process.env.ROOT_PASSWORD) {
       login({ id: 'root', name: 'System Root', role: 'ROOT' } as any);
       return;
     }

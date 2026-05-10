@@ -478,9 +478,10 @@ export const seedInitialData = async () => {
     if (!businessId) {
        // If no business ID is set, check if a default business exists, else create it
        const defaultBiz = await db.businesses.get('biz_001');
-       if (!defaultBiz) {
-         await db.businesses.add({ id: 'biz_001', name: 'Default Business', code: 'MTAANI01' });
-       }
+        if (!defaultBiz) {
+          await db.businesses.add({ id: 'biz_001', name: 'Default Business', code: process.env.DEFAULT_BUSINESS_CODE! });
+        }
+
        businessId = 'biz_001';
        useStore.getState().setActiveBusinessId(businessId);
     }
