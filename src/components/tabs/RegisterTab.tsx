@@ -47,13 +47,17 @@ export default function RegisterTab() {
   const cart = useStore((state) => state.cart);
   const { success: toastSuccess, error: toastError } = useStore.getState ? {} : {};
   const { selectedCustomerId, setSelectedCustomerId, activeBusinessId, activeBranchId, activeShift, isAdmin } = useStore();
-  const allProducts = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
+  const allProducts = useLiveQuery(
+    () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
+    []
+  );
   const allCustomers = useLiveQuery(() => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
   const selectedCustomer = allCustomers?.find(c => c.id === selectedCustomerId);
 
   const products = useLiveQuery(
     () => {
-      if (!activeBusinessId) return Promise.resolve([]);
+      if (!activeBusinessId || !activeBranchId) return Promise.resolve([]);
       let query = db.products.where('businessId').equals(activeBusinessId);
       
       // If branch-specific stock is needed, we could filter by branchId here
@@ -65,7 +69,7 @@ export default function RegisterTab() {
       
       return query.filter(p => !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode.includes(searchQuery)).toArray();
     },
-    [searchQuery, selectedCategory, activeBusinessId],
+    [searchQuery, selectedCategory, activeBusinessId, activeBranchId],
     []
   );
 
