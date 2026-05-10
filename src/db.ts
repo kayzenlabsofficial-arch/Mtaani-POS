@@ -65,7 +65,13 @@ export interface Transaction {
   items: TransactionItem[];
   timestamp: number;
   status: 'QUOTE' | 'PAID' | 'VOIDED' | 'REFUNDED' | 'PARTIAL_REFUND' | 'PENDING_REFUND';
-  paymentMethod?: 'CASH' | 'MPESA';
+  paymentMethod?: 'CASH' | 'MPESA' | 'CREDIT' | 'SPLIT';
+  splitPayments?: {
+    cashAmount: number;
+    secondaryMethod: 'MPESA' | 'CREDIT';
+    secondaryAmount: number;
+    secondaryReference?: string;
+  };
   amountTendered?: number;
   changeGiven?: number;
   cashierName?: string;
@@ -238,7 +244,7 @@ export interface Expense {
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   preparedBy?: string;
   approvedBy?: string;
-  source: 'TILL' | 'ACCOUNT';
+  source: 'TILL' | 'ACCOUNT' | 'SHOP';
   accountId?: string; // Link to FinancialAccount if source is ACCOUNT
   branchId: string;
   businessId: string;

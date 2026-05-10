@@ -5,7 +5,7 @@ import { SearchableSelect } from '../shared/SearchableSelect';
 interface ExpenseModalProps {
   isOpen: boolean;
   onClose: () => void;
-  expenseForm: { amount: string, category: string, description: string, source: 'TILL' | 'ACCOUNT' };
+  expenseForm: { amount: string, category: string, description: string, source: 'TILL' | 'ACCOUNT' | 'SHOP', accountId?: string, productId?: string, quantity?: string };
   setExpenseForm: (form: any) => void;
   handleSaveExpense: () => Promise<void>;
   isSaving?: boolean;
@@ -53,6 +53,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                   placeholder="Select Account..."
                   options={[
                     ...(accounts || []).map(acc => ({ value: acc.name, label: acc.name, keywords: acc.name })),
+                    ...(financialAccounts || []).map(acc => ({ value: `Finance: ${acc.name}`, label: `Finance: ${acc.name}`, keywords: `${acc.name} ${acc.type} finance account` })),
                     { value: 'Other', label: 'Other / Miscellaneous', keywords: 'other miscellaneous misc' },
                   ]}
                   buttonClassName="focus:border-orange-500"

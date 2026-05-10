@@ -94,8 +94,16 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const totalTax = shiftTransactions.reduce((sum, t) => sum + getNetSales(t).tax, 0);
   const totalGross = shiftTransactions.reduce((sum, t) => sum + getNetSales(t).subtotal, 0);
   
-  const cashTotal = shiftTransactions.filter(t => t.paymentMethod === 'CASH').reduce((sum, t) => sum + getNetSales(t).total, 0);
-  const mpesaTotal = shiftTransactions.filter(t => t.paymentMethod === 'MPESA').reduce((sum, t) => sum + getNetSales(t).total, 0);
+  const cashTotal = shiftTransactions.reduce((sum, t) => {
+    if (t.paymentMethod === 'CASH') return sum + getNetSales(t).total;
+    if (t.paymentMethod === 'SPLIT') return sum + (t.splitPayments?.cashAmount || 0);
+    return sum;
+  }, 0);
+  const mpesaTotal = shiftTransactions.reduce((sum, t) => {
+    if (t.paymentMethod === 'MPESA') return sum + getNetSales(t).total;
+    if (t.paymentMethod === 'SPLIT' && t.splitPayments?.secondaryMethod === 'MPESA') return sum + (t.splitPayments.secondaryAmount || 0);
+    return sum;
+  }, 0);
   const shiftRefunds = shiftTransactions.reduce((sum, t) => sum + getNetSales(t).refunded, 0);
   
   const shiftTillExpenses = (allExpenses || []).filter(e => {

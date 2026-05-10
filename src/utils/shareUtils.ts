@@ -262,7 +262,13 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
   y += 4;
   // Payment Details (Tendered & Change)
   const tethered = safe(r.amountTendered);
-  if (tethered > 0) {
+  if (r.paymentMethod === 'SPLIT' && r.splitPayments) {
+    row('Paid (Cash)', ksh(r.splitPayments.cashAmount || 0));
+    row(`Paid (${safeStr(r.splitPayments.secondaryMethod, 'Secondary')})`, ksh(r.splitPayments.secondaryAmount || 0));
+    if (r.splitPayments.secondaryReference) {
+      row('Reference', safeStr(r.splitPayments.secondaryReference));
+    }
+  } else if (tethered > 0) {
     row(`Paid (${r.paymentMethod || 'CASH'})`, ksh(tethered));
     const change = safe(r.changeGiven || (tethered - safe(r.total)));
     if (change > 0) {

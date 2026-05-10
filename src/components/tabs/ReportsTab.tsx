@@ -128,7 +128,9 @@ export default function ReportsTab() {
   const topProducts = Object.values(productPerf).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
   const topProductShare = topProducts.length > 0 && totalRevenue > 0 ? (topProducts[0].revenue / totalRevenue) * 100 : 0;
   const lowStockCount = allProducts.filter(p => (p.stockQuantity || 0) <= 5).length;
-  const creditTransactions = filteredTransactions.filter(t => t.paymentMethod === 'CREDIT').length;
+  const creditTransactions = filteredTransactions.filter(
+    t => t.paymentMethod === 'CREDIT' || (t.paymentMethod === 'SPLIT' && t.splitPayments?.secondaryMethod === 'CREDIT')
+  ).length;
 
   // Chart Data Formatting
   const salesTrendData = Array.from({ length: 7 }).map((_, i) => {

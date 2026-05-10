@@ -259,9 +259,15 @@ export default function MtaaniPOS() {
   const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<any>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isCashModalOpen, setIsCashModalOpen] = useState(false);
+  const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
   const [completedTransaction, setCompletedTransaction] = useState<Transaction | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [amountTendered, setAmountTendered] = useState("");
+  const [splitForm, setSplitForm] = useState({
+    cashAmount: '',
+    secondaryMethod: 'MPESA' as 'MPESA' | 'CREDIT',
+    secondaryReference: '',
+  });
 
   // M-Pesa State
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -275,13 +281,22 @@ export default function MtaaniPOS() {
   const [discountValue, setDiscountValue] = useState<number>(0);
   const [discountType, setDiscountType] = useState<'FIXED' | 'PERCENT'>('FIXED');
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState(false);
+  const [pendingCreditCheckout, setPendingCreditCheckout] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [mpesaMessage, setMpesaMessage] = useState('');
   // ── IDEMPOTENCY GUARD: prevents handleCheckout firing more than once per M-Pesa request
   const mpesaCheckoutFiredRef = React.useRef(false);
 
   // Global Expense State (for Dashboard & Expenses Tab access)
-  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'TILL' | 'ACCOUNT', accountId: '' });
+  const [expenseForm, setExpenseForm] = useState({
+    amount: '',
+    category: '',
+    description: '',
+    source: 'TILL' as 'TILL' | 'ACCOUNT' | 'SHOP',
+    accountId: '',
+    productId: '',
+    quantity: '1'
+  });
   
   // Real-time Cash Drawer Calculation for validation
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
@@ -300,7 +315,11 @@ export default function MtaaniPOS() {
     (activeShift ? t.shiftId === activeShift.id : (t.timestamp || 0) >= todayStart.getTime())
   );
   
-  const cashTotal = todaysPaidTransactions.filter(t => t.paymentMethod === 'CASH').reduce((sum, t) => sum + (t.total || 0), 0);
+  const cashTotal = todaysPaidTransactions.reduce((sum, t) => {
+    if (t.paymentMethod === 'CASH') return sum + (t.total || 0);
+    if (t.paymentMethod === 'SPLIT') return sum + (t.splitPayments?.cashAmount || 0);
+    return sum;
+  }, 0);
   
   const todayTillExpenses = (allExpenses || []).filter(e => 
     e.source === 'TILL' && 
@@ -345,6 +364,10 @@ export default function MtaaniPOS() {
               return;
           }
       }
+      if (expenseForm.source === 'ACCOUNT' && !expenseForm.accountId) {
+          error("Select an account for account-funded expense.");
+          return;
+      }
       if (!currentUser || !activeBranchId) return;
 
       setIsSaving(true);
@@ -375,7 +398,7 @@ export default function MtaaniPOS() {
            } as any);
         }
         setIsExpenseModalOpen(false);
-        setExpenseForm({ amount: '', category: '', description: '', source: 'TILL', accountId: '' });
+        setExpenseForm({ amount: '', category: '', description: '', source: 'TILL', accountId: '', productId: '', quantity: '1' });
         success("Expense logged successfully.");
       } catch (err: any) {
         error("Failed to save expense: " + err.message);
@@ -658,6 +681,28 @@ export default function MtaaniPOS() {
     () => activeBranchId ? db.branches.get(activeBranchId).then(b => b?.name) : Promise.resolve(undefined),
     [activeBranchId]
   );
+  const activeBranches = useLiveQuery(
+    () => activeBusinessId ? db.branches.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
+
+  const handleQuickBranchSwitch = async (nextBranchId: string) => {
+    if (!nextBranchId || nextBranchId === activeBranchId || !activeBusinessId) return;
+    try {
+      setIsSyncing(true);
+      setActiveBranchId(nextBranchId);
+      await db.sync();
+
+      const existingShift = await db.shifts.where('status').equals('OPEN').and(s => s.branchId === nextBranchId).first();
+      setActiveShift(existingShift || null);
+      success(`Switched to ${activeBranches.find(b => b.id === nextBranchId)?.name || 'branch'}.`);
+    } catch (err: any) {
+      error("Failed to switch branch.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
 
   // Auth Handlers
@@ -887,11 +932,18 @@ export default function MtaaniPOS() {
 
   const checkoutLockRef = React.useRef(false);
 
-  const handleCheckout = async (status: 'QUOTE' | 'PAID', paymentMethod?: 'CASH' | 'MPESA' | 'CREDIT', mpesaCode?: string, resolvedMpesaCustomer?: string) => {
-    if (isAdmin) {
-      error("Administrators cannot process sales. Please use a Cashier or Manager account.");
-      return;
+  const handleCheckout = async (
+    status: 'QUOTE' | 'PAID',
+    paymentMethod?: 'CASH' | 'MPESA' | 'CREDIT' | 'SPLIT',
+    mpesaCode?: string,
+    resolvedMpesaCustomer?: string,
+    splitPaymentInput?: {
+      cashAmount: number;
+      secondaryMethod: 'MPESA' | 'CREDIT';
+      secondaryAmount: number;
+      secondaryReference?: string;
     }
+  ) => {
     if (cart.length === 0) return;
 
     // ── OFFLINE POLICY (money/data integrity) ───────────────────────────────
@@ -907,11 +959,6 @@ export default function MtaaniPOS() {
         return;
     }
     
-    if (status === 'PAID' && !activeShift) {
-       error("No active shift found. Please open a shift first.");
-       return;
-    }
-
     checkoutLockRef.current = true;
 
     try {
@@ -920,8 +967,9 @@ export default function MtaaniPOS() {
         currentCustomer = await db.customers.get(selectedCustomerId);
       }
 
-      if (paymentMethod === 'CREDIT') {
+      if (paymentMethod === 'CREDIT' || (paymentMethod === 'SPLIT' && splitPaymentInput?.secondaryMethod === 'CREDIT')) {
         if (!currentCustomer) {
+          setPendingCreditCheckout(paymentMethod === 'CREDIT');
           setIsCustomerSelectOpen(true);
           checkoutLockRef.current = false;
           return;
@@ -931,7 +979,53 @@ export default function MtaaniPOS() {
       const subtotal = cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0);
       const discountAmount = discountType === 'PERCENT' ? (subtotal * (discountValue / 100)) : discountValue;
       const total = Math.max(0, subtotal - discountAmount);
-      
+
+      let splitPayments: Transaction['splitPayments'] | undefined;
+      if (paymentMethod === 'SPLIT') {
+        if (!splitPaymentInput) {
+          error("Split payment details are missing.");
+          return;
+        }
+        const cashAmount = Number(splitPaymentInput.cashAmount) || 0;
+        const secondaryAmount = Number(splitPaymentInput.secondaryAmount) || 0;
+        if (cashAmount <= 0 || secondaryAmount <= 0) {
+          error("Split payment amounts must be above zero.");
+          return;
+        }
+        if (Math.abs((cashAmount + secondaryAmount) - total) > 0.01) {
+          error("Split payment must add up to total.");
+          return;
+        }
+        splitPayments = {
+          cashAmount,
+          secondaryMethod: splitPaymentInput.secondaryMethod,
+          secondaryAmount,
+          secondaryReference: splitPaymentInput.secondaryReference || undefined,
+        };
+      }
+
+      let shiftToUse = activeShift;
+      if (status === 'PAID' && !shiftToUse) {
+        const openShift = await db.shifts.where('status').equals('OPEN').and(s => s.branchId === activeBranchId).first();
+        if (openShift) {
+          shiftToUse = openShift as any;
+          setActiveShift(openShift);
+        } else {
+          const newShift: Shift = {
+            id: crypto.randomUUID(),
+            startTime: Date.now(),
+            cashierName: currentUser?.name || 'System',
+            status: 'OPEN',
+            branchId: activeBranchId!,
+            businessId: activeBusinessId!,
+            lastSyncAt: Date.now(),
+          };
+          await db.shifts.add(newShift as any);
+          setActiveShift(newShift as any);
+          shiftToUse = newShift as any;
+        }
+      }
+
       setIsSyncing(true);
       const transaction: Transaction = {
         id: crypto.randomUUID(),
@@ -950,15 +1044,16 @@ export default function MtaaniPOS() {
         total: total,
         status: status,
         paymentMethod: paymentMethod,
+        splitPayments: splitPayments,
         cashierName: currentUser?.name || 'Unknown',
         branchId: activeBranchId!,
         businessId: activeBusinessId!,
-        amountTendered: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) : (paymentMethod === 'MPESA' ? total : undefined),
-        changeGiven: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) - total : (paymentMethod === 'MPESA' ? 0 : undefined),
+        amountTendered: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) : (paymentMethod === 'MPESA' ? total : (paymentMethod === 'SPLIT' ? splitPayments?.cashAmount : undefined)),
+        changeGiven: paymentMethod === 'CASH' && amountTendered ? Number(amountTendered) - total : 0,
         preparedBy: currentCustomer ? currentCustomer.name : undefined,
         mpesaCode: mpesaCode,
         mpesaCustomer: currentCustomer ? currentCustomer.name : resolvedMpesaCustomer,
-        shiftId: activeShift?.id
+        shiftId: shiftToUse?.id
       };
 
       await db.transactions.add(transaction);
@@ -967,9 +1062,10 @@ export default function MtaaniPOS() {
       await new Promise(r => setTimeout(r, 100));
 
       // Handle Customer Credit Update
-      if (paymentMethod === 'CREDIT' && currentCustomer) {
+      if ((paymentMethod === 'CREDIT' || (paymentMethod === 'SPLIT' && splitPayments?.secondaryMethod === 'CREDIT')) && currentCustomer) {
+         const creditAmount = paymentMethod === 'CREDIT' ? total : (splitPayments?.secondaryAmount || 0);
          await db.customers.update(currentCustomer.id, {
-            balance: (Number(currentCustomer.balance) || 0) + total,
+            balance: (Number(currentCustomer.balance) || 0) + creditAmount,
             totalSpent: (Number(currentCustomer.totalSpent) || 0) + total
          });
          success(`Credit added to ${currentCustomer.name}'s account.`);
@@ -997,7 +1093,7 @@ export default function MtaaniPOS() {
                       reference: `Bundle Sale #${transaction.id.split('-')[0].toUpperCase()} (${freshProduct.name})`,
                       branchId: activeBranchId!,
                       businessId: activeBusinessId!,
-                      shiftId: activeShift?.id
+                      shiftId: shiftToUse?.id
                     });
                   }
                 }
@@ -1017,7 +1113,7 @@ export default function MtaaniPOS() {
                   reference: `Sale #${transaction.id.split('-')[0].toUpperCase()}${oversold ? ' ⚠ OVERSOLD' : ''}`,
                   branchId: activeBranchId!,
                   businessId: activeBusinessId!,
-                  shiftId: activeShift?.id
+                  shiftId: shiftToUse?.id
                 });
               }
             }
@@ -1030,6 +1126,8 @@ export default function MtaaniPOS() {
 
       clearCart();
       setIsCartOpen(false);
+      setIsSplitModalOpen(false);
+      setSplitForm({ cashAmount: '', secondaryMethod: 'MPESA', secondaryReference: '' });
       setAmountTendered("");
       setDiscountValue(0);
       setCompletedTransaction(transaction);
@@ -1043,6 +1141,9 @@ export default function MtaaniPOS() {
       checkoutLockRef.current = false;
     }
   };
+
+  const cartSubtotal = cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0);
+  const currentSaleTotal = Math.max(0, cartSubtotal - (discountType === 'PERCENT' ? (cartSubtotal * (discountValue / 100)) : discountValue));
 
   if (isSystemManager) {
     return <SystemManagerDashboard onLogout={() => setIsSystemManager(false)} />;
@@ -1188,12 +1289,23 @@ export default function MtaaniPOS() {
           <div>
             <h1 className="text-base font-bold tracking-tight text-slate-900 leading-none">{storeName}</h1>
             {activeBranchName && (
-              <div className="flex items-center gap-1 mt-0.5">
+              <div className="flex items-center gap-2 mt-0.5">
                 <MapPin size={8} className="text-blue-400" />
-                {currentUser?.role === 'ADMIN' ? (
-                  <p className="text-[9px] font-bold text-slate-400">{activeBranchName}</p>
-                ) : (
-                  <p className="text-[9px] font-bold text-slate-400">{activeBranchName}</p>
+                <p className="text-[9px] font-bold text-slate-400">{activeBranchName}</p>
+                {(isAdmin || isManager) && (
+                  <select
+                    value={activeBranchId || ''}
+                    onChange={(e) => handleQuickBranchSwitch(e.target.value)}
+                    className="text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 outline-none"
+                  >
+                    {(activeBranches || [])
+                      .filter(b => b.isActive)
+                      .map(b => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                  </select>
                 )}
               </div>
             )}
@@ -1525,18 +1637,18 @@ export default function MtaaniPOS() {
                   <div className="space-y-2">
                      <div className="flex justify-between text-slate-500 font-bold text-xs">
                         <span>Subtotal</span>
-                        <span>Ksh {cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0).toLocaleString()}</span>
+                        <span>Ksh {cartSubtotal.toLocaleString()}</span>
                      </div>
                      {discountValue > 0 && (
                        <div className="flex justify-between text-red-500 font-bold text-xs">
                           <span>Discount ({discountType === 'PERCENT' ? `${discountValue}%` : `Ksh ${discountValue}`})</span>
-                          <span>- Ksh {(discountType === 'PERCENT' ? (cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0) * (discountValue / 100)) : discountValue).toLocaleString()}</span>
+                          <span>- Ksh {(discountType === 'PERCENT' ? (cartSubtotal * (discountValue / 100)) : discountValue).toLocaleString()}</span>
                        </div>
                      )}
                      <div className="flex justify-between text-slate-900 font-black text-xl tracking-tight pt-2 border-t border-slate-200">
                         <span>Total amount</span>
                         <span className="text-blue-600">
-                          Ksh {Math.max(0, cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0) - (discountType === 'PERCENT' ? (cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0) * (discountValue / 100)) : discountValue)).toLocaleString()}
+                          Ksh {currentSaleTotal.toLocaleString()}
                         </span>
                      </div>
                   </div>
@@ -1568,6 +1680,14 @@ export default function MtaaniPOS() {
                         M-Pesa
                       </button>
                     </div>
+                    <button
+                      onClick={() => setIsSplitModalOpen(true)}
+                      disabled={!isOnline || isSyncing}
+                      className="w-full px-4 py-4 rounded-2xl bg-indigo-600 text-white font-bold text-[10px] hover:bg-indigo-700 shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      <Activity size={16} />
+                      Split Payment
+                    </button>
                     <button 
                       onClick={() => handleCheckout('PAID', 'CREDIT')}
                       disabled={!isOnline}
@@ -1630,7 +1750,7 @@ export default function MtaaniPOS() {
             
             <div className="bg-slate-50 p-6 rounded-3xl mb-6 border border-slate-100 text-center">
                <p className="text-[10px] font-bold text-slate-400 mb-1">Total amount due</p>
-               <p className="text-3xl font-black text-slate-900">Ksh {cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0).toLocaleString()}</p>
+               <p className="text-3xl font-black text-slate-900">Ksh {currentSaleTotal.toLocaleString()}</p>
             </div>
 
             <div className="space-y-4 mb-8">
@@ -1649,10 +1769,10 @@ export default function MtaaniPOS() {
                 </div>
               </div>
 
-              {Number(amountTendered) >= cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0) && (
+              {Number(amountTendered) >= currentSaleTotal && (
                 <div className="bg-green-50 p-5 rounded-2xl border border-green-100 flex justify-between items-center text-green-800 animate-in fade-in slide-in-from-top-2 duration-300">
                    <span className="font-bold text-xs">Change to give</span>
-                   <span className="text-2xl font-black">Ksh {(Number(amountTendered) - cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0)).toLocaleString()}</span>
+                   <span className="text-2xl font-black">Ksh {(Number(amountTendered) - currentSaleTotal).toLocaleString()}</span>
                 </div>
               )}
             </div>
@@ -1661,10 +1781,120 @@ export default function MtaaniPOS() {
                <button onClick={() => setIsCashModalOpen(false)} className="px-6 py-4 bg-slate-100 text-slate-600 font-bold text-[10px] rounded-2xl hover:bg-slate-200 transition-all">Cancel</button>
                <button 
                 onClick={() => { setIsCashModalOpen(false); handleCheckout('PAID', 'CASH'); }} 
-                disabled={Number(amountTendered) < cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0)} 
+                disabled={Number(amountTendered) < currentSaleTotal} 
                 className="px-6 py-4 bg-slate-900 text-white font-bold text-[10px] rounded-2xl disabled:opacity-50 hover:bg-blue-600 shadow-xl transition-all active:scale-95"
               >
                 Complete sale
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Split Payment Modal */}
+      {isSplitModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsSplitModalOpen(false)} />
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-elevated relative z-10 flex flex-col p-8 animate-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center mb-6 mx-auto">
+              <Activity size={32} />
+            </div>
+            <h2 className="text-2xl font-black text-slate-900 mb-2 text-center">Split Payment</h2>
+            <p className="text-slate-500 text-sm mb-6 text-center">Take part cash and complete with M-Pesa or credit.</p>
+
+            <div className="bg-slate-50 p-6 rounded-3xl mb-6 border border-slate-100 text-center">
+              <p className="text-[10px] font-bold text-slate-400 mb-1">Total amount due</p>
+              <p className="text-3xl font-black text-slate-900">Ksh {currentSaleTotal.toLocaleString()}</p>
+            </div>
+
+            <div className="space-y-4 mb-8">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-2 ml-4">Cash amount</label>
+                <div className="relative">
+                  <span className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">KSH</span>
+                  <input
+                    type="number"
+                    className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl pl-16 pr-6 py-4 text-xl font-black text-slate-900 transition-all outline-none"
+                    placeholder="0"
+                    value={splitForm.cashAmount}
+                    onChange={(e) => setSplitForm({ ...splitForm, cashAmount: e.target.value })}
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-2 ml-4">Second method</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSplitForm({ ...splitForm, secondaryMethod: 'MPESA' })}
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-colors ${splitForm.secondaryMethod === 'MPESA' ? 'bg-green-50 border-green-500 text-green-700' : 'bg-white border-slate-200 text-slate-600'}`}
+                  >
+                    M-Pesa
+                  </button>
+                  <button
+                    onClick={() => setSplitForm({ ...splitForm, secondaryMethod: 'CREDIT' })}
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-colors ${splitForm.secondaryMethod === 'CREDIT' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white border-slate-200 text-slate-600'}`}
+                  >
+                    Credit
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-2 ml-4">Reference (optional)</label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 transition-all outline-none"
+                  placeholder={splitForm.secondaryMethod === 'MPESA' ? 'M-Pesa code (optional)' : 'Credit note (optional)'}
+                  value={splitForm.secondaryReference}
+                  onChange={(e) => setSplitForm({ ...splitForm, secondaryReference: e.target.value })}
+                />
+              </div>
+              <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl">
+                <div className="flex justify-between text-xs font-bold text-slate-700">
+                  <span>Cash</span>
+                  <span>Ksh {(Number(splitForm.cashAmount) || 0).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-xs font-bold text-slate-700 mt-1">
+                  <span>{splitForm.secondaryMethod}</span>
+                  <span>Ksh {Math.max(0, currentSaleTotal - (Number(splitForm.cashAmount) || 0)).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => setIsSplitModalOpen(false)} className="px-6 py-4 bg-slate-100 text-slate-600 font-bold text-[10px] rounded-2xl hover:bg-slate-200 transition-all">
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const cashAmount = Number(splitForm.cashAmount) || 0;
+                  const secondaryAmount = currentSaleTotal - cashAmount;
+                  if (cashAmount <= 0 || secondaryAmount <= 0) {
+                    error('Enter a valid split amount.');
+                    return;
+                  }
+                  if (splitForm.secondaryMethod === 'CREDIT' && !selectedCustomerId) {
+                    setPendingCreditCheckout(false);
+                    setIsCustomerSelectOpen(true);
+                    info('Select a customer to continue with split credit.');
+                    return;
+                  }
+                  handleCheckout(
+                    'PAID',
+                    'SPLIT',
+                    splitForm.secondaryMethod === 'MPESA' ? splitForm.secondaryReference : undefined,
+                    selectedCustomer?.name,
+                    {
+                      cashAmount,
+                      secondaryMethod: splitForm.secondaryMethod,
+                      secondaryAmount,
+                      secondaryReference: splitForm.secondaryReference || undefined,
+                    }
+                  );
+                }}
+                className="px-6 py-4 bg-indigo-600 text-white font-bold text-[10px] rounded-2xl hover:bg-indigo-700 shadow-xl transition-all active:scale-95"
+              >
+                Complete split sale
               </button>
             </div>
           </div>
@@ -1697,7 +1927,7 @@ export default function MtaaniPOS() {
 
             <div className="bg-slate-50 p-6 rounded-3xl mb-6 border border-slate-100 text-center">
                <p className="text-[10px] font-bold text-slate-400 mb-1">Total amount due</p>
-               <p className="text-3xl font-black text-slate-900">Ksh {cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0).toLocaleString()}</p>
+               <p className="text-3xl font-black text-slate-900">Ksh {currentSaleTotal.toLocaleString()}</p>
             </div>
 
             {mpesaState === 'IDLE' || mpesaState === 'FAILED' ? (
@@ -1731,7 +1961,7 @@ export default function MtaaniPOS() {
                     onClick={async () => {
                       if (!mpesaPhone || mpesaPhone.length < 9) return error("Enter a valid phone number");
                       setMpesaState('PUSHING');
-                      const total = cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQuantity), 0);
+                      const total = currentSaleTotal;
                       const res = await MpesaService.triggerStkPush(mpesaPhone, total, 'POS', activeBusinessId!, activeBranchId!);
                       if (res.success && res.checkoutRequestId) {
                         setMpesaRequestId(res.checkoutRequestId);
@@ -1821,7 +2051,11 @@ export default function MtaaniPOS() {
                       </div>
                       <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
                         <p className="text-slate-400 font-bold uppercase">Payment</p>
-                        <p className="text-slate-900 font-black">{completedTransaction.paymentMethod}</p>
+                        <p className="text-slate-900 font-black">
+                          {completedTransaction.paymentMethod === 'SPLIT'
+                            ? `SPLIT (Cash + ${completedTransaction.splitPayments?.secondaryMethod || 'MPESA'})`
+                            : completedTransaction.paymentMethod}
+                        </p>
                       </div>
                     </div>
                     {completedTransaction.mpesaCode && (
@@ -1874,14 +2108,34 @@ export default function MtaaniPOS() {
                       </table>
                     </div>
 
-                    {(completedTransaction.paymentMethod === 'CASH' || completedTransaction.paymentMethod === 'MPESA') && completedTransaction.amountTendered !== undefined && (
+                    {(completedTransaction.paymentMethod === 'CASH' || completedTransaction.paymentMethod === 'MPESA' || completedTransaction.paymentMethod === 'SPLIT') && completedTransaction.amountTendered !== undefined && (
                       <div className="overflow-hidden rounded-2xl border border-slate-200">
                         <table className="w-full text-xs">
                           <tbody>
-                            <tr className="border-b border-slate-100">
-                              <td className="px-3 py-2 font-semibold text-slate-600">Amount Tendered ({completedTransaction.paymentMethod})</td>
-                              <td className="px-3 py-2 text-right font-black text-slate-900">Ksh {completedTransaction.amountTendered.toLocaleString()}</td>
-                            </tr>
+                            {completedTransaction.paymentMethod !== 'SPLIT' && (
+                              <tr className="border-b border-slate-100">
+                                <td className="px-3 py-2 font-semibold text-slate-600">Amount Tendered ({completedTransaction.paymentMethod})</td>
+                                <td className="px-3 py-2 text-right font-black text-slate-900">Ksh {completedTransaction.amountTendered.toLocaleString()}</td>
+                              </tr>
+                            )}
+                            {completedTransaction.paymentMethod === 'SPLIT' && (
+                              <>
+                                <tr className="border-b border-slate-100">
+                                  <td className="px-3 py-2 font-semibold text-slate-600">Cash Portion</td>
+                                  <td className="px-3 py-2 text-right font-black text-slate-900">Ksh {(completedTransaction.splitPayments?.cashAmount || 0).toLocaleString()}</td>
+                                </tr>
+                                <tr className="border-b border-slate-100">
+                                  <td className="px-3 py-2 font-semibold text-slate-600">{completedTransaction.splitPayments?.secondaryMethod || 'Secondary'} Portion</td>
+                                  <td className="px-3 py-2 text-right font-black text-slate-900">Ksh {(completedTransaction.splitPayments?.secondaryAmount || 0).toLocaleString()}</td>
+                                </tr>
+                                {completedTransaction.splitPayments?.secondaryReference && (
+                                  <tr className="border-b border-slate-100">
+                                    <td className="px-3 py-2 font-semibold text-slate-600">Reference</td>
+                                    <td className="px-3 py-2 text-right font-black text-slate-900">{completedTransaction.splitPayments.secondaryReference}</td>
+                                  </tr>
+                                )}
+                              </>
+                            )}
                             {completedTransaction.paymentMethod === 'CASH' && (
                               <tr className="bg-green-50">
                                 <td className="px-3 py-2 font-semibold text-green-700">Change</td>
@@ -1958,8 +2212,10 @@ export default function MtaaniPOS() {
           onSelect={(customer) => {
             setSelectedCustomerId(customer.id);
             setIsCustomerSelectOpen(false);
-            // Re-trigger checkout with credit now that customer is selected
-            setTimeout(() => handleCheckout('PAID', 'CREDIT'), 100);
+            if (pendingCreditCheckout) {
+              setPendingCreditCheckout(false);
+              setTimeout(() => handleCheckout('PAID', 'CREDIT'), 100);
+            }
           }}
         />
       )}

@@ -65,6 +65,25 @@ export default function AdminApprovals() {
         status: 'APPROVED',
         approvedBy: currentUser?.name
     });
+    // Deduct from owner finance account when source is ACCOUNT
+    if (e.source === 'ACCOUNT' && e.accountId) {
+        const account = await db.financialAccounts.get(e.accountId);
+        if (!account) {
+          await db.expenses.update(e.id, { status: 'PENDING', approvedBy: undefined });
+          error("Account-backed expense failed: selected account not found.");
+          return;
+        }
+        if ((account.balance || 0) < (Number(e.amount) || 0)) {
+          await db.expenses.update(e.id, { status: 'PENDING', approvedBy: undefined });
+          error(`Insufficient funds in ${account.name}.`);
+          return;
+        }
+        await db.financialAccounts.update(account.id, {
+          balance: (account.balance || 0) - (Number(e.amount) || 0),
+          updated_at: Date.now()
+        });
+    }
+
     // safe deduction of stock for SHOP source
     if (e.source === 'SHOP' && (e as any).productId) {
         const product = await db.products.get((e as any).productId);

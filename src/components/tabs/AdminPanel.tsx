@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Settings as SettingsIcon, ShieldCheck, Users, Plus, Trash2, KeyRound, Tag as TagIcon, Building2, Save, X, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Palette, Check, DollarSign } from 'lucide-react';
+import { Settings as SettingsIcon, ShieldCheck, Users, Plus, Minus, Trash2, KeyRound, Tag as TagIcon, Building2, Save, X, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Palette, Check, DollarSign } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { hashPassword } from '../../security';
@@ -77,7 +77,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   );
   const [isAddingFinAccount, setIsAddingFinAccount] = useState(false);
   const [finAccountForm, setFinAccountForm] = useState({ name: '', type: 'BANK' as 'BANK' | 'MPESA' | 'CASH', accountNumber: '', balance: 0, branchId: '' });
-  const [depositState, setDepositState] = useState<{ accountId: string | null, amount: string }>({ accountId: null, amount: '' });
+  const [depositState, setDepositState] = useState<{ accountId: string | null, amount: string, mode: 'DEPOSIT' | 'WITHDRAW' }>({ accountId: null, amount: '', mode: 'DEPOSIT' });
   const [isSaving, setIsSaving] = useState(false);
 
   // Device sync status (admin visibility)
@@ -260,10 +260,40 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
              updated_at: Date.now() 
          });
          success(`Deposited Ksh ${Number(depositState.amount).toLocaleString()} successfully.`);
-         setDepositState({ accountId: null, amount: '' });
+         setDepositState({ accountId: null, amount: '', mode: 'DEPOSIT' });
       }
     } catch (err: any) {
       error("Deposit failed.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!depositState.accountId || !depositState.amount || Number(depositState.amount) <= 0) return;
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const account = await db.financialAccounts.get(depositState.accountId);
+      if (!account) {
+        error("Account not found.");
+        return;
+      }
+
+      const withdrawal = Number(depositState.amount);
+      if ((account.balance || 0) < withdrawal) {
+        error(`Insufficient balance in ${account.name}.`);
+        return;
+      }
+
+      await db.financialAccounts.update(account.id, {
+        balance: (account.balance || 0) - withdrawal,
+        updated_at: Date.now()
+      });
+      success(`Withdrew Ksh ${withdrawal.toLocaleString()} successfully.`);
+      setDepositState({ accountId: null, amount: '', mode: 'DEPOSIT' });
+    } catch (err: any) {
+      error("Withdrawal failed.");
     } finally {
       setIsSaving(false);
     }
@@ -720,15 +750,23 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                                 value={depositState.amount} 
                                 onChange={e => setDepositState({...depositState, amount: e.target.value})} 
                                 placeholder="Amount..." 
-                                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-green-500"
+                                className={`w-full bg-white border rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none ${depositState.mode === 'WITHDRAW' ? 'border-orange-300 focus:border-orange-500' : 'border-slate-200 focus:border-green-500'}`}
                              />
-                             <button onClick={handleDeposit} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black hover:bg-green-700 whitespace-nowrap">Add</button>
-                             <button onClick={() => setDepositState({ accountId: null, amount: '' })} className="bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-[10px] font-black hover:bg-slate-300">Cancel</button>
+                             <button
+                               onClick={depositState.mode === 'WITHDRAW' ? handleWithdraw : handleDeposit}
+                               className={`${depositState.mode === 'WITHDRAW' ? 'bg-orange-600 hover:bg-orange-700' : 'bg-green-600 hover:bg-green-700'} text-white px-3 py-1.5 rounded-lg text-[10px] font-black whitespace-nowrap`}
+                             >
+                               {depositState.mode === 'WITHDRAW' ? 'Withdraw' : 'Deposit'}
+                             </button>
+                             <button onClick={() => setDepositState({ accountId: null, amount: '', mode: 'DEPOSIT' })} className="bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-[10px] font-black hover:bg-slate-300">Cancel</button>
                           </div>
                        ) : (
                           <div className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-slate-100">
-                             <button onClick={() => setDepositState({ accountId: acc.id, amount: '' })} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors">
+                             <button onClick={() => setDepositState({ accountId: acc.id, amount: '', mode: 'DEPOSIT' })} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors">
                                 <Plus size={12} /> Deposit
+                             </button>
+                             <button onClick={() => setDepositState({ accountId: acc.id, amount: '', mode: 'WITHDRAW' })} className="bg-orange-50 hover:bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors">
+                                <Minus size={12} /> Withdraw
                              </button>
                              <button onClick={() => handleDeleteFinAccount(acc.id)} className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors">
                                 <Trash2 size={12} />
