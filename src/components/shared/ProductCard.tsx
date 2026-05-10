@@ -1,45 +1,110 @@
 import React from 'react';
 
-const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => (
-  <span className={`material-symbols-outlined ${className}`}>{name}</span>
+const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
+  <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>
 );
 
-export function ProductCard({ product, onAdd, recentlyAdded }: any) {
-  const isOutOfStock = (product.stockQuantity || 0) <= 0;
-  const isLowStock = !isOutOfStock && (product.stockQuantity || 0) <= (product.reorderPoint || 5);
-  
+const PAYMENT_ICONS: Record<string, string> = {
+  VAT: 'receipt',
+};
+
+interface ProductCardProps {
+  product: any;
+  onAdd: (p: any) => void;
+  recentlyAdded?: boolean;
+}
+
+export function ProductCard({ product, onAdd, recentlyAdded }: ProductCardProps) {
+  const stock = product.stockQuantity || 0;
+  const isOutOfStock = stock <= 0;
+  const isLowStock = !isOutOfStock && stock <= (product.reorderPoint || 5);
+
+  const stockColor = isOutOfStock
+    ? 'text-rose-600 bg-rose-50 border-rose-100'
+    : isLowStock
+    ? 'text-amber-600 bg-amber-50 border-amber-100'
+    : 'text-emerald-600 bg-emerald-50 border-emerald-100';
+
+  const stockDot = isOutOfStock ? 'bg-rose-500' : isLowStock ? 'bg-amber-500' : 'bg-emerald-500';
+
+  const stockLabel = isOutOfStock
+    ? 'Out of Stock'
+    : isLowStock
+    ? `Low — ${stock} left`
+    : `${stock} in stock`;
+
   return (
-    <div 
+    <div
       onClick={() => !isOutOfStock && onAdd(product)}
-      className={`bg-white rounded-3xl p-6 border-2 transition-all group relative cursor-pointer flex flex-col items-start ${recentlyAdded ? 'scale-95 border-primary shadow-inner' : 'border-slate-50 hover:border-primary/30 hover:shadow-xl hover:-translate-y-1'}`}
+      className={`
+        relative flex flex-col bg-white border rounded-2xl p-4 transition-all duration-200 select-none
+        ${isOutOfStock
+          ? 'opacity-60 cursor-not-allowed border-slate-100'
+          : 'cursor-pointer border-slate-100 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 active:scale-[0.98]'
+        }
+        ${recentlyAdded ? 'scale-95 border-primary/50 shadow-primary/10 shadow-md' : ''}
+      `}
     >
-      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 transition-colors ${isOutOfStock ? 'bg-surface-container text-outline' : 'bg-surface-container-low text-primary group-hover:bg-primary group-hover:text-white'}`}>
-        <MaterialIcon name="inventory_2" className="text-2xl" />
+      {/* Top: Category tag + VAT badge */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-2 py-0.5 rounded-full border border-slate-100">
+          {product.category || 'General'}
+        </span>
+        {product.isTaxable && (
+          <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+            VAT
+          </span>
+        )}
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-2">
-         {product.isTaxable && (
-           <span className="text-[9px] font-bold bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded-full uppercase tracking-tighter">VAT</span>
-         )}
-         <span className="text-[9px] font-bold bg-surface-container text-on-surface-variant px-2 py-0.5 rounded-full uppercase tracking-tighter">{product.category}</span>
+      {/* Product icon */}
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 transition-colors flex-shrink-0 ${
+        isOutOfStock
+          ? 'bg-slate-100 text-slate-300'
+          : 'bg-primary/8 text-primary'
+      }`}>
+        <MaterialIcon name="inventory_2" style={{ fontSize: '24px' }} />
       </div>
 
-      <h3 className="text-base font-bold text-on-surface leading-tight mb-1 truncate w-full">{product.name}</h3>
-      <p className="text-lg font-bold text-primary mb-4 tabular-nums">Ksh {product.sellingPrice.toLocaleString()}</p>
+      {/* Name */}
+      <h3 className="text-[13px] font-bold text-slate-900 leading-tight mb-0.5 line-clamp-2 flex-1">
+        {product.name}
+      </h3>
 
-      <div className="mt-auto pt-4 border-t border-slate-50 w-full flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-             <div className={`w-1.5 h-1.5 rounded-full ${isOutOfStock ? 'bg-error' : isLowStock ? 'bg-amber-500' : 'bg-primary'}`} />
-             <span className={`text-[9px] font-bold uppercase tracking-wide ${isOutOfStock ? 'text-error' : isLowStock ? 'text-amber-600' : 'text-primary'}`}>
-               {isOutOfStock ? 'Out of Stock' : isLowStock ? `${product.stockQuantity} Left` : 'In Stock'}
-             </span>
-          </div>
+      {/* Barcode if present */}
+      {product.barcode && (
+        <p className="text-[9px] font-mono text-slate-400 mb-2 truncate">{product.barcode}</p>
+      )}
+
+      {/* Price */}
+      <p className="text-base font-black text-primary tabular-nums mt-1">
+        Ksh {product.sellingPrice?.toLocaleString()}
+      </p>
+
+      {/* Stock badge */}
+      <div className={`mt-3 pt-3 border-t border-slate-50 flex items-center gap-1.5`}>
+        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${stockDot} ${isLowStock || isOutOfStock ? 'animate-pulse' : ''}`} />
+        <span className={`text-[9px] font-bold uppercase tracking-wide ${
+          isOutOfStock ? 'text-rose-500' : isLowStock ? 'text-amber-600' : 'text-emerald-600'
+        }`}>
+          {stockLabel}
+        </span>
       </div>
 
+      {/* Add overlay icon on hover */}
       {!isOutOfStock && (
-        <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center shadow-lg">
-            <MaterialIcon name="add" className="text-lg" />
+        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+          <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center shadow-md shadow-primary/30">
+            <MaterialIcon name="add" className="text-white" style={{ fontSize: '16px' }} />
+          </div>
+        </div>
+      )}
+
+      {/* Out of stock overlay */}
+      {isOutOfStock && (
+        <div className="absolute inset-0 rounded-2xl flex items-end justify-center pb-3 pointer-events-none">
+          <div className="bg-slate-900/70 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full backdrop-blur-sm">
+            Out of Stock
           </div>
         </div>
       )}

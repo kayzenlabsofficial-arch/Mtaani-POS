@@ -84,7 +84,7 @@ export default function MtaaniPOS() {
   }
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden font-hanken">
+    <div className="flex h-screen bg-slate-50 overflow-hidden font-hanken">
       <Sidebar 
         activeTab={activeTab} 
         onTabChange={navigateToTab} 
@@ -108,7 +108,7 @@ export default function MtaaniPOS() {
           currentUser={currentUser}
         />
 
-        <main className="flex-1 overflow-y-auto no-scrollbar relative p-6 md:p-12">
+        <main className="flex-1 overflow-y-auto main-scroll relative p-4 md:p-8 lg:p-10">
           <div className="max-w-[1440px] mx-auto">
             {activeTab === 'REGISTER' && <RegisterTab toggleCart={toggleCart} />}
             {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={navigateToTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}

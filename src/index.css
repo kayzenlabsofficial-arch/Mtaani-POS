@@ -40,8 +40,8 @@
 }
 
 :root {
-  --background: #f9f9ff;
-  --on-background: #041b3c;
+  --background: #f8fafc;
+  --on-background: #0f172a;
 }
 
 *, *::before, *::after {
@@ -61,7 +61,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: var(--on-background);
-  background: var(--background);
+  background: #f8fafc;
 }
 
 button, input, select, textarea {
@@ -153,40 +153,6 @@ button, input, select, textarea {
 
   /* ── Glassmorphism ───────────────────────────────────── */
   .glass {
-    background: rgba(255, 255, 255, 0.12);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-  }
-
-  .glass-dark {
-    background: rgba(15, 23, 42, 0.6);
-    backdrop-filter: blur(24px) saturate(160%);
-    -webkit-backdrop-filter: blur(24px) saturate(160%);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  /* ── Scrollbars ─────────────────────────────────────── */
-  .no-scrollbar::-webkit-scrollbar { display: none; }
-  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-  .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-  .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
-
-  /* ── Gradient text ─────────────────────────────────── */
-  .text-gradient {
-    background: linear-gradient(135deg, #2563eb, #7c3aed);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-
-  .text-gradient-gold {
-    background: linear-gradient(135deg, #f59e0b, #ef4444);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
   }
 
   /* ── Premium shadows ─────────────────────────────────  */
@@ -299,6 +265,93 @@ button, input, select, textarea {
   .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
   
   .max-w-desktop {
+
+  /* ── Input focus glow ────────────────────────────────  */
+  .input-focus:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  }
+
+  /* ── Active press effect ─────────────────────────────  */
+  .press:active { transform: scale(0.96); transition: transform 0.1s; }
+
+  /* ── Status chips ────────────────────────────────────  */
+  .chip-green  { background: #dcfce7; color: #15803d; }
+  .chip-blue   { background: #dbeafe; color: #1d4ed8; }
+  .chip-orange { background: #ffedd5; color: #c2410c; }
+  .chip-red    { background: #fee2e2; color: #b91c1c; }
+  .chip-purple { background: #ede9fe; color: #6d28d9; }
+  .chip-slate  { background: #f1f5f9; color: #475569; }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   ── PRINT ENGINE (80mm & A4 Support) ───────────────────────────────────
+   ────────────────────────────────────────────────────────────────────────── */
+
+@media print {
+  body {
+    background: white !important;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+
+  /* Force white background and hide UI chrome */
+  #printable-content {
+    background: white !important;
+    width: 100% !important;
+    position: static !important;
+    margin: 0 !important;
+  }
+
+  /* Support for thermal rolls (80mm) */
+  .print-receipt-80mm {
+    width: 80mm !important;
+    max-width: 80mm !important;
+    font-size: 10pt !important;
+    margin: 0 auto !important;
+  }
+
+  /* Support for formal A4 documents */
+  .print-document-a4 {
+    width: 210mm !important;
+    margin: 0 auto !important;
+    font-size: 11pt !important;
+  }
+
+  /* Ensure colors and backgrounds print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+/* ─── Barcode scanner scanning line ───────────────────────────── */
+@keyframes scanLine {
+  0%   { top: 8%; opacity: 1; }
+  45%  { top: 85%; opacity: 1; }
+  50%  { top: 85%; opacity: 0; }
+  55%  { top: 8%;  opacity: 0; }
+  60%  { top: 8%;  opacity: 1; }
+  100% { top: 8%;  opacity: 1; }
+}
+
+.scan-line-animate {
+  position: absolute;
+  animation: scanLine 2s ease-in-out infinite;
+}
+
+/* Desktop Layout Enhancements */
+@media (min-width: 1024px) {
+  .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  
+  .max-w-desktop {
     max-width: 1400px;
     margin: 0 auto;
   }
@@ -308,3 +361,11 @@ button, input, select, textarea {
   animation: slide-from-left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* ── Desktop main content scrollbar ─────────────────────── */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.main-scroll::-webkit-scrollbar { width: 6px; }
+.main-scroll::-webkit-scrollbar-track { background: transparent; margin: 8px 0; }
+.main-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+.main-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
