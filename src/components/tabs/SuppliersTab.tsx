@@ -11,7 +11,7 @@ import NestedControlPanel from '../shared/NestedControlPanel';
 export default function SuppliersTab({ setActiveTab, financialAccounts }: { setActiveTab?: (tab: string) => void, financialAccounts: any[] }) {
   const [supplierSearch, setSupplierSearch] = useState("");
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
-  const [isOpsPanelOpen, setIsOpsPanelOpen] = useState(false);
+
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
   const [selectedSupplierForLedger, setSelectedSupplierForLedger] = useState<Supplier | null>(null);
@@ -178,72 +178,39 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
   return (
     <div className="pb-24 animate-in fade-in w-full">
       
-      {/* Supply Chain Header */}
-      <div className="px-4 pt-2 mb-6">
-        <div className="flex items-center justify-between mb-4">
-           <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Supply Chain</h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Vendor & Procurement Management</p>
-           </div>
-           <div className="flex gap-2">
-              <button 
-                onClick={() => setIsOpsPanelOpen(!isOpsPanelOpen)}
-                className={`p-2.5 rounded-xl border-2 transition-all flex items-center gap-2 ${isOpsPanelOpen ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-600 border-slate-100'}`}
-              >
-                <SlidersHorizontal size={18} />
-                <span className="text-[10px] font-black uppercase">Tools</span>
-              </button>
-              <button onClick={openAddSupplier} className="grad-indigo text-white px-4 py-2.5 rounded-xl shadow-indigo active:scale-95 transition-all flex items-center gap-2 font-black text-[10px] uppercase">
-                 <Plus size={18} /> New Vendor
-              </button>
-           </div>
-        </div>
-
-        {isOpsPanelOpen && (
-          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
-             <NestedControlPanel
-               title="Procurement Operations"
-               subtitle="Monitor payables and supplier relationships"
-               onClose={() => setIsOpsPanelOpen(false)}
-             >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   <div className={`p-5 rounded-2xl border-2 flex items-center gap-5 transition-all ${totalPayables > 0 ? 'bg-rose-50 border-rose-100' : 'bg-emerald-50 border-emerald-100'}`}>
-                      <div className={`w-12 h-12 rounded-[1.25rem] flex items-center justify-center ${totalPayables > 0 ? 'bg-rose-600 text-white shadow-rose' : 'bg-emerald-600 text-white shadow-emerald'}`}>
-                         <CreditCard size={24} />
-                      </div>
-                      <div>
-                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Payables</p>
-                         <h3 className={`text-2xl font-black ${totalPayables > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>Ksh {totalPayables.toLocaleString()}</h3>
-                      </div>
-                   </div>
-                   <div className="p-5 rounded-2xl border-2 border-slate-100 bg-white flex items-center gap-5 shadow-sm">
-                      <div className="w-12 h-12 rounded-[1.25rem] bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                         <Building2 size={24} />
-                      </div>
-                      <div>
-                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Active Vendors</p>
-                         <h3 className="text-2xl font-black text-slate-900 leading-none">{activeVendors} Registered</h3>
-                      </div>
-                   </div>
-                </div>
-             </NestedControlPanel>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">Suppliers</h2>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-[10px] font-bold text-slate-500">{activeVendors} vendors</span>
+            <span className="text-slate-300">·</span>
+            <span className={`text-[10px] font-bold ${totalPayables > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+              Ksh {totalPayables.toLocaleString()} payable
+            </span>
           </div>
-        )}
+        </div>
+        <button
+          onClick={openAddSupplier}
+          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
+        >
+          <Plus size={18} /> Add New Supplier
+        </button>
       </div>
 
       {/* Search Bar */}
-      <div className="px-4 mb-8">
+      <div className="mb-6">
         <div className="relative group">
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={20} />
-          <input 
-            type="text" 
-            placeholder="Search by company name or primary contact..." 
-            value={supplierSearch} 
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={16} />
+          <input
+            type="text"
+            placeholder="Search by company or contact name..."
+            value={supplierSearch}
             onChange={(e) => setSupplierSearch(e.target.value)}
-            className="w-full pl-14 pr-4 py-4.5 bg-white rounded-[1.5rem] border-2 border-slate-100 text-sm font-bold text-slate-800 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/5 transition-all outline-none"
+            className="w-full pl-10 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/15 focus:border-primary outline-none shadow-sm transition-all"
           />
           {supplierSearch && (
-            <button onClick={() => setSupplierSearch('')} className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all">
+            <button onClick={() => setSupplierSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
               <X size={14} />
             </button>
           )}
@@ -251,7 +218,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
       </div>
 
       {/* Vendor List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 px-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
          {filteredSuppliers.map(supplier => (
             <div 
               key={supplier.id} 

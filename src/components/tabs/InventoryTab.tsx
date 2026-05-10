@@ -7,6 +7,16 @@ const MaterialIcon = ({ name, className = "", style = {} }: { name: string, clas
   <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>
 );
 
+const CARD_COLORS = [
+  'bg-blue-600', 'bg-violet-600', 'bg-emerald-600',
+  'bg-amber-500', 'bg-rose-600', 'bg-indigo-600', 'bg-teal-600', 'bg-orange-500',
+];
+function colorFor(str: string) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return CARD_COLORS[Math.abs(hash) % CARD_COLORS.length];
+}
+
 const CATEGORY_COLORS = [
   'bg-blue-500', 'bg-violet-500', 'bg-emerald-500',
   'bg-amber-500', 'bg-rose-500', 'bg-indigo-500', 'bg-teal-500',
@@ -191,8 +201,8 @@ export default function InventoryTab() {
               >
                 {/* Product info */}
                 <div className="md:col-span-5 flex items-center gap-3">
-                  <div className={`w-10 h-10 ${catColor} rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm opacity-90`}>
-                    <MaterialIcon name="inventory_2" className="text-white" style={{ fontSize: '18px' }} />
+                  <div className={`w-10 h-10 ${colorFor(product.name)} rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm opacity-90`}>
+                    <span className="text-white text-xs font-black">{product.name.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase()}</span>
                   </div>
                   <div className="min-w-0">
                     <p className="text-[13px] font-bold text-slate-900 truncate group-hover:text-primary transition-colors">{product.name}</p>
@@ -271,8 +281,8 @@ export default function InventoryTab() {
             <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-5">
               {/* Icon + name */}
               <div className="flex items-start gap-4">
-                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center flex-shrink-0">
-                  <MaterialIcon name="inventory_2" className="text-primary" style={{ fontSize: '32px' }} />
+                <div className={`w-16 h-16 ${colorFor(selectedProduct.name)} rounded-2xl flex items-center justify-center flex-shrink-0`}>
+                  <span className="text-white text-xl font-black">{selectedProduct.name.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase()}</span>
                 </div>
                 <div>
                   <h4 className="text-lg font-black text-slate-900 leading-tight">{selectedProduct.name}</h4>
