@@ -5,12 +5,11 @@ import { db, type Transaction } from '../../db';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import AdminApprovals from './AdminApprovals';
 import { useStore } from '../../store';
-import NestedControlPanel from '../shared/NestedControlPanel';
+
 
 export default function DocumentsTab() {
   const [docSearch, setDocSearch] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
-  const [filterType, setFilterType] = useState<'ALL' | 'APPROVALS' | 'SALES' | 'EXPENSES' | 'SUPPLIER_PAYMENTS' | 'INVOICES' | 'SHIFTS' | 'DAILY'>('ALL');
   const [filterType, setFilterType] = useState<'ALL' | 'APPROVALS' | 'SALES' | 'EXPENSES' | 'SUPPLIER_PAYMENTS' | 'INVOICES' | 'SHIFTS' | 'DAILY'>('ALL');
 
   const activeBranchId = useStore(state => state.activeBranchId);
