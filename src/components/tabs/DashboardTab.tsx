@@ -7,6 +7,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { canUseOwnerMode, getCashDrawerLimit, getCashFloatTarget, isOwnerCashSweepEnabled, isOwnerModeEnabled } from '../../utils/ownerMode';
 import { recordAuditEvent } from '../../utils/auditLog';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
+import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
 
 const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => (
   <span className={`material-symbols-outlined ${className}`}>{name}</span>
@@ -54,7 +55,11 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
   const { success, error } = useToast();
-  const branches = useLiveQuery(() => db.branches.toArray(), []);
+  const branches = useLiveQuery(
+    () => activeBusinessId ? db.branches.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
   const activeBranch = branches?.find(b => b.id === activeBranchId);
 
   const transactions = useLiveQuery(
@@ -83,6 +88,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     () => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
     [activeBranchId], []
   );
+  const branchSupplierPayments = useLiveQuery(
+    () => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
+    [activeBranchId], []
+  );
   const pendingApprovalCount = useLiveQuery(async () => {
     if (!activeBranchId) return 0;
     const [expenses, refunds, purchaseOrders, picks] = await Promise.all([
@@ -102,22 +111,13 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const cashDrawerLimit = getCashDrawerLimit(businessSettings);
   const cashFloatTarget = getCashFloatTarget(businessSettings);
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const cashSalesToday = (branchTransactions || [])
-    .filter(t => (t.timestamp || 0) >= todayStart.getTime() && t.status === 'PAID')
-    .reduce((sum, t: any) => {
-      if (t.paymentMethod === 'CASH') return sum + (t.total || 0);
-      if (t.paymentMethod === 'SPLIT') return sum + (t.splitPayments?.cashAmount || t.splitData?.cashAmount || 0);
-      return sum;
-    }, 0);
-  const tillExpensesToday = (branchExpenses || [])
-    .filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'TILL' && e.status !== 'REJECTED')
-    .reduce((sum, e) => sum + (e.amount || 0), 0);
-  const cashPicksToday = (branchCashPicks || [])
-    .filter(p => (p.timestamp || 0) >= todayStart.getTime())
-    .reduce((sum, p) => sum + (p.amount || 0), 0);
-  const actualCashDrawer = Math.max(0, cashSalesToday - tillExpensesToday - cashPicksToday);
+  const actualCashDrawer = Math.max(0, calculateCashDrawer({
+    transactions: branchTransactions || [],
+    expenses: branchExpenses || [],
+    cashPicks: branchCashPicks || [],
+    supplierPayments: branchSupplierPayments || [],
+    since: getTodayStartMs(),
+  }).actualCashDrawer);
   const sweepAmount = Math.max(0, actualCashDrawer - cashFloatTarget);
   const shouldSweepCash = cashSweepActive && actualCashDrawer > cashDrawerLimit && sweepAmount > 0;
 

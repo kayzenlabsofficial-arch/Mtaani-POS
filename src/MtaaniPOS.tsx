@@ -8,6 +8,7 @@ import { canPerform } from './utils/accessControl';
 import { recordAuditEvent } from './utils/auditLog';
 import { applyApprovedExpenseEffects, ensureExpenseCanBeApproved } from './utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from './utils/ownerMode';
+import { calculateCashDrawer, getTodayStartMs } from './utils/cashDrawer';
 
 // Modular Components
 import RegisterTab from './components/tabs/RegisterTab';
@@ -81,26 +82,15 @@ export default function MtaaniPOS() {
   const transactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
   const expenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
   const cashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
+  const supplierPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const cashSalesToday = (transactions || [])
-    .filter(t => (t.timestamp || 0) >= todayStart.getTime() && t.status === 'PAID')
-    .reduce((sum, t) => {
-      if (t.paymentMethod === 'CASH') return sum + (t.total || 0);
-      if (t.paymentMethod === 'SPLIT') {
-        const splitCash = (t as any).splitPayments?.cashAmount ?? (t as any).splitData?.cashAmount ?? 0;
-        return sum + Number(splitCash || 0);
-      }
-      return sum;
-    }, 0);
-  const tillExpensesToday = (expenses || [])
-    .filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'TILL' && e.status !== 'REJECTED')
-    .reduce((sum, e) => sum + (e.amount || 0), 0);
-  const cashPicksToday = (cashPicks || [])
-    .filter(p => (p.timestamp || 0) >= todayStart.getTime() && p.status !== 'REJECTED')
-    .reduce((sum, p) => sum + (p.amount || 0), 0);
-  const actualCashDrawer = cashSalesToday - tillExpensesToday - cashPicksToday;
+  const actualCashDrawer = calculateCashDrawer({
+    transactions: transactions || [],
+    expenses: expenses || [],
+    cashPicks: cashPicks || [],
+    supplierPayments: supplierPayments || [],
+    since: getTodayStartMs(),
+  }).actualCashDrawer;
 
   const handleSaveExpense = async () => {
     if (isSavingExpense) return;

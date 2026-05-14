@@ -329,7 +329,8 @@ function buildExpense(r: any, bizName?: string): Blob {
 // ─── Purchase Order ───────────────────────────────────────────────────────────
 function buildPO(r: any, supplier?: any, bizName?: string): Blob {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const ref = safeStr(r.invoiceNumber || (r.id || '').startsWith('PO-') ? r.id : (r.id || '').split('-')[0], 'LPO').toUpperCase();
+  const fallbackRef = (r.poNumber || r.id || '').startsWith('PO-') ? (r.poNumber || r.id) : (r.id || '').split('-')[0];
+  const ref = safeStr(r.invoiceNumber || fallbackRef, 'LPO').toUpperCase();
   const dateStr = new Date(r.orderDate || r.timestamp || Date.now()).toLocaleDateString('en-KE', { 
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
   });

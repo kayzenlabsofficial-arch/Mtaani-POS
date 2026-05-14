@@ -85,7 +85,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     []
   );
   const activeShifts = useLiveQuery(
-    () => activeBusinessId && activeBranchId ? db.shifts.where('status').equals('OPEN').and(s => s.businessId === activeBusinessId).toArray() : Promise.resolve([]),
+    () => activeBusinessId && activeBranchId ? db.shifts.where('status').equals('OPEN').and(s => s.businessId === activeBusinessId && s.branchId === activeBranchId).toArray() : Promise.resolve([]),
     [activeBusinessId, activeBranchId],
     []
   );

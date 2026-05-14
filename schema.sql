@@ -212,6 +212,8 @@ CREATE TABLE IF NOT EXISTS creditNotes (
     reason TEXT,
     status TEXT DEFAULT 'PENDING',
     allocatedTo TEXT,
+    productId TEXT,
+    quantity REAL,
     branchId TEXT,
     businessId TEXT,
     shiftId TEXT,

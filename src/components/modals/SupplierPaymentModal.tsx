@@ -94,6 +94,14 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
 
   if (!isOpen || !supplier) return null;
 
+  const paymentMethods = paymentForm.source === 'TILL'
+    ? [{ id: 'CASH', icon: Banknote }]
+    : [
+        { id: 'MPESA', icon: CreditCard },
+        { id: 'BANK', icon: Building2 },
+        { id: 'CHEQUE', icon: Receipt }
+      ];
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = Number(paymentForm.amount);
@@ -125,9 +133,9 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pb-safe">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4 pb-safe">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="bg-white w-full max-w-sm rounded-2xl shadow-elevated relative z-10 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+      <div className="bg-white w-full max-w-sm rounded-t-2xl sm:rounded-2xl shadow-elevated relative z-10 flex flex-col max-h-[92dvh] animate-in zoom-in-95 duration-200">
         
         {/* Header */}
         <div className="p-5 pb-0 flex justify-between items-center">
@@ -168,6 +176,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
                         outstandingInvoices.map(inv => (
                             <div 
                                 key={inv.id} 
+                                data-testid={`supplier-payment-invoice-${inv.id}`}
                                 onClick={() => toggleInvoice(inv.id)}
                                 className={`flex items-center gap-2 p-2.5 rounded-xl border-2 transition-all cursor-pointer ${selectedInvoiceIds.includes(inv.id) ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100 hover:border-slate-200'}`}
                             >
@@ -194,6 +203,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
                       {pendingCreditNotes.map(cn => (
                           <div 
                               key={cn.id} 
+                              data-testid={`supplier-payment-credit-${cn.id}`}
                               onClick={() => toggleCreditNote(cn.id)}
                               className={`flex items-center gap-2 p-2.5 rounded-xl border-2 transition-all cursor-pointer ${selectedCreditNoteIds.includes(cn.id) ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-100 hover:border-slate-200'}`}
                           >
@@ -222,6 +232,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
                     required
                     value={paymentForm.amount} 
                     onChange={e => setPaymentForm({...paymentForm, amount: e.target.value})} 
+                    data-testid="supplier-payment-amount"
                     className="w-full bg-slate-100 border-2 border-transparent rounded-xl pl-10 pr-4 py-2.5 text-lg font-black text-slate-900 focus:outline-none focus:border-green-500 focus:bg-white transition-all" 
                     placeholder="0" 
                   />
@@ -230,16 +241,12 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
 
               <div>
                 <label className="block text-[9px] font-black text-slate-400   mb-1.5 ml-1">Method</label>
-                <div className="grid grid-cols-4 gap-1.5">
-                   {[
-                     { id: 'CASH', icon: Banknote },
-                     { id: 'MPESA', icon: CreditCard },
-                     { id: 'BANK', icon: Building2 },
-                     { id: 'CHEQUE', icon: Receipt }
-                   ].map(m => (
+                <div className={`grid gap-1.5 ${paymentForm.source === 'TILL' ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                   {paymentMethods.map(m => (
                      <button 
                        key={m.id}
                        type="button"
+                       data-testid={`supplier-payment-method-${String(m.id).toLowerCase()}`}
                        onClick={() => setPaymentForm({...paymentForm, method: m.id as any})}
                        className={`flex flex-col items-center justify-center p-2 rounded-lg border-2 transition-all ${paymentForm.method === m.id ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-400'}`}
                      >
@@ -255,14 +262,16 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
                 <div className="flex gap-2">
                    <button 
                     type="button"
-                    onClick={() => setPaymentForm({...paymentForm, source: 'TILL'})}
+                    data-testid="supplier-payment-source-till"
+                    onClick={() => setPaymentForm({...paymentForm, source: 'TILL', method: 'CASH', accountId: ''})}
                     className={`flex-1 py-2.5 rounded-xl text-[10px] font-black border transition-all ${paymentForm.source === 'TILL' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 text-slate-500'}`}
                    >
                      Till (Cash Drawer)
                    </button>
                    <button 
                     type="button"
-                    onClick={() => setPaymentForm({...paymentForm, source: 'ACCOUNT'})}
+                    data-testid="supplier-payment-source-account"
+                    onClick={() => setPaymentForm({...paymentForm, source: 'ACCOUNT', method: paymentForm.method === 'CASH' ? 'BANK' : paymentForm.method})}
                     className={`flex-1 py-2.5 rounded-xl text-[10px] font-black border transition-all ${paymentForm.source === 'ACCOUNT' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-500'}`}
                    >
                      Direct Account
@@ -285,6 +294,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
                      size="sm"
                      buttonClassName="bg-blue-50 border-blue-200 text-blue-900 focus:border-blue-500"
                      searchInputClassName="bg-white"
+                     dataTestId="supplier-payment-account"
                    />
                 </div>
               )}
@@ -297,6 +307,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
                   type="text" 
                   value={paymentForm.transactionCode} 
                   onChange={e => setPaymentForm({...paymentForm, transactionCode: e.target.value})} 
+                  data-testid="supplier-payment-transaction-code"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[11px] font-bold text-slate-900 focus:outline-none focus:border-slate-500" 
                   placeholder="Reference number" 
                 />
@@ -315,8 +326,8 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
             </div>
 
             <div className="flex gap-2 pt-2 sticky bottom-0 bg-white pb-2 mt-auto">
-              <button type="button" onClick={onClose} className="flex-1 px-4 py-3.5 bg-slate-100 text-slate-500 font-black text-[9px]   rounded-xl">Cancel</button>
-              <button type="submit" disabled={!paymentForm.amount || Number(paymentForm.amount) < 0 || (paymentForm.source === 'ACCOUNT' && Number(paymentForm.amount) > 0 && !paymentForm.accountId) || isSaving} className="flex-[2] bg-green-600 text-white py-3.5 font-black text-[9px]   rounded-xl shadow-lg shadow-green-600/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+              <button type="button" data-testid="supplier-payment-cancel" onClick={onClose} className="flex-1 px-4 py-3.5 bg-slate-100 text-slate-500 font-black text-[9px]   rounded-xl">Cancel</button>
+              <button type="submit" data-testid="supplier-payment-submit" disabled={!paymentForm.amount || Number(paymentForm.amount) < 0 || (paymentForm.source === 'ACCOUNT' && Number(paymentForm.amount) > 0 && !paymentForm.accountId) || isSaving} className="flex-[2] bg-green-600 text-white py-3.5 font-black text-[9px]   rounded-xl shadow-lg shadow-green-600/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                 {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                 {isSaving ? 'Processing...' : 'Confirm & Pay'}
               </button>

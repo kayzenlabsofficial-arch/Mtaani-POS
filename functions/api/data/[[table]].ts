@@ -49,17 +49,17 @@ CREATE TABLE IF NOT EXISTS cashPicks (id TEXT PRIMARY KEY, amount REAL NOT NULL,
  CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, startTime INTEGER NOT NULL, endTime INTEGER, openingFloat REAL, cashierName TEXT NOT NULL, status TEXT NOT NULL, branchId TEXT, lastSyncAt INTEGER, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS endOfDayReports (id TEXT PRIMARY KEY, shiftId TEXT, timestamp INTEGER NOT NULL, openingFloat REAL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, cashSales REAL NOT NULL, mpesaSales REAL NOT NULL, totalExpenses REAL NOT NULL, totalPicks REAL NOT NULL, totalRefunds REAL, expectedCash REAL NOT NULL, reportedCash REAL NOT NULL, difference REAL NOT NULL, cashierName TEXT NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, amount REAL NOT NULL, category TEXT NOT NULL, description TEXT, timestamp INTEGER NOT NULL, userName TEXT, status TEXT NOT NULL, source TEXT, accountId TEXT, preparedBy TEXT, approvedBy TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, amount REAL NOT NULL, category TEXT NOT NULL, description TEXT, timestamp INTEGER NOT NULL, userName TEXT, status TEXT NOT NULL, source TEXT, accountId TEXT, productId TEXT, quantity REAL, preparedBy TEXT, approvedBy TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, totalSpent REAL, balance REAL, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT, phone TEXT, email TEXT, balance REAL, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS supplierPayments (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, purchaseOrderId TEXT, purchaseOrderIds TEXT, creditNoteIds TEXT, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, timestamp INTEGER NOT NULL, reference TEXT, source TEXT, accountId TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
- CREATE TABLE IF NOT EXISTS creditNotes (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, amount REAL NOT NULL, reference TEXT NOT NULL, timestamp INTEGER NOT NULL, reason TEXT, status TEXT DEFAULT 'PENDING', allocatedTo TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER);
+ CREATE TABLE IF NOT EXISTS creditNotes (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, amount REAL NOT NULL, reference TEXT NOT NULL, timestamp INTEGER NOT NULL, reason TEXT, status TEXT DEFAULT 'PENDING', allocatedTo TEXT, productId TEXT, quantity REAL, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS dailySummaries (id TEXT PRIMARY KEY, date INTEGER NOT NULL, shiftIds TEXT NOT NULL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, totalExpenses REAL NOT NULL, totalPicks REAL NOT NULL, totalVariance REAL NOT NULL, timestamp INTEGER NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (id TEXT PRIMARY KEY, productId TEXT NOT NULL, productName TEXT, oldQty REAL, newQty REAL, requestedQuantity REAL, reason TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, preparedBy TEXT, approvedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS purchaseOrders (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, items TEXT NOT NULL, totalAmount REAL NOT NULL, status TEXT NOT NULL, approvalStatus TEXT NOT NULL, paymentStatus TEXT, paidAmount REAL, orderDate INTEGER NOT NULL, expectedDate INTEGER, receivedDate INTEGER, invoiceNumber TEXT, poNumber TEXT, preparedBy TEXT, approvedBy TEXT, receivedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, storeName TEXT NOT NULL, location TEXT, tillNumber TEXT, kraPin TEXT, receiptFooter TEXT, ownerModeEnabled INTEGER DEFAULT 0, autoApproveOwnerActions INTEGER DEFAULT 1, cashSweepEnabled INTEGER DEFAULT 1, cashDrawerLimit REAL DEFAULT 5000, cashFloatTarget REAL DEFAULT 1000, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, iconName TEXT NOT NULL, color TEXT NOT NULL, businessId TEXT, branchId TEXT, updated_at INTEGER);
- CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, name TEXT NOT NULL, location TEXT NOT NULL, phone TEXT, tillNumber TEXT, kraPin TEXT, isActive INTEGER NOT NULL DEFAULT 1, businessId TEXT, updated_at INTEGER);
+ CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, name TEXT NOT NULL, location TEXT NOT NULL, phone TEXT, tillNumber TEXT, kraPin TEXT, isActive INTEGER NOT NULL DEFAULT 1, businessId TEXT, mpesaConsumerKey TEXT, mpesaConsumerSecret TEXT, mpesaPasskey TEXT, mpesaEnv TEXT, mpesaType TEXT DEFAULT 'paybill', mpesaStoreNumber TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS expenseAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS financialAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, balance REAL NOT NULL DEFAULT 0, businessId TEXT, branchId TEXT, accountNumber TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS mpesaCallbacks (checkoutRequestId TEXT PRIMARY KEY, merchantRequestId TEXT, resultCode INTEGER, resultDesc TEXT, amount REAL, receiptNumber TEXT, phoneNumber TEXT, businessId TEXT, branchId TEXT, timestamp INTEGER);
@@ -183,12 +183,20 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['creditNotes', "status TEXT DEFAULT 'PENDING'"],
           ['creditNotes', 'allocatedTo TEXT'],
           ['creditNotes', 'shiftId TEXT'],
+          ['creditNotes', 'productId TEXT'],
+          ['creditNotes', 'quantity REAL'],
           ['purchaseOrders', 'poNumber TEXT'],
           ['purchaseOrders', 'preparedBy TEXT'],
           ['purchaseOrders', 'approvedBy TEXT'],
           ['purchaseOrders', 'receivedBy TEXT'],
           ['endOfDayReports', 'totalRefunds REAL'],
           ['financialAccounts', 'accountNumber TEXT'],
+          ['branches', 'mpesaConsumerKey TEXT'],
+          ['branches', 'mpesaConsumerSecret TEXT'],
+          ['branches', 'mpesaPasskey TEXT'],
+          ['branches', 'mpesaEnv TEXT'],
+          ['branches', "mpesaType TEXT DEFAULT 'paybill'"],
+          ['branches', 'mpesaStoreNumber TEXT'],
           ['settings', 'location TEXT'],
           ['settings', 'ownerModeEnabled INTEGER DEFAULT 0'],
           ['settings', 'autoApproveOwnerActions INTEGER DEFAULT 1'],
@@ -223,6 +231,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId)').run();
     }
 
+    if (table === 'products') {
+      // Product catalog fields were added across multiple releases; keep old D1 databases usable.
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN unit TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN branchId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN costPrice REAL').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN reorderPoint REAL').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN isBundle INTEGER DEFAULT 0').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN components TEXT').run(); } catch (e) {}
+    }
+
     if (table === 'expenses') {
       // Keep item-based expenses durable across deployments that predate shop-use tracking.
       try { await env.DB.prepare('ALTER TABLE expenses ADD COLUMN productId TEXT').run(); } catch (e) {}
@@ -236,6 +254,25 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashSweepEnabled INTEGER DEFAULT 1').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashDrawerLimit REAL DEFAULT 5000').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashFloatTarget REAL DEFAULT 1000').run(); } catch (e) {}
+    }
+
+    if (table === 'creditNotes') {
+      // Preserve stock-return details for supplier credits.
+      try { await env.DB.prepare("ALTER TABLE creditNotes ADD COLUMN status TEXT DEFAULT 'PENDING'").run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE creditNotes ADD COLUMN allocatedTo TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE creditNotes ADD COLUMN shiftId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE creditNotes ADD COLUMN productId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE creditNotes ADD COLUMN quantity REAL').run(); } catch (e) {}
+    }
+
+    if (table === 'branches') {
+      // Branch-level Daraja credentials were added after the original branch table.
+      try { await env.DB.prepare('ALTER TABLE branches ADD COLUMN mpesaConsumerKey TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE branches ADD COLUMN mpesaConsumerSecret TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE branches ADD COLUMN mpesaPasskey TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE branches ADD COLUMN mpesaEnv TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare("ALTER TABLE branches ADD COLUMN mpesaType TEXT DEFAULT 'paybill'").run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE branches ADD COLUMN mpesaStoreNumber TEXT').run(); } catch (e) {}
     }
 
     // ── GET ──────────────────────────────────────────────────────────────────

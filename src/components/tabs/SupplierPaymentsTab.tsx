@@ -5,6 +5,7 @@ import { db, type Supplier } from '../../db';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
+import { settleSupplierPayment, type SupplierPaymentInput } from '../../utils/supplierLedger';
 
 
 export default function SupplierPaymentsTab({ financialAccounts }: { financialAccounts: any[] }) {
@@ -58,77 +59,18 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
       }
   }, [paymentSupplierId, allSuppliers, setPaymentSupplierId]);
 
-  const handleSavePayment = async (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, source: 'TILL' | 'ACCOUNT', accountId?: string, transactionCode?: string, purchaseOrderIds?: string[], creditNoteIds?: string[] }) => {
+  const handleSavePayment = async (payment: SupplierPaymentInput) => {
     if (!selectedSupplierForPayment || isSaving) return;
     
     setIsSaving(true);
     try {
-        if (payment.source === 'ACCOUNT' && payment.accountId) {
-           const account = await db.financialAccounts.get(payment.accountId);
-           if (!account) { error('Selected account not found.'); return; }
-           if (account.balance < payment.amount) {
-               error(`Insufficient funds in "${account.name}". Balance: Ksh ${account.balance.toLocaleString()}`);
-               return;
-           }
-        }
-
-        const paymentId = crypto.randomUUID();
-        let totalDeduction = payment.amount;
-
-        for (const cnId of payment.creditNoteIds || []) {
-            const cn = await db.creditNotes.get(cnId);
-            if (cn && (!cn.status || cn.status === 'PENDING')) {
-                await db.creditNotes.update(cnId, { status: 'ALLOCATED', allocatedTo: paymentId });
-                totalDeduction += cn.amount;
-            }
-        }
-
-        await db.supplierPayments.add({
-          id: paymentId,
-          supplierId: selectedSupplierForPayment.id,
-          purchaseOrderIds: payment.purchaseOrderIds,
-          creditNoteIds: payment.creditNoteIds,
-          amount: payment.amount,
-          paymentMethod: payment.method,
-          transactionCode: payment.transactionCode,
-          reference: payment.reference,
-          source: payment.source,
-          accountId: payment.accountId,
-          timestamp: Date.now(),
+        await settleSupplierPayment({
+          supplier: selectedSupplierForPayment,
+          payment,
+          activeBranchId: activeBranchId!,
+          activeBusinessId: activeBusinessId!,
           preparedBy: useStore.getState().currentUser?.name || 'Authorized Staff',
-          branchId: activeBranchId!,
-          businessId: activeBusinessId!
-        });
-
-        if (payment.source === 'ACCOUNT' && payment.accountId && payment.amount > 0) {
-           const account = await db.financialAccounts.get(payment.accountId);
-           if (account) {
-              await db.financialAccounts.update(account.id, { balance: account.balance - payment.amount });
-           }
-        }
-
-        if (payment.purchaseOrderIds && payment.purchaseOrderIds.length > 0) {
-            let remainingPool = totalDeduction;
-            for (const poId of payment.purchaseOrderIds) {
-                if (remainingPool <= 0) break;
-                
-                const inv = await db.purchaseOrders.get(poId);
-                if (inv) {
-                    const due = inv.totalAmount - (inv.paidAmount || 0);
-                    const paymentForThisInv = Math.min(due, remainingPool);
-                    const newPaidAmount = (inv.paidAmount || 0) + paymentForThisInv;
-                    
-                    await db.purchaseOrders.update(poId, {
-                        paidAmount: newPaidAmount,
-                        paymentStatus: newPaidAmount >= inv.totalAmount ? 'PAID' : 'PARTIAL'
-                    });
-                    remainingPool -= paymentForThisInv;
-                }
-            }
-        }
-
-        await db.suppliers.update(selectedSupplierForPayment.id, {
-          balance: Math.max(0, (selectedSupplierForPayment.balance || 0) - totalDeduction)
+          shiftId: useStore.getState().activeShift?.id,
         });
         success("Payment recorded successfully.");
         setIsPaymentModalOpen(false);

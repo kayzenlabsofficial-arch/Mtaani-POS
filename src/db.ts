@@ -232,6 +232,8 @@ export interface CreditNote {
   reason: string;
   status: 'PENDING' | 'ALLOCATED';
   allocatedTo?: string; // e.g. an Invoice/PO reference
+  productId?: string;
+  quantity?: number;
   branchId?: string;
   businessId: string;
   shiftId?: string;

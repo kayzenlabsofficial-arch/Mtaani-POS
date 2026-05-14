@@ -10,6 +10,7 @@ import { canPerform } from '../../utils/accessControl';
 import { recordAuditEvent } from '../../utils/auditLog';
 import { applyApprovedExpenseEffects, ensureExpenseCanBeApproved } from '../../utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
+import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
 
 
 export default function ExpensesTab() {
@@ -26,30 +27,25 @@ export default function ExpensesTab() {
   const { success, error } = useToast();
 
   const allExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
-  const expenseAccounts = useLiveQuery(() => db.expenseAccounts.toArray(), [], []) ;
+  const expenseAccounts = useLiveQuery(() => activeBusinessId ? db.expenseAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []) ;
   const financialAccounts = useLiveQuery(() => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []) ;
   const products = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []) ;
   const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const allCashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  const allSupplierPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-
-  const todaysPaidTransactions = (allTransactions || []).filter(t => (t.timestamp || 0) >= todayStart.getTime() && t.status === 'PAID');
-  const cashTotal = todaysPaidTransactions.reduce((sum, t) => {
-    if (t.paymentMethod === 'CASH') return sum + (t.total || 0);
-    if (t.paymentMethod === 'SPLIT') {
-      const splitCash = (t as any).splitPayments?.cashAmount ?? (t as any).splitData?.cashAmount ?? 0;
-      return sum + Number(splitCash || 0);
-    }
-    return sum;
-  }, 0);
-  const todayTillExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'TILL' && e.status !== 'REJECTED').reduce((sum, e) => sum + (e.amount || 0), 0);
-  const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'ACCOUNT' && e.status !== 'REJECTED').reduce((sum, e) => sum + (e.amount || 0), 0);
-  const todayCashPicks = (allCashPicks || []).filter(c => (c.timestamp || 0) >= todayStart.getTime() && c.status !== 'REJECTED');
-  const totalPickedAmount = todayCashPicks.reduce((acc, p) => acc + (p.amount || 0), 0);
-  const actualCashDrawer = cashTotal - totalPickedAmount - todayTillExpenses;
+  const todayStartMs = getTodayStartMs();
+  const drawer = calculateCashDrawer({
+    transactions: allTransactions || [],
+    expenses: allExpenses || [],
+    cashPicks: allCashPicks || [],
+    supplierPayments: allSupplierPayments || [],
+    since: todayStartMs,
+  });
+  const todayTillExpenses = drawer.tillExpenses;
+  const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'ACCOUNT' && e.status !== 'REJECTED').reduce((sum, e) => sum + (e.amount || 0), 0);
+  const actualCashDrawer = drawer.actualCashDrawer;
 
   const handleSaveExpense = async () => {
       if (isSaving) return;
@@ -162,7 +158,7 @@ export default function ExpensesTab() {
     .filter(e => e.description.toLowerCase().includes(expenseSearch.toLowerCase()) || e.category.toLowerCase().includes(expenseSearch.toLowerCase()))
     .sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-  if (!allExpenses || !allTransactions || !allCashPicks) {
+  if (!allExpenses || !allTransactions || !allCashPicks || !allSupplierPayments) {
       return (
           <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
               <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">

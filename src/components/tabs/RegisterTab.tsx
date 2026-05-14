@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Ban, Banknote, Calculator, CircleDollarSign, CreditCard, Minus, Package, Percent, Plus, ScanBarcode, Search, ShoppingCart, Smartphone, Split, Store, UserRound, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
@@ -157,6 +157,7 @@ function SalePanel({
   const [splitCash, setSplitCash] = useState('');
   const [splitSecondaryMethod, setSplitSecondaryMethod] = useState<'MPESA' | 'PDQ' | 'CREDIT'>('MPESA');
   const [splitSecondaryRef, setSplitSecondaryRef] = useState('');
+  const checkoutLockRef = useRef(false);
 
   const customers = useLiveQuery(
     () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).sortBy('name') : Promise.resolve([]),
@@ -198,56 +199,61 @@ function SalePanel({
   });
 
   const submitCheckout = async () => {
-    if (cart.length === 0 || isCheckingOut) return;
+    if (cart.length === 0 || isCheckingOut || checkoutLockRef.current) return;
+    checkoutLockRef.current = true;
 
-    if ((paymentMode === 'CREDIT' || (paymentMode === 'SPLIT' && splitSecondaryMethod === 'CREDIT')) && !selectedCustomer) {
-      warning('Choose a registered customer before putting any amount on credit.');
-      return;
-    }
-
-    if (paymentMode === 'CASH') {
-      const paid = cashTendered ? tendered : total;
-      if (paid < total) {
-        warning('Amount received must cover the sale total.');
+    try {
+      if ((paymentMode === 'CREDIT' || (paymentMode === 'SPLIT' && splitSecondaryMethod === 'CREDIT')) && !selectedCustomer) {
+        warning('Choose a registered customer before putting any amount on credit.');
         return;
       }
-      await onCheckout('PAID', 'CASH', { ...baseOptions(), amountTendered: paid, changeGiven: Math.max(0, paid - total) });
-      return;
-    }
 
-    if (paymentMode === 'MPESA') {
-      await onCheckout('PAID', 'MPESA', { ...baseOptions(), mpesaRef: mpesaRef.trim(), paymentReference: mpesaRef.trim() });
-      return;
-    }
-
-    if (paymentMode === 'PDQ') {
-      await onCheckout('PAID', 'PDQ', { ...baseOptions(), pdqRef: pdqRef.trim(), paymentReference: pdqRef.trim() });
-      return;
-    }
-
-    if (paymentMode === 'SPLIT') {
-      if (splitCashAmount <= 0 || splitCashAmount >= total) {
-        warning('Enter the cash part so the balance can go to M-Pesa, PDQ, or credit.');
+      if (paymentMode === 'CASH') {
+        const paid = cashTendered ? tendered : total;
+        if (paid < total) {
+          warning('Amount received must cover the sale total.');
+          return;
+        }
+        await onCheckout('PAID', 'CASH', { ...baseOptions(), amountTendered: paid, changeGiven: Math.max(0, paid - total) });
         return;
       }
-      await onCheckout(splitSecondaryMethod === 'CREDIT' ? 'UNPAID' : 'PAID', 'SPLIT', {
-        ...baseOptions(),
-        amountTendered: splitCashAmount,
-        changeGiven: 0,
-        mpesaRef: splitSecondaryMethod === 'MPESA' ? splitSecondaryRef.trim() : undefined,
-        pdqRef: splitSecondaryMethod === 'PDQ' ? splitSecondaryRef.trim() : undefined,
-        paymentReference: splitSecondaryRef.trim(),
-        splitPayments: {
-          cashAmount: splitCashAmount,
-          secondaryAmount: splitSecondaryAmount,
-          secondaryMethod: splitSecondaryMethod,
-          secondaryReference: splitSecondaryRef.trim(),
-        },
-      });
-      return;
-    }
 
-    await onCheckout('UNPAID', 'CREDIT', baseOptions());
+      if (paymentMode === 'MPESA') {
+        await onCheckout('PAID', 'MPESA', { ...baseOptions(), mpesaRef: mpesaRef.trim(), paymentReference: mpesaRef.trim() });
+        return;
+      }
+
+      if (paymentMode === 'PDQ') {
+        await onCheckout('PAID', 'PDQ', { ...baseOptions(), pdqRef: pdqRef.trim(), paymentReference: pdqRef.trim() });
+        return;
+      }
+
+      if (paymentMode === 'SPLIT') {
+        if (splitCashAmount <= 0 || splitCashAmount >= total) {
+          warning('Enter the cash part so the balance can go to M-Pesa, PDQ, or credit.');
+          return;
+        }
+        await onCheckout(splitSecondaryMethod === 'CREDIT' ? 'UNPAID' : 'PAID', 'SPLIT', {
+          ...baseOptions(),
+          amountTendered: splitCashAmount,
+          changeGiven: 0,
+          mpesaRef: splitSecondaryMethod === 'MPESA' ? splitSecondaryRef.trim() : undefined,
+          pdqRef: splitSecondaryMethod === 'PDQ' ? splitSecondaryRef.trim() : undefined,
+          paymentReference: splitSecondaryRef.trim(),
+          splitPayments: {
+            cashAmount: splitCashAmount,
+            secondaryAmount: splitSecondaryAmount,
+            secondaryMethod: splitSecondaryMethod,
+            secondaryReference: splitSecondaryRef.trim(),
+          },
+        });
+        return;
+      }
+
+      await onCheckout('UNPAID', 'CREDIT', baseOptions());
+    } finally {
+      checkoutLockRef.current = false;
+    }
   };
 
   return (
@@ -464,13 +470,15 @@ function SalePanel({
 
         <button
           onClick={submitCheckout}
-          onPointerUp={(event) => {
-            if (event.pointerType === 'touch') {
-              event.preventDefault();
-              void submitCheckout();
-            }
+          onMouseDown={(event) => {
+            event.preventDefault();
+            void submitCheckout();
           }}
-          onTouchEnd={(event) => {
+          onPointerDown={(event) => {
+            event.preventDefault();
+            void submitCheckout();
+          }}
+          onTouchStart={(event) => {
             event.preventDefault();
             void submitCheckout();
           }}
@@ -568,6 +576,10 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
   const outOfStock = displayProducts.filter(p => (p.stockQuantity || 0) <= 0).length || 0;
   const saleTotal = cart.reduce((sum, item) => sum + ((Number(item.sellingPrice) || 0) * (Number(item.cartQuantity) || 0)), 0);
   const saleItemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
+  const openMobileCheckout = (event?: React.SyntheticEvent) => {
+    event?.preventDefault();
+    setIsMobileCheckoutOpen(true);
+  };
 
   return (
     <div className="flex flex-col h-full animate-in fade-in gap-4">
@@ -695,17 +707,10 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
             <p className="text-lg font-black tabular-nums truncate">Ksh {saleTotal.toLocaleString()}</p>
           </div>
           <button 
-            onClick={() => setIsMobileCheckoutOpen(true)}
-            onPointerUp={(event) => {
-              if (event.pointerType === 'touch') {
-                event.preventDefault();
-                setIsMobileCheckoutOpen(true);
-              }
-            }}
-            onTouchEnd={(event) => {
-              event.preventDefault();
-              setIsMobileCheckoutOpen(true);
-            }}
+            onMouseDown={openMobileCheckout}
+            onClick={openMobileCheckout}
+            onPointerDown={openMobileCheckout}
+            onTouchStart={openMobileCheckout}
             disabled={isCheckingOut}
             data-testid="mobile-checkout"
             className="px-4 py-3 bg-primary rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50"

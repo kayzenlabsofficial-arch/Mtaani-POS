@@ -142,7 +142,7 @@ export async function approveRefundTransaction(
   }
 
   const updatedItems = transaction.items.map(item => ({ ...item }));
-  const productIngredients = await db.productIngredients.toArray();
+  const productIngredients = await db.productIngredients.where('businessId').equals(context.activeBusinessId).toArray();
   for (const line of lines) {
     const product = await db.products.get(line.productId);
     if (product && isBundleProduct(product)) {

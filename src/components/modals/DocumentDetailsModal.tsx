@@ -617,6 +617,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
             {onReceive && isPO && selectedRecord.approvalStatus === 'APPROVED' && selectedRecord.status === 'PENDING' && (
                <button
                  onClick={() => { onReceive(selectedRecord); setSelectedRecord(null); }}
+                 data-testid="document-receive-items"
                  className="w-full py-3.5 bg-blue-600 text-white font-black text-xs   rounded-xl transition-colors active:bg-blue-700 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
                >
                  <PackagePlus size={16} /> Receive Items

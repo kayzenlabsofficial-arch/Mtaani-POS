@@ -13,7 +13,11 @@ interface ExpenseAccountModalProps {
 export default function ExpenseAccountModal({ isOpen, onClose }: ExpenseAccountModalProps) {
   const { success, error, warning } = useToast();
   const activeBusinessId = useStore(state => state.activeBusinessId);
-  const accounts = useLiveQuery(() => db.expenseAccounts.toArray(), [], []);
+  const accounts = useLiveQuery(
+    () => activeBusinessId ? db.expenseAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', description: '' });
@@ -28,7 +32,12 @@ export default function ExpenseAccountModal({ isOpen, onClose }: ExpenseAccountM
 
     try {
       if (editingId) {
-        await db.expenseAccounts.update(editingId, { ...form, updated_at: Date.now() });
+        await db.expenseAccounts.update(editingId, {
+          name: form.name.trim(),
+          description: form.description.trim(),
+          businessId: activeBusinessId!,
+          updated_at: Date.now()
+        });
         success("Expense account updated.");
       } else {
         await db.expenseAccounts.add({

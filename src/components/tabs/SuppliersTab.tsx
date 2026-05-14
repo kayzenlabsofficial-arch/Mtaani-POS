@@ -6,6 +6,7 @@ import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 import SupplierLedgerModal from '../modals/SupplierLedgerModal';
+import { settleSupplierPayment, type SupplierPaymentInput } from '../../utils/supplierLedger';
 
 
 export default function SuppliersTab({ setActiveTab, financialAccounts }: { setActiveTab?: (tab: string) => void, financialAccounts: any[] }) {
@@ -101,77 +102,19 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
     }
   }
 
-   const handleSavePayment = async (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, source: 'TILL' | 'ACCOUNT', accountId?: string, transactionCode?: string, purchaseOrderIds?: string[], creditNoteIds?: string[] }) => {
+   const handleSavePayment = async (payment: SupplierPaymentInput) => {
     if (!selectedSupplierForPayment || isSaving) return;
     setIsSaving(true);
     
     try {
-        if (payment.source === 'ACCOUNT' && payment.accountId) {
-           const account = await db.financialAccounts.get(payment.accountId);
-           if (!account) {
-              error('Selected account not found.');
-              return;
-           }
-           if ((account.balance || 0) < payment.amount) {
-              error(`Insufficient funds in "${account.name}". Balance: Ksh ${(account.balance || 0).toLocaleString()}`);
-              return;
-           }
-        }
-
-        const paymentId = crypto.randomUUID();
-        let totalDeduction = payment.amount;
-
-        for (const cnId of payment.creditNoteIds || []) {
-            const cn = await db.creditNotes.get(cnId);
-            if (cn && (!cn.status || cn.status === 'PENDING')) {
-                await db.creditNotes.update(cnId, { status: 'ALLOCATED', allocatedTo: paymentId });
-                totalDeduction += cn.amount;
-            }
-        }
-
-        await db.supplierPayments.add({
-          id: paymentId,
-          supplierId: selectedSupplierForPayment.id,
-          purchaseOrderIds: payment.purchaseOrderIds,
-          creditNoteIds: payment.creditNoteIds,
-          amount: payment.amount,
-          paymentMethod: payment.method,
-          transactionCode: payment.transactionCode,
-          reference: payment.reference,
-          source: payment.source,
-          accountId: payment.accountId,
-          timestamp: Date.now(),
+        await settleSupplierPayment({
+          supplier: selectedSupplierForPayment,
+          payment,
+          activeBranchId: activeBranchId!,
+          activeBusinessId: activeBusinessId!,
           preparedBy: useStore.getState().currentUser?.name || 'Authorized Staff',
-          branchId: activeBranchId!,
-          businessId: activeBusinessId!,
-          shiftId: useStore.getState().activeShift?.id
+          shiftId: useStore.getState().activeShift?.id,
         });
-
-        let remainingPool = totalDeduction;
-        for (const poId of payment.purchaseOrderIds || []) {
-            if (remainingPool <= 0) break;
-            const inv = await db.purchaseOrders.get(poId);
-            if (!inv) continue;
-            const due = inv.totalAmount - (inv.paidAmount || 0);
-            const paymentForThisInv = Math.min(due, remainingPool);
-            const newPaidAmount = (inv.paidAmount || 0) + paymentForThisInv;
-            await db.purchaseOrders.update(poId, {
-                paidAmount: newPaidAmount,
-                paymentStatus: newPaidAmount >= inv.totalAmount ? 'PAID' : 'PARTIAL'
-            });
-            remainingPool -= paymentForThisInv;
-        }
-
-        await db.suppliers.update(selectedSupplierForPayment.id, {
-          balance: Math.max(0, (selectedSupplierForPayment.balance || 0) - totalDeduction)
-        });
-
-        if (payment.source === 'ACCOUNT' && payment.accountId && payment.amount > 0) {
-           const account = await db.financialAccounts.get(payment.accountId);
-           if (account) {
-              await db.financialAccounts.update(account.id, { balance: account.balance - payment.amount });
-           }
-        }
         success("Payment recorded successfully.");
         setIsPaymentModalOpen(false);
         setSelectedSupplierForPayment(null);
@@ -232,6 +175,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
              {filteredSuppliers.map(supplier => (
                <div
                  key={supplier.id}
+                 data-testid={`supplier-row-${supplier.id}`}
                  className="px-3 sm:px-5 py-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 hover:bg-indigo-50/40 transition-colors group cursor-pointer"
                  onClick={() => { setSelectedSupplierForLedger(supplier); setIsLedgerModalOpen(true); }}
                >
@@ -254,6 +198,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
                      </p>
                    </div>
                    <button
+                     data-testid={`supplier-pay-${supplier.id}`}
                      onClick={(e) => {
                        e.stopPropagation();
                        useStore.getState().setPaymentSupplierId(supplier.id);

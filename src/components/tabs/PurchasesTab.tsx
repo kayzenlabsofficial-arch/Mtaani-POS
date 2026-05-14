@@ -90,17 +90,19 @@ export default function PurchasesTab() {
            });
            setSelectedPOToEdit(null);
         } else {
-           const allPOs = await db.purchaseOrders.toArray();
+           const allPOs = activeBranchId ? await db.purchaseOrders.where('branchId').equals(activeBranchId).toArray() : [];
            const maxNumber = allPOs.reduce((max, po) => {
-              if (!po.id.startsWith('PO-')) return max;
-              const num = parseInt(po.id.replace('PO-', ''));
+              const ref = po.poNumber || po.id;
+              if (!ref.startsWith('PO-')) return max;
+              const num = parseInt(ref.replace('PO-', ''));
               return !isNaN(num) && num > max ? num : max;
            }, 0);
-           const nextId = `PO-${String(maxNumber + 1).padStart(4, '0')}`;
+           const nextRef = `PO-${String(maxNumber + 1).padStart(4, '0')}`;
+           const nextId = `po_${activeBusinessId}_${activeBranchId}_${crypto.randomUUID()}`;
 
            await db.purchaseOrders.add({
               id: nextId,
-              poNumber: nextId,
+              poNumber: nextRef,
               supplierId: poForm.supplierId,
               items: poItems.map(item => ({ ...item, receivedQuantity: 0 })),
               totalAmount,
@@ -171,17 +173,24 @@ export default function PurchasesTab() {
             const cost = receiveUnitCosts[item.productId] || item.unitCost;
             return { ...item, receivedQuantity: qty, unitCost: cost };
         });
+        if (updatedItems.some(item => item.receivedQuantity < 0 || item.unitCost < 0)) {
+            return error("Received quantities and costs cannot be negative.");
+        }
+        const totalReceivedCost = updatedItems.reduce((sum, item) => sum + (item.receivedQuantity * item.unitCost), 0);
+        if (totalReceivedCost <= 0) return error("Receive at least one item before confirming arrival.");
         
         await db.purchaseOrders.update(selectedPO.id, { 
             status: 'RECEIVED', 
             paymentStatus: 'UNPAID',
             paidAmount: 0,
             items: updatedItems,
+            totalAmount: totalReceivedCost,
             receivedDate: Date.now(),
-            invoiceNumber 
+            invoiceNumber,
+            receivedBy: currentUser?.name || 'Authorized Staff',
+            updated_at: Date.now(),
         });
 
-        let totalReceivedCost = 0;
         for (const item of updatedItems) {
            if (item.receivedQuantity > 0) {
                const product = await db.products.get(item.productId);
@@ -189,6 +198,7 @@ export default function PurchasesTab() {
                    const newSell = receiveSellingPrices[item.productId];
                    await db.products.update(item.productId, {
                        stockQuantity: (product.stockQuantity || 0) + item.receivedQuantity,
+                       costPrice: item.unitCost,
                        ...(newSell && newSell !== product.sellingPrice ? { sellingPrice: newSell } : {})
                    });
                    await db.stockMovements.add({
@@ -197,19 +207,19 @@ export default function PurchasesTab() {
                        type: 'IN',
                        quantity: item.receivedQuantity,
                        timestamp: Date.now(),
-                       reference: `PO#${selectedPO.id.split('-')[0].toUpperCase()} Inv:${invoiceNumber}`,
+                       reference: `${selectedPO.poNumber || selectedPO.id.split('-')[0].toUpperCase()} Inv:${invoiceNumber}`,
                        branchId: activeBranchId!,
                        businessId: activeBusinessId!
                    });
                }
-               totalReceivedCost += (item.receivedQuantity * item.unitCost);
            }
         }
 
         const supplier = await db.suppliers.get(selectedPO.supplierId);
         if (supplier) {
             await db.suppliers.update(supplier.id, {
-                balance: (supplier.balance || 0) + totalReceivedCost
+                balance: (supplier.balance || 0) + totalReceivedCost,
+                updated_at: Date.now(),
             });
         }
 
@@ -243,6 +253,7 @@ export default function PurchasesTab() {
           </div>
         </div>
         <button
+          data-testid="purchase-new-order"
           onClick={() => { setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); setIsPOModalOpen(true); }}
           className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
         >
@@ -282,6 +293,7 @@ export default function PurchasesTab() {
                  <button
                    key={po.id}
                    type="button"
+                   data-testid={`purchase-row-${po.id}`}
                    onClick={() => po.approvalStatus === 'PENDING' ? initEditPO(po) : handleDetailsClick(po)}
                    className="w-full text-left px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-indigo-50/40 transition-colors group"
                  >
@@ -358,6 +370,7 @@ export default function PurchasesTab() {
                         keywords: `${s.company} ${s.name}`,
                       }))}
                       buttonClassName="rounded-2xl px-6 py-4.5 font-black text-slate-900 bg-slate-50 border-transparent hover:border-slate-200"
+                      dataTestId="purchase-supplier"
                     />
                  </div>
                  
@@ -368,6 +381,7 @@ export default function PurchasesTab() {
                            type="text" 
                            value={poItemInput.search} 
                            onChange={e => setPoItemInput({...poItemInput, search: e.target.value, productId: ''})} 
+                           data-testid="purchase-product-search"
                            placeholder="Search product by name or barcode..." 
                            className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl pl-12 pr-4 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" 
                        />
@@ -376,7 +390,7 @@ export default function PurchasesTab() {
                        {poItemInput.search && !poItemInput.productId && (
                           <div className="absolute top-full left-0 right-0 z-10 bg-white border-2 border-slate-100 rounded-2xl shadow-xl mt-2 max-h-60 overflow-y-auto no-scrollbar animate-in slide-in-from-top-2">
                              {allProducts?.filter(p => p.name.toLowerCase().includes(poItemInput.search.toLowerCase()) || p.barcode.includes(poItemInput.search)).slice(0, 5).map(p => (
-                                <div key={p.id} onClick={() => handleSelectPoProduct(p)} className="px-5 py-4 text-sm font-bold text-slate-700 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center justify-between">
+                                <div key={p.id} data-testid={`purchase-product-option-${p.id}`} onClick={() => handleSelectPoProduct(p)} className="px-5 py-4 text-sm font-bold text-slate-700 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center justify-between">
                                    <span>{p.name}</span>
                                    <span className="text-[10px] text-slate-400 font-mono">{p.barcode}</span>
                                 </div>
@@ -388,13 +402,13 @@ export default function PurchasesTab() {
                     {poItemInput.productId && (
                        <div className="flex gap-3 animate-in zoom-in-95">
                           <div className="flex-1">
-                             <input type="number" placeholder="Qty" value={poItemInput.qty} onChange={e => setPoItemInput({...poItemInput, qty: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm text-center" />
+                             <input data-testid="purchase-item-qty" type="number" placeholder="Qty" value={poItemInput.qty} onChange={e => setPoItemInput({...poItemInput, qty: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm text-center" />
                           </div>
                           <div className="flex-[2] relative">
                              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300">KSH</span>
-                             <input type="number" placeholder="Unit Cost" value={poItemInput.cost} onChange={e => setPoItemInput({...poItemInput, cost: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl pl-12 pr-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" />
+                             <input data-testid="purchase-item-cost" type="number" placeholder="Unit Cost" value={poItemInput.cost} onChange={e => setPoItemInput({...poItemInput, cost: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl pl-12 pr-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" />
                           </div>
-                          <button onClick={handleAddPoItem} className="w-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-indigo active:scale-95 transition-all">
+                          <button data-testid="purchase-add-item" onClick={handleAddPoItem} className="w-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-indigo active:scale-95 transition-all">
                              <Plus size={24}/>
                           </button>
                        </div>
@@ -434,7 +448,7 @@ export default function PurchasesTab() {
                  <button onClick={() => { setIsPOModalOpen(false); setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); }} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
                    Dismiss
                  </button>
-                 <button onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0 || isSaving} className="flex-[2] grad-indigo text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-indigo press flex items-center justify-center gap-3">
+                 <button data-testid="purchase-save-order" onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0 || isSaving} className="flex-[2] grad-indigo text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-indigo press flex items-center justify-center gap-3">
                    <Save size={18}/>
                    {isSaving ? 'Saving...' : selectedPOToEdit ? 'Commit Changes' : 'Publish Order'}
                  </button>
@@ -463,7 +477,7 @@ export default function PurchasesTab() {
               <div className="space-y-6 mb-10">
                  <div>
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Vendor Invoice Number</label>
-                    <input type="text" value={receiveInvoices[selectedPO.id] || ''} onChange={e => setReceiveInvoices({...receiveInvoices, [selectedPO.id]: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 focus:bg-white rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="e.g. INV/2026/001" />
+                    <input data-testid="purchase-receive-invoice" type="text" value={receiveInvoices[selectedPO.id] || ''} onChange={e => setReceiveInvoices({...receiveInvoices, [selectedPO.id]: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 focus:bg-white rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="e.g. INV/2026/001" />
                  </div>
 
                  <div className="space-y-3">
@@ -480,6 +494,7 @@ export default function PurchasesTab() {
                                     <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Actual Recv</label>
                                     <input 
                                         type="number" 
+                                        data-testid={`purchase-receive-qty-${item.productId}`}
                                         value={receiveQuantities[item.productId] ?? item.expectedQuantity} 
                                         onChange={e => setReceiveQuantities({...receiveQuantities, [item.productId]: Number(e.target.value)})} 
                                         className="w-full bg-white border-2 border-transparent focus:border-emerald-500 rounded-xl px-2 py-2 text-sm font-black text-slate-900 outline-none text-center shadow-sm" 
@@ -491,6 +506,7 @@ export default function PurchasesTab() {
                                     <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Verified Unit Cost</label>
                                     <input 
                                         type="number" 
+                                        data-testid={`purchase-receive-cost-${item.productId}`}
                                         value={receiveUnitCosts[item.productId] ?? item.unitCost} 
                                         onChange={e => setReceiveUnitCosts({...receiveUnitCosts, [item.productId]: Number(e.target.value)})} 
                                         className="w-full bg-white border-2 border-transparent focus:border-emerald-500 rounded-xl px-4 py-2 text-[11px] font-black text-slate-900 outline-none shadow-sm" 
@@ -500,6 +516,7 @@ export default function PurchasesTab() {
                                     <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Update Sell Price</label>
                                     <input 
                                         type="number" 
+                                        data-testid={`purchase-receive-sell-${item.productId}`}
                                         value={receiveSellingPrices[item.productId] ?? ''} 
                                         onChange={e => setReceiveSellingPrices({...receiveSellingPrices, [item.productId]: Number(e.target.value)})} 
                                         className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-2 text-[11px] font-black text-slate-900 outline-none shadow-sm" 
@@ -517,7 +534,7 @@ export default function PurchasesTab() {
                  <button onClick={() => setIsReceivePOModalOpen(false)} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
                    Dismiss
                  </button>
-                 <button onClick={handleReceivePO} disabled={!receiveInvoices[selectedPO.id] || isSaving} className="flex-[2] bg-emerald-600 text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-emerald press flex items-center justify-center gap-3">
+                 <button data-testid="purchase-confirm-arrival" onClick={handleReceivePO} disabled={!receiveInvoices[selectedPO.id] || isSaving} className="flex-[2] bg-emerald-600 text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-emerald press flex items-center justify-center gap-3">
                    {isSaving ? <Loader2 size={18} className="animate-spin" /> : <CheckSquare size={18}/>}
                    {isSaving ? 'Processing...' : 'Confirm Arrival'}
                  </button>

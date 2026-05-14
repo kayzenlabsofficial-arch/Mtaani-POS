@@ -155,7 +155,9 @@ export function useMtaaniPOS() {
     }
     
     try {
-      const productIngredients = await db.productIngredients.toArray();
+      const productIngredients = activeBusinessId
+        ? await db.productIngredients.where('businessId').equals(activeBusinessId).toArray()
+        : [];
       for (const item of cart) {
         const prod = await db.products.get(item.id);
         if (!prod) continue;
