@@ -204,6 +204,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       await env.DB.prepare('CREATE TABLE IF NOT EXISTS loginAttempts (id TEXT PRIMARY KEY, count INTEGER DEFAULT 0, lockedUntil INTEGER, updated_at INTEGER)').run();
     }
 
+    if (table === 'productIngredients') {
+      // Defensive migration for deployed databases that predate bundle ingredients.
+      await env.DB.prepare('CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER)').run();
+      await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId)').run();
+    }
+
     // ── GET ──────────────────────────────────────────────────────────────────
     if (request.method === 'GET') {
       if (table === 'businesses') {

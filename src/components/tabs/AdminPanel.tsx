@@ -64,6 +64,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
       : 'USERS';
   });
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  const activeBranchId = useStore(state => state.activeBranchId);
   const { success, error, warning } = useToast();
   const scrollRef = useHorizontalScroll();
   
@@ -84,8 +85,8 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     []
   );
   const activeShifts = useLiveQuery(
-    () => activeBusinessId ? db.shifts.where('status').equals('OPEN').and(s => s.businessId === activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId],
+    () => activeBusinessId && activeBranchId ? db.shifts.where('status').equals('OPEN').and(s => s.businessId === activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
     []
   );
   const branches = useLiveQuery(
@@ -93,7 +94,6 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     [activeBusinessId],
     []
   );
-  const activeBranchId = useStore(state => state.activeBranchId);
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', password: '', role: 'CASHIER' as 'CASHIER' | 'ADMIN', branchId: '' });
   const [editingUserId, setEditingUserId] = useState<string | null>(null);

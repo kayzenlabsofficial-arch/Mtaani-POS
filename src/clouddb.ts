@@ -41,6 +41,21 @@ const OFFLINE_CACHE_TABLES = new Set<OfflineCacheTable>([
   'productIngredients',
 ]);
 
+const CLIENT_GLOBAL_TABLES = new Set([
+  'users',
+  'branches',
+  'settings',
+  'expenseAccounts',
+  'financialAccounts',
+  'customers',
+  'suppliers',
+  'products',
+  'productIngredients',
+  'categories',
+  'businesses',
+  'loginAttempts',
+]);
+
 function isLikelyOfflineError(e: any): boolean {
   if (typeof window !== 'undefined' && navigator && navigator.onLine === false) return true;
   const msg = String(e?.message || e || '');
@@ -197,8 +212,13 @@ export class CloudTable<T extends { id: string }> {
     try {
       const { useStore } = await import('./store');
       const businessId = useStore.getState().activeBusinessId;
+      const branchId = useStore.getState().activeBranchId;
       
       if (!businessId && this.name !== 'businesses' && this.name !== 'loginAttempts' && !this.name.startsWith('system')) {
+        return;
+      }
+
+      if (businessId && !branchId && !CLIENT_GLOBAL_TABLES.has(this.name)) {
         return;
       }
 
