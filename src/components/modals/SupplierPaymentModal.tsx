@@ -38,7 +38,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
   const pendingCreditNotes = useLiveQuery(
     () => supplier ? db.creditNotes
       .where('supplierId').equals(supplier.id)
-      .filter(cn => cn.status === 'PENDING').toArray() : [],
+      .filter(cn => !cn.status || cn.status === 'PENDING').toArray() : [],
     [supplier]
   ) || [];
 

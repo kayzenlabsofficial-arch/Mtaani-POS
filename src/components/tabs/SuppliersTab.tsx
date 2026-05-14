@@ -123,7 +123,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
 
         for (const cnId of payment.creditNoteIds || []) {
             const cn = await db.creditNotes.get(cnId);
-            if (cn && cn.status === 'PENDING') {
+            if (cn && (!cn.status || cn.status === 'PENDING')) {
                 await db.creditNotes.update(cnId, { status: 'ALLOCATED', allocatedTo: paymentId });
                 totalDeduction += cn.amount;
             }

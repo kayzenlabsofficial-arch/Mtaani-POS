@@ -29,7 +29,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
   const allPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const allCreditNotes = useLiveQuery(() => activeBranchId ? db.creditNotes.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
 
-  const pendingCredits = allCreditNotes.filter(cn => cn.status === 'PENDING');
+  const pendingCredits = allCreditNotes.filter(cn => !cn.status || cn.status === 'PENDING');
   const totalPendingCredit = pendingCredits.reduce((sum, cn) => sum + cn.amount, 0);
 
   const suppliersOwed = allSuppliers.filter(s => s.balance > 0);
@@ -77,7 +77,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
 
         for (const cnId of payment.creditNoteIds || []) {
             const cn = await db.creditNotes.get(cnId);
-            if (cn && cn.status === 'PENDING') {
+            if (cn && (!cn.status || cn.status === 'PENDING')) {
                 await db.creditNotes.update(cnId, { status: 'ALLOCATED', allocatedTo: paymentId });
                 totalDeduction += cn.amount;
             }
