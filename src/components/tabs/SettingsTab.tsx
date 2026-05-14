@@ -4,6 +4,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
+import { DEFAULT_CASH_DRAWER_LIMIT, DEFAULT_CASH_FLOAT_TARGET } from '../../utils/ownerMode';
 
 
 export default function SettingsTab({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
@@ -13,6 +14,13 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
   const savedSettings = useLiveQuery(() => db.settings.get('core'), [], null);
   const [storeSettings, setStoreSettings] = useState({
      storeName: 'Mtaani Shop', krapin: 'P0000000000A', tillNumber: '123456', receiptFooter: 'Thank you for shopping!', location: 'Nairobi, Kenya'
+  });
+  const [ownerSettings, setOwnerSettings] = useState({
+    ownerModeEnabled: false,
+    autoApproveOwnerActions: true,
+    cashSweepEnabled: true,
+    cashDrawerLimit: String(DEFAULT_CASH_DRAWER_LIMIT),
+    cashFloatTarget: String(DEFAULT_CASH_FLOAT_TARGET),
   });
 
   const [isUpdating, setIsUpdating] = useState(false);
@@ -37,6 +45,13 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
            tillNumber: savedSettings.tillNumber,
            receiptFooter: savedSettings.receiptFooter,
            location: savedSettings.location || 'Nairobi, Kenya'
+        });
+        setOwnerSettings({
+          ownerModeEnabled: savedSettings.ownerModeEnabled === 1,
+          autoApproveOwnerActions: savedSettings.autoApproveOwnerActions !== 0,
+          cashSweepEnabled: savedSettings.cashSweepEnabled !== 0,
+          cashDrawerLimit: String(savedSettings.cashDrawerLimit ?? DEFAULT_CASH_DRAWER_LIMIT),
+          cashFloatTarget: String(savedSettings.cashFloatTarget ?? DEFAULT_CASH_FLOAT_TARGET),
         });
      }
   }, [savedSettings]);
@@ -70,12 +85,18 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
       setIsUpdating(true);
       try {
         await db.settings.put({
+            ...(savedSettings || {}),
             id: 'core',
             storeName: storeSettings.storeName,
             tillNumber: storeSettings.tillNumber,
             kraPin: storeSettings.krapin,
             receiptFooter: storeSettings.receiptFooter,
-            location: storeSettings.location
+            location: storeSettings.location,
+            ownerModeEnabled: ownerSettings.ownerModeEnabled ? 1 : 0,
+            autoApproveOwnerActions: ownerSettings.autoApproveOwnerActions ? 1 : 0,
+            cashSweepEnabled: ownerSettings.cashSweepEnabled ? 1 : 0,
+            cashDrawerLimit: Number(ownerSettings.cashDrawerLimit) || DEFAULT_CASH_DRAWER_LIMIT,
+            cashFloatTarget: Number(ownerSettings.cashFloatTarget) || DEFAULT_CASH_FLOAT_TARGET,
         });
         success("Business configuration saved successfully!");
       } catch (err) {
@@ -235,6 +256,86 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                >
                  <Usb size={18} /> Save Hardware Settings
                </button>
+            </div>
+
+            <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
+               <h3 className="text-base font-bold text-slate-900 mb-6 flex items-center gap-2">
+                  <ShieldCheck className="text-emerald-600" /> Owner Mode
+               </h3>
+
+               <div className="space-y-4">
+                  <button
+                    type="button"
+                    onClick={() => setOwnerSettings(prev => ({ ...prev, ownerModeEnabled: !prev.ownerModeEnabled }))}
+                    className={`w-full flex items-center justify-between gap-4 p-4 rounded-2xl border-2 transition-all ${ownerSettings.ownerModeEnabled ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-slate-50 border-slate-100 text-slate-600'}`}
+                  >
+                    <div className="text-left">
+                      <p className="text-[10px] font-black uppercase tracking-widest">Solo Operator</p>
+                      <p className="text-xs font-bold mt-1">{ownerSettings.ownerModeEnabled ? 'Owner flow active' : 'Standard staff flow'}</p>
+                    </div>
+                    <div className={`w-12 h-7 rounded-full p-1 flex transition-all ${ownerSettings.ownerModeEnabled ? 'bg-emerald-600 justify-end' : 'bg-slate-300 justify-start'}`}>
+                      <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
+                    </div>
+                  </button>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setOwnerSettings(prev => ({ ...prev, autoApproveOwnerActions: !prev.autoApproveOwnerActions }))}
+                      disabled={!ownerSettings.ownerModeEnabled}
+                      className={`p-4 rounded-2xl border-2 text-left transition-all disabled:opacity-40 ${ownerSettings.autoApproveOwnerActions ? 'bg-blue-50 border-blue-100 text-blue-900' : 'bg-white border-slate-100 text-slate-500'}`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {ownerSettings.autoApproveOwnerActions ? <Check size={16} /> : <X size={16} />}
+                        <p className="text-[9px] font-black uppercase tracking-widest">Auto Approve</p>
+                      </div>
+                      <p className="text-xs font-bold leading-snug">Owner expenses, returns, and orders</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setOwnerSettings(prev => ({ ...prev, cashSweepEnabled: !prev.cashSweepEnabled }))}
+                      disabled={!ownerSettings.ownerModeEnabled}
+                      className={`p-4 rounded-2xl border-2 text-left transition-all disabled:opacity-40 ${ownerSettings.cashSweepEnabled ? 'bg-amber-50 border-amber-100 text-amber-900' : 'bg-white border-slate-100 text-slate-500'}`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {ownerSettings.cashSweepEnabled ? <Check size={16} /> : <X size={16} />}
+                        <p className="text-[9px] font-black uppercase tracking-widest">Cash Sweep</p>
+                      </div>
+                      <p className="text-xs font-bold leading-snug">Dashboard banking shortcut</p>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Drawer Limit</label>
+                      <input
+                        type="number"
+                        value={ownerSettings.cashDrawerLimit}
+                        onChange={e => setOwnerSettings(prev => ({ ...prev, cashDrawerLimit: e.target.value }))}
+                        className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none shadow-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Keep Float</label>
+                      <input
+                        type="number"
+                        value={ownerSettings.cashFloatTarget}
+                        onChange={e => setOwnerSettings(prev => ({ ...prev, cashFloatTarget: e.target.value }))}
+                        className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none shadow-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleSaveSettings}
+                    disabled={isUpdating}
+                    className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-emerald press flex items-center justify-center gap-3 disabled:opacity-50"
+                  >
+                    {isUpdating ? <RefreshCcw size={16} className="animate-spin" /> : <Save size={16} />}
+                    Save Owner Mode
+                  </button>
+               </div>
             </div>
 
             <div className="bg-rose-50 p-8 rounded-[2.5rem] border-2 border-rose-100 flex items-center gap-6">

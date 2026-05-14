@@ -35,7 +35,13 @@ const COLOR_OPTIONS = [
 ];
 
 export default function AdminPanel({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
-  const [activeAdminTab, setActiveAdminTab] = useState<'SETTINGS' | 'APPROVALS' | 'USERS' | 'CATEGORIES' | 'BRANCHES' | 'FINANCE'>('USERS');
+  const [activeAdminTab, setActiveAdminTab] = useState<'SETTINGS' | 'APPROVALS' | 'USERS' | 'CATEGORIES' | 'BRANCHES' | 'FINANCE'>(() => {
+    const requested = sessionStorage.getItem('mtaani_admin_tab');
+    sessionStorage.removeItem('mtaani_admin_tab');
+    return ['SETTINGS', 'APPROVALS', 'USERS', 'CATEGORIES', 'BRANCHES', 'FINANCE'].includes(requested || '')
+      ? requested as any
+      : 'USERS';
+  });
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const { success, error, warning } = useToast();
   const scrollRef = useHorizontalScroll();

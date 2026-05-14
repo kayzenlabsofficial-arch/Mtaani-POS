@@ -6,6 +6,7 @@ import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { SearchableSelect } from '../shared/SearchableSelect';
+import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 
 
 export default function PurchasesTab() {
@@ -42,6 +43,7 @@ export default function PurchasesTab() {
     [activeBusinessId, activeBranchId],
     []
   );
+  const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
 
   const filteredPurchases = allPurchaseOrders.filter(po => 
       (po.invoiceNumber || '').toLowerCase().includes(purchaseSearch.toLowerCase()) || 
@@ -75,6 +77,7 @@ export default function PurchasesTab() {
       setIsSaving(true);
       try {
         const totalAmount = poItems.reduce((acc, item) => acc + (item.expectedQuantity * item.unitCost), 0);
+        const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
         
         if (selectedPOToEdit) {
            await db.purchaseOrders.update(selectedPOToEdit.id, {
@@ -82,6 +85,7 @@ export default function PurchasesTab() {
               items: poItems.map(item => ({ ...item, receivedQuantity: 0 })),
               totalAmount,
               preparedBy: selectedPOToEdit.preparedBy || currentUser?.name || 'Authorized Staff',
+              ...(autoApprove ? { approvalStatus: 'APPROVED', approvedBy: currentUser?.name || 'Owner' } : {}),
               branchId: activeBranchId!
            });
            setSelectedPOToEdit(null);
@@ -101,9 +105,10 @@ export default function PurchasesTab() {
               items: poItems.map(item => ({ ...item, receivedQuantity: 0 })),
               totalAmount,
               status: 'PENDING',
-              approvalStatus: 'PENDING',
+              approvalStatus: autoApprove ? 'APPROVED' : 'PENDING',
               orderDate: Date.now(),
               preparedBy: currentUser?.name || 'Authorized Staff',
+              approvedBy: autoApprove ? currentUser?.name || 'Owner' : undefined,
               branchId: activeBranchId!,
               businessId: activeBusinessId!
            } as any);
@@ -111,7 +116,7 @@ export default function PurchasesTab() {
         setIsPOModalOpen(false);
         setPoForm({ supplierId: '' });
         setPoItems([]);
-        success("Purchase order saved successfully.");
+        success(autoApprove ? "Purchase order approved and ready to receive." : "Purchase order saved successfully.");
       } catch (err: any) {
         error("Failed to save PO: " + err.message);
       } finally {

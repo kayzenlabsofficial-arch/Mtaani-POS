@@ -6,6 +6,9 @@ import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import AdminApprovals from './AdminApprovals';
 import { useStore } from '../../store';
 import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
+import { approveRefundTransaction, requestRefundApproval } from '../../utils/approvalWorkflows';
+import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
+import { useToast } from '../../context/ToastContext';
 
 
 export default function DocumentsTab() {
@@ -13,14 +16,18 @@ export default function DocumentsTab() {
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
   const [filterType, setFilterType] = useState<'ALL' | 'APPROVALS' | 'SALES' | 'EXPENSES' | 'SUPPLIER_PAYMENTS' | 'INVOICES' | 'SHIFTS' | 'DAILY'>('ALL');
   const scrollRef = useHorizontalScroll();
+  const { success, error } = useToast();
 
   const activeBranchId = useStore(state => state.activeBranchId);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
+  const currentUser = useStore(state => state.currentUser);
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const allExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
   const allSupplierPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
   const allPurchaseOrders = useLiveQuery(() => activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
   const allReports = useLiveQuery(() => activeBranchId ? db.endOfDayReports.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
   const allDailySummaries = useLiveQuery(() => activeBranchId ? db.dailySummaries.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
+  const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
 
   const unifiedRecords: any[] = [
     ...(allTransactions || []).map(t => ({ ...t, recordType: 'SALE' as const })),
@@ -44,9 +51,22 @@ export default function DocumentsTab() {
 
   const handleRefund = async (t: Transaction, itemsToReturn?: { productId: string, quantity: number }[]) => {
     if (t.status !== 'PAID' && t.status !== 'PARTIAL_REFUND') return;
-    await db.transactions.update(t.id, { status: 'PENDING_REFUND' });
-    setSelectedRecord(null);
-    alert("Refund request sent to Admin for approval.");
+    const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
+    try {
+      if (autoApprove && activeBranchId && activeBusinessId) {
+        await approveRefundTransaction(t, itemsToReturn, {
+          approvedBy: currentUser?.name || 'Owner',
+          activeBranchId,
+          activeBusinessId
+        });
+      } else {
+        await requestRefundApproval(t, itemsToReturn);
+      }
+      setSelectedRecord(null);
+      success(autoApprove ? "Refund processed and stock returned." : "Refund request sent to Admin for approval.");
+    } catch (err: any) {
+      error(err.message || 'Refund failed.');
+    }
   };
 
   const filteredDocs = unifiedRecords.filter(r => {

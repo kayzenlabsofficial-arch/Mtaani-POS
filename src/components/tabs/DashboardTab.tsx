@@ -4,6 +4,8 @@ import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { canUseOwnerMode, getCashDrawerLimit, getCashFloatTarget, isOwnerCashSweepEnabled, isOwnerModeEnabled } from '../../utils/ownerMode';
+import { recordAuditEvent } from '../../utils/auditLog';
 
 const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => (
   <span className={`material-symbols-outlined ${className}`}>{name}</span>
@@ -46,9 +48,11 @@ const chartData = [
 
 export default function DashboardTab({ setActiveTab, openExpenseModal }: DashboardTabProps) {
   const [trendView, setTrendView] = useState<'DAY' | 'WEEK'>('DAY');
+  const [isBankingExcess, setIsBankingExcess] = useState(false);
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
+  const { success, error } = useToast();
   const branches = useLiveQuery(() => db.branches.toArray(), []);
   const activeBranch = branches?.find(b => b.id === activeBranchId);
 
@@ -61,9 +65,84 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : [],
     [activeBusinessId], []
   );
+  const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
+  const branchTransactions = useLiveQuery(
+    () => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
+    [activeBranchId], []
+  );
+  const branchExpenses = useLiveQuery(
+    () => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
+    [activeBranchId], []
+  );
+  const branchCashPicks = useLiveQuery(
+    () => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
+    [activeBranchId], []
+  );
+  const pendingApprovalCount = useLiveQuery(async () => {
+    if (!activeBranchId) return 0;
+    const [expenses, refunds, purchaseOrders, picks] = await Promise.all([
+      db.expenses.where('branchId').equals(activeBranchId).and(row => row.status === 'PENDING').toArray(),
+      db.transactions.where('branchId').equals(activeBranchId).and(row => row.status === 'PENDING_REFUND').toArray(),
+      db.purchaseOrders.where('branchId').equals(activeBranchId).and(row => row.approvalStatus === 'PENDING').toArray(),
+      db.cashPicks.where('branchId').equals(activeBranchId).and(row => row.status === 'PENDING').toArray(),
+    ]);
+    return expenses.length + refunds.length + purchaseOrders.length + picks.length;
+  }, [activeBranchId], 0);
 
   const lowStockItems = products?.filter(p => (p.stockQuantity || 0) <= (p.reorderPoint || 5)).slice(0, 5) || [];
   const totalRevenue = transactions?.reduce((a, t) => a + t.total, 0) || 0;
+  const ownerModeActive = canUseOwnerMode(currentUser) && isOwnerModeEnabled(businessSettings);
+  const cashSweepActive = ownerModeActive && isOwnerCashSweepEnabled(businessSettings);
+  const cashDrawerLimit = getCashDrawerLimit(businessSettings);
+  const cashFloatTarget = getCashFloatTarget(businessSettings);
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const cashSalesToday = (branchTransactions || [])
+    .filter(t => (t.timestamp || 0) >= todayStart.getTime() && t.status === 'PAID')
+    .reduce((sum, t: any) => {
+      if (t.paymentMethod === 'CASH') return sum + (t.total || 0);
+      if (t.paymentMethod === 'SPLIT') return sum + (t.splitPayments?.cashAmount || t.splitData?.cashAmount || 0);
+      return sum;
+    }, 0);
+  const tillExpensesToday = (branchExpenses || [])
+    .filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'TILL' && e.status !== 'REJECTED')
+    .reduce((sum, e) => sum + (e.amount || 0), 0);
+  const cashPicksToday = (branchCashPicks || [])
+    .filter(p => (p.timestamp || 0) >= todayStart.getTime())
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+  const actualCashDrawer = Math.max(0, cashSalesToday - tillExpensesToday - cashPicksToday);
+  const sweepAmount = Math.max(0, actualCashDrawer - cashFloatTarget);
+  const shouldSweepCash = cashSweepActive && actualCashDrawer > cashDrawerLimit && sweepAmount > 0;
+
+  const handleBankExcessCash = async () => {
+    if (!activeBranchId || !activeBusinessId || !currentUser || !shouldSweepCash || isBankingExcess) return;
+    setIsBankingExcess(true);
+    try {
+      await db.cashPicks.add({
+        id: crypto.randomUUID(),
+        amount: sweepAmount,
+        timestamp: Date.now(),
+        status: 'APPROVED',
+        userName: currentUser.name,
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+      });
+      recordAuditEvent({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        action: 'cash.pick.owner_sweep',
+        entity: 'cashPick',
+        severity: 'INFO',
+        details: `Owner cash sweep recorded for Ksh ${sweepAmount.toLocaleString()}`,
+      });
+      success(`Banked Ksh ${sweepAmount.toLocaleString()} and left Ksh ${cashFloatTarget.toLocaleString()} in drawer.`);
+    } catch (err: any) {
+      error(err.message || 'Cash sweep failed.');
+    } finally {
+      setIsBankingExcess(false);
+    }
+  };
 
   const quickActions = [
     { id: 'REGISTER', label: 'New Sale', icon: 'point_of_sale', color: 'bg-primary' },
@@ -86,6 +165,54 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           {activeBranch?.name || 'Main Shop'} • {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
         </p>
       </div>
+
+      {ownerModeActive && (
+        <div className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-9 h-9 bg-emerald-600 text-white rounded-xl flex items-center justify-center">
+                  <MaterialIcon name="verified_user" className="text-lg" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Owner Console</h3>
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Auto approvals active</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="text-[10px] font-black text-slate-500 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-xl">
+                  Pending: {pendingApprovalCount || 0}
+                </span>
+                <span className="text-[10px] font-black text-slate-500 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-xl">
+                  Drawer: Ksh {actualCashDrawer.toLocaleString()}
+                </span>
+                <span className="text-[10px] font-black text-slate-500 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-xl">
+                  Limit: Ksh {cashDrawerLimit.toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 lg:min-w-[360px]">
+              <button
+                onClick={() => {
+                  sessionStorage.setItem('mtaani_admin_tab', 'SETTINGS');
+                  setActiveTab('ADMIN_PANEL');
+                }}
+                className="flex-1 px-4 py-3 bg-slate-50 border border-slate-100 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all"
+              >
+                Owner Settings
+              </button>
+              <button
+                onClick={handleBankExcessCash}
+                disabled={!shouldSweepCash || isBankingExcess}
+                className={`flex-[1.4] px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${shouldSweepCash ? 'bg-emerald-600 text-white shadow-emerald press' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}
+              >
+                {isBankingExcess ? 'Banking...' : shouldSweepCash ? `Bank Ksh ${sweepAmount.toLocaleString()}` : 'Cash OK'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* KPI Grid — 2x2 */}
       <div className="grid grid-cols-2 gap-4">

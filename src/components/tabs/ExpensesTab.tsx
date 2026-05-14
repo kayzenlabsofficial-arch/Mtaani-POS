@@ -8,6 +8,8 @@ import ExpenseModal from '../modals/ExpenseModal';
 import ExpenseAccountModal from '../modals/ExpenseAccountModal';
 import { canPerform } from '../../utils/accessControl';
 import { recordAuditEvent } from '../../utils/auditLog';
+import { applyApprovedExpenseEffects, ensureExpenseCanBeApproved } from '../../utils/approvalWorkflows';
+import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 
 
 export default function ExpensesTab() {
@@ -27,6 +29,7 @@ export default function ExpensesTab() {
   const expenseAccounts = useLiveQuery(() => db.expenseAccounts.toArray(), [], []) ;
   const financialAccounts = useLiveQuery(() => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []) ;
   const products = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []) ;
+  const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const allCashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   
@@ -52,6 +55,14 @@ export default function ExpensesTab() {
           error("Insufficient cash in drawer.");
           return;
       }
+      if (expenseForm.source === 'ACCOUNT' && !expenseForm.accountId) {
+          error("Select the account paying this expense.");
+          return;
+      }
+      if (expenseForm.source === 'SHOP' && !expenseForm.productId) {
+          error("Select the stock item being expensed.");
+          return;
+      }
       if (!currentUser) return;
       if (!canPerform(currentUser, 'expense.create')) {
           error("You do not have permission to create expenses.");
@@ -60,7 +71,8 @@ export default function ExpensesTab() {
 
       setIsSaving(true);
       try {
-        await db.expenses.add({
+        const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
+        const expenseRecord = {
            id: crypto.randomUUID(),
            amount,
            category: expenseForm.category,
@@ -68,22 +80,46 @@ export default function ExpensesTab() {
            timestamp: Date.now(),
            userName: currentUser.name,
            preparedBy: currentUser.name,
-           status: 'PENDING',
+           status: autoApprove ? 'APPROVED' : 'PENDING',
+           approvedBy: autoApprove ? currentUser.name : undefined,
            source: expenseForm.source,
+           accountId: expenseForm.source === 'ACCOUNT' ? expenseForm.accountId : undefined,
+           productId: expenseForm.source === 'SHOP' ? expenseForm.productId : undefined,
+           quantity: expenseForm.source === 'SHOP' ? Number(expenseForm.quantity || 1) : undefined,
            branchId: activeBranchId!,
            businessId: activeBusinessId!
-        });
+        } as any;
+
+        if (autoApprove) {
+          await ensureExpenseCanBeApproved(expenseRecord);
+        }
+
+        await db.expenses.add(expenseRecord);
+
+        if (autoApprove) {
+          try {
+            await applyApprovedExpenseEffects(expenseRecord, {
+              approvedBy: currentUser.name,
+              activeBranchId: activeBranchId!,
+              activeBusinessId: activeBusinessId!
+            });
+          } catch (err) {
+            await db.expenses.update(expenseRecord.id, { status: 'PENDING', approvedBy: undefined });
+            throw err;
+          }
+        }
+
         recordAuditEvent({
           userId: currentUser.id,
           userName: currentUser.name,
           action: 'expense.create',
           entity: 'expense',
-          severity: 'WARN',
-          details: `Created pending expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'Uncategorized'})`,
+          severity: autoApprove ? 'INFO' : 'WARN',
+          details: `${autoApprove ? 'Auto-approved' : 'Created pending'} expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'Uncategorized'})`,
         });
         setIsExpenseModalOpen(false);
         setExpenseForm({ amount: '', category: '', description: '', source: 'TILL', accountId: '', productId: '', quantity: '1' });
-        success("Expense logged successfully.");
+        success(autoApprove ? "Expense logged and approved." : "Expense logged successfully.");
       } catch (err: any) {
         error("Failed to log expense: " + err.message);
       } finally {

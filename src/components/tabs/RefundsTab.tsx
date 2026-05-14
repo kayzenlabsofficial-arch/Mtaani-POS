@@ -7,6 +7,8 @@ import { useStore } from '../../store';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { canPerform } from '../../utils/accessControl';
 import { recordAuditEvent } from '../../utils/auditLog';
+import { approveRefundTransaction, requestRefundApproval } from '../../utils/approvalWorkflows';
+import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 
 
 interface RefundsTabProps {
@@ -20,8 +22,10 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   const { success, error } = useToast();
 
   const activeBranchId = useStore(state => state.activeBranchId);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
   
   if (!allTransactions) {
     return (
@@ -53,21 +57,28 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
 
     setIsSaving(true);
     try {
-        await db.transactions.update(t.id, { 
-            status: 'PENDING_REFUND'
-        });
+        const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
+        if (autoApprove && activeBranchId && activeBusinessId) {
+          await approveRefundTransaction(t, itemsToReturn, {
+            approvedBy: currentUser?.name || 'Owner',
+            activeBranchId,
+            activeBusinessId
+          });
+        } else {
+          await requestRefundApproval(t, itemsToReturn);
+        }
         recordAuditEvent({
           userId: currentUser?.id,
           userName: currentUser?.name,
           action: 'sale.refund.request',
           entity: 'transaction',
           entityId: t.id,
-          severity: 'WARN',
-          details: `Refund request submitted for Ksh ${(t.total || 0).toLocaleString()}`,
+          severity: autoApprove ? 'INFO' : 'WARN',
+          details: `${autoApprove ? 'Refund processed' : 'Refund request submitted'} for Ksh ${(t.total || 0).toLocaleString()}`,
         });
         
         setSelectedRecord(null);
-        success("Refund request sent to Admin for approval.");
+        success(autoApprove ? "Refund processed and stock returned." : "Refund request sent to Admin for approval.");
     } catch (err: any) {
         error("Failed to request refund: " + err.message);
     } finally {

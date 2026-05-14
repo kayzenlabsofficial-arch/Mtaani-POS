@@ -293,6 +293,11 @@ export interface BusinessSettings {
   tillNumber: string;
   kraPin: string;
   receiptFooter: string;
+  ownerModeEnabled?: number;
+  autoApproveOwnerActions?: number;
+  cashSweepEnabled?: number;
+  cashDrawerLimit?: number;
+  cashFloatTarget?: number;
   businessId: string;
   updated_at?: number;
 }

@@ -5,6 +5,7 @@ import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import { Check, X, Package, Banknote, Clock, AlertCircle, FileMinus, RotateCcw, ClipboardList, PackagePlus, Eye, ChevronRight } from 'lucide-react';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
+import { approveExpenseRequest, approveRefundTransaction } from '../../utils/approvalWorkflows';
 
 export default function AdminApprovals() {
   const currentUser = useStore(state => state.currentUser);
@@ -54,59 +55,17 @@ export default function AdminApprovals() {
   };
 
   const handleApproveExpense = async (e: any) => {
-    // ── FIX C6: Guard against double-approval (rapid double-tap) ──
-    const freshExpense = await db.expenses.get(e.id);
-    if (!freshExpense || freshExpense.status !== 'PENDING') {
-      error('This expense has already been processed.');
-      return;
+    if (!activeBranchId || !activeBusinessId) return;
+    try {
+      await approveExpenseRequest(e, {
+        approvedBy: currentUser?.name || 'Administrator',
+        activeBranchId,
+        activeBusinessId
+      });
+      success("Expense disbursement authorized.");
+    } catch (err: any) {
+      error(err.message || 'Expense approval failed.');
     }
-    // Mark as APPROVED first to prevent a second concurrent approval from also passing the check
-    await db.expenses.update(e.id, { 
-        status: 'APPROVED',
-        approvedBy: currentUser?.name
-    });
-    // Deduct from owner finance account when source is ACCOUNT
-    if (e.source === 'ACCOUNT' && e.accountId) {
-        const account = await db.financialAccounts.get(e.accountId);
-        if (!account) {
-          await db.expenses.update(e.id, { status: 'PENDING', approvedBy: undefined });
-          error("Account-backed expense failed: selected account not found.");
-          return;
-        }
-        if ((account.balance || 0) < (Number(e.amount) || 0)) {
-          await db.expenses.update(e.id, { status: 'PENDING', approvedBy: undefined });
-          error(`Insufficient funds in ${account.name}.`);
-          return;
-        }
-        await db.financialAccounts.update(account.id, {
-          balance: (account.balance || 0) - (Number(e.amount) || 0),
-          updated_at: Date.now()
-        });
-    }
-
-    // safe deduction of stock for SHOP source
-    if (e.source === 'SHOP' && (e as any).productId) {
-        const product = await db.products.get((e as any).productId);
-        if (product) {
-            const qty = Number((e as any).quantity) || 1;
-            await db.products.update(product.id, {
-                stockQuantity: Math.max(0, product.stockQuantity - qty)
-            });
-            await db.stockMovements.add({
-                id: crypto.randomUUID(),
-                productId: product.id,
-                type: 'OUT',
-                quantity: -qty,
-                timestamp: Date.now(),
-                reference: `Expense: ${e.description || 'Shop Use'}`,
-                branchId: activeBranchId!,
-                businessId: activeBusinessId!,
-                shiftId: e.shiftId
-            });
-        }
-    }
-
-    success("Expense disbursement authorized.");
   };
 
   const handleApprovePO = async (id: string) => {
@@ -128,50 +87,17 @@ export default function AdminApprovals() {
   };
 
   const handleApproveRefund = async (t: Transaction) => {
-    const items = t.pendingRefundItems || t.items.map(i => ({ productId: i.productId, quantity: i.quantity - (i.returnedQuantity || 0) }));
-
-    // Refund logic: deduct cash from the branch-specific CASH account
-    if (t.paymentMethod === 'CASH' && t.branchId) {
-        const cashAccount = await db.financialAccounts.where('branchId').equals(t.branchId)
-            .and(acc => acc.type === 'CASH').first();
-        if (cashAccount) {
-           await db.financialAccounts.update(cashAccount.id, { 
-               balance: cashAccount.balance - (t.total || 0) 
-           });
-        }
+    if (!activeBranchId || !activeBusinessId) return;
+    try {
+      await approveRefundTransaction(t, undefined, {
+        approvedBy: currentUser?.name || 'Administrator',
+        activeBranchId,
+        activeBusinessId
+      });
+      success("Refund authorized and stock returned.");
+    } catch (err: any) {
+      error(err.message || 'Refund approval failed.');
     }
-
-    for (const item of items) {
-       if (item.quantity <= 0) continue;
-       const product = await db.products.get(item.productId);
-       if (product) {
-          await db.products.update(item.productId, {
-             stockQuantity: product.stockQuantity + item.quantity
-          });
-          await db.stockMovements.add({
-             id: crypto.randomUUID(),
-             productId: item.productId,
-             type: 'RETURN',
-             quantity: item.quantity,
-             timestamp: Date.now(),
-             reference: `Return #${t.id.split('-')[0].toUpperCase()}`,
-             branchId: activeBranchId!,
-             businessId: activeBusinessId!,
-             shiftId: t.shiftId
-          });
-          const txItem = t.items.find(i => i.productId === item.productId);
-          if (txItem) txItem.returnedQuantity = (txItem.returnedQuantity || 0) + item.quantity;
-       }
-    }
-
-    const allReturned = t.items.every(i => (i.returnedQuantity || 0) >= i.quantity);
-    await db.transactions.update(t.id, { 
-        status: allReturned ? 'REFUNDED' : 'PARTIAL_REFUND',
-        items: t.items,
-        pendingRefundItems: undefined,
-        approvedBy: currentUser?.name
-    });
-    success("Refund authorized and stock returned.");
   };
 
   const handleRejectAdjustment = async (id: string) => {

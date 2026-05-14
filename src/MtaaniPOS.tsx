@@ -5,6 +5,8 @@ import { useMtaaniPOS } from './hooks/useMtaaniPOS';
 import { useToast } from './context/ToastContext';
 import { canPerform } from './utils/accessControl';
 import { recordAuditEvent } from './utils/auditLog';
+import { applyApprovedExpenseEffects, ensureExpenseCanBeApproved } from './utils/approvalWorkflows';
+import { shouldAutoApproveOwnerAction } from './utils/ownerMode';
 
 // Modular Components
 import RegisterTab from './components/tabs/RegisterTab';
@@ -57,6 +59,7 @@ export default function MtaaniPOS() {
   const branches = useLiveQuery(() => activeBusinessId ? db.branches.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
   const activeBranch = branches?.find(b => b.id === activeBranchId);
   const activeBusiness = useLiveQuery(() => activeBusinessId ? db.businesses.get(activeBusinessId) : Promise.resolve(undefined), [activeBusinessId]);
+  const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
 
   const [expenseForm, setExpenseForm] = useState({
     description: '',
@@ -102,7 +105,8 @@ export default function MtaaniPOS() {
 
     setIsSavingExpense(true);
     try {
-      await db.expenses.add({
+      const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
+      const expenseRecord = {
         id: crypto.randomUUID(),
         amount,
         category: expenseForm.category || 'General',
@@ -110,25 +114,46 @@ export default function MtaaniPOS() {
         timestamp: Date.now(),
         userName: currentUser.name,
         preparedBy: currentUser.name,
-        status: 'PENDING',
+        status: autoApprove ? 'APPROVED' : 'PENDING',
+        approvedBy: autoApprove ? currentUser.name : undefined,
         source: expenseForm.source,
         accountId: expenseForm.source === 'ACCOUNT' ? expenseForm.accountId : undefined,
         productId: expenseForm.source === 'SHOP' ? expenseForm.productId : undefined,
         quantity: expenseForm.source === 'SHOP' ? Number(expenseForm.quantity || 1) : undefined,
         branchId: activeBranchId,
         businessId: activeBusinessId
-      } as any);
+      } as any;
+
+      if (autoApprove) {
+        await ensureExpenseCanBeApproved(expenseRecord);
+      }
+
+      await db.expenses.add(expenseRecord);
+
+      if (autoApprove) {
+        try {
+          await applyApprovedExpenseEffects(expenseRecord, {
+            approvedBy: currentUser.name,
+            activeBranchId,
+            activeBusinessId
+          });
+        } catch (err) {
+          await db.expenses.update(expenseRecord.id, { status: 'PENDING', approvedBy: undefined });
+          throw err;
+        }
+      }
+
       recordAuditEvent({
         userId: currentUser.id,
         userName: currentUser.name,
         action: 'expense.create',
         entity: 'expense',
-        severity: 'WARN',
-        details: `Created pending expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'General'})`,
+        severity: autoApprove ? 'INFO' : 'WARN',
+        details: `${autoApprove ? 'Auto-approved' : 'Created pending'} expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'General'})`,
       });
       setIsExpenseModalOpen(false);
       setExpenseForm({ description: '', amount: '', category: 'General', source: 'TILL', accountId: '', financialAccountId: '', productId: '', quantity: '1' });
-      success("Expense logged successfully.");
+      success(autoApprove ? "Expense logged and approved." : "Expense logged successfully.");
     } catch (err: any) {
       error("Failed to log expense: " + err.message);
     } finally {

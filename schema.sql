@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     paymentMethod TEXT,
     amountTendered REAL,
     cashierName TEXT,
+    approvedBy TEXT,
+    pendingRefundItems TEXT,
     branchId TEXT,
     businessId TEXT,
     updated_at INTEGER
@@ -250,9 +252,15 @@ CREATE TABLE IF NOT EXISTS purchaseOrders (
 CREATE TABLE IF NOT EXISTS settings (
     id TEXT PRIMARY KEY,
     storeName TEXT NOT NULL,
+    location TEXT,
     tillNumber TEXT,
     kraPin TEXT,
     receiptFooter TEXT,
+    ownerModeEnabled INTEGER DEFAULT 0,
+    autoApproveOwnerActions INTEGER DEFAULT 1,
+    cashSweepEnabled INTEGER DEFAULT 1,
+    cashDrawerLimit REAL DEFAULT 5000,
+    cashFloatTarget REAL DEFAULT 1000,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -297,6 +305,8 @@ CREATE INDEX IF NOT EXISTS idx_shifts_branch ON shifts(branchId);
 -- or just rely on the "CREATE TABLE IF NOT EXISTS" above for fresh installs.
 -- The following lines are for reference or manual execution:
 -- ALTER TABLE transactions ADD COLUMN branchId TEXT;
+-- ALTER TABLE transactions ADD COLUMN approvedBy TEXT;
+-- ALTER TABLE transactions ADD COLUMN pendingRefundItems TEXT;
 -- ALTER TABLE shifts ADD COLUMN branchId TEXT;
 -- ALTER TABLE endOfDayReports ADD COLUMN branchId TEXT;
 -- ALTER TABLE expenses ADD COLUMN branchId TEXT;
@@ -324,6 +334,12 @@ CREATE INDEX IF NOT EXISTS idx_shifts_branch ON shifts(branchId);
 -- ALTER TABLE stockAdjustmentRequests ADD COLUMN businessId TEXT;
 -- ALTER TABLE purchaseOrders ADD COLUMN businessId TEXT;
 -- ALTER TABLE settings ADD COLUMN businessId TEXT;
+-- ALTER TABLE settings ADD COLUMN location TEXT;
+-- ALTER TABLE settings ADD COLUMN ownerModeEnabled INTEGER DEFAULT 0;
+-- ALTER TABLE settings ADD COLUMN autoApproveOwnerActions INTEGER DEFAULT 1;
+-- ALTER TABLE settings ADD COLUMN cashSweepEnabled INTEGER DEFAULT 1;
+-- ALTER TABLE settings ADD COLUMN cashDrawerLimit REAL DEFAULT 5000;
+-- ALTER TABLE settings ADD COLUMN cashFloatTarget REAL DEFAULT 1000;
 -- ALTER TABLE categories ADD COLUMN businessId TEXT;
 -- ALTER TABLE branches ADD COLUMN businessId TEXT;
 
