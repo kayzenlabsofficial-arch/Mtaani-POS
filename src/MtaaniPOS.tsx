@@ -52,6 +52,7 @@ export default function MtaaniPOS() {
     handleLogout, loginError,
     currentUser, isSystemAdmin,
     activeBusinessId, activeBranchId, setActiveBranchId,
+    handleCheckout,
     updateServiceWorker, needRefresh
   } = useMtaaniPOS();
   const { success, error } = useToast();
@@ -204,7 +205,7 @@ export default function MtaaniPOS() {
 
         <main className="flex-1 overflow-y-auto main-scroll relative p-4 md:p-8 lg:p-10">
           <div className="max-w-[1440px] mx-auto">
-            {activeTab === 'REGISTER' && <RegisterTab toggleCart={toggleCart} />}
+            {activeTab === 'REGISTER' && <RegisterTab toggleCart={toggleCart} handleCheckout={handleCheckout} />}
             {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={navigateToTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}
             {activeTab === 'INVENTORY' && <InventoryTab />}
             {activeTab === 'CUSTOMERS' && <CustomersTab />}

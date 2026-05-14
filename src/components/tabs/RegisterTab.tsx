@@ -3,6 +3,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
+import { useToast } from '../../context/ToastContext';
 import BarcodeScanner from '../shared/BarcodeScanner';
 import { enrichProductsWithBundleStock, isBundleProduct } from '../../utils/bundleInventory';
 
@@ -93,15 +94,103 @@ function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
   );
 }
 
-export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean) => void }) {
+function SalePanel({
+  onCheckout,
+  isCheckingOut,
+}: {
+  onCheckout: (status: 'PAID' | 'UNPAID', method: string) => Promise<void>;
+  isCheckingOut: boolean;
+}) {
+  const { cart, removeFromCart, updateQuantity, setQuantity, clearCart } = useStore();
+  const total = cart.reduce((sum, item) => sum + ((Number(item.sellingPrice) || 0) * (Number(item.cartQuantity) || 0)), 0);
+  const itemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
+
+  return (
+    <aside className="bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col min-h-[22rem] lg:sticky lg:top-0 lg:max-h-[calc(100vh-9rem)] shadow-sm">
+      <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+        <div>
+          <h3 className="text-sm font-black text-slate-900">Current Sale</h3>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{itemCount.toLocaleString()} item{itemCount === 1 ? '' : 's'}</p>
+        </div>
+        {cart.length > 0 && (
+          <button onClick={clearCart} className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:text-rose-700">
+            Clear
+          </button>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2">
+        {cart.length === 0 ? (
+          <div className="h-full min-h-52 flex flex-col items-center justify-center text-center text-slate-400">
+            <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
+              <MaterialIcon name="shopping_cart" style={{ fontSize: '28px' }} />
+            </div>
+            <p className="text-sm font-black">Tap an item to add it here</p>
+          </div>
+        ) : cart.map(item => (
+          <div key={item.id} className="border border-slate-100 rounded-2xl p-3 bg-white">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[13px] font-black text-slate-900 truncate">{item.name}</p>
+                <p className="text-[10px] font-bold text-slate-400">Ksh {item.sellingPrice?.toLocaleString()} each</p>
+              </div>
+              <button onClick={() => removeFromCart(item.id)} className="w-8 h-8 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white flex items-center justify-center flex-shrink-0">
+                <MaterialIcon name="close" style={{ fontSize: '16px' }} />
+              </button>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-1 bg-slate-50 rounded-xl p-1">
+                <button onClick={() => updateQuantity(item.id, -1)} className="w-8 h-8 rounded-lg bg-white text-slate-600 border border-slate-100 flex items-center justify-center">
+                  <MaterialIcon name="remove" style={{ fontSize: '16px' }} />
+                </button>
+                <input
+                  type="number"
+                  step="any"
+                  value={item.cartQuantity}
+                  onChange={e => setQuantity(item.id, Number(e.target.value))}
+                  className="w-16 bg-transparent text-center text-sm font-black text-slate-900 outline-none"
+                />
+                <button onClick={() => updateQuantity(item.id, 1)} className="w-8 h-8 rounded-lg bg-white text-slate-600 border border-slate-100 flex items-center justify-center">
+                  <MaterialIcon name="add" style={{ fontSize: '16px' }} />
+                </button>
+              </div>
+              <p className="text-sm font-black text-slate-900 whitespace-nowrap">
+                Ksh {((Number(item.sellingPrice) || 0) * (Number(item.cartQuantity) || 0)).toLocaleString()}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="border-t border-slate-100 p-4 space-y-3 bg-white">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total</span>
+          <span className="text-2xl font-black text-slate-900 tabular-nums">Ksh {total.toLocaleString()}</span>
+        </div>
+        <button
+          onClick={() => onCheckout('PAID', 'CASH')}
+          disabled={cart.length === 0 || isCheckingOut}
+          className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        >
+          <MaterialIcon name="payments" style={{ fontSize: '18px' }} />
+          {isCheckingOut ? 'Saving Sale...' : 'Cash Sale'}
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart?: (val: boolean) => void; handleCheckout?: (status: 'PAID' | 'UNPAID', method: string, mpesaRef?: string, customerName?: string, splitData?: any) => Promise<any> }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
   const scrollRef = useHorizontalScroll();
+  const { warning, error } = useToast();
 
   // ✅ Only require activeBusinessId — branch does not filter products
-  const { addToCart, activeBusinessId } = useStore();
+  const { addToCart, activeBusinessId, cart } = useStore();
 
   const products = useLiveQuery(
     () => {
@@ -145,14 +234,32 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
   });
 
   const handleAddToCart = (product: any) => {
-    if ((product.stockQuantity || 0) <= 0) return;
+    if ((product.stockQuantity || 0) <= 0) {
+      warning(isBundleProduct(product) ? 'This bulk item has no ingredient stock available.' : 'This item is out of stock.');
+      return;
+    }
     addToCart(product);
+    toggleCart?.(true);
     setRecentlyAdded(prev => new Set([...prev, product.id]));
     setTimeout(() => setRecentlyAdded(prev => { const n = new Set(prev); n.delete(product.id); return n; }), 600);
   };
 
+  const completeCheckout = async (status: 'PAID' | 'UNPAID', method: string) => {
+    if (!handleCheckout || cart.length === 0 || isCheckingOut) return;
+    setIsCheckingOut(true);
+    try {
+      await handleCheckout(status, method);
+    } catch (err: any) {
+      error(err?.message || 'Checkout failed.');
+    } finally {
+      setIsCheckingOut(false);
+    }
+  };
+
   const inStock = displayProducts.filter(p => (p.stockQuantity || 0) > 0).length || 0;
   const outOfStock = displayProducts.filter(p => (p.stockQuantity || 0) <= 0).length || 0;
+  const saleTotal = cart.reduce((sum, item) => sum + ((Number(item.sellingPrice) || 0) * (Number(item.cartQuantity) || 0)), 0);
+  const saleItemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
 
   return (
     <div className="flex flex-col h-full animate-in fade-in gap-4">
@@ -241,29 +348,49 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
         </div>
       )}
 
-      {/* Product rows */}
       {activeBusinessId && (
-        <div className="flex-1 overflow-y-auto no-scrollbar pb-24">
-          {sorted.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-3">
-                <MaterialIcon name="inventory" className="text-slate-300" style={{ fontSize: '32px' }} />
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-4 min-h-0">
+          {/* Product rows */}
+          <div className="overflow-y-auto no-scrollbar pb-24 lg:pb-0">
+            {sorted.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-3">
+                  <MaterialIcon name="inventory" className="text-slate-300" style={{ fontSize: '32px' }} />
+                </div>
+                <p className="text-sm font-bold text-slate-400">No products found</p>
+                <p className="text-xs text-slate-400 mt-1 font-medium">
+                  {searchQuery ? `No results for "${searchQuery}"` : 'Add products in Inventory'}
+                </p>
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="mt-4 px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl">Clear Search</button>
+                )}
               </div>
-              <p className="text-sm font-bold text-slate-400">No products found</p>
-              <p className="text-xs text-slate-400 mt-1 font-medium">
-                {searchQuery ? `No results for "${searchQuery}"` : 'Add products in Inventory'}
-              </p>
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="mt-4 px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl">Clear Search</button>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {sorted.map(p => (
-                <ProductTile key={p.id} product={p} onAdd={handleAddToCart} recentlyAdded={recentlyAdded.has(p.id)} />
-              ))}
-            </div>
-          )}
+            ) : (
+              <div className="space-y-2">
+                {sorted.map(p => (
+                  <ProductTile key={p.id} product={p} onAdd={handleAddToCart} recentlyAdded={recentlyAdded.has(p.id)} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <SalePanel onCheckout={completeCheckout} isCheckingOut={isCheckingOut} />
+        </div>
+      )}
+
+      {cart.length > 0 && (
+        <div className="lg:hidden fixed left-3 right-3 bottom-20 z-40 bg-slate-950 text-white rounded-2xl shadow-2xl p-3 flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{saleItemCount.toLocaleString()} item{saleItemCount === 1 ? '' : 's'} in sale</p>
+            <p className="text-lg font-black tabular-nums truncate">Ksh {saleTotal.toLocaleString()}</p>
+          </div>
+          <button
+            onClick={() => completeCheckout('PAID', 'CASH')}
+            disabled={isCheckingOut}
+            className="px-4 py-3 bg-primary rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+          >
+            {isCheckingOut ? 'Saving' : 'Cash Sale'}
+          </button>
         </div>
       )}
     </div>
