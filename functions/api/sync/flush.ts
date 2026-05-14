@@ -87,7 +87,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   validMutations.forEach(m => {
     const items = m.payload?.items || [];
     items.forEach((it: any) => {
-      if (it.id) productIds.add(it.id);
+      const productId = it.productId || it.id;
+      if (productId) productIds.add(productId);
     });
   });
 
@@ -99,6 +100,22 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       `SELECT id, name, isBundle, components, stockQuantity FROM products WHERE businessId = ? AND id IN (${placeholders})`
     ).bind(businessId, ...ids).all();
     results.forEach((p: any) => productsMap.set(p.id, deserializeRow(p)));
+  }
+
+  const bundleIds = Array.from(productsMap.values())
+    .filter((p: any) => p.isBundle === 1 || p.isBundle === true || p.isBundle === '1')
+    .map((p: any) => p.id);
+  const ingredientsMap = new Map<string, any[]>();
+  if (bundleIds.length > 0) {
+    const placeholders = bundleIds.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(
+      `SELECT productId, ingredientProductId, quantity FROM productIngredients WHERE businessId = ? AND productId IN (${placeholders})`
+    ).bind(businessId, ...bundleIds).all();
+    results.forEach((row: any) => {
+      const arr = ingredientsMap.get(row.productId) || [];
+      arr.push(deserializeRow(row));
+      ingredientsMap.set(row.productId, arr);
+    });
   }
 
   // 3. Build Final Batch (Transactions + Stock Updates + Movements)
@@ -130,15 +147,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const txTime = payload.timestamp || Date.now();
 
     for (const item of items) {
-      const p = productsMap.get(item.id);
+      const itemProductId = item.productId || item.id;
+      const p = productsMap.get(itemProductId);
       if (!p) continue;
 
       const saleQty = Number(item.cartQuantity || item.quantity) || 0;
       if (saleQty <= 0) continue;
 
-      if (p.isBundle && p.components) {
+      if (p.isBundle) {
         // Deduct from components
-        const components = Array.isArray(p.components) ? p.components : [];
+        const components = ingredientsMap.get(p.id)?.map((row: any) => ({
+          productId: row.ingredientProductId,
+          quantity: row.quantity,
+        })) || (Array.isArray(p.components) ? p.components : []);
         for (const comp of components) {
           const deductQty = (Number(comp.quantity) || 0) * saleQty;
           if (deductQty <= 0) continue;
@@ -160,14 +181,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         // Regular product deduction
         finalBatch.push(
           env.DB.prepare(`UPDATE products SET stockQuantity = MAX(0, stockQuantity - ?) WHERE id = ? AND businessId = ?`)
-            .bind(saleQty, item.id, businessId)
+            .bind(saleQty, itemProductId, businessId)
         );
         // Record movement
         finalBatch.push(
           env.DB.prepare(
             `INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          ).bind(crypto.randomUUID(), item.id, 'OUT', -saleQty, txTime, `Sale (Sync) #${txRef}`, branchId, businessId, payload.shiftId)
+          ).bind(crypto.randomUUID(), itemProductId, 'OUT', -saleQty, txTime, `Sale (Sync) #${txRef}`, branchId, businessId, payload.shiftId)
         );
       }
     }

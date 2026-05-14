@@ -6,6 +6,18 @@ export interface CartItem extends Product {
   cartQuantity: number;
 }
 
+const clampCartQuantity = (quantity: number, product: Product) => {
+  const requested = Number.isFinite(quantity) ? quantity : 1;
+  const stock = Number(product.stockQuantity);
+  const rounded = (value: number) => Number(value.toFixed(3));
+
+  if (Number.isFinite(stock) && stock > 0) {
+    return rounded(Math.min(Math.max(0.001, requested), stock));
+  }
+
+  return rounded(Math.max(0.001, requested));
+};
+
 interface POSState {
   cart: CartItem[];
   isAdmin: boolean;
@@ -73,17 +85,20 @@ export const useStore = create<POSState>()(
       }),
       setActiveShift: (activeShift) => set({ activeShift }),
       addToCart: (product) => set((state) => {
+        const stock = Number(product.stockQuantity);
+        if (Number.isFinite(stock) && stock <= 0) return { cart: state.cart };
+
         const existing = state.cart.find((item) => item.id === product.id);
         if (existing) {
           return {
             cart: state.cart.map((item) => 
               item.id === product.id 
-                ? { ...item, cartQuantity: item.cartQuantity + 1 } 
+                ? { ...item, ...product, cartQuantity: clampCartQuantity(item.cartQuantity + 1, product) } 
                 : item
             )
           };
         }
-        return { cart: [...state.cart, { ...product, cartQuantity: 1 }] };
+        return { cart: [...state.cart, { ...product, cartQuantity: clampCartQuantity(1, product) }] };
       }),
       removeFromCart: (productId) => set((state) => ({
         cart: state.cart.filter((item) => item.id !== productId)
@@ -91,8 +106,7 @@ export const useStore = create<POSState>()(
       updateQuantity: (productId, delta) => set((state) => ({
         cart: state.cart.map((item) => {
           if (item.id === productId) {
-            const newQuantity = Math.max(0.001, item.cartQuantity + delta);
-            return { ...item, cartQuantity: Number(newQuantity.toFixed(3)) };
+            return { ...item, cartQuantity: clampCartQuantity(item.cartQuantity + delta, item) };
           }
           return item;
         })
@@ -100,7 +114,7 @@ export const useStore = create<POSState>()(
       setQuantity: (productId, quantity) => set((state) => ({
         cart: state.cart.map((item) => 
           item.id === productId 
-            ? { ...item, cartQuantity: Number(quantity) } 
+            ? { ...item, cartQuantity: clampCartQuantity(Number(quantity), item) } 
             : item
         )
       })),

@@ -4,6 +4,7 @@ import { db } from '../../db';
 import { useStore } from '../../store';
 import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import BarcodeScanner from '../shared/BarcodeScanner';
+import { enrichProductsWithBundleStock, isBundleProduct } from '../../utils/bundleInventory';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>
@@ -57,6 +58,7 @@ function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
           </div>
           <div className="mt-1 flex items-center gap-x-2 gap-y-1 flex-wrap text-[9px] sm:text-[10px] font-bold uppercase tracking-wide text-slate-400">
             <span className="truncate max-w-[120px] sm:max-w-none">{product.category || 'General'}</span>
+            {isBundleProduct(product) && <span className="text-emerald-600">bulk</span>}
             {product.barcode && <span className="font-mono normal-case tracking-normal text-slate-500">#{product.barcode}</span>}
             <span>{product.unit || 'pcs'}</span>
           </div>
@@ -123,11 +125,16 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
     () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId], []
   );
+  const productIngredients = useLiveQuery(
+    () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId], []
+  );
 
   const categories = ['All', ...(dbCategories?.map(c => c.name) || [])];
+  const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
 
   // Sort: in-stock → low-stock → out-of-stock
-  const sorted = [...(products || [])].sort((a, b) => {
+  const sorted = [...displayProducts].sort((a, b) => {
     const score = (p: any) => {
       const q = p.stockQuantity || 0;
       if (q <= 0) return 2;
@@ -144,8 +151,8 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
     setTimeout(() => setRecentlyAdded(prev => { const n = new Set(prev); n.delete(product.id); return n; }), 600);
   };
 
-  const inStock = products?.filter(p => (p.stockQuantity || 0) > 0).length || 0;
-  const outOfStock = products?.filter(p => (p.stockQuantity || 0) <= 0).length || 0;
+  const inStock = displayProducts.filter(p => (p.stockQuantity || 0) > 0).length || 0;
+  const outOfStock = displayProducts.filter(p => (p.stockQuantity || 0) <= 0).length || 0;
 
   return (
     <div className="flex flex-col h-full animate-in fade-in gap-4">
@@ -209,7 +216,7 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
         <div className="bg-slate-950 rounded-2xl overflow-hidden flex-shrink-0">
           <div className="relative aspect-video max-h-44">
             <BarcodeScanner onScan={barcode => {
-              const p = products?.find(prod => prod.barcode === barcode);
+              const p = displayProducts.find(prod => prod.barcode === barcode);
               if (p) { handleAddToCart(p); setIsScannerOpen(false); }
             }} />
             <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-primary/60 shadow-[0_0_10px_rgba(37,99,235,0.8)] animate-pulse pointer-events-none" />

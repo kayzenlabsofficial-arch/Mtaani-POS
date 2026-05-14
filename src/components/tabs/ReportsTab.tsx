@@ -16,6 +16,7 @@ import { db } from '../../db';
 import { useStore } from '../../store';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { canPerform } from '../../utils/accessControl';
+import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 
@@ -49,6 +50,11 @@ export default function ReportsTab() {
     [activeBusinessId, activeBranchId],
     []
   );
+  const productIngredients = useLiveQuery(
+    () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
   const allExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
   const allSuppliers = useLiveQuery(() => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []);
   const allPurchases = useLiveQuery(() => activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
@@ -76,6 +82,7 @@ export default function ReportsTab() {
   const startTime = getFilterStartTime();
   const filteredTransactions = allTransactions.filter(t => t.timestamp >= startTime && t.status !== 'VOIDED');
   const filteredExpenses = allExpenses.filter(e => e.timestamp >= startTime && (e.status === 'APPROVED' || e.status === 'PENDING'));
+  const displayProducts = enrichProductsWithBundleStock(allProducts || [], productIngredients || []);
 
   // 2. Complex Financial & Operational Analytics
   let totalRevenue = 0;
@@ -111,7 +118,7 @@ export default function ReportsTab() {
       productPerf[item.productId].revenue += (item.snapshotPrice * item.quantity);
       productPerf[item.productId].profit += itemProfit;
 
-      const productObj = allProducts.find(p => p.id === item.productId);
+      const productObj = displayProducts.find(p => p.id === item.productId);
       const category = productObj?.category || 'Uncategorized';
       if (!categoryPerf[category]) categoryPerf[category] = { revenue: 0, profit: 0 };
       categoryPerf[category].revenue += (item.snapshotPrice * item.quantity);
@@ -125,7 +132,7 @@ export default function ReportsTab() {
   const averageBasket = filteredTransactions.length > 0 ? totalRevenue / filteredTransactions.length : 0;
   const topProducts = Object.values(productPerf).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
   const topProductShare = topProducts.length > 0 && totalRevenue > 0 ? (topProducts[0].revenue / totalRevenue) * 100 : 0;
-  const lowStockCount = allProducts.filter(p => (p.stockQuantity || 0) <= 5).length;
+  const lowStockCount = displayProducts.filter(p => (p.stockQuantity || 0) <= 5).length;
   const creditTransactions = filteredTransactions.filter(
     t => t.paymentMethod === 'CREDIT' || (t.paymentMethod === 'SPLIT' && t.splitPayments?.secondaryMethod === 'CREDIT')
   ).length;
@@ -148,7 +155,7 @@ export default function ReportsTab() {
 
   const topCashiers = Object.entries(cashierPerf).map(([name, data]) => ({ name, ...data })).sort((a,b) => b.revenue - a.revenue);
 
-  const selectedProduct = allProducts.find(p => p.id === selectedProductId);
+  const selectedProduct = displayProducts.find(p => p.id === selectedProductId);
   const selectedProductSales = filteredTransactions.filter(t => t.items.some(i => i.productId === selectedProductId));
   const productStats = {
     totalQty: selectedProductSales.reduce((acc, t) => acc + t.items.filter(i => i.productId === selectedProductId).reduce((s, i) => s + i.quantity, 0), 0),
@@ -343,7 +350,7 @@ export default function ReportsTab() {
                   value={selectedProductId || ''}
                   onChange={(v) => setSelectedProductId(v || null)}
                   placeholder="Search for a product..."
-                  options={allProducts.map(p => ({
+                  options={displayProducts.map(p => ({
                     value: p.id,
                     label: p.name,
                     keywords: `${p.name} ${p.barcode || ''} ${p.category || ''}`,

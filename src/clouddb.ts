@@ -38,6 +38,7 @@ const OFFLINE_CACHE_TABLES = new Set<OfflineCacheTable>([
   'users',
   'financialAccounts',
   'expenseAccounts',
+  'productIngredients',
 ]);
 
 function isLikelyOfflineError(e: any): boolean {

@@ -4,6 +4,7 @@ import { useToast } from '../context/ToastContext';
 import { db, type Transaction } from '../db';
 import { verifyPassword, isLockedOut, recordFailedAttempt, resetAttempts } from '../security';
 import { useRegisterSW } from 'virtual:pwa-register/react';
+import { getProductIngredients, isBundleProduct } from '../utils/bundleInventory';
 
 export function useMtaaniPOS() {
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'REPORTS' | 'ADMIN_PANEL'>('REGISTER');
@@ -142,6 +143,31 @@ export function useMtaaniPOS() {
     if (cart.length === 0 || !activeBranchId) return;
     
     try {
+      const productIngredients = await db.productIngredients.toArray();
+      for (const item of cart) {
+        const prod = await db.products.get(item.id);
+        if (!prod) continue;
+        const saleQty = Number(item.cartQuantity) || 0;
+        if (isBundleProduct(prod)) {
+          const ingredients = getProductIngredients(prod, productIngredients);
+          if (ingredients.length === 0) {
+            error(`${item.name} has no ingredients configured.`);
+            return null;
+          }
+          for (const row of ingredients) {
+            const ingredient = await db.products.get(row.ingredientProductId);
+            const requiredQty = row.quantity * saleQty;
+            if (!ingredient || (ingredient.stockQuantity || 0) < requiredQty) {
+              error(`Insufficient ingredient stock for ${item.name}.`);
+              return null;
+            }
+          }
+        } else if ((prod.stockQuantity || 0) < saleQty) {
+          error(`Insufficient stock for ${item.name}.`);
+          return null;
+        }
+      }
+
       const transactionId = crypto.randomUUID();
       const newTransaction: Transaction = {
         id: transactionId,
@@ -176,10 +202,34 @@ export function useMtaaniPOS() {
       for (const item of cart) {
         const prod = await db.products.get(item.id);
         if (prod) {
-          await db.products.update(item.id, {
-            stockQuantity: Math.max(0, (prod.stockQuantity || 0) - item.cartQuantity),
-            updated_at: Date.now()
-          });
+          const saleQty = Number(item.cartQuantity) || 0;
+          if (isBundleProduct(prod)) {
+            const ingredients = getProductIngredients(prod, productIngredients);
+            for (const row of ingredients) {
+              const ingredient = await db.products.get(row.ingredientProductId);
+              if (!ingredient) continue;
+              const deductQty = row.quantity * saleQty;
+              await db.products.update(ingredient.id, {
+                stockQuantity: Math.max(0, (ingredient.stockQuantity || 0) - deductQty),
+                updated_at: Date.now()
+              });
+              await db.stockMovements.add({
+                id: crypto.randomUUID(),
+                productId: ingredient.id,
+                type: 'OUT',
+                quantity: -deductQty,
+                timestamp: Date.now(),
+                reference: `Bundle Sale #${transactionId.split('-')[0].toUpperCase()} (${item.name})`,
+                branchId: activeBranchId!,
+                businessId: activeBusinessId!,
+              });
+            }
+          } else {
+            await db.products.update(item.id, {
+              stockQuantity: Math.max(0, (prod.stockQuantity || 0) - saleQty),
+              updated_at: Date.now()
+            });
+          }
         }
       }
 

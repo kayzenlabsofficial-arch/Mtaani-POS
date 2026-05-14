@@ -6,6 +6,7 @@ import { useToast } from '../../context/ToastContext';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { canUseOwnerMode, getCashDrawerLimit, getCashFloatTarget, isOwnerCashSweepEnabled, isOwnerModeEnabled } from '../../utils/ownerMode';
 import { recordAuditEvent } from '../../utils/auditLog';
+import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 
 const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => (
   <span className={`material-symbols-outlined ${className}`}>{name}</span>
@@ -65,6 +66,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : [],
     [activeBusinessId], []
   );
+  const productIngredients = useLiveQuery(
+    () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId], []
+  );
   const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
   const branchTransactions = useLiveQuery(
     () => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
@@ -89,7 +94,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     return expenses.length + refunds.length + purchaseOrders.length + picks.length;
   }, [activeBranchId], 0);
 
-  const lowStockItems = products?.filter(p => (p.stockQuantity || 0) <= (p.reorderPoint || 5)).slice(0, 5) || [];
+  const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
+  const lowStockItems = displayProducts.filter(p => (p.stockQuantity || 0) <= (p.reorderPoint || 5)).slice(0, 5) || [];
   const totalRevenue = transactions?.reduce((a, t) => a + t.total, 0) || 0;
   const ownerModeActive = canUseOwnerMode(currentUser) && isOwnerModeEnabled(businessSettings);
   const cashSweepActive = ownerModeActive && isOwnerCashSweepEnabled(businessSettings);

@@ -9,7 +9,8 @@ export type OfflineCacheTable =
   | 'branches'
   | 'users'
   | 'financialAccounts'
-  | 'expenseAccounts';
+  | 'expenseAccounts'
+  | 'productIngredients';
 
 export type OfflineOutboxOp = 'UPSERT';
 

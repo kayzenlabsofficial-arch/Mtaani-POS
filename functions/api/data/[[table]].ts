@@ -8,11 +8,11 @@ const ALLOWED_TABLES = new Set([
   'endOfDayReports', 'stockMovements', 'expenses', 'customers',
   'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries',
   'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories',
-  'branches', 'businesses', 'system', 'expenseAccounts', 'financialAccounts', 'loginAttempts'
+  'branches', 'businesses', 'system', 'expenseAccounts', 'financialAccounts', 'productIngredients', 'loginAttempts'
 ]);
 
 // Global tables: shared across branches, isolated by businessId
-const GLOBAL_TABLES = new Set(['users', 'branches', 'settings', 'expenseAccounts', 'financialAccounts', 'customers', 'suppliers', 'products', 'categories']);
+const GLOBAL_TABLES = new Set(['users', 'branches', 'settings', 'expenseAccounts', 'financialAccounts', 'customers', 'suppliers', 'products', 'productIngredients', 'categories']);
 // Truly unscoped tables: not filtered by businessId/branchId
 const UNSCOPED_TABLES = new Set(['businesses', 'loginAttempts']);
 
@@ -41,7 +41,9 @@ function secureJsonHeaders() {
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS businesses (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, isActive INTEGER DEFAULT 1, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL, businessId TEXT, branchId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, sellingPrice REAL NOT NULL, costPrice REAL, taxCategory TEXT NOT NULL, stockQuantity REAL NOT NULL, unit TEXT, barcode TEXT NOT NULL, imageUrl TEXT, reorderPoint REAL, businessId TEXT, branchId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, sellingPrice REAL NOT NULL, costPrice REAL, taxCategory TEXT NOT NULL, stockQuantity REAL NOT NULL, unit TEXT, barcode TEXT NOT NULL, imageUrl TEXT, reorderPoint REAL, isBundle INTEGER DEFAULT 0, components TEXT, businessId TEXT, branchId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER);
+CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId);
 CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, total REAL NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, discountAmount REAL, discountReason TEXT, items TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, paymentMethod TEXT, amountTendered REAL, cashierName TEXT, approvedBy TEXT, pendingRefundItems TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS cashPicks (id TEXT PRIMARY KEY, amount REAL NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, userName TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, startTime INTEGER NOT NULL, endTime INTEGER, openingFloat REAL, cashierName TEXT NOT NULL, status TEXT NOT NULL, branchId TEXT, lastSyncAt INTEGER, businessId TEXT, updated_at INTEGER);
@@ -142,6 +144,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['products',   'branchId TEXT'],
           ['products',   'costPrice REAL'],
           ['products',   'reorderPoint REAL'],
+          ['products',   'isBundle INTEGER DEFAULT 0'],
+          ['products',   'components TEXT'],
           ['transactions', 'shiftId TEXT'],
           ['transactions', 'approvedBy TEXT'],
           ['transactions', 'pendingRefundItems TEXT'],
@@ -179,7 +183,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['settings', 'cashDrawerLimit REAL DEFAULT 5000'],
           ['settings', 'cashFloatTarget REAL DEFAULT 1000'],
         ];
-        const allTables = ['users', 'products', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
+        const allTables = ['users', 'products', 'productIngredients', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
         for (const t of allTables) {
           try { await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN businessId TEXT`).run(); } catch (e) {}
         }
@@ -285,7 +289,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
       if (table === 'businesses') {
         // Cascade delete: remove ALL data for this business
-        const cascadeTables = ['users', 'products', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
+        const cascadeTables = ['users', 'products', 'productIngredients', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
         const batch = cascadeTables.map(t => env.DB.prepare(`DELETE FROM ${t} WHERE businessId = ?`).bind(id));
         batch.push(env.DB.prepare(`DELETE FROM businesses WHERE id = ?`).bind(id));
         await env.DB.batch(batch);

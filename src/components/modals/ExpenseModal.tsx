@@ -1,6 +1,7 @@
 import React from 'react';
 import { FileMinus, Loader2 } from 'lucide-react';
 import { SearchableSelect } from '../shared/SearchableSelect';
+import { isBundleProduct } from '../../utils/bundleInventory';
 
 interface ExpenseModalProps {
   isOpen: boolean;
@@ -107,7 +108,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                          }}
                          placeholder="Choose item..."
                          options={(products || [])
-                           .filter(p => !p.isBundle)
+                           .filter(p => !isBundleProduct(p))
                            .map(p => ({
                              value: p.id,
                              label: `${p.name} (${p.stockQuantity} ${p.unit || 'pcs'} left)`,

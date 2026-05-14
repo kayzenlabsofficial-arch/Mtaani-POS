@@ -39,10 +39,19 @@ export interface Product {
   barcode: string;
   reorderPoint?: number; // Minimum stock before alarm triggers
   imageUrl?: string;
-  isBundle?: boolean;
+  isBundle?: boolean | number | string;
   components?: { productId: string; quantity: number }[];
   businessId: string;
   branchId: string;
+  updated_at?: number;
+}
+
+export interface ProductIngredient {
+  id: string;
+  productId: string;
+  ingredientProductId: string;
+  quantity: number;
+  businessId: string;
   updated_at?: number;
 }
 
@@ -374,6 +383,7 @@ class MtaaniCloudDB {
   loginAttempts       = new CloudTable<LoginAttempt>('loginAttempts');
 
   products            = new CloudTable<Product>('products');
+  productIngredients  = new CloudTable<ProductIngredient>('productIngredients');
   transactions        = new CloudTable<Transaction>('transactions');
   cashPicks           = new CloudTable<CashPick>('cashPicks');
   endOfDayReports     = new CloudTable<EndOfDayReport>('endOfDayReports');
@@ -406,6 +416,7 @@ class MtaaniCloudDB {
 
     // Branch-scoped / operational tables
     this.products.reset();
+    this.productIngredients.reset();
     this.transactions.reset();
     this.cashPicks.reset();
     this.endOfDayReports.reset();
@@ -458,6 +469,7 @@ class MtaaniCloudDB {
     if (state.activeBranchId) {
       promises.push(
         this.products.reload(),
+        this.productIngredients.reload(),
         this.transactions.reload(),
         this.cashPicks.reload(),
         this.endOfDayReports.reload(),

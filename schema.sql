@@ -32,10 +32,22 @@ CREATE TABLE IF NOT EXISTS products (
     barcode TEXT NOT NULL,
     imageUrl TEXT,
     reorderPoint REAL,
+    isBundle INTEGER DEFAULT 0,
+    components TEXT,
     businessId TEXT,
     branchId TEXT,
     updated_at INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS productIngredients (
+    id TEXT PRIMARY KEY,
+    productId TEXT NOT NULL,
+    ingredientProductId TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    businessId TEXT,
+    updated_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId);
 
 CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
@@ -320,6 +332,9 @@ CREATE INDEX IF NOT EXISTS idx_shifts_branch ON shifts(branchId);
 -- MIGRATION: Add businessId to existing tables
 -- ALTER TABLE users ADD COLUMN businessId TEXT;
 -- ALTER TABLE products ADD COLUMN businessId TEXT;
+-- ALTER TABLE products ADD COLUMN isBundle INTEGER DEFAULT 0;
+-- ALTER TABLE products ADD COLUMN components TEXT;
+-- CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER);
 -- ALTER TABLE transactions ADD COLUMN businessId TEXT;
 -- ALTER TABLE cashPicks ADD COLUMN businessId TEXT;
 -- ALTER TABLE shifts ADD COLUMN businessId TEXT;

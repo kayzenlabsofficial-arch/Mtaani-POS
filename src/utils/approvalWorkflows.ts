@@ -1,4 +1,5 @@
 import { db, type Expense, type Transaction } from '../db';
+import { getProductIngredients, isBundleProduct } from './bundleInventory';
 
 interface ApprovalContext {
   approvedBy: string;
@@ -141,9 +142,31 @@ export async function approveRefundTransaction(
   }
 
   const updatedItems = transaction.items.map(item => ({ ...item }));
+  const productIngredients = await db.productIngredients.toArray();
   for (const line of lines) {
     const product = await db.products.get(line.productId);
-    if (product) {
+    if (product && isBundleProduct(product)) {
+      const ingredients = getProductIngredients(product, productIngredients);
+      for (const row of ingredients) {
+        const ingredient = await db.products.get(row.ingredientProductId);
+        if (!ingredient) continue;
+        const returnQty = row.quantity * line.quantity;
+        await db.products.update(ingredient.id, {
+          stockQuantity: (ingredient.stockQuantity || 0) + returnQty
+        });
+        await db.stockMovements.add({
+          id: crypto.randomUUID(),
+          productId: ingredient.id,
+          type: 'RETURN',
+          quantity: returnQty,
+          timestamp: Date.now(),
+          reference: `Bundle Return #${transaction.id.split('-')[0].toUpperCase()} (${product.name})`,
+          branchId: context.activeBranchId,
+          businessId: context.activeBusinessId,
+          shiftId: transaction.shiftId
+        });
+      }
+    } else if (product) {
       await db.products.update(line.productId, {
         stockQuantity: (product.stockQuantity || 0) + line.quantity
       });

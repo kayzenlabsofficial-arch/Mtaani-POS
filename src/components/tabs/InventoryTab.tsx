@@ -5,6 +5,8 @@ import { useStore } from '../../store';
 import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import { useToast } from '../../context/ToastContext';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { SearchableSelect } from '../shared/SearchableSelect';
+import { enrichProductsWithBundleStock, getProductIngredients, isBundleProduct } from '../../utils/bundleInventory';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>
@@ -45,8 +47,10 @@ export default function InventoryTab() {
     unit: 'pcs',
     barcode: '',
     reorderPoint: '5',
-    taxCategory: 'A' as 'A' | 'C' | 'E'
+    taxCategory: 'A' as 'A' | 'C' | 'E',
+    isBundle: false
   });
+  const [ingredientRows, setIngredientRows] = useState<{ ingredientProductId: string; quantity: string }[]>([]);
   const scrollRef = useHorizontalScroll();
   const activeBusinessId = useStore(s => s.activeBusinessId);
   const activeBranchId = useStore(s => s.activeBranchId);
@@ -68,6 +72,10 @@ export default function InventoryTab() {
     },
     [search, selectedCategory, activeBusinessId], []
   );
+  const productIngredients = useLiveQuery(
+    () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId], []
+  );
 
   const categories = useLiveQuery(
     () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
@@ -88,7 +96,9 @@ export default function InventoryTab() {
     []
   );
 
-  const sorted = [...(products || [])].sort((a, b) => {
+  const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
+
+  const sorted = [...displayProducts].sort((a, b) => {
     let res = 0;
     if (sortBy === 'name') res = a.name.localeCompare(b.name);
     else if (sortBy === 'stock') res = (a.stockQuantity || 0) - (b.stockQuantity || 0);
@@ -96,9 +106,9 @@ export default function InventoryTab() {
     return sortDir === 'asc' ? res : -res;
   });
 
-  const totalValue = products?.reduce((a, p) => a + ((p.stockQuantity || 0) * (p.sellingPrice || 0)), 0) || 0;
-  const outOfStock = products?.filter(p => (p.stockQuantity || 0) <= 0).length || 0;
-  const lowStock = products?.filter(p => {
+  const totalValue = displayProducts.reduce((a, p) => a + ((p.stockQuantity || 0) * (p.sellingPrice || 0)), 0) || 0;
+  const outOfStock = displayProducts.filter(p => (p.stockQuantity || 0) <= 0).length || 0;
+  const lowStock = displayProducts.filter(p => {
     const qty = p.stockQuantity || 0;
     return qty > 0 && qty <= (p.reorderPoint || 5);
   }).length || 0;
@@ -119,37 +129,73 @@ export default function InventoryTab() {
       unit: product?.unit || 'pcs',
       barcode: product?.barcode || '',
       reorderPoint: product?.reorderPoint !== undefined ? String(product.reorderPoint) : '5',
-      taxCategory: product?.taxCategory || 'A'
+      taxCategory: product?.taxCategory || 'A',
+      isBundle: isBundleProduct(product)
     });
+    const savedIngredients = getProductIngredients(product, productIngredients || []);
+    setIngredientRows(savedIngredients.map(row => ({
+      ingredientProductId: row.ingredientProductId,
+      quantity: String(row.quantity),
+    })));
     setIsProductModalOpen(true);
   };
 
   const handleSaveProduct = async () => {
     if (!activeBusinessId || !activeBranchId || !productForm.name.trim()) return;
+    const cleanIngredients = ingredientRows
+      .map(row => ({ ingredientProductId: row.ingredientProductId, quantity: Number(row.quantity) || 0 }))
+      .filter(row => row.ingredientProductId && row.quantity > 0);
+
+    if (productForm.isBundle && cleanIngredients.length === 0) {
+      error('Add at least one ingredient for this bulk item.');
+      return;
+    }
+    if (productForm.isBundle && editingProduct && cleanIngredients.some(row => row.ingredientProductId === editingProduct.id)) {
+      error('A bulk item cannot use itself as an ingredient.');
+      return;
+    }
+
     const payload = {
       name: productForm.name.trim(),
       category: productForm.category.trim() || 'General',
       sellingPrice: Number(productForm.sellingPrice) || 0,
       costPrice: Number(productForm.costPrice) || 0,
       taxCategory: productForm.taxCategory,
-      stockQuantity: Number(productForm.stockQuantity) || 0,
+      stockQuantity: productForm.isBundle ? 0 : Number(productForm.stockQuantity) || 0,
       unit: productForm.unit.trim() || 'pcs',
       barcode: productForm.barcode.trim() || `SKU-${Date.now()}`,
       reorderPoint: Number(productForm.reorderPoint) || 5,
+      isBundle: productForm.isBundle ? 1 : 0,
+      components: productForm.isBundle
+        ? cleanIngredients.map(row => ({ productId: row.ingredientProductId, quantity: row.quantity }))
+        : [],
       branchId: activeBranchId,
       businessId: activeBusinessId
     };
     try {
+      const productId = editingProduct?.id || crypto.randomUUID();
       if (editingProduct) {
         await db.products.update(editingProduct.id, payload as any);
         if (selectedProduct?.id === editingProduct.id) setSelectedProduct({ ...selectedProduct, ...payload });
         success('Product updated.');
       } else {
-        await db.products.add({ id: crypto.randomUUID(), ...payload } as any);
+        await db.products.add({ id: productId, ...payload } as any);
         success('Product added.');
+      }
+      await db.productIngredients.where('productId').equals(productId).delete();
+      if (productForm.isBundle && cleanIngredients.length > 0) {
+        await db.productIngredients.bulkAdd(cleanIngredients.map(row => ({
+          id: `${productId}_${row.ingredientProductId}`,
+          productId,
+          ingredientProductId: row.ingredientProductId,
+          quantity: row.quantity,
+          businessId: activeBusinessId,
+          updated_at: Date.now()
+        })));
       }
       setIsProductModalOpen(false);
       setEditingProduct(null);
+      setIngredientRows([]);
     } catch (err: any) {
       error('Failed to save product: ' + err.message);
     }
@@ -211,6 +257,14 @@ export default function InventoryTab() {
       units: rows.reduce((sum, row) => sum + (Number(row.item.quantity) || 0), 0)
     };
   });
+
+  const ingredientOptions = (products || [])
+    .filter(p => !isBundleProduct(p) && p.id !== editingProduct?.id)
+    .map(p => ({
+      value: p.id,
+      label: `${p.name} (${p.stockQuantity || 0} ${p.unit || 'pcs'} left)`,
+      keywords: `${p.name} ${p.barcode || ''} ${p.category || ''}`,
+    }));
 
   const SortIcon = ({ col }: { col: 'name' | 'stock' | 'price' }) =>
     sortBy === col ? (
@@ -349,6 +403,9 @@ export default function InventoryTab() {
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className={`w-1.5 h-1.5 rounded-full ${catColor}`} />
                       <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide truncate">{product.category || 'General'}</span>
+                      {isBundleProduct(product) && (
+                        <span className="text-[8px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full">BULK</span>
+                      )}
                       {product.taxCategory === 'A' && (
                         <span className="text-[8px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full">VAT</span>
                       )}
@@ -373,6 +430,9 @@ export default function InventoryTab() {
                   <span className={`text-[13px] font-black tabular-nums ${isOut ? 'text-rose-600' : isLow ? 'text-amber-600' : 'text-slate-900'}`}>
                     {stock}
                   </span>
+                  {isBundleProduct(product) && (
+                    <span className="text-[8px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full">AUTO</span>
+                  )}
                   {isLow && !isOut && (
                     <span className="text-[8px] font-black bg-amber-50 text-amber-700 border border-amber-100 px-1.5 py-0.5 rounded-full">LOW</span>
                   )}
@@ -438,7 +498,7 @@ export default function InventoryTab() {
               {[
                 { label: 'Selling Price', value: `Ksh ${selectedProduct.sellingPrice?.toLocaleString()}` },
                 { label: 'Cost Price', value: selectedProduct.costPrice ? `Ksh ${selectedProduct.costPrice.toLocaleString()}` : '—' },
-                { label: 'Stock Qty', value: `${selectedProduct.stockQuantity || 0} ${selectedProduct.unit || 'pcs'}` },
+                { label: isBundleProduct(selectedProduct) ? 'Available From Ingredients' : 'Stock Qty', value: `${selectedProduct.stockQuantity || 0} ${selectedProduct.unit || 'pcs'}` },
                 { label: 'Reorder Point', value: selectedProduct.reorderPoint || 5 },
                 { label: 'Barcode', value: selectedProduct.barcode || '---' },
               ].map(row => (
@@ -522,9 +582,15 @@ export default function InventoryTab() {
               <button onClick={() => openProductModal(selectedProduct)} className="py-3 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
                 <MaterialIcon name="edit" style={{ fontSize: '18px' }} /> Edit
               </button>
-              <button onClick={() => setIsRestocking(true)} className="py-3 bg-primary text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
-                <MaterialIcon name="add" style={{ fontSize: '18px' }} /> Restock
-              </button>
+              {isBundleProduct(selectedProduct) ? (
+                <button onClick={() => openProductModal(selectedProduct)} className="py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald/20 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
+                  <MaterialIcon name="restaurant" style={{ fontSize: '18px' }} /> Ingredients
+                </button>
+              ) : (
+                <button onClick={() => setIsRestocking(true)} className="py-3 bg-primary text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+                  <MaterialIcon name="add" style={{ fontSize: '18px' }} /> Restock
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -593,7 +659,13 @@ export default function InventoryTab() {
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Stock Qty</label>
-                <input type="number" step="any" value={productForm.stockQuantity} onChange={e => setProductForm({ ...productForm, stockQuantity: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+                {productForm.isBundle ? (
+                  <div className="w-full bg-emerald-50 border-2 border-emerald-100 rounded-xl px-4 py-3 text-sm font-black text-emerald-700">
+                    Auto from ingredients
+                  </div>
+                ) : (
+                  <input type="number" step="any" value={productForm.stockQuantity} onChange={e => setProductForm({ ...productForm, stockQuantity: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+                )}
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Unit</label>
@@ -611,6 +683,79 @@ export default function InventoryTab() {
                   <option value="E">E - Exempt</option>
                 </select>
               </div>
+              <div className="sm:col-span-2">
+                <button
+                  type="button"
+                  onClick={() => setProductForm({ ...productForm, isBundle: !productForm.isBundle })}
+                  className={`w-full flex items-center justify-between gap-4 p-4 rounded-2xl border-2 transition-all ${productForm.isBundle ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-slate-50 border-slate-100 text-slate-600'}`}
+                >
+                  <div className="flex items-center gap-3 text-left">
+                    <span className={`w-10 h-10 rounded-xl flex items-center justify-center ${productForm.isBundle ? 'bg-emerald-600 text-white' : 'bg-white text-slate-400 border border-slate-100'}`}>
+                      <MaterialIcon name="restaurant" style={{ fontSize: '20px' }} />
+                    </span>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest">Bulk / Recipe Item</p>
+                      <p className="text-xs font-bold mt-0.5">Stock is calculated from ingredients</p>
+                    </div>
+                  </div>
+                  <div className={`w-12 h-7 rounded-full p-1 flex transition-all ${productForm.isBundle ? 'bg-emerald-600 justify-end' : 'bg-slate-300 justify-start'}`}>
+                    <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
+                  </div>
+                </button>
+              </div>
+
+              {productForm.isBundle && (
+                <div className="sm:col-span-2 bg-emerald-50/70 border-2 border-emerald-100 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-[10px] font-black text-emerald-900 uppercase tracking-widest">Ingredients</h4>
+                      <p className="text-[10px] font-bold text-emerald-700/70 mt-0.5">Quantity is the amount used to sell one bulk item.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIngredientRows([...ingredientRows, { ingredientProductId: '', quantity: '1' }])}
+                      className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest"
+                    >
+                      Add Ingredient
+                    </button>
+                  </div>
+
+                  {ingredientRows.length === 0 && (
+                    <div className="py-6 text-center text-[10px] font-bold text-emerald-700/60 bg-white/60 border border-dashed border-emerald-200 rounded-xl">
+                      Add the products that make up this bulk item.
+                    </div>
+                  )}
+
+                  {ingredientRows.map((row, idx) => (
+                    <div key={idx} className="grid grid-cols-1 sm:grid-cols-[1fr_120px_40px] gap-2 items-center bg-white p-3 rounded-xl border border-emerald-100">
+                      <SearchableSelect
+                        value={row.ingredientProductId}
+                        onChange={(v) => setIngredientRows(rows => rows.map((r, i) => i === idx ? { ...r, ingredientProductId: v } : r))}
+                        placeholder="Select ingredient..."
+                        options={ingredientOptions}
+                        buttonClassName="bg-slate-50 border-transparent"
+                        searchInputClassName="bg-white"
+                      />
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={row.quantity}
+                        onChange={e => setIngredientRows(rows => rows.map((r, i) => i === idx ? { ...r, quantity: e.target.value } : r))}
+                        className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 rounded-xl px-4 py-3 text-sm font-black outline-none"
+                        placeholder="Qty"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setIngredientRows(rows => rows.filter((_, i) => i !== idx))}
+                        className="w-10 h-10 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white flex items-center justify-center"
+                      >
+                        <MaterialIcon name="close" style={{ fontSize: '18px' }} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex gap-3 mt-6 pt-4 border-t border-slate-100">
               <button onClick={() => setIsProductModalOpen(false)} className="flex-1 py-3.5 bg-slate-100 text-slate-500 rounded-xl text-xs font-black uppercase tracking-widest">Cancel</button>
