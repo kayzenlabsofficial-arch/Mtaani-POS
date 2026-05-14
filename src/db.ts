@@ -21,7 +21,7 @@ export interface User {
   id: string;
   name: string;
   password: string;
-  role: 'ADMIN' | 'CASHIER' | 'MANAGER';
+  role: 'ADMIN' | 'CASHIER' | 'MANAGER' | 'ROOT';
   businessId: string;
   branchId?: string; // Assigned branch for isolation
   updated_at?: number;
@@ -32,6 +32,7 @@ export interface Product {
   name: string;
   category: string;
   sellingPrice: number;
+  costPrice?: number;
   taxCategory: 'A' | 'C' | 'E';
   stockQuantity: number; // Changed to allow decimals
   unit?: string; // e.g. 'pcs', 'm', 'kg', 'tot'
@@ -49,22 +50,24 @@ export interface TransactionItem {
   productId: string;
   name: string;
   snapshotPrice: number;
+  snapshotCost?: number;
   quantity: number; // Changed to allow decimals
   unit?: string;
+  category?: string;
   returnedQuantity?: number;
-  taxCategory: 'A' | 'C' | 'E';
+  taxCategory?: 'A' | 'C' | 'E';
 }
 
 export interface Transaction {
   id: string;
   total: number;
-  subtotal: number;
-  tax: number;
+  subtotal?: number;
+  tax?: number;
   discountAmount?: number;
   discountReason?: string;
   items: TransactionItem[];
   timestamp: number;
-  status: 'QUOTE' | 'PAID' | 'VOIDED' | 'REFUNDED' | 'PARTIAL_REFUND' | 'PENDING_REFUND';
+  status: 'QUOTE' | 'PAID' | 'UNPAID' | 'VOIDED' | 'REFUNDED' | 'PARTIAL_REFUND' | 'PENDING_REFUND';
   paymentMethod?: 'CASH' | 'MPESA' | 'CREDIT' | 'SPLIT';
   splitPayments?: {
     cashAmount: number;
@@ -74,14 +77,24 @@ export interface Transaction {
   };
   amountTendered?: number;
   changeGiven?: number;
+  mpesaReference?: string;
   cashierName?: string;
+  cashierId?: string;
   preparedBy?: string;
   approvedBy?: string;
+  customerId?: string;
+  customerName?: string;
   branchId: string;
   businessId: string;
   shiftId?: string; // Link to the specific shift session
   mpesaCode?: string;
   mpesaCustomer?: string;
+  mpesaCheckoutRequestId?: string;
+  pendingRefundItems?: { productId: string; quantity: number }[];
+  discount?: number;
+  discountType?: string;
+  splitData?: any;
+  isSynced?: number;
   updated_at?: number;
 }
 
@@ -210,7 +223,9 @@ export interface CreditNote {
   reason: string;
   status: 'PENDING' | 'ALLOCATED';
   allocatedTo?: string; // e.g. an Invoice/PO reference
+  branchId?: string;
   businessId: string;
+  shiftId?: string;
   updated_at?: number;
 }
 

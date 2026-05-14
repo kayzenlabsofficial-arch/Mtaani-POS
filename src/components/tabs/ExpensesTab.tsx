@@ -14,7 +14,7 @@ export default function ExpensesTab() {
   const [expenseSearch, setExpenseSearch] = useState("");
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'TILL' | 'ACCOUNT' });
+  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'TILL' | 'ACCOUNT' | 'SHOP', accountId: '', productId: '', quantity: '1' });
   const [isSaving, setIsSaving] = useState(false);
   
   const currentUser = useStore(state => state.currentUser);
@@ -25,6 +25,8 @@ export default function ExpensesTab() {
 
   const allExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const expenseAccounts = useLiveQuery(() => db.expenseAccounts.toArray(), [], []) ;
+  const financialAccounts = useLiveQuery(() => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []) ;
+  const products = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []) ;
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const allCashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   
@@ -80,7 +82,7 @@ export default function ExpensesTab() {
           details: `Created pending expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'Uncategorized'})`,
         });
         setIsExpenseModalOpen(false);
-        setExpenseForm({ amount: '', category: '', description: '', source: 'TILL' });
+        setExpenseForm({ amount: '', category: '', description: '', source: 'TILL', accountId: '', productId: '', quantity: '1' });
         success("Expense logged successfully.");
       } catch (err: any) {
         error("Failed to log expense: " + err.message);
@@ -244,6 +246,8 @@ export default function ExpensesTab() {
         isSaving={isSaving}
         actualCashDrawer={actualCashDrawer}
         accounts={expenseAccounts || []}
+        financialAccounts={financialAccounts || []}
+        products={products || []}
       />
 
       <ExpenseAccountModal 

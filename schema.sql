@@ -25,11 +25,13 @@ CREATE TABLE IF NOT EXISTS products (
     name TEXT NOT NULL,
     category TEXT NOT NULL,
     sellingPrice REAL NOT NULL,
+    costPrice REAL,
     taxCategory TEXT NOT NULL,
     stockQuantity REAL NOT NULL,
     unit TEXT,
     barcode TEXT NOT NULL,
     imageUrl TEXT,
+    reorderPoint REAL,
     businessId TEXT,
     branchId TEXT,
     updated_at INTEGER
@@ -181,8 +183,11 @@ CREATE TABLE IF NOT EXISTS creditNotes (
     reference TEXT NOT NULL,
     timestamp INTEGER NOT NULL,
     reason TEXT,
+    status TEXT DEFAULT 'PENDING',
+    allocatedTo TEXT,
     branchId TEXT,
     businessId TEXT,
+    shiftId TEXT,
     updated_at INTEGER
 );
 
@@ -233,6 +238,7 @@ CREATE TABLE IF NOT EXISTS purchaseOrders (
     expectedDate INTEGER,
     receivedDate INTEGER,
     invoiceNumber TEXT,
+    poNumber TEXT,
     preparedBy TEXT,
     approvedBy TEXT,
     receivedBy TEXT,

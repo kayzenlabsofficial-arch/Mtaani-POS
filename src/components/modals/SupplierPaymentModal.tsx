@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, Save, X, CreditCard, Banknote, Building2, Receipt, FileText, ChevronDown, Loader2, CheckCircle2 } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
-import { db, type Supplier, type PurchaseOrder } from '../../db';
+import { db, type Supplier } from '../../db';
 import { SearchableSelect } from '../shared/SearchableSelect';
 
 interface SupplierPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   supplier: Supplier | null;
-  onSave: (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, source: 'TILL' | 'ACCOUNT', accountId?: string, transactionCode?: string, purchaseOrderId?: string, purchaseOrderIds?: string[] }) => Promise<void>;
+  onSave: (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, source: 'TILL' | 'ACCOUNT', accountId?: string, transactionCode?: string, purchaseOrderIds?: string[], creditNoteIds?: string[] }) => Promise<void>;
   financialAccounts: any[];
   shiftId?: string;
 }
@@ -63,7 +63,22 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
         amount: finalAmount.toString(), 
         reference: refStr 
     }));
-  }, [selectedInvoiceIds, selectedCreditNoteIds]);
+  }, [selectedInvoiceIds, selectedCreditNoteIds, outstandingInvoices, pendingCreditNotes]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setPaymentForm({
+      amount: '',
+      method: 'CASH',
+      reference: '',
+      transactionCode: '',
+      purchaseOrderId: '',
+      source: 'TILL',
+      accountId: ''
+    });
+    setSelectedInvoiceIds([]);
+    setSelectedCreditNoteIds([]);
+  }, [isOpen, supplier?.id]);
 
   const toggleInvoice = (id: string) => {
     setSelectedInvoiceIds(prev => 
@@ -84,6 +99,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
     const amount = Number(paymentForm.amount);
     // Allow zero amount if credit notes cover the full invoice
     if (amount < 0 || isSaving) return;
+    if (paymentForm.source === 'ACCOUNT' && amount > 0 && !paymentForm.accountId) return;
     
     setIsSaving(true);
     try {
@@ -300,7 +316,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
 
             <div className="flex gap-2 pt-2 sticky bottom-0 bg-white pb-2 mt-auto">
               <button type="button" onClick={onClose} className="flex-1 px-4 py-3.5 bg-slate-100 text-slate-500 font-black text-[9px]   rounded-xl">Cancel</button>
-              <button type="submit" disabled={!paymentForm.amount || Number(paymentForm.amount) < 0 || isSaving} className="flex-[2] bg-green-600 text-white py-3.5 font-black text-[9px]   rounded-xl shadow-lg shadow-green-600/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+              <button type="submit" disabled={!paymentForm.amount || Number(paymentForm.amount) < 0 || (paymentForm.source === 'ACCOUNT' && Number(paymentForm.amount) > 0 && !paymentForm.accountId) || isSaving} className="flex-[2] bg-green-600 text-white py-3.5 font-black text-[9px]   rounded-xl shadow-lg shadow-green-600/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                 {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                 {isSaving ? 'Processing...' : 'Confirm & Pay'}
               </button>

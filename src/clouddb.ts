@@ -243,12 +243,13 @@ export class CloudTable<T extends { id: string }> {
   // Lazy where() — all terminal methods call ensure() internally
   where(field: keyof T) {
     const self = this;
-    const makeOp = (predicate: (r: T) => boolean, _rev = false) => {
+    const makeOp = (predicate: (r: T) => boolean, _rev = false, _limit?: number) => {
       const op = {
         toArray: async (): Promise<T[]> => {
           await self.ensure();
           let arr = Array.from(self.cache.values()).filter(predicate);
           if (_rev) arr = arr.reverse();
+          if (_limit !== undefined) arr = arr.slice(0, _limit);
           return arr;
         },
         count: async (): Promise<number> => {
@@ -272,9 +273,10 @@ export class CloudTable<T extends { id: string }> {
           return toDelete.length;
         },
         // ── KEY FIX: and() is the secondary filter ──────────────────────────
-        and: (fn: (r: T) => boolean) => makeOp(r => predicate(r) && fn(r), _rev),
-        filter: (fn: (r: T) => boolean) => makeOp(r => predicate(r) && fn(r), _rev),
-        reverse: () => makeOp(predicate, true),
+        and: (fn: (r: T) => boolean) => makeOp(r => predicate(r) && fn(r), _rev, _limit),
+        filter: (fn: (r: T) => boolean) => makeOp(r => predicate(r) && fn(r), _rev, _limit),
+        reverse: () => makeOp(predicate, true, _limit),
+        limit: (n: number) => makeOp(predicate, _rev, n),
         sortBy: async (key: keyof T): Promise<T[]> => {
           await self.ensure();
           let arr = Array.from(self.cache.values())
@@ -289,6 +291,12 @@ export class CloudTable<T extends { id: string }> {
 
     return {
       equals: (v: any) => makeOp(r => (r[field] as any) === v),
+      between: (low: any, high: any, includeLow = true, includeHigh = false) => makeOp(r => {
+        const value = r[field] as any;
+        const aboveLow = includeLow ? value >= low : value > low;
+        const belowHigh = includeHigh ? value <= high : value < high;
+        return aboveLow && belowHigh;
+      }),
       above: (v: any) => makeOp(r => (r[field] as any) > v),
       aboveOrEqual: (v: any) => makeOp(r => (r[field] as any) >= v),
       below: (v: any) => makeOp(r => (r[field] as any) < v),

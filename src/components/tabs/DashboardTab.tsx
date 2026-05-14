@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { TrendingUp, TrendingDown } from '@mui/icons-material';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';

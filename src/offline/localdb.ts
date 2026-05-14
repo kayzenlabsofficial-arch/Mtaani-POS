@@ -133,7 +133,7 @@ export async function enqueueOutbox(item: Omit<OutboxItem, 'id' | 'createdAt' | 
 
 export async function markOutboxAttempt(id: string, args: { error?: string } = {}): Promise<void> {
   await offlineDb.outbox.update(id, {
-    attemptCount: Dexie.increment(1),
+    attemptCount: (Dexie as any).increment(1),
     lastAttemptAt: Date.now(),
     error: args.error,
   });

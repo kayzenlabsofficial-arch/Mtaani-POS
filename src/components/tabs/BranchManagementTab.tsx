@@ -17,7 +17,7 @@ export default function BranchManagementTab() {
   const isAdmin = useStore(state => state.isAdmin);
   const { success, error, warning } = useToast();
 
-  const BLANK: Omit<Branch, 'id' | 'updated_at'> = {
+  const BLANK: Omit<Branch, 'id' | 'updated_at' | 'businessId'> = {
     name: '', location: '', phone: '', tillNumber: '', kraPin: '', isActive: true,
     mpesaConsumerKey: '', mpesaConsumerSecret: '', mpesaPasskey: '', mpesaEnv: 'sandbox',
     mpesaType: 'paybill', mpesaStoreNumber: ''

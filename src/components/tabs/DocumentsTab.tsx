@@ -3,6 +3,7 @@ import { Search, CheckCircle2, FileText, RotateCcw, Receipt, ArrowUpRight, Arrow
 import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction } from '../../db';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
+import AdminApprovals from './AdminApprovals';
 import { useStore } from '../../store';
 import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 

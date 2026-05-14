@@ -83,7 +83,7 @@ export class MPesaService {
         throw new Error(`Failed to get access token: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as { access_token: string; expires_in: number };
       this.accessToken = data.access_token;
       this.tokenExpiry = Date.now() + (data.expires_in * 1000) - 60000; // Expire 1 minute early
       
@@ -236,7 +236,7 @@ export class MPesaService {
         throw new Error(`Transaction query failed: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as { ResultCode?: string | number; ResultDesc?: string };
       
       if (data.ResultCode === '0') {
         return {

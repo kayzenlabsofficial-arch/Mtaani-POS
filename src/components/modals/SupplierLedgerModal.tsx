@@ -90,19 +90,6 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
     }
   };
 
-  const handleAllocateCreditNote = async (cn: CreditNote) => {
-    if (cn.status === 'ALLOCATED') return;
-    try {
-      await db.creditNotes.update(cn.id, { status: 'ALLOCATED' });
-      await db.suppliers.update(supplier.id, {
-        balance: Math.max(0, supplier.balance - cn.amount)
-      });
-      success(`Ksh ${cn.amount.toLocaleString()} allocated and deducted from balance.`);
-    } catch (err) {
-      error("Allocation failed.");
-    }
-  };
-
   const handlePrintStatement = async () => {
     if (!supplier) return;
     setIsSharing(true);
@@ -284,11 +271,11 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                     <div className="text-right">
                                         <p className="text-sm font-black text-blue-600">Ksh {cn.amount.toLocaleString()}</p>
                                         {cn.status !== 'ALLOCATED' ? (
-                                            <button 
-                                                onClick={() => handleAllocateCreditNote(cn)}
-                                                className="mt-1 text-[9px] font-black text-blue-600   border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-600 hover:text-white transition-all"
+                                            <button
+                                                onClick={() => onPay(supplier)}
+                                                className="mt-1 text-[9px] font-black text-blue-600 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-600 hover:text-white transition-all"
                                             >
-                                                Allocate Credit
+                                                Apply During Payment
                                             </button>
                                         ) : (
                                             <p className="text-[9px] font-bold text-slate-400   mt-0.5 italic">Balance Updated</p>
@@ -354,7 +341,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                 </div>
                 <div className="flex gap-2">
                     <button onClick={() => setIsAddCreditNoteOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs  ">Cancel</button>
-                    <button onClick={handleAddCreditNote} disabled={!creditNoteForm.amount} className="flex-[2] py-3 bg-blue-600 text-white font-black rounded-xl text-xs   active:scale-95 transition-all disabled:opacity-50 shadow-blue">Apply Credit</button>
+                    <button onClick={handleAddCreditNote} disabled={!creditNoteForm.amount} className="flex-[2] py-3 bg-blue-600 text-white font-black rounded-xl text-xs   active:scale-95 transition-all disabled:opacity-50 shadow-blue">Save Credit Note</button>
                 </div>
             </div>
         </div>

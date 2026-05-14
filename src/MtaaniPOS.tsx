@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { useLiveQuery } from './clouddb';
 import { db } from './db';
 import { useMtaaniPOS } from './hooks/useMtaaniPOS';
+import { useToast } from './context/ToastContext';
+import { canPerform } from './utils/accessControl';
+import { recordAuditEvent } from './utils/auditLog';
 
 // Modular Components
 import RegisterTab from './components/tabs/RegisterTab';
@@ -27,8 +30,8 @@ import SystemManagerDashboard from './components/admin/SystemManager';
 import ProfileModal from './components/modals/ProfileModal';
 import ExpenseModal from './components/modals/ExpenseModal';
 
-const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => (
-  <span className={`material-symbols-outlined ${className}`}>{name}</span>
+const MaterialIcon = ({ name, className = "", style }: { name: string, className?: string, style?: React.CSSProperties }) => (
+  <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>
 );
 
 export default function MtaaniPOS() {
@@ -49,6 +52,7 @@ export default function MtaaniPOS() {
     activeBusinessId, activeBranchId, setActiveBranchId,
     updateServiceWorker, needRefresh
   } = useMtaaniPOS();
+  const { success, error } = useToast();
 
   const branches = useLiveQuery(() => activeBusinessId ? db.branches.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
   const activeBranch = branches?.find(b => b.id === activeBranchId);
@@ -58,14 +62,79 @@ export default function MtaaniPOS() {
     description: '',
     amount: '',
     category: 'General',
+    source: 'TILL' as 'TILL' | 'ACCOUNT' | 'SHOP',
     accountId: '',
     financialAccountId: '',
-    productId: ''
+    productId: '',
+    quantity: '1'
   });
+  const [isSavingExpense, setIsSavingExpense] = useState(false);
 
   const expenseAccounts = useLiveQuery(() => activeBusinessId ? db.expenseAccounts.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
   const financialAccounts = useLiveQuery(() => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
   const products = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
+  const transactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
+  const expenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
+  const cashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const cashSalesToday = (transactions || [])
+    .filter(t => (t.timestamp || 0) >= todayStart.getTime() && t.status === 'PAID' && t.paymentMethod === 'CASH')
+    .reduce((sum, t) => sum + (t.total || 0), 0);
+  const tillExpensesToday = (expenses || [])
+    .filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'TILL')
+    .reduce((sum, e) => sum + (e.amount || 0), 0);
+  const cashPicksToday = (cashPicks || [])
+    .filter(p => (p.timestamp || 0) >= todayStart.getTime())
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+  const actualCashDrawer = cashSalesToday - tillExpensesToday - cashPicksToday;
+
+  const handleSaveExpense = async () => {
+    if (isSavingExpense) return;
+    const amount = Number(expenseForm.amount);
+    if (!currentUser || !activeBusinessId || !activeBranchId) return;
+    if (amount <= 0) return error("Invalid amount.");
+    if (!canPerform(currentUser, 'expense.create')) return error("You do not have permission to create expenses.");
+    if (expenseForm.source === 'TILL' && amount > actualCashDrawer) return error("Insufficient cash in drawer.");
+    if (expenseForm.source === 'ACCOUNT' && !expenseForm.accountId) return error("Select the account paying this expense.");
+    if (expenseForm.source === 'SHOP' && !expenseForm.productId) return error("Select the stock item being expensed.");
+
+    setIsSavingExpense(true);
+    try {
+      await db.expenses.add({
+        id: crypto.randomUUID(),
+        amount,
+        category: expenseForm.category || 'General',
+        description: expenseForm.description,
+        timestamp: Date.now(),
+        userName: currentUser.name,
+        preparedBy: currentUser.name,
+        status: 'PENDING',
+        source: expenseForm.source,
+        accountId: expenseForm.source === 'ACCOUNT' ? expenseForm.accountId : undefined,
+        productId: expenseForm.source === 'SHOP' ? expenseForm.productId : undefined,
+        quantity: expenseForm.source === 'SHOP' ? Number(expenseForm.quantity || 1) : undefined,
+        branchId: activeBranchId,
+        businessId: activeBusinessId
+      } as any);
+      recordAuditEvent({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        action: 'expense.create',
+        entity: 'expense',
+        severity: 'WARN',
+        details: `Created pending expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'General'})`,
+      });
+      setIsExpenseModalOpen(false);
+      setExpenseForm({ description: '', amount: '', category: 'General', source: 'TILL', accountId: '', financialAccountId: '', productId: '', quantity: '1' });
+      success("Expense logged successfully.");
+    } catch (err: any) {
+      error("Failed to log expense: " + err.message);
+    } finally {
+      setIsSavingExpense(false);
+    }
+  };
 
   if (isSystemAdmin) {
     return <SystemManagerDashboard onLogout={handleLogout} />;
@@ -114,11 +183,11 @@ export default function MtaaniPOS() {
             {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={navigateToTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}
             {activeTab === 'INVENTORY' && <InventoryTab />}
             {activeTab === 'CUSTOMERS' && <CustomersTab />}
-            {activeTab === 'SUPPLIERS' && <SuppliersTab />}
+            {activeTab === 'SUPPLIERS' && <SuppliersTab setActiveTab={navigateToTab} financialAccounts={financialAccounts || []} />}
             {activeTab === 'PURCHASES' && <PurchasesTab />}
             {activeTab === 'EXPENSES' && <ExpensesTab />}
-            {activeTab === 'SUPPLIER_PAYMENTS' && <SupplierPaymentsTab />}
-            {activeTab === 'REFUNDS' && <RefundsTab />}
+            {activeTab === 'SUPPLIER_PAYMENTS' && <SupplierPaymentsTab financialAccounts={financialAccounts || []} />}
+            {activeTab === 'REFUNDS' && <RefundsTab setActiveTab={navigateToTab} />}
             {activeTab === 'DOCUMENTS' && <DocumentsTab />}
             {activeTab === 'REPORTS' && <ReportsTab />}
             {activeTab === 'ADMIN_PANEL' && <AdminPanel updateServiceWorker={updateServiceWorker} needRefresh={needRefresh} />}
@@ -156,8 +225,9 @@ export default function MtaaniPOS() {
         onClose={() => setIsExpenseModalOpen(false)} 
         expenseForm={expenseForm} 
         setExpenseForm={setExpenseForm} 
-        handleSaveExpense={() => {}} 
-        actualCashDrawer={0} 
+        handleSaveExpense={handleSaveExpense}
+        isSaving={isSavingExpense}
+        actualCashDrawer={actualCashDrawer}
         accounts={expenseAccounts || []} 
         financialAccounts={financialAccounts || []} 
         products={products || []} 

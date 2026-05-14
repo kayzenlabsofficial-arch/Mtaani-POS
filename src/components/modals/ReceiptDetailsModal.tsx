@@ -38,7 +38,7 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
     if (!selectedReceipt) return;
     setIsSharing(true);
     try {
-      await shareDocument('printable-content', `Receipt-${selectedReceipt.id.split('-')[0].toUpperCase()}`, true);
+      await shareDocument('printable-content', `Receipt-${selectedReceipt.id.split('-')[0].toUpperCase()}`);
     } catch (err) {
       console.error('Sharing failed', err);
     } finally {

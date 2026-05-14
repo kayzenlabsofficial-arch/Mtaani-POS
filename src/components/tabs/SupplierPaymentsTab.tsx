@@ -58,13 +58,13 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
       }
   }, [paymentSupplierId, allSuppliers, setPaymentSupplierId]);
 
-  const handleSavePayment = async (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, transactionCode?: string, purchaseOrderId?: string, purchaseOrderIds?: string[] }) => {
+  const handleSavePayment = async (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, source: 'TILL' | 'ACCOUNT', accountId?: string, transactionCode?: string, purchaseOrderIds?: string[], creditNoteIds?: string[] }) => {
     if (!selectedSupplierForPayment || isSaving) return;
     
     setIsSaving(true);
     try {
-        if ((payment as any).source === 'ACCOUNT' && (payment as any).accountId) {
-           const account = await db.financialAccounts.get((payment as any).accountId);
+        if (payment.source === 'ACCOUNT' && payment.accountId) {
+           const account = await db.financialAccounts.get(payment.accountId);
            if (!account) { error('Selected account not found.'); return; }
            if (account.balance < payment.amount) {
                error(`Insufficient funds in "${account.name}". Balance: Ksh ${account.balance.toLocaleString()}`);
@@ -72,29 +72,43 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
            }
         }
 
+        const paymentId = crypto.randomUUID();
+        let totalDeduction = payment.amount;
+
+        for (const cnId of payment.creditNoteIds || []) {
+            const cn = await db.creditNotes.get(cnId);
+            if (cn && cn.status === 'PENDING') {
+                await db.creditNotes.update(cnId, { status: 'ALLOCATED', allocatedTo: paymentId });
+                totalDeduction += cn.amount;
+            }
+        }
+
         await db.supplierPayments.add({
-          id: crypto.randomUUID(),
+          id: paymentId,
           supplierId: selectedSupplierForPayment.id,
           purchaseOrderIds: payment.purchaseOrderIds,
+          creditNoteIds: payment.creditNoteIds,
           amount: payment.amount,
           paymentMethod: payment.method,
           transactionCode: payment.transactionCode,
-          source: (payment as any).source,
-          accountId: (payment as any).accountId,
+          reference: payment.reference,
+          source: payment.source,
+          accountId: payment.accountId,
           timestamp: Date.now(),
+          preparedBy: useStore.getState().currentUser?.name || 'Authorized Staff',
           branchId: activeBranchId!,
           businessId: activeBusinessId!
         });
 
-        if ((payment as any).source === 'ACCOUNT' && (payment as any).accountId) {
-           const account = await db.financialAccounts.get((payment as any).accountId);
+        if (payment.source === 'ACCOUNT' && payment.accountId && payment.amount > 0) {
+           const account = await db.financialAccounts.get(payment.accountId);
            if (account) {
               await db.financialAccounts.update(account.id, { balance: account.balance - payment.amount });
            }
         }
 
         if (payment.purchaseOrderIds && payment.purchaseOrderIds.length > 0) {
-            let remainingPool = payment.amount;
+            let remainingPool = totalDeduction;
             for (const poId of payment.purchaseOrderIds) {
                 if (remainingPool <= 0) break;
                 
@@ -114,7 +128,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
         }
 
         await db.suppliers.update(selectedSupplierForPayment.id, {
-          balance: Math.max(0, (selectedSupplierForPayment.balance || 0) - payment.amount)
+          balance: Math.max(0, (selectedSupplierForPayment.balance || 0) - totalDeduction)
         });
         success("Payment recorded successfully.");
         setIsPaymentModalOpen(false);

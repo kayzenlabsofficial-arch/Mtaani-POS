@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useStore } from '../store';
 import { useToast } from '../context/ToastContext';
 import { db, type Transaction } from '../db';
@@ -16,14 +16,17 @@ export function useMtaaniPOS() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   
   const { 
-    cart, clearCart, currentSaleTotal, 
-    discountValue, discountType, setDiscountValue,
+    cart, clearCart,
     currentUser, login, logout, isSystemAdmin,
     activeBusinessId, setActiveBusinessId,
     activeBranchId, setActiveBranchId
   } = useStore();
 
   const { success, error } = useToast();
+  const currentSaleTotal = cart.reduce((sum, item) => sum + ((item.sellingPrice || 0) * (item.cartQuantity || 0)), 0);
+  const discountValue = 0;
+  const discountType = 'FIXED';
+  const setDiscountValue = (_value: number) => {};
   
   const {
     offlineReady: [offlineReady, setOfflineReady],
@@ -50,7 +53,7 @@ export function useMtaaniPOS() {
     };
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     if (isLoggingIn) return;
     setLoginError("");
@@ -151,7 +154,7 @@ export function useMtaaniPOS() {
           category: item.category
         })),
         total: currentSaleTotal,
-        paymentMethod: method,
+        paymentMethod: method as any,
         mpesaReference: mpesaRef,
         status,
         timestamp: Date.now(),

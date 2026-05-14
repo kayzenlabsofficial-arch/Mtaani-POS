@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Plus, Users, Phone, Mail, ChevronRight, X, User, Trash2, Smartphone, Loader2, CheckCircle2, SlidersHorizontal, TrendingUp, CreditCard, UserCheck, ChevronDown } from 'lucide-react';
+import { Search, Plus, Users, Phone, Mail, ChevronRight, X, User, Trash2, Smartphone, Loader2, CheckCircle2, SlidersHorizontal, TrendingUp, CreditCard, UserCheck, ChevronDown, Save } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Customer } from '../../db';
 import { useStore } from '../../store';

@@ -44,8 +44,8 @@ export default function PurchasesTab() {
   );
 
   const filteredPurchases = allPurchaseOrders.filter(po => 
-      po.invoiceNumber?.toLowerCase().includes(purchaseSearch.toLowerCase()) || 
-      allSuppliers.find(s => s.id === po.supplierId)?.company.toLowerCase().includes(purchaseSearch.toLowerCase()) ||
+      (po.invoiceNumber || '').toLowerCase().includes(purchaseSearch.toLowerCase()) || 
+      (allSuppliers.find(s => s.id === po.supplierId)?.company || '').toLowerCase().includes(purchaseSearch.toLowerCase()) ||
       po.id.toLowerCase().includes(purchaseSearch.toLowerCase())
   ).sort((a,b) => (b.orderDate || 0) - (a.orderDate || 0));
 
@@ -425,13 +425,13 @@ export default function PurchasesTab() {
                  )}
               </div>
 
-              <div className="flex gap-4 mt-auto pt-6 border-t border-slate-50">
+              <div className="sticky bottom-0 bg-white flex gap-4 mt-auto pt-6 pb-2 border-t border-slate-50">
                  <button onClick={() => { setIsPOModalOpen(false); setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); }} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
                    Dismiss
                  </button>
-                 <button onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0} className="flex-[2] grad-indigo text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-indigo press flex items-center justify-center gap-3">
+                 <button onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0 || isSaving} className="flex-[2] grad-indigo text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-indigo press flex items-center justify-center gap-3">
                    <Save size={18}/>
-                   {selectedPOToEdit ? 'Commit Changes' : 'Publish Order'}
+                   {isSaving ? 'Saving...' : selectedPOToEdit ? 'Commit Changes' : 'Publish Order'}
                  </button>
               </div>
            </div>
@@ -508,7 +508,7 @@ export default function PurchasesTab() {
                  </div>
               </div>
 
-              <div className="flex gap-4 mt-auto pt-6 border-t border-slate-50">
+              <div className="sticky bottom-0 bg-white flex gap-4 mt-auto pt-6 pb-2 border-t border-slate-50">
                  <button onClick={() => setIsReceivePOModalOpen(false)} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
                    Dismiss
                  </button>

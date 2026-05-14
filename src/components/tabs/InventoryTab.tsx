@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useLiveQuery } from '../../clouddb';
-import { db } from '../../db';
+import { db, type Product } from '../../db';
 import { useStore } from '../../store';
 import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
+import { useToast } from '../../context/ToastContext';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>
@@ -29,8 +31,26 @@ export default function InventoryTab() {
   const [sortBy, setSortBy] = useState<'name' | 'stock' | 'price'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [isRestocking, setIsRestocking] = useState(false);
+  const [restockQty, setRestockQty] = useState('');
+  const [restockCost, setRestockCost] = useState('');
+  const [productForm, setProductForm] = useState({
+    name: '',
+    category: 'General',
+    sellingPrice: '',
+    costPrice: '',
+    stockQuantity: '',
+    unit: 'pcs',
+    barcode: '',
+    reorderPoint: '5',
+    taxCategory: 'A' as 'A' | 'C' | 'E'
+  });
   const scrollRef = useHorizontalScroll();
   const activeBusinessId = useStore(s => s.activeBusinessId);
+  const activeBranchId = useStore(s => s.activeBranchId);
+  const { success, error } = useToast();
 
   const products = useLiveQuery(
     () => {
@@ -54,6 +74,20 @@ export default function InventoryTab() {
     [activeBusinessId], []
   );
 
+  const selectedMovements = useLiveQuery(
+    () => selectedProduct ? db.stockMovements.where('productId').equals(selectedProduct.id).toArray() : Promise.resolve([]),
+    [selectedProduct?.id],
+    []
+  );
+
+  const selectedSales = useLiveQuery(
+    () => selectedProduct && activeBranchId
+      ? db.transactions.where('branchId').equals(activeBranchId).filter(t => (t.items || []).some((i: any) => i.productId === selectedProduct.id)).toArray()
+      : Promise.resolve([]),
+    [selectedProduct?.id, activeBranchId],
+    []
+  );
+
   const sorted = [...(products || [])].sort((a, b) => {
     let res = 0;
     if (sortBy === 'name') res = a.name.localeCompare(b.name);
@@ -74,6 +108,110 @@ export default function InventoryTab() {
     else { setSortBy(col); setSortDir('asc'); }
   };
 
+  const openProductModal = (product?: Product) => {
+    setEditingProduct(product || null);
+    setProductForm({
+      name: product?.name || '',
+      category: product?.category || selectedCategory || 'General',
+      sellingPrice: product?.sellingPrice ? String(product.sellingPrice) : '',
+      costPrice: (product as any)?.costPrice ? String((product as any).costPrice) : '',
+      stockQuantity: product?.stockQuantity !== undefined ? String(product.stockQuantity) : '0',
+      unit: product?.unit || 'pcs',
+      barcode: product?.barcode || '',
+      reorderPoint: product?.reorderPoint !== undefined ? String(product.reorderPoint) : '5',
+      taxCategory: product?.taxCategory || 'A'
+    });
+    setIsProductModalOpen(true);
+  };
+
+  const handleSaveProduct = async () => {
+    if (!activeBusinessId || !activeBranchId || !productForm.name.trim()) return;
+    const payload = {
+      name: productForm.name.trim(),
+      category: productForm.category.trim() || 'General',
+      sellingPrice: Number(productForm.sellingPrice) || 0,
+      costPrice: Number(productForm.costPrice) || 0,
+      taxCategory: productForm.taxCategory,
+      stockQuantity: Number(productForm.stockQuantity) || 0,
+      unit: productForm.unit.trim() || 'pcs',
+      barcode: productForm.barcode.trim() || `SKU-${Date.now()}`,
+      reorderPoint: Number(productForm.reorderPoint) || 5,
+      branchId: activeBranchId,
+      businessId: activeBusinessId
+    };
+    try {
+      if (editingProduct) {
+        await db.products.update(editingProduct.id, payload as any);
+        if (selectedProduct?.id === editingProduct.id) setSelectedProduct({ ...selectedProduct, ...payload });
+        success('Product updated.');
+      } else {
+        await db.products.add({ id: crypto.randomUUID(), ...payload } as any);
+        success('Product added.');
+      }
+      setIsProductModalOpen(false);
+      setEditingProduct(null);
+    } catch (err: any) {
+      error('Failed to save product: ' + err.message);
+    }
+  };
+
+  const handleRestock = async () => {
+    if (!selectedProduct || !activeBusinessId || !activeBranchId) return;
+    const qty = Number(restockQty);
+    if (qty <= 0) return error('Enter a valid restock quantity.');
+    try {
+      await db.products.update(selectedProduct.id, {
+        stockQuantity: (selectedProduct.stockQuantity || 0) + qty,
+        ...(restockCost ? { costPrice: Number(restockCost) || 0 } : {})
+      } as any);
+      await db.stockMovements.add({
+        id: crypto.randomUUID(),
+        productId: selectedProduct.id,
+        type: 'IN',
+        quantity: qty,
+        timestamp: Date.now(),
+        reference: 'Manual restock',
+        branchId: activeBranchId,
+        businessId: activeBusinessId
+      });
+      setSelectedProduct({
+        ...selectedProduct,
+        stockQuantity: (selectedProduct.stockQuantity || 0) + qty,
+        ...(restockCost ? { costPrice: Number(restockCost) || 0 } : {})
+      });
+      setRestockQty('');
+      setRestockCost('');
+      setIsRestocking(false);
+      success('Stock updated.');
+    } catch (err: any) {
+      error('Failed to restock: ' + err.message);
+    }
+  };
+
+  const productSales = selectedProduct ? (selectedSales || []).flatMap((tx: any) =>
+    (tx.items || [])
+      .filter((item: any) => item.productId === selectedProduct.id)
+      .map((item: any) => ({ tx, item }))
+  ) : [];
+  const soldUnits = productSales.reduce((sum, row) => sum + (Number(row.item.quantity) || 0), 0);
+  const revenue = productSales.reduce((sum, row) => sum + ((Number(row.item.quantity) || 0) * (Number(row.item.snapshotPrice) || 0)), 0);
+  const cost = productSales.reduce((sum, row) => sum + ((Number(row.item.quantity) || 0) * (Number(row.item.snapshotCost ?? selectedProduct?.costPrice ?? 0) || 0)), 0);
+  const grossProfit = revenue - cost;
+  const movementIn = (selectedMovements || []).filter(m => m.type === 'IN' || m.quantity > 0).reduce((sum, m) => sum + Math.abs(Number(m.quantity) || 0), 0);
+  const movementOut = (selectedMovements || []).filter(m => m.type !== 'IN' && m.quantity < 0).reduce((sum, m) => sum + Math.abs(Number(m.quantity) || 0), 0);
+  const chartData = Array.from({ length: 8 }).map((_, idx) => {
+    const day = new Date();
+    day.setDate(day.getDate() - (7 - idx));
+    day.setHours(0, 0, 0, 0);
+    const next = day.getTime() + 86400000;
+    const rows = productSales.filter(row => (row.tx.timestamp || 0) >= day.getTime() && (row.tx.timestamp || 0) < next);
+    return {
+      label: day.toLocaleDateString('en-KE', { weekday: 'short' }),
+      sales: rows.reduce((sum, row) => sum + ((Number(row.item.quantity) || 0) * (Number(row.item.snapshotPrice) || 0)), 0),
+      units: rows.reduce((sum, row) => sum + (Number(row.item.quantity) || 0), 0)
+    };
+  });
+
   const SortIcon = ({ col }: { col: 'name' | 'stock' | 'price' }) =>
     sortBy === col ? (
       <MaterialIcon name={sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward'} className="text-primary" style={{ fontSize: '13px' }} />
@@ -92,7 +230,7 @@ export default function InventoryTab() {
             {products?.length || 0} products across {categories?.length || 0} categories
           </p>
         </div>
-        <button className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start">
+        <button onClick={() => openProductModal()} className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start">
           <MaterialIcon name="add" style={{ fontSize: '20px' }} />
           Add Product
         </button>
@@ -211,7 +349,7 @@ export default function InventoryTab() {
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className={`w-1.5 h-1.5 rounded-full ${catColor}`} />
                       <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide truncate">{product.category || 'General'}</span>
-                      {product.isTaxable && (
+                      {product.taxCategory === 'A' && (
                         <span className="text-[8px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full">VAT</span>
                       )}
                     </div>
@@ -266,7 +404,7 @@ export default function InventoryTab() {
       </div>
 
       {/* FAB */}
-      <button className="fixed bottom-24 md:bottom-8 right-6 md:right-8 w-14 h-14 bg-primary text-white rounded-2xl shadow-2xl shadow-primary/30 flex items-center justify-center z-40 hover:bg-blue-700 active:scale-95 transition-all">
+      <button onClick={() => openProductModal()} className="fixed bottom-24 md:bottom-8 right-6 md:right-8 w-14 h-14 bg-primary text-white rounded-2xl shadow-2xl shadow-primary/30 flex items-center justify-center z-40 hover:bg-blue-700 active:scale-95 transition-all">
         <MaterialIcon name="add" style={{ fontSize: '28px' }} />
       </button>
 
@@ -290,7 +428,7 @@ export default function InventoryTab() {
                 <div>
                   <h4 className="text-lg font-black text-slate-900 leading-tight">{selectedProduct.name}</h4>
                   <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mt-1">{selectedProduct.category}</p>
-                  {selectedProduct.isTaxable && (
+                  {selectedProduct.taxCategory === 'A' && (
                     <span className="text-[9px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-2 py-0.5 rounded-full mt-1 inline-block">VAT Applicable</span>
                   )}
                 </div>
@@ -309,14 +447,175 @@ export default function InventoryTab() {
                   <span className="text-[13px] font-black text-slate-900">{row.value}</span>
                 </div>
               ))}
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                {[
+                  { label: 'Units Sold', value: soldUnits.toLocaleString(), color: 'text-blue-600' },
+                  { label: 'Revenue', value: `Ksh ${revenue.toLocaleString()}`, color: 'text-emerald-600' },
+                  { label: 'Gross Profit', value: `Ksh ${grossProfit.toLocaleString()}`, color: grossProfit >= 0 ? 'text-slate-900' : 'text-rose-600' },
+                  { label: 'Stock In / Out', value: `${movementIn.toLocaleString()} / ${movementOut.toLocaleString()}`, color: 'text-indigo-600' },
+                ].map(metric => (
+                  <div key={metric.label} className="bg-slate-50 border border-slate-100 rounded-2xl p-3">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{metric.label}</p>
+                    <p className={`text-sm font-black tabular-nums mt-1 ${metric.color}`}>{metric.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-slate-950 rounded-2xl p-4 text-white">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">8-Day Performance</p>
+                    <p className="text-xs font-bold text-slate-200">Sales value and unit movement</p>
+                  </div>
+                  <MaterialIcon name="monitoring" className="text-emerald-300" style={{ fontSize: '20px' }} />
+                </div>
+                <div className="h-44">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="salesGlow" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#34d399" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#34d399" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="#1e293b" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={{ background: '#020617', border: '1px solid #334155', borderRadius: 12, color: '#fff' }} />
+                      <Area type="monotone" dataKey="sales" stroke="#34d399" strokeWidth={3} fill="url(#salesGlow)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recent Movement</p>
+                  <span className="text-[9px] font-bold text-slate-400">{(selectedMovements || []).length} entries</span>
+                </div>
+                <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar">
+                  {[...(selectedMovements || [])]
+                    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+                    .slice(0, 8)
+                    .map(move => (
+                      <div key={move.id} className="flex items-center justify-between bg-white border border-slate-100 rounded-xl px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-black text-slate-800 truncate">{move.reference || move.type}</p>
+                          <p className="text-[9px] font-bold text-slate-400">{new Date(move.timestamp).toLocaleString('en-KE')}</p>
+                        </div>
+                        <span className={`text-xs font-black tabular-nums ${move.quantity >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {move.quantity >= 0 ? '+' : ''}{move.quantity}
+                        </span>
+                      </div>
+                    ))}
+                  {(selectedMovements || []).length === 0 && (
+                    <div className="text-center py-6 text-[10px] font-bold text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                      No stock movement recorded yet.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="flex-shrink-0 p-6 border-t border-slate-100 grid grid-cols-2 gap-3">
-              <button className="py-3 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
+              <button onClick={() => openProductModal(selectedProduct)} className="py-3 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
                 <MaterialIcon name="edit" style={{ fontSize: '18px' }} /> Edit
               </button>
-              <button className="py-3 bg-primary text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+              <button onClick={() => setIsRestocking(true)} className="py-3 bg-primary text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
                 <MaterialIcon name="add" style={{ fontSize: '18px' }} /> Restock
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isRestocking && selectedProduct && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsRestocking(false)} />
+          <div className="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 z-10">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-black text-slate-900">Restock Item</h3>
+              <button onClick={() => setIsRestocking(false)} className="w-9 h-9 rounded-xl bg-slate-50 text-slate-400 hover:text-slate-700">
+                <MaterialIcon name="close" style={{ fontSize: '20px' }} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Quantity Received</label>
+                <input type="number" step="any" value={restockQty} onChange={e => setRestockQty(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="0" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Latest Unit Cost</label>
+                <input type="number" step="any" value={restockCost} onChange={e => setRestockCost(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="Optional" />
+              </div>
+              <button onClick={handleRestock} disabled={!restockQty || Number(restockQty) <= 0} className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50">
+                Update Stock
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isProductModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsProductModalOpen(false)} />
+          <div className="relative bg-white w-full max-w-lg max-h-[92vh] overflow-y-auto no-scrollbar rounded-t-3xl sm:rounded-2xl shadow-2xl p-6 z-10">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-xl font-black text-slate-900">{editingProduct ? 'Edit Product' : 'Add Product'}</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inventory master record</p>
+              </div>
+              <button onClick={() => setIsProductModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:text-slate-700">
+                <MaterialIcon name="close" style={{ fontSize: '20px' }} />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Product Name</label>
+                <input value={productForm.name} onChange={e => setProductForm({ ...productForm, name: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="e.g. 2kg Maize Flour" autoFocus />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Category</label>
+                <input value={productForm.category} onChange={e => setProductForm({ ...productForm, category: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Barcode</label>
+                <input value={productForm.barcode} onChange={e => setProductForm({ ...productForm, barcode: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="Auto if blank" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Selling Price</label>
+                <input type="number" value={productForm.sellingPrice} onChange={e => setProductForm({ ...productForm, sellingPrice: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Cost Price</label>
+                <input type="number" value={productForm.costPrice} onChange={e => setProductForm({ ...productForm, costPrice: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Stock Qty</label>
+                <input type="number" step="any" value={productForm.stockQuantity} onChange={e => setProductForm({ ...productForm, stockQuantity: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Unit</label>
+                <input value={productForm.unit} onChange={e => setProductForm({ ...productForm, unit: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Reorder Point</label>
+                <input type="number" step="any" value={productForm.reorderPoint} onChange={e => setProductForm({ ...productForm, reorderPoint: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tax Category</label>
+                <select value={productForm.taxCategory} onChange={e => setProductForm({ ...productForm, taxCategory: e.target.value as any })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none">
+                  <option value="A">A - VAT</option>
+                  <option value="C">C - Zero Rated</option>
+                  <option value="E">E - Exempt</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6 pt-4 border-t border-slate-100">
+              <button onClick={() => setIsProductModalOpen(false)} className="flex-1 py-3.5 bg-slate-100 text-slate-500 rounded-xl text-xs font-black uppercase tracking-widest">Cancel</button>
+              <button onClick={handleSaveProduct} disabled={!productForm.name.trim() || !productForm.sellingPrice} className="flex-[2] py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50">
+                {editingProduct ? 'Save Changes' : 'Create Product'}
               </button>
             </div>
           </div>
