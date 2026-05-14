@@ -39,7 +39,8 @@ export function getBundleAvailableStock(
   productIngredients: ProductIngredient[] = []
 ): number {
   const ingredients = getProductIngredients(product, productIngredients);
-  if (!isBundleProduct(product) || ingredients.length === 0) return Number(product.stockQuantity) || 0;
+  if (!isBundleProduct(product)) return Number(product.stockQuantity) || 0;
+  if (ingredients.length === 0) return 0;
 
   const ingredientStocks = ingredients.map(row => {
     const ingredient = products.find(p => p.id === row.ingredientProductId);
@@ -60,4 +61,3 @@ export function enrichProductsWithBundleStock(
       : product
   ));
 }
-

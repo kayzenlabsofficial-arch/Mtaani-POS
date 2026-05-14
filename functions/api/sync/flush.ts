@@ -154,7 +154,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       const saleQty = Number(item.cartQuantity || item.quantity) || 0;
       if (saleQty <= 0) continue;
 
-      if (p.isBundle) {
+      const isBundle = p.isBundle === 1 || p.isBundle === true || p.isBundle === '1';
+      if (isBundle) {
         // Deduct from components
         const components = ingredientsMap.get(p.id)?.map((row: any) => ({
           productId: row.ingredientProductId,
