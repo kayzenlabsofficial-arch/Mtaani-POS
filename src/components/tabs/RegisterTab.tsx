@@ -138,9 +138,11 @@ type CheckoutOptions = {
 function SalePanel({
   onCheckout,
   isCheckingOut,
+  className = '',
 }: {
   onCheckout: (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => Promise<void>;
   isCheckingOut: boolean;
+  className?: string;
 }) {
   const { cart, removeFromCart, updateQuantity, setQuantity, clearCart } = useStore();
   const activeBusinessId = useStore((state) => state.activeBusinessId);
@@ -249,7 +251,7 @@ function SalePanel({
   };
 
   return (
-    <aside className="bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col min-h-[22rem] lg:sticky lg:top-0 lg:max-h-[calc(100vh-9rem)] shadow-sm">
+    <aside className={`bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col min-h-[22rem] lg:sticky lg:top-0 lg:max-h-[calc(100vh-9rem)] shadow-sm ${className}`}>
       <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
         <div>
           <h3 className="text-sm font-black text-slate-900">Current Sale</h3>
@@ -330,6 +332,7 @@ function SalePanel({
               value={discountValue}
               onChange={(event) => setDiscountValue(event.target.value)}
               placeholder="Discount"
+              data-testid="checkout-discount"
               className="w-full h-11 pl-9 pr-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
             />
           </label>
@@ -349,6 +352,17 @@ function SalePanel({
               key={id}
               type="button"
               onClick={() => setPaymentMode(id)}
+              onPointerUp={(event) => {
+                if (event.pointerType === 'touch') {
+                  event.preventDefault();
+                  setPaymentMode(id);
+                }
+              }}
+              onTouchEnd={(event) => {
+                event.preventDefault();
+                setPaymentMode(id);
+              }}
+              data-testid={`payment-${id.toLowerCase()}`}
               className={`h-12 rounded-xl border px-2 flex flex-col items-center justify-center gap-0.5 text-[10px] font-black transition-colors ${
                 paymentMode === id
                   ? 'border-primary bg-primary/10 text-primary'
@@ -371,6 +385,7 @@ function SalePanel({
                 value={cashTendered}
                 onChange={(event) => setCashTendered(event.target.value)}
                 placeholder="Cash received"
+                data-testid="cash-received"
                 className="w-full h-11 pl-9 pr-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
               />
             </label>
@@ -386,6 +401,7 @@ function SalePanel({
             value={mpesaRef}
             onChange={(event) => setMpesaRef(event.target.value)}
             placeholder="M-Pesa code or phone reference"
+            data-testid="mpesa-reference"
             className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
           />
         )}
@@ -395,6 +411,7 @@ function SalePanel({
             value={pdqRef}
             onChange={(event) => setPdqRef(event.target.value)}
             placeholder="PDQ terminal reference"
+            data-testid="pdq-reference"
             className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
           />
         )}
@@ -403,6 +420,7 @@ function SalePanel({
           <select
             value={selectedCustomerId}
             onChange={(event) => setSelectedCustomerId(event.target.value)}
+            data-testid="customer-select"
             className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
           >
             <option value="">Select registered customer</option>
@@ -421,11 +439,13 @@ function SalePanel({
               value={splitCash}
               onChange={(event) => setSplitCash(event.target.value)}
               placeholder="Cash part"
+              data-testid="split-cash"
               className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
             />
             <select
               value={splitSecondaryMethod}
               onChange={(event) => setSplitSecondaryMethod(event.target.value as 'MPESA' | 'PDQ' | 'CREDIT')}
+              data-testid="split-method"
               className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-2 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
             >
               <option value="MPESA">M-Pesa</option>
@@ -436,6 +456,7 @@ function SalePanel({
               value={splitSecondaryRef}
               onChange={(event) => setSplitSecondaryRef(event.target.value)}
               placeholder={`${splitSecondaryMethod} reference (Ksh ${splitSecondaryAmount.toLocaleString()})`}
+              data-testid="split-reference"
               className="sm:col-span-2 w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
             />
           </div>
@@ -443,7 +464,18 @@ function SalePanel({
 
         <button
           onClick={submitCheckout}
+          onPointerUp={(event) => {
+            if (event.pointerType === 'touch') {
+              event.preventDefault();
+              void submitCheckout();
+            }
+          }}
+          onTouchEnd={(event) => {
+            event.preventDefault();
+            void submitCheckout();
+          }}
           disabled={cart.length === 0 || isCheckingOut}
+          data-testid="complete-sale"
           className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           <MaterialIcon name="payments" style={{ fontSize: '18px' }} />
@@ -460,6 +492,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [isMobileCheckoutOpen, setIsMobileCheckoutOpen] = useState(false);
   const scrollRef = useHorizontalScroll();
   const { warning, error } = useToast();
 
@@ -522,7 +555,8 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
     if (!handleCheckout || cart.length === 0 || isCheckingOut) return;
     setIsCheckingOut(true);
     try {
-      await handleCheckout(status, method, options?.mpesaRef || options?.pdqRef || options?.paymentReference, options?.customerName, options);
+      const result = await handleCheckout(status, method, options?.mpesaRef || options?.pdqRef || options?.paymentReference, options?.customerName, options);
+      if (result) setIsMobileCheckoutOpen(false);
     } catch (err: any) {
       error(err?.message || 'Checkout failed.');
     } finally {
@@ -648,7 +682,9 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
             )}
           </div>
 
-          <SalePanel onCheckout={completeCheckout} isCheckingOut={isCheckingOut} />
+          <div className="hidden lg:block">
+            <SalePanel onCheckout={completeCheckout} isCheckingOut={isCheckingOut} />
+          </div>
         </div>
       )}
 
@@ -659,12 +695,47 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
             <p className="text-lg font-black tabular-nums truncate">Ksh {saleTotal.toLocaleString()}</p>
           </div>
           <button 
-            onClick={() => completeCheckout('PAID', 'CASH', { subtotal: saleTotal, total: saleTotal, amountTendered: saleTotal, changeGiven: 0 })}
+            onClick={() => setIsMobileCheckoutOpen(true)}
+            onPointerUp={(event) => {
+              if (event.pointerType === 'touch') {
+                event.preventDefault();
+                setIsMobileCheckoutOpen(true);
+              }
+            }}
+            onTouchEnd={(event) => {
+              event.preventDefault();
+              setIsMobileCheckoutOpen(true);
+            }}
             disabled={isCheckingOut}
+            data-testid="mobile-checkout"
             className="px-4 py-3 bg-primary rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
           >
-            {isCheckingOut ? 'Saving' : 'Cash Sale'}
+            {isCheckingOut ? 'Saving' : 'Checkout'}
           </button>
+        </div>
+      )}
+
+      {isMobileCheckoutOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-end" data-testid="mobile-checkout-sheet">
+          <div className="w-full max-h-[92dvh] bg-white rounded-t-3xl shadow-2xl overflow-hidden pb-[env(safe-area-inset-bottom)]">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Checkout</p>
+                <p className="text-sm font-black text-slate-900 truncate">{saleItemCount.toLocaleString()} item{saleItemCount === 1 ? '' : 's'} - Ksh {saleTotal.toLocaleString()}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMobileCheckoutOpen(false)}
+                className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center"
+                aria-label="Close checkout"
+              >
+                <X className="w-5 h-5" strokeWidth={2.4} />
+              </button>
+            </div>
+            <div className="max-h-[calc(92dvh-4rem)] overflow-y-auto p-3">
+              <SalePanel onCheckout={completeCheckout} isCheckingOut={isCheckingOut} className="border-0 shadow-none rounded-2xl min-h-0" />
+            </div>
+          </div>
         </div>
       )}
     </div>

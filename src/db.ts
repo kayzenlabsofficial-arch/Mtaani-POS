@@ -270,6 +270,8 @@ export interface Expense {
   approvedBy?: string;
   source: 'TILL' | 'ACCOUNT' | 'SHOP';
   accountId?: string; // Link to FinancialAccount if source is ACCOUNT
+  productId?: string;
+  quantity?: number;
   branchId: string;
   businessId: string;
   shiftId?: string; // Link to the shift

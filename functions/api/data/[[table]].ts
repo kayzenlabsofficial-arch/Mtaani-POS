@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, passw
 CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, sellingPrice REAL NOT NULL, costPrice REAL, taxCategory TEXT NOT NULL, stockQuantity REAL NOT NULL, unit TEXT, barcode TEXT NOT NULL, imageUrl TEXT, reorderPoint REAL, isBundle INTEGER DEFAULT 0, components TEXT, businessId TEXT, branchId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId);
-CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, total REAL NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, discountAmount REAL, discountReason TEXT, items TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, paymentMethod TEXT, amountTendered REAL, cashierName TEXT, approvedBy TEXT, pendingRefundItems TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, total REAL NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, discountAmount REAL, discountReason TEXT, items TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, paymentMethod TEXT, amountTendered REAL, changeGiven REAL, mpesaReference TEXT, mpesaCode TEXT, cashierId TEXT, cashierName TEXT, customerId TEXT, customerName TEXT, discount REAL, discountType TEXT, splitPayments TEXT, splitData TEXT, isSynced INTEGER, approvedBy TEXT, pendingRefundItems TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS cashPicks (id TEXT PRIMARY KEY, amount REAL NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, userName TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, startTime INTEGER NOT NULL, endTime INTEGER, openingFloat REAL, cashierName TEXT NOT NULL, status TEXT NOT NULL, branchId TEXT, lastSyncAt INTEGER, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS endOfDayReports (id TEXT PRIMARY KEY, shiftId TEXT, timestamp INTEGER NOT NULL, openingFloat REAL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, cashSales REAL NOT NULL, mpesaSales REAL NOT NULL, totalExpenses REAL NOT NULL, totalPicks REAL NOT NULL, totalRefunds REAL, expectedCash REAL NOT NULL, reportedCash REAL NOT NULL, difference REAL NOT NULL, cashierName TEXT NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
@@ -149,6 +149,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['transactions', 'shiftId TEXT'],
           ['transactions', 'approvedBy TEXT'],
           ['transactions', 'pendingRefundItems TEXT'],
+          ['transactions', 'changeGiven REAL'],
+          ['transactions', 'mpesaReference TEXT'],
+          ['transactions', 'mpesaCode TEXT'],
+          ['transactions', 'cashierId TEXT'],
+          ['transactions', 'customerId TEXT'],
+          ['transactions', 'customerName TEXT'],
+          ['transactions', 'discount REAL'],
+          ['transactions', 'discountType TEXT'],
+          ['transactions', 'splitPayments TEXT'],
+          ['transactions', 'splitData TEXT'],
+          ['transactions', 'isSynced INTEGER'],
           ['categories', 'branchId TEXT'],
           ['shifts',     'lastSyncAt INTEGER'],
           ['shifts',     'openingFloat REAL'],
@@ -159,6 +170,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['cashPicks',  'shiftId TEXT'],
           ['expenses',   'source TEXT'],
           ['expenses',   'accountId TEXT'],
+          ['expenses',   'productId TEXT'],
+          ['expenses',   'quantity REAL'],
           ['expenses',   'preparedBy TEXT'],
           ['expenses',   'approvedBy TEXT'],
           ['expenses',   'shiftId TEXT'],
@@ -208,6 +221,21 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       // Defensive migration for deployed databases that predate bundle ingredients.
       await env.DB.prepare('CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER)').run();
       await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId)').run();
+    }
+
+    if (table === 'expenses') {
+      // Keep item-based expenses durable across deployments that predate shop-use tracking.
+      try { await env.DB.prepare('ALTER TABLE expenses ADD COLUMN productId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE expenses ADD COLUMN quantity REAL').run(); } catch (e) {}
+    }
+
+    if (table === 'settings') {
+      // Owner-mode settings were added after the base table existed in some D1 databases.
+      try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN ownerModeEnabled INTEGER DEFAULT 0').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN autoApproveOwnerActions INTEGER DEFAULT 1').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashSweepEnabled INTEGER DEFAULT 1').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashDrawerLimit REAL DEFAULT 5000').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashFloatTarget REAL DEFAULT 1000').run(); } catch (e) {}
     }
 
     // ── GET ──────────────────────────────────────────────────────────────────

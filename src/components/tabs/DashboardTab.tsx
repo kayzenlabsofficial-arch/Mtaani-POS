@@ -211,6 +211,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
               <button
                 onClick={handleBankExcessCash}
                 disabled={!shouldSweepCash || isBankingExcess}
+                data-testid="owner-cash-sweep"
                 className={`flex-[1.4] px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${shouldSweepCash ? 'bg-emerald-600 text-white shadow-emerald press' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}
               >
                 {isBankingExcess ? 'Banking...' : shouldSweepCash ? `Bank Ksh ${sweepAmount.toLocaleString()}` : 'Cash OK'}
@@ -312,6 +313,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 <button
                   key={i}
                   onClick={() => (action as any).fn ? (action as any).fn() : setActiveTab((action as any).id)}
+                  data-testid={`quick-action-${action.label.toLowerCase().replace(/\s+/g, '-')}`}
                   className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-slate-50 transition-all group"
                 >
                   <div className={`w-10 h-10 ${action.color} rounded-xl flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform`}>

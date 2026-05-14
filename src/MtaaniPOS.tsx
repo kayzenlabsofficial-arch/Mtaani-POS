@@ -85,13 +85,20 @@ export default function MtaaniPOS() {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const cashSalesToday = (transactions || [])
-    .filter(t => (t.timestamp || 0) >= todayStart.getTime() && t.status === 'PAID' && t.paymentMethod === 'CASH')
-    .reduce((sum, t) => sum + (t.total || 0), 0);
+    .filter(t => (t.timestamp || 0) >= todayStart.getTime() && t.status === 'PAID')
+    .reduce((sum, t) => {
+      if (t.paymentMethod === 'CASH') return sum + (t.total || 0);
+      if (t.paymentMethod === 'SPLIT') {
+        const splitCash = (t as any).splitPayments?.cashAmount ?? (t as any).splitData?.cashAmount ?? 0;
+        return sum + Number(splitCash || 0);
+      }
+      return sum;
+    }, 0);
   const tillExpensesToday = (expenses || [])
-    .filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'TILL')
+    .filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'TILL' && e.status !== 'REJECTED')
     .reduce((sum, e) => sum + (e.amount || 0), 0);
   const cashPicksToday = (cashPicks || [])
-    .filter(p => (p.timestamp || 0) >= todayStart.getTime())
+    .filter(p => (p.timestamp || 0) >= todayStart.getTime() && p.status !== 'REJECTED')
     .reduce((sum, p) => sum + (p.amount || 0), 0);
   const actualCashDrawer = cashSalesToday - tillExpensesToday - cashPicksToday;
 

@@ -37,10 +37,17 @@ export default function ExpensesTab() {
   todayStart.setHours(0, 0, 0, 0);
 
   const todaysPaidTransactions = (allTransactions || []).filter(t => (t.timestamp || 0) >= todayStart.getTime() && t.status === 'PAID');
-  const cashTotal = todaysPaidTransactions.filter(t => t.paymentMethod === 'CASH').reduce((sum, t) => sum + (t.total || 0), 0);
-  const todayTillExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'TILL').reduce((sum, e) => sum + (e.amount || 0), 0);
-  const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'ACCOUNT').reduce((sum, e) => sum + (e.amount || 0), 0);
-  const todayCashPicks = (allCashPicks || []).filter(c => (c.timestamp || 0) >= todayStart.getTime());
+  const cashTotal = todaysPaidTransactions.reduce((sum, t) => {
+    if (t.paymentMethod === 'CASH') return sum + (t.total || 0);
+    if (t.paymentMethod === 'SPLIT') {
+      const splitCash = (t as any).splitPayments?.cashAmount ?? (t as any).splitData?.cashAmount ?? 0;
+      return sum + Number(splitCash || 0);
+    }
+    return sum;
+  }, 0);
+  const todayTillExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'TILL' && e.status !== 'REJECTED').reduce((sum, e) => sum + (e.amount || 0), 0);
+  const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStart.getTime() && e.source === 'ACCOUNT' && e.status !== 'REJECTED').reduce((sum, e) => sum + (e.amount || 0), 0);
+  const todayCashPicks = (allCashPicks || []).filter(c => (c.timestamp || 0) >= todayStart.getTime() && c.status !== 'REJECTED');
   const totalPickedAmount = todayCashPicks.reduce((acc, p) => acc + (p.amount || 0), 0);
   const actualCashDrawer = cashTotal - totalPickedAmount - todayTillExpenses;
 
@@ -184,12 +191,14 @@ export default function ExpensesTab() {
         <div className="flex gap-2">
           <button
             onClick={() => setIsAccountModalOpen(true)}
+            data-testid="expenses-setup-accounts"
             className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-50 active:scale-[0.98] transition-all self-start"
           >
             <BookOpen size={16} /> Setup Accounts
           </button>
           <button
             onClick={() => setIsExpenseModalOpen(true)}
+            data-testid="expenses-log-expense"
             className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
           >
             <Plus size={18} /> Log Expense

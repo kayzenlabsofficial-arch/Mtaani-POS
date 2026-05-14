@@ -97,7 +97,12 @@ export function useMtaaniPOS() {
 
       if (user && await verifyPassword(password, user.password)) {
         await resetAttempts(businessCode);
-        if (user.branchId) setActiveBranchId(user.branchId);
+        if (user.branchId) {
+          setActiveBranchId(user.branchId);
+        } else {
+          const firstBranch = await db.branches.where('businessId').equals(biz.id).first();
+          if (firstBranch?.id) setActiveBranchId(firstBranch.id);
+        }
         login(user);
         success(`Welcome back, ${user.name}!`);
       } else {
@@ -140,7 +145,14 @@ export function useMtaaniPOS() {
   };
 
   const handleCheckout = async (status: 'PAID' | 'UNPAID', method: string, mpesaRef?: string, customerName?: string, splitData?: any) => {
-    if (cart.length === 0 || !activeBranchId) return;
+    if (cart.length === 0) {
+      error("Add at least one item before completing the sale.");
+      return null;
+    }
+    if (!activeBranchId) {
+      error("Select or assign a branch before completing the sale.");
+      return null;
+    }
     
     try {
       const productIngredients = await db.productIngredients.toArray();
@@ -276,8 +288,9 @@ export function useMtaaniPOS() {
         db.sync().catch(() => {});
       }
       return newTransaction;
-    } catch (err) {
-      error("Transaction failed. Please try again.");
+    } catch (err: any) {
+      console.error("Checkout failed:", err);
+      error(err?.message || "Transaction failed. Please try again.");
       return null;
     }
   };

@@ -29,6 +29,7 @@ export function SearchableSelect<T extends string = string>({
   id,
   name,
   autoFocus,
+  dataTestId,
 }: {
   value: T | '';
   onChange: (value: T | '') => void;
@@ -49,6 +50,7 @@ export function SearchableSelect<T extends string = string>({
   id?: string;
   name?: string;
   autoFocus?: boolean;
+  dataTestId?: string;
 }) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
@@ -168,6 +170,7 @@ export function SearchableSelect<T extends string = string>({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
+        data-testid={dataTestId}
         className={`w-full bg-slate-50 border border-slate-200 ${baseButton} font-semibold text-left focus:outline-none focus:border-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${buttonClassName}`}
       >
         <span
@@ -194,6 +197,7 @@ export function SearchableSelect<T extends string = string>({
               onChange={e => setQuery(e.target.value)}
               onKeyDown={onInputKeyDown}
               placeholder={searchPlaceholder}
+              data-testid={dataTestId ? `${dataTestId}-search` : undefined}
               className={`w-full border border-slate-200 bg-slate-50 ${baseInput} font-semibold focus:outline-none focus:border-blue-500 ${searchInputClassName}`}
             />
           </div>
@@ -209,6 +213,7 @@ export function SearchableSelect<T extends string = string>({
               role="option"
               aria-selected={value === ''}
               onClick={() => selectValue('')}
+              data-testid={dataTestId ? `${dataTestId}-option-empty` : undefined}
               className={`w-full text-left px-3 py-2 text-sm font-semibold border-b border-slate-50 hover:bg-slate-50 ${
                 value === '' ? 'text-blue-700 bg-blue-50/40' : 'text-slate-500'
               }`}
@@ -232,6 +237,7 @@ export function SearchableSelect<T extends string = string>({
                     disabled={!!opt.disabled}
                     onMouseEnter={() => setActiveIndex(idx)}
                     onClick={() => !opt.disabled && selectValue(opt.value)}
+                    data-testid={dataTestId ? `${dataTestId}-option-${String(opt.value)}` : undefined}
                     className={`w-full text-left px-3 py-2 text-sm font-semibold border-b border-slate-50 ${
                       opt.disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'
                     } ${isActive ? 'bg-slate-50' : ''} ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}

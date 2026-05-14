@@ -20,9 +20,9 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="bg-white w-full max-w-sm rounded-xl shadow-elevated relative z-10 flex flex-col p-6 animate-in zoom-in-95 duration-200">
+      <div className="bg-white w-full max-w-sm max-h-[92dvh] overflow-y-auto rounded-t-2xl sm:rounded-xl shadow-elevated relative z-10 flex flex-col p-5 sm:p-6 animate-in zoom-in-95 duration-200">
         <h2 className="text-xl font-black text-slate-900 mb-2 flex items-center gap-2">
            <FileMinus className="text-orange-600" /> Add Expense
         </h2>
@@ -34,6 +34,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                 <div className="relative">
                    <span className="absolute left-4 top-3 text-slate-400 font-bold">Ksh</span>
                    <input 
+                      data-testid="expense-amount"
                       type="number" 
                       value={expenseForm.amount} 
                       onChange={e => setExpenseForm({...expenseForm, amount: e.target.value})} 
@@ -58,28 +59,32 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                     { value: 'Other', label: 'Other / Miscellaneous', keywords: 'other miscellaneous misc' },
                   ]}
                   buttonClassName="focus:border-orange-500"
+                  dataTestId="expense-category"
                 />
              </div>
               <div>
                  <label className="block text-xs font-bold text-slate-500  mb-1.5">Description</label>
-                 <input type="text" value={expenseForm.description} onChange={e => setExpenseForm({...expenseForm, description: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-orange-500" placeholder="e.g. Bought receipt rolls" />
+                 <input data-testid="expense-description" type="text" value={expenseForm.description} onChange={e => setExpenseForm({...expenseForm, description: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-orange-500" placeholder="e.g. Bought receipt rolls" />
               </div>
               <div>
                  <label className="block text-xs font-bold text-slate-500  mb-1.5">Source of Funds</label>
                  <div className="flex gap-2">
                     <button 
+                       data-testid="expense-source-till"
                        onClick={() => setExpenseForm({...expenseForm, source: 'TILL'})}
                        className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all ${expenseForm.source === 'TILL' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white border-slate-200 text-slate-500'}`}
                     >
                        Till (Cash)
                     </button>
                     <button 
+                       data-testid="expense-source-account"
                        onClick={() => setExpenseForm({...expenseForm, source: 'ACCOUNT'})}
                        className={`flex-1 py-2.5 rounded-xl text-[10px] font-bold border transition-all ${expenseForm.source === 'ACCOUNT' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}
                     >
                        Owner Account
                     </button>
                     <button 
+                       data-testid="expense-source-shop"
                        onClick={() => setExpenseForm({...expenseForm, source: 'SHOP'})}
                        className={`flex-1 py-2.5 rounded-xl text-[10px] font-bold border transition-all ${expenseForm.source === 'SHOP' ? 'bg-purple-50 border-purple-500 text-purple-700' : 'bg-white border-slate-200 text-slate-500'}`}
                     >
@@ -116,11 +121,13 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                            }))}
                          buttonClassName="bg-purple-50 border-purple-200 focus:border-purple-500"
                          searchInputClassName="bg-white"
+                         dataTestId="expense-product"
                        />
                     </div>
                     <div>
                        <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Quantity</label>
                        <input 
+                          data-testid="expense-quantity"
                           type="number" 
                           step="any"
                           value={expenseForm.quantity || '1'} 
@@ -146,14 +153,15 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                      }))}
                      buttonClassName="bg-blue-50 border-blue-200 focus:border-blue-500"
                      searchInputClassName="bg-white"
+                     dataTestId="expense-payment-account"
                    />
                 </div>
               )}
          </div>
 
         <div className="flex gap-3">
-           <button onClick={onClose} disabled={isSaving} className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors disabled:opacity-50">Cancel</button>
-           <button onClick={handleSaveExpense} disabled={!expenseForm.amount || Number(expenseForm.amount) <= 0 || (expenseForm.source === 'TILL' && Number(expenseForm.amount) > actualCashDrawer) || (expenseForm.source === 'ACCOUNT' && !expenseForm.accountId) || (expenseForm.source === 'SHOP' && !expenseForm.productId) || isSaving} className="flex-[2] bg-orange-600 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50 flex justify-center items-center gap-2">
+           <button data-testid="expense-cancel" onClick={onClose} disabled={isSaving} className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors disabled:opacity-50">Cancel</button>
+           <button data-testid="expense-save" onClick={handleSaveExpense} disabled={!expenseForm.amount || Number(expenseForm.amount) <= 0 || (expenseForm.source === 'TILL' && Number(expenseForm.amount) > actualCashDrawer) || (expenseForm.source === 'ACCOUNT' && !expenseForm.accountId) || (expenseForm.source === 'SHOP' && !expenseForm.productId) || isSaving} className="flex-[2] bg-orange-600 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50 flex justify-center items-center gap-2">
              {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
              {isSaving ? 'Logging...' : 'Log Expense'}
            </button>
