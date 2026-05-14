@@ -1,8 +1,5 @@
 import React from 'react';
-
-const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => (
-  <span className={`material-symbols-outlined ${className}`}>{name}</span>
-);
+import { AlertCircle, Building2, Cloud, LogIn, Lock, RefreshCw, ShieldCheck, ShoppingCart, User, Wifi } from 'lucide-react';
 
 interface LoginScreenProps {
   businessCode: string;
@@ -33,7 +30,7 @@ export function LoginScreen({
         }} />
         <div className="relative text-center">
           <div className="w-24 h-24 bg-white/20 backdrop-blur-sm rounded-3xl flex items-center justify-center mb-8 mx-auto shadow-2xl border border-white/20">
-            <MaterialIcon name="point_of_sale" className="text-white text-5xl" />
+            <ShoppingCart className="w-12 h-12 text-white" strokeWidth={2.5} />
           </div>
           <h1 className="text-5xl font-black text-white mb-4 tracking-tight">Mtaani POS</h1>
           <p className="text-blue-100 text-lg font-medium max-w-xs mx-auto leading-relaxed">
@@ -41,17 +38,19 @@ export function LoginScreen({
           </p>
           <div className="mt-12 grid grid-cols-3 gap-6 text-center">
             {[
-              { icon: 'cloud_sync', label: 'Cloud Sync' },
-              { icon: 'offline_bolt', label: 'Works Offline' },
-              { icon: 'shield_lock', label: 'Secure' },
-            ].map(f => (
+              { icon: Cloud, label: 'Cloud Sync' },
+              { icon: Wifi, label: 'Works Offline' },
+              { icon: ShieldCheck, label: 'Secure' },
+            ].map(f => {
+              const FeatureIcon = f.icon;
+              return (
               <div key={f.label} className="flex flex-col items-center gap-2">
                 <div className="w-12 h-12 bg-white/15 rounded-2xl flex items-center justify-center border border-white/20">
-                  <MaterialIcon name={f.icon} className="text-white" />
+                  <FeatureIcon className="w-5 h-5 text-white" strokeWidth={2.4} />
                 </div>
                 <p className="text-[10px] font-bold text-blue-200 uppercase tracking-widest">{f.label}</p>
               </div>
-            ))}
+            )})}
           </div>
         </div>
       </div>
@@ -62,7 +61,7 @@ export function LoginScreen({
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-3 mb-10">
             <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30">
-              <MaterialIcon name="point_of_sale" className="text-white" />
+              <ShoppingCart className="w-5 h-5 text-white" strokeWidth={2.5} />
             </div>
             <span className="text-xl font-black text-white">Mtaani POS</span>
           </div>
@@ -77,7 +76,7 @@ export function LoginScreen({
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Business Code</label>
               <div className="relative">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-                  <MaterialIcon name="business" className="text-xl" />
+                  <Building2 className="w-5 h-5" strokeWidth={2.2} />
                 </div>
                 <input 
                   type="text" 
@@ -93,7 +92,7 @@ export function LoginScreen({
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Username</label>
               <div className="relative">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-                  <MaterialIcon name="person" className="text-xl" />
+                  <User className="w-5 h-5" strokeWidth={2.2} />
                 </div>
                 <input 
                   type="text" 
@@ -109,7 +108,7 @@ export function LoginScreen({
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Password</label>
               <div className="relative">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-                  <MaterialIcon name="lock" className="text-xl" />
+                  <Lock className="w-5 h-5" strokeWidth={2.2} />
                 </div>
                 <input 
                   type="password" 
@@ -123,7 +122,7 @@ export function LoginScreen({
 
             {loginError && (
               <div className="flex items-start gap-3 p-4 bg-rose-950/50 border border-rose-900/50 rounded-2xl text-rose-400">
-                <MaterialIcon name="error" className="text-rose-400 flex-shrink-0 mt-0.5" />
+                <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
                 <p className="text-sm font-medium">{loginError}</p>
               </div>
             )}
@@ -135,12 +134,12 @@ export function LoginScreen({
             >
               {isLoggingIn ? (
                 <>
-                  <MaterialIcon name="sync" className="animate-spin" />
+                  <RefreshCw className="w-5 h-5 animate-spin" strokeWidth={2.4} />
                   Signing in...
                 </>
               ) : (
                 <>
-                  <MaterialIcon name="login" />
+                  <LogIn className="w-5 h-5" strokeWidth={2.4} />
                   Sign In
                 </>
               )}
