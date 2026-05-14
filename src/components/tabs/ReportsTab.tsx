@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   BarChart3, Activity, Wallet, Package, TrendingDown, 
   Landmark, Scale, Calendar, ChevronRight, ArrowUpRight, 
