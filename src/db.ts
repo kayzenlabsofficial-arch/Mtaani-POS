@@ -77,10 +77,10 @@ export interface Transaction {
   items: TransactionItem[];
   timestamp: number;
   status: 'QUOTE' | 'PAID' | 'UNPAID' | 'VOIDED' | 'REFUNDED' | 'PARTIAL_REFUND' | 'PENDING_REFUND';
-  paymentMethod?: 'CASH' | 'MPESA' | 'CREDIT' | 'SPLIT';
+  paymentMethod?: 'CASH' | 'MPESA' | 'PDQ' | 'CREDIT' | 'SPLIT';
   splitPayments?: {
     cashAmount: number;
-    secondaryMethod: 'MPESA' | 'CREDIT';
+    secondaryMethod: 'MPESA' | 'PDQ' | 'CREDIT';
     secondaryAmount: number;
     secondaryReference?: string;
   };

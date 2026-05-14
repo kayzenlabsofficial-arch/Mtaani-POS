@@ -168,6 +168,22 @@ export function useMtaaniPOS() {
         }
       }
 
+      const checkoutData = splitData || {};
+      const subtotal = Number(checkoutData.subtotal ?? currentSaleTotal) || 0;
+      const discountAmount = Math.min(subtotal, Math.max(Number(checkoutData.discountAmount) || 0, 0));
+      const finalTotal = Math.max(0, Number(checkoutData.total ?? (subtotal - discountAmount)) || 0);
+      const splitPayments = checkoutData.splitPayments;
+      const amountTendered = checkoutData.amountTendered !== undefined ? Number(checkoutData.amountTendered) : undefined;
+      const changeGiven = checkoutData.changeGiven !== undefined ? Number(checkoutData.changeGiven) : undefined;
+      const effectiveCustomerId = checkoutData.customerId || selectedCustomerId || undefined;
+      const effectiveCustomerName = checkoutData.customerName || customerName;
+      const paymentReference = mpesaRef || checkoutData.mpesaRef || checkoutData.pdqRef || checkoutData.paymentReference;
+      const creditAmount = method === 'CREDIT'
+        ? finalTotal
+        : method === 'SPLIT' && splitPayments?.secondaryMethod === 'CREDIT'
+          ? Number(splitPayments.secondaryAmount) || 0
+          : 0;
+
       const transactionId = crypto.randomUUID();
       const newTransaction: Transaction = {
         id: transactionId,
@@ -179,25 +195,43 @@ export function useMtaaniPOS() {
           snapshotCost: item.costPrice || 0,
           category: item.category
         })),
-        total: currentSaleTotal,
+        subtotal,
+        tax: 0,
+        discountAmount,
+        total: finalTotal,
         paymentMethod: method as any,
-        mpesaReference: mpesaRef,
+        mpesaReference: paymentReference,
+        mpesaCode: method === 'MPESA' || splitPayments?.secondaryMethod === 'MPESA' ? paymentReference : undefined,
+        amountTendered,
+        changeGiven,
+        splitPayments,
         status,
         timestamp: Date.now(),
         businessId: activeBusinessId!,
         branchId: activeBranchId!,
         cashierId: currentUser!.id,
         cashierName: currentUser!.name,
-        customerId: selectedCustomerId || undefined,
-        customerName: customerName,
-        discount: discountValue,
-        discountType: discountType,
+        customerId: effectiveCustomerId,
+        customerName: effectiveCustomerName,
+        discount: discountAmount,
+        discountType: checkoutData.discountType || discountType,
         isSynced: 0,
         updated_at: Date.now(),
-        splitData: splitData || undefined
+        splitData: Object.keys(checkoutData).length ? checkoutData : undefined
       };
 
       await db.transactions.add(newTransaction);
+
+      if (effectiveCustomerId) {
+        const customer = await db.customers.get(effectiveCustomerId);
+        if (customer) {
+          await db.customers.update(effectiveCustomerId, {
+            totalSpent: (Number(customer.totalSpent) || 0) + finalTotal,
+            balance: (Number(customer.balance) || 0) + creditAmount,
+            updated_at: Date.now()
+          });
+        }
+      }
       
       for (const item of cart) {
         const prod = await db.products.get(item.id);

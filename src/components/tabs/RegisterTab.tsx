@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Ban, CircleDollarSign, Minus, Package, Plus, ScanBarcode, Search, ShoppingCart, Store, X } from 'lucide-react';
+import { Ban, Banknote, Calculator, CircleDollarSign, CreditCard, Minus, Package, Percent, Plus, ScanBarcode, Search, ShoppingCart, Smartphone, Split, Store, UserRound, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
@@ -115,16 +115,138 @@ function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
   );
 }
 
+type CheckoutOptions = {
+  subtotal?: number;
+  total?: number;
+  discountAmount?: number;
+  discountType?: 'FIXED' | 'PERCENT';
+  amountTendered?: number;
+  changeGiven?: number;
+  mpesaRef?: string;
+  pdqRef?: string;
+  paymentReference?: string;
+  customerId?: string;
+  customerName?: string;
+  splitPayments?: {
+    cashAmount: number;
+    secondaryAmount: number;
+    secondaryMethod: 'MPESA' | 'PDQ' | 'CREDIT';
+    secondaryReference?: string;
+  };
+};
+
 function SalePanel({
   onCheckout,
   isCheckingOut,
 }: {
-  onCheckout: (status: 'PAID' | 'UNPAID', method: string) => Promise<void>;
+  onCheckout: (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => Promise<void>;
   isCheckingOut: boolean;
 }) {
   const { cart, removeFromCart, updateQuantity, setQuantity, clearCart } = useStore();
-  const total = cart.reduce((sum, item) => sum + ((Number(item.sellingPrice) || 0) * (Number(item.cartQuantity) || 0)), 0);
+  const activeBusinessId = useStore((state) => state.activeBusinessId);
+  const { warning } = useToast();
+  const [paymentMode, setPaymentMode] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT'>('CASH');
+  const [discountType, setDiscountType] = useState<'FIXED' | 'PERCENT'>('FIXED');
+  const [discountValue, setDiscountValue] = useState('');
+  const [cashTendered, setCashTendered] = useState('');
+  const [mpesaRef, setMpesaRef] = useState('');
+  const [pdqRef, setPdqRef] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [splitCash, setSplitCash] = useState('');
+  const [splitSecondaryMethod, setSplitSecondaryMethod] = useState<'MPESA' | 'PDQ' | 'CREDIT'>('MPESA');
+  const [splitSecondaryRef, setSplitSecondaryRef] = useState('');
+
+  const customers = useLiveQuery(
+    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).sortBy('name') : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
+
+  const subtotal = cart.reduce((sum, item) => sum + ((Number(item.sellingPrice) || 0) * (Number(item.cartQuantity) || 0)), 0);
   const itemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
+  const rawDiscount = Number(discountValue) || 0;
+  const discountAmount = Math.min(
+    subtotal,
+    discountType === 'PERCENT'
+      ? subtotal * Math.min(Math.max(rawDiscount, 0), 100) / 100
+      : Math.max(rawDiscount, 0)
+  );
+  const total = Math.max(0, subtotal - discountAmount);
+  const tendered = Number(cashTendered) || 0;
+  const changeDue = Math.max(0, tendered - total);
+  const splitCashAmount = Math.min(Math.max(Number(splitCash) || 0, 0), total);
+  const splitSecondaryAmount = Math.max(0, total - splitCashAmount);
+  const selectedCustomer = customers?.find((customer) => customer.id === selectedCustomerId);
+
+  const paymentOptions = [
+    { id: 'CASH' as const, label: 'Cash', icon: Banknote },
+    { id: 'MPESA' as const, label: 'M-Pesa', icon: Smartphone },
+    { id: 'PDQ' as const, label: 'PDQ', icon: CreditCard },
+    { id: 'SPLIT' as const, label: 'Split', icon: Split },
+    { id: 'CREDIT' as const, label: 'Credit', icon: UserRound },
+  ];
+
+  const baseOptions = (): CheckoutOptions => ({
+    subtotal,
+    total,
+    discountAmount,
+    discountType,
+    customerId: selectedCustomer?.id,
+    customerName: selectedCustomer?.name,
+  });
+
+  const submitCheckout = async () => {
+    if (cart.length === 0 || isCheckingOut) return;
+
+    if ((paymentMode === 'CREDIT' || (paymentMode === 'SPLIT' && splitSecondaryMethod === 'CREDIT')) && !selectedCustomer) {
+      warning('Choose a registered customer before putting any amount on credit.');
+      return;
+    }
+
+    if (paymentMode === 'CASH') {
+      const paid = cashTendered ? tendered : total;
+      if (paid < total) {
+        warning('Amount received must cover the sale total.');
+        return;
+      }
+      await onCheckout('PAID', 'CASH', { ...baseOptions(), amountTendered: paid, changeGiven: Math.max(0, paid - total) });
+      return;
+    }
+
+    if (paymentMode === 'MPESA') {
+      await onCheckout('PAID', 'MPESA', { ...baseOptions(), mpesaRef: mpesaRef.trim(), paymentReference: mpesaRef.trim() });
+      return;
+    }
+
+    if (paymentMode === 'PDQ') {
+      await onCheckout('PAID', 'PDQ', { ...baseOptions(), pdqRef: pdqRef.trim(), paymentReference: pdqRef.trim() });
+      return;
+    }
+
+    if (paymentMode === 'SPLIT') {
+      if (splitCashAmount <= 0 || splitCashAmount >= total) {
+        warning('Enter the cash part so the balance can go to M-Pesa, PDQ, or credit.');
+        return;
+      }
+      await onCheckout(splitSecondaryMethod === 'CREDIT' ? 'UNPAID' : 'PAID', 'SPLIT', {
+        ...baseOptions(),
+        amountTendered: splitCashAmount,
+        changeGiven: 0,
+        mpesaRef: splitSecondaryMethod === 'MPESA' ? splitSecondaryRef.trim() : undefined,
+        pdqRef: splitSecondaryMethod === 'PDQ' ? splitSecondaryRef.trim() : undefined,
+        paymentReference: splitSecondaryRef.trim(),
+        splitPayments: {
+          cashAmount: splitCashAmount,
+          secondaryAmount: splitSecondaryAmount,
+          secondaryMethod: splitSecondaryMethod,
+          secondaryReference: splitSecondaryRef.trim(),
+        },
+      });
+      return;
+    }
+
+    await onCheckout('UNPAID', 'CREDIT', baseOptions());
+  };
 
   return (
     <aside className="bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col min-h-[22rem] lg:sticky lg:top-0 lg:max-h-[calc(100vh-9rem)] shadow-sm">
@@ -184,17 +306,148 @@ function SalePanel({
       </div>
 
       <div className="border-t border-slate-100 p-4 space-y-3 bg-white">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total</span>
-          <span className="text-2xl font-black text-slate-900 tabular-nums">Ksh {total.toLocaleString()}</span>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 min-w-0">
+            <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Subtotal</span>
+            <span className="block text-sm font-black text-slate-900 tabular-nums truncate">Ksh {subtotal.toLocaleString()}</span>
+          </div>
+          <div className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 min-w-0">
+            <span className="block text-[9px] font-black text-rose-500 uppercase tracking-widest">Discount</span>
+            <span className="block text-sm font-black text-rose-700 tabular-nums truncate">Ksh {discountAmount.toLocaleString()}</span>
+          </div>
+          <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 min-w-0">
+            <span className="block text-[9px] font-black text-emerald-700 uppercase tracking-widest">Payable</span>
+            <span className="block text-sm font-black text-emerald-950 tabular-nums truncate">Ksh {total.toLocaleString()}</span>
+          </div>
         </div>
+
+        <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-2">
+          <label className="relative min-w-0">
+            <Percent className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="number"
+              min="0"
+              value={discountValue}
+              onChange={(event) => setDiscountValue(event.target.value)}
+              placeholder="Discount"
+              className="w-full h-11 pl-9 pr-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            />
+          </label>
+          <select
+            value={discountType}
+            onChange={(event) => setDiscountType(event.target.value as 'FIXED' | 'PERCENT')}
+            className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-2 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          >
+            <option value="FIXED">Ksh</option>
+            <option value="PERCENT">%</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+          {paymentOptions.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setPaymentMode(id)}
+              className={`h-12 rounded-xl border px-2 flex flex-col items-center justify-center gap-0.5 text-[10px] font-black transition-colors ${
+                paymentMode === id
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              <Icon className="w-4 h-4" strokeWidth={2.4} />
+              <span className="truncate max-w-full">{label}</span>
+            </button>
+          ))}
+        </div>
+
+        {paymentMode === 'CASH' && (
+          <div className="grid grid-cols-2 gap-2">
+            <label className="relative min-w-0">
+              <Calculator className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="number"
+                min="0"
+                value={cashTendered}
+                onChange={(event) => setCashTendered(event.target.value)}
+                placeholder="Cash received"
+                className="w-full h-11 pl-9 pr-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+            </label>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 min-w-0">
+              <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Change</span>
+              <span className="block text-sm font-black text-slate-900 tabular-nums truncate">Ksh {changeDue.toLocaleString()}</span>
+            </div>
+          </div>
+        )}
+
+        {paymentMode === 'MPESA' && (
+          <input
+            value={mpesaRef}
+            onChange={(event) => setMpesaRef(event.target.value)}
+            placeholder="M-Pesa code or phone reference"
+            className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          />
+        )}
+
+        {paymentMode === 'PDQ' && (
+          <input
+            value={pdqRef}
+            onChange={(event) => setPdqRef(event.target.value)}
+            placeholder="PDQ terminal reference"
+            className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          />
+        )}
+
+        {(paymentMode === 'CREDIT' || paymentMode === 'SPLIT') && (
+          <select
+            value={selectedCustomerId}
+            onChange={(event) => setSelectedCustomerId(event.target.value)}
+            className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          >
+            <option value="">Select registered customer</option>
+            {customers?.map((customer) => (
+              <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` - ${customer.phone}` : ''}</option>
+            ))}
+          </select>
+        )}
+
+        {paymentMode === 'SPLIT' && (
+          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_7rem] gap-2">
+            <input
+              type="number"
+              min="0"
+              max={total}
+              value={splitCash}
+              onChange={(event) => setSplitCash(event.target.value)}
+              placeholder="Cash part"
+              className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            />
+            <select
+              value={splitSecondaryMethod}
+              onChange={(event) => setSplitSecondaryMethod(event.target.value as 'MPESA' | 'PDQ' | 'CREDIT')}
+              className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-2 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            >
+              <option value="MPESA">M-Pesa</option>
+              <option value="PDQ">PDQ</option>
+              <option value="CREDIT">Credit</option>
+            </select>
+            <input
+              value={splitSecondaryRef}
+              onChange={(event) => setSplitSecondaryRef(event.target.value)}
+              placeholder={`${splitSecondaryMethod} reference (Ksh ${splitSecondaryAmount.toLocaleString()})`}
+              className="sm:col-span-2 w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            />
+          </div>
+        )}
+
         <button
-          onClick={() => onCheckout('PAID', 'CASH')}
+          onClick={submitCheckout}
           disabled={cart.length === 0 || isCheckingOut}
           className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           <MaterialIcon name="payments" style={{ fontSize: '18px' }} />
-          {isCheckingOut ? 'Saving Sale...' : 'Cash Sale'}
+          {isCheckingOut ? 'Saving Sale...' : `Complete ${paymentMode === 'MPESA' ? 'M-Pesa' : paymentMode} Sale`}
         </button>
       </div>
     </aside>
@@ -265,11 +518,11 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
     setTimeout(() => setRecentlyAdded(prev => { const n = new Set(prev); n.delete(product.id); return n; }), 600);
   };
 
-  const completeCheckout = async (status: 'PAID' | 'UNPAID', method: string) => {
+  const completeCheckout = async (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => {
     if (!handleCheckout || cart.length === 0 || isCheckingOut) return;
     setIsCheckingOut(true);
     try {
-      await handleCheckout(status, method);
+      await handleCheckout(status, method, options?.mpesaRef || options?.pdqRef || options?.paymentReference, options?.customerName, options);
     } catch (err: any) {
       error(err?.message || 'Checkout failed.');
     } finally {
@@ -405,8 +658,8 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{saleItemCount.toLocaleString()} item{saleItemCount === 1 ? '' : 's'} in sale</p>
             <p className="text-lg font-black tabular-nums truncate">Ksh {saleTotal.toLocaleString()}</p>
           </div>
-          <button
-            onClick={() => completeCheckout('PAID', 'CASH')}
+          <button 
+            onClick={() => completeCheckout('PAID', 'CASH', { subtotal: saleTotal, total: saleTotal, amountTendered: saleTotal, changeGiven: 0 })}
             disabled={isCheckingOut}
             className="px-4 py-3 bg-primary rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
           >
