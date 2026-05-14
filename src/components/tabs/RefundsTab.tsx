@@ -118,49 +118,46 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
       </div>
 
       {/* Refunds List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-         {refundedTransactions.map(t => (
-            <div 
-              key={t.id} 
-              onClick={() => setSelectedRecord(t)} 
-              className="group bg-white p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col gap-4 hover:border-orange-300 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden"
-            >
-              <div className="flex justify-between items-start">
-                 <div className="w-12 h-12 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 shadow-sm group-hover:scale-110 transition-transform">
-                    <RotateCcw size={24} />
+      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+         {refundedTransactions.length > 0 ? (
+           <div className="divide-y divide-slate-100">
+             {refundedTransactions.map(t => (
+               <button
+                 key={t.id}
+                 type="button"
+                 onClick={() => setSelectedRecord(t)}
+                 className="w-full text-left px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-orange-50/40 transition-colors group"
+               >
+                 <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 shrink-0">
+                   <RotateCcw size={18} />
                  </div>
-                 <div className="text-right">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Refunded Amount</p>
-                    <h3 className="text-lg font-black text-orange-600 leading-none">Ksh {t.total.toLocaleString()}</h3>
+                 <div className="min-w-0 flex-1">
+                   <h4 className="text-sm font-black text-slate-900 truncate">Receipt #{t.id.split('-')[0].toUpperCase()}</h4>
+                   <div className="flex items-center gap-2 mt-1 flex-wrap">
+                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(t.timestamp).toLocaleDateString()}</span>
+                     <span className="w-1 h-1 rounded-full bg-slate-200" />
+                     <span className="text-[10px] font-bold text-slate-400 truncate">Cashier: {t.cashierName || 'System'}</span>
+                   </div>
                  </div>
-              </div>
-
-              <div className="flex-1 min-w-0">
-                 <h4 className="text-sm font-black text-slate-900 truncate mb-1">Receipt #{t.id.split('-')[0].toUpperCase()}</h4>
-                 <div className="flex items-center gap-2 mb-4">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(t.timestamp).toLocaleDateString()}</span>
-                    <span className="w-1 h-1 rounded-full bg-slate-200" />
-                    <span className="text-[10px] font-bold text-slate-400 truncate max-w-[120px]">Cashier: {t.cashierName || 'System'}</span>
+                 <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter shrink-0 ${t.status === 'REFUNDED' ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>
+                   {t.status}
+                 </span>
+                 <div className="text-right shrink-0 min-w-[100px]">
+                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Amount</p>
+                   <p className="text-sm font-black text-orange-600 leading-none tabular-nums">Ksh {t.total.toLocaleString()}</p>
                  </div>
-                 
-                 <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                    <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter ${t.status === 'REFUNDED' ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>
-                       {t.status}
-                    </span>
-                    <ChevronRight size={18} className="text-slate-200 group-hover:text-orange-400 transition-colors" />
-                 </div>
-              </div>
-            </div>
-         ))}
-         
-         {refundedTransactions.length === 0 && (
-            <div className="col-span-full py-32 text-center flex flex-col items-center">
-               <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner text-slate-200">
-                 <ArrowLeftRight size={44} />
-               </div>
-               <p className="text-slate-500 font-black text-lg">No return records found</p>
-               <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Processed returns will appear here</p>
-            </div>
+                 <ChevronRight size={18} className="text-slate-300 group-hover:text-orange-500 transition-colors shrink-0" />
+               </button>
+             ))}
+           </div>
+         ) : (
+           <div className="py-20 text-center flex flex-col items-center">
+             <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-4 shadow-inner text-slate-200">
+               <ArrowLeftRight size={36} />
+             </div>
+             <p className="text-slate-500 font-black text-base">No return records found</p>
+             <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Processed returns will appear here</p>
+           </div>
          )}
       </div>
 

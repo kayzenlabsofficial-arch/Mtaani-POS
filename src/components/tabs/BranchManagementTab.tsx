@@ -165,70 +165,49 @@ export default function BranchManagementTab() {
         </button>
       </div>
 
-      {/* Branch Node Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {(branches || []).map(branch => (
-          <div
-            key={branch.id}
-            className={`group bg-white p-6 rounded-[2.5rem] border-2 transition-all flex flex-col gap-5 hover:shadow-xl hover:-translate-y-1 relative overflow-hidden ${branch.isActive ? 'border-slate-100 hover:border-indigo-300' : 'border-slate-50 opacity-60'}`}
-          >
-            <div className="flex items-start justify-between relative z-10">
-              <div className="flex items-center gap-4">
-                <div className={`w-14 h-14 rounded-[1.25rem] flex items-center justify-center shrink-0 shadow-sm group-hover:scale-110 transition-transform ${branch.isActive ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-                   <Building2 size={28} />
+      {/* Branch Node Rows */}
+      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+        {(branches || []).length > 0 ? (
+          <div className="divide-y divide-slate-100">
+            {(branches || []).map(branch => (
+              <div key={branch.id} className={`px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-indigo-50/40 transition-colors group ${branch.isActive ? '' : 'opacity-70'}`}>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${branch.isActive ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                  <Building2 size={18} />
                 </div>
-                <div className="min-w-0">
-                  <h4 className="text-base font-black text-slate-900 truncate leading-tight">{branch.name}</h4>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <MapPin size={12} className="text-slate-300" />
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{branch.location}</span>
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-sm font-black text-slate-900 truncate leading-tight">{branch.name}</h4>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><MapPin size={11} className="text-slate-300" /> {branch.location}</span>
+                    {branch.tillNumber && <span className="text-[10px] font-bold text-slate-300 uppercase">Till {branch.tillNumber}</span>}
                   </div>
                 </div>
+                {branch.isActive ? (
+                  <span className="flex items-center gap-1 text-[9px] font-black bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-tighter shrink-0">
+                    <CheckCircle2 size={10} /> Operational
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[9px] font-black bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full uppercase tracking-tighter shrink-0">
+                    <XCircle size={10} /> Suspended
+                  </span>
+                )}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button onClick={() => openEdit(branch)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-50 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all">
+                    <Pencil size={15} />
+                  </button>
+                  <button onClick={() => toggleActive(branch)} className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${branch.isActive ? 'bg-emerald-50 text-emerald-600 hover:bg-rose-50 hover:text-rose-600' : 'bg-slate-100 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>
+                    <Power size={15} />
+                  </button>
+                </div>
               </div>
-              
-              <div className="flex flex-col gap-1.5">
-                 <button onClick={() => openEdit(branch)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all">
-                    <Pencil size={18} />
-                 </button>
-                 <button onClick={() => toggleActive(branch)} className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${branch.isActive ? 'bg-emerald-50 text-emerald-600 hover:bg-rose-50 hover:text-rose-600' : 'bg-slate-100 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>
-                    <Power size={18} />
-                 </button>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2 relative z-10">
-              {branch.isActive ? (
-                <span className="flex items-center gap-1.5 text-[9px] font-black bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-full border border-emerald-100 uppercase tracking-tighter">
-                  <CheckCircle2 size={10} /> Operational
-                </span>
-              ) : (
-                <span className="flex items-center gap-1.5 text-[9px] font-black bg-slate-100 text-slate-500 px-3 py-1.5 rounded-full uppercase tracking-tighter">
-                  <XCircle size={10} /> Suspended
-                </span>
-              )}
-              {branch.tillNumber && (
-                <span className="flex items-center gap-1.5 text-[9px] font-black text-slate-400 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100 uppercase tracking-widest">
-                  <Hash size={10} /> {branch.tillNumber}
-                </span>
-              )}
-              {branch.kraPin && (
-                <span className="flex items-center gap-1.5 text-[9px] font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 uppercase tracking-widest">
-                  KRA Verified
-                </span>
-              )}
-            </div>
-
-            <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-slate-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+            ))}
           </div>
-        ))}
-
-        {(branches || []).length === 0 && (
-          <div className="col-span-full py-32 text-center flex flex-col items-center">
-             <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner text-slate-200">
-               <Globe size={44} />
-             </div>
-             <p className="text-slate-500 font-black text-lg">No branch nodes deployed</p>
-             <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Initiate deployment to expand your network</p>
+        ) : (
+          <div className="py-20 text-center flex flex-col items-center">
+            <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-4 shadow-inner text-slate-200">
+              <Globe size={36} />
+            </div>
+            <p className="text-slate-500 font-black text-base">No branch nodes deployed</p>
+            <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Initiate deployment to expand your network</p>
           </div>
         )}
       </div>

@@ -199,51 +199,48 @@ export default function CustomersTab() {
       </div>
 
       {/* Client List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-         {filteredCustomers.map(customer => (
-            <div 
-              key={customer.id} 
-              onClick={() => openEditCustomer(customer)} 
-              className="group bg-white p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col gap-4 hover:border-indigo-300 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden"
-            >
-               <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                     <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm shrink-0 font-black text-lg group-hover:scale-110 transition-transform">
-                        {customer.name.substring(0,1).toUpperCase()}
-                     </div>
-                     <div className="min-w-0">
-                        <h4 className="text-base font-black text-slate-900 truncate leading-tight">{customer.name}</h4>
-                        <div className="flex items-center gap-2 mt-1">
-                           <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Phone size={12}/> {customer.phone}</span>
-                        </div>
-                     </div>
-                  </div>
-                  <ChevronRight size={20} className="text-slate-200 group-hover:text-indigo-400 transition-colors" />
-               </div>
-               
-               <div className="flex items-end justify-between pt-4 border-t border-slate-50">
-                  <div>
-                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Spent</p>
-                     <h3 className="text-base font-black text-indigo-600 tabular-nums">Ksh {customer.totalSpent.toLocaleString()}</h3>
-                  </div>
-                  <div className="text-right">
-                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Debt Balance</p>
-                     <h3 className={`text-base font-black tabular-nums ${customer.balance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                        {customer.balance > 0 ? `Ksh ${customer.balance.toLocaleString()}` : 'CLEAN'}
-                     </h3>
-                  </div>
-               </div>
-            </div>
-         ))}
-         
-         {filteredCustomers.length === 0 && (
-            <div className="col-span-full py-32 text-center flex flex-col items-center">
-               <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner text-slate-200">
-                 <Users size={44} />
-               </div>
-               <p className="text-slate-500 font-black text-lg">No client records found</p>
-               <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Adjust filters or add a new relationship</p>
-            </div>
+      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+         {filteredCustomers.length > 0 ? (
+           <div className="divide-y divide-slate-100">
+             {filteredCustomers.map(customer => (
+               <button
+                 key={customer.id}
+                 type="button"
+                 onClick={() => openEditCustomer(customer)}
+                 className="w-full text-left px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-indigo-50/40 transition-colors group"
+               >
+                 <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 font-black text-sm">
+                   {customer.name.substring(0, 1).toUpperCase()}
+                 </div>
+                 <div className="min-w-0 flex-1">
+                   <h4 className="text-sm font-black text-slate-900 truncate leading-tight">{customer.name}</h4>
+                   <div className="flex items-center gap-2 mt-1 flex-wrap">
+                     <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Phone size={11} /> {customer.phone}</span>
+                     {customer.email && <span className="text-[10px] font-bold text-slate-300 truncate">{customer.email}</span>}
+                   </div>
+                 </div>
+                 <div className="text-right shrink-0">
+                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Spent</p>
+                   <p className="text-sm font-black text-indigo-600 tabular-nums">Ksh {customer.totalSpent.toLocaleString()}</p>
+                 </div>
+                 <div className="text-right shrink-0 min-w-[90px]">
+                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Debt</p>
+                   <p className={`text-sm font-black tabular-nums ${customer.balance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                     {customer.balance > 0 ? `Ksh ${customer.balance.toLocaleString()}` : 'Clean'}
+                   </p>
+                 </div>
+                 <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
+               </button>
+             ))}
+           </div>
+         ) : (
+           <div className="py-20 text-center flex flex-col items-center">
+             <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-4 shadow-inner text-slate-200">
+               <Users size={36} />
+             </div>
+             <p className="text-slate-500 font-black text-base">No client records found</p>
+             <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Adjust filters or add a new relationship</p>
+           </div>
          )}
       </div>
 

@@ -131,7 +131,7 @@ export default function DocumentsTab() {
             <AdminApprovals />
          </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
            {filteredDocs.map(r => {
              const isSale = r.recordType === 'SALE';
              const isExp = r.recordType === 'EXPENSE';
@@ -140,34 +140,28 @@ export default function DocumentsTab() {
              const isDaily = r.recordType === 'DAILY_SUMMARY';
 
              return (
-              <div 
+              <button 
                 key={r.id} 
+                type="button"
                 onClick={() => setSelectedRecord(r)} 
-                className="group bg-white p-5 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col gap-4 hover:border-indigo-300 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden"
+                className="w-full text-left px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-indigo-50/40 transition-colors group border-b border-slate-100 last:border-b-0"
               >
-                <div className="flex justify-between items-start">
-                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform ${
-                     isSale ? 'bg-emerald-50 text-emerald-600' : 
-                     isExp ? 'bg-orange-50 text-orange-600' : 
-                     isPay ? 'bg-purple-50 text-purple-600' :
-                     isShift ? 'bg-slate-900 text-white' :
-                     isDaily ? 'bg-indigo-600 text-white' :
-                     'bg-blue-50 text-blue-600'
-                   }`}>
-                      {isSale ? <Receipt size={24} /> : 
-                       isExp ? <Wallet size={24} /> : 
-                       isPay ? <Landmark size={24} /> :
-                       isShift ? <CalendarCheck size={24} /> :
-                       <ClipboardList size={24} />}
-                   </div>
-                   <div className="text-right">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Value</p>
-                      <h3 className="text-lg font-black text-slate-900 leading-none">Ksh {(r.total || 0).toLocaleString()}</h3>
-                   </div>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  isSale ? 'bg-emerald-50 text-emerald-600' : 
+                  isExp ? 'bg-orange-50 text-orange-600' : 
+                  isPay ? 'bg-purple-50 text-purple-600' :
+                  isShift ? 'bg-slate-900 text-white' :
+                  isDaily ? 'bg-indigo-600 text-white' :
+                  'bg-blue-50 text-blue-600'
+                }`}>
+                   {isSale ? <Receipt size={18} /> : 
+                    isExp ? <Wallet size={18} /> : 
+                    isPay ? <Landmark size={18} /> :
+                    isShift ? <CalendarCheck size={18} /> :
+                    <ClipboardList size={18} />}
                 </div>
-
                 <div className="flex-1 min-w-0">
-                   <h4 className="text-sm font-black text-slate-900 truncate mb-1">
+                   <h4 className="text-sm font-black text-slate-900 truncate">
                      {isSale ? `Receipt #${r.id.split('-')[0].toUpperCase()}` : 
                       isExp ? `Expense: ${r.category}` : 
                       isPay ? 'Supplier Settlement' :
@@ -175,38 +169,39 @@ export default function DocumentsTab() {
                       isDaily ? `Business Summary` :
                       `Invoice #${r.invoiceNumber || r.id.split('-')[0].toUpperCase()}`}
                    </h4>
-                   <div className="flex items-center gap-2 mb-4">
+                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(r.timestamp).toLocaleDateString()}</span>
                       <span className="w-1 h-1 rounded-full bg-slate-200" />
                       <span className="text-[10px] font-bold text-slate-400 truncate max-w-[120px]">{r.description || r.reference || 'Automated entry'}</span>
                    </div>
-                   
-                   <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                      <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter ${
-                        isSale ? 'bg-slate-100 text-slate-600' : 
-                        isExp ? 'bg-orange-50 text-orange-600' : 
-                        isPay ? 'bg-purple-50 text-purple-600' :
-                        'bg-blue-50 text-blue-600'
-                      }`}>
-                         {isSale ? r.status : 
-                          r.recordType === 'PURCHASE_ORDER' ? (r.paymentStatus || 'UNPAID') :
-                          isShift ? 'FINALIZED' :
-                          isDaily ? 'MASTERED' :
-                          r.recordType.replace('_', ' ')}
-                      </span>
-                      <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-400 transition-colors" />
-                   </div>
                 </div>
-              </div>
+                <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter shrink-0 ${
+                  isSale ? 'bg-slate-100 text-slate-600' : 
+                  isExp ? 'bg-orange-50 text-orange-600' : 
+                  isPay ? 'bg-purple-50 text-purple-600' :
+                  'bg-blue-50 text-blue-600'
+                }`}>
+                  {isSale ? r.status : 
+                   r.recordType === 'PURCHASE_ORDER' ? (r.paymentStatus || 'UNPAID') :
+                   isShift ? 'FINALIZED' :
+                   isDaily ? 'MASTERED' :
+                   r.recordType.replace('_', ' ')}
+                </span>
+                <div className="text-right shrink-0 min-w-[100px]">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Value</p>
+                  <h3 className="text-sm font-black text-slate-900 leading-none tabular-nums">Ksh {(r.total || 0).toLocaleString()}</h3>
+                </div>
+                <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
+              </button>
              );
            })}
            
            {filteredDocs.length === 0 && (
-              <div className="col-span-full py-32 text-center flex flex-col items-center">
-                 <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner text-slate-200">
-                   <Archive size={44} />
+              <div className="py-20 text-center flex flex-col items-center">
+                 <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-4 shadow-inner text-slate-200">
+                   <Archive size={36} />
                  </div>
-                 <p className="text-slate-500 font-black text-lg">No records matched your filter</p>
+                 <p className="text-slate-500 font-black text-base">No records matched your filter</p>
                  <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Adjust search or filter parameters</p>
               </div>
            )}

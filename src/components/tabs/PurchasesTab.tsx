@@ -265,66 +265,61 @@ export default function PurchasesTab() {
       </div>
 
       {/* PO List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-         {filteredPurchases.map(po => {
-            const supplier = allSuppliers?.find(s => s.id === po.supplierId);
-            const isRecv = po.status === 'RECEIVED';
-            const isAppr = po.approvalStatus === 'APPROVED';
+      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+         {filteredPurchases.length > 0 ? (
+           <div className="divide-y divide-slate-100">
+             {filteredPurchases.map(po => {
+               const supplier = allSuppliers?.find(s => s.id === po.supplierId);
+               const isRecv = po.status === 'RECEIVED';
+               const isAppr = po.approvalStatus === 'APPROVED';
 
-            return (
-              <div 
-                key={po.id} 
-                onClick={() => po.approvalStatus === 'PENDING' ? initEditPO(po) : handleDetailsClick(po)} 
-                className="group bg-white p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col gap-5 hover:border-indigo-300 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden"
-              >
-                <div className="flex justify-between items-start">
-                   <div className={`w-14 h-14 rounded-[1.25rem] flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform ${
-                     isRecv ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
-                     isAppr ? 'bg-blue-50 text-blue-600 border border-blue-100' : 
+               return (
+                 <button
+                   key={po.id}
+                   type="button"
+                   onClick={() => po.approvalStatus === 'PENDING' ? initEditPO(po) : handleDetailsClick(po)}
+                   className="w-full text-left px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-indigo-50/40 transition-colors group"
+                 >
+                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                     isRecv ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                     isAppr ? 'bg-blue-50 text-blue-600 border border-blue-100' :
                      'bg-amber-50 text-amber-600 border border-amber-100'
                    }`}>
-                      {isRecv ? <PackagePlus size={28} /> : (isAppr ? <CheckSquare size={28} /> : <ClipboardList size={28} />)}
+                     {isRecv ? <PackagePlus size={18} /> : (isAppr ? <CheckSquare size={18} /> : <ClipboardList size={18} />)}
                    </div>
-                   <div className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
-                     isRecv ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
-                     isAppr ? 'bg-blue-50 text-blue-600 border border-blue-100' : 
+                   <div className="min-w-0 flex-1">
+                     <h4 className="text-sm font-black text-slate-900 truncate leading-tight">{supplier?.company || 'Unknown Supplier'}</h4>
+                     <div className="flex items-center gap-2 mt-1 flex-wrap">
+                       <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-100 flex items-center gap-1">
+                         <FileText size={11} /> {po.poNumber || po.id}
+                       </span>
+                       <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(po.orderDate).toLocaleDateString()}</span>
+                     </div>
+                   </div>
+                   <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0 ${
+                     isRecv ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                     isAppr ? 'bg-blue-50 text-blue-600 border border-blue-100' :
                      'bg-amber-50 text-amber-600 border border-amber-100'
                    }`}>
-                      <div className={`w-1.5 h-1.5 rounded-full ${isRecv ? 'bg-emerald-500' : isAppr ? 'bg-blue-500' : 'bg-amber-500 animate-pulse'}`} />
-                      {isRecv ? 'RECEIVED' : (isAppr ? 'APPROVED' : 'PENDING')}
+                     {isRecv ? 'Received' : (isAppr ? 'Approved' : 'Pending')}
+                   </span>
+                   <div className="text-right shrink-0 min-w-[110px]">
+                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Value</p>
+                     <p className="text-sm font-black text-slate-900 leading-none tabular-nums">Ksh {po.totalAmount.toLocaleString()}</p>
                    </div>
-                </div>
-
-                <div className="flex-1 min-w-0">
-                   <h4 className="text-base font-black text-slate-900 truncate mb-1 leading-tight">{supplier?.company || 'Unknown Supplier'}</h4>
-                   <div className="flex items-center gap-2 mb-4">
-                      <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100 flex items-center gap-1.5 uppercase tracking-tighter">
-                         <FileText size={12} /> {po.poNumber || po.id}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-300">|</span>
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(po.orderDate).toLocaleDateString()}</span>
-                   </div>
-                   
-                   <div className="flex items-end justify-between pt-4 border-t border-slate-50">
-                      <div>
-                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Order Value</p>
-                         <h3 className="text-lg font-black text-slate-900 leading-none">Ksh {po.totalAmount.toLocaleString()}</h3>
-                      </div>
-                      <ChevronRight size={20} className="text-slate-200 group-hover:text-indigo-400 transition-colors" />
-                   </div>
-                </div>
-              </div>
-            );
-         })}
-         
-         {filteredPurchases.length === 0 && (
-            <div className="col-span-full py-32 text-center flex flex-col items-center">
-               <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner text-slate-200">
-                 <ClipboardList size={44} />
-               </div>
-               <p className="text-slate-500 font-black text-lg">No procurement records found</p>
-               <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Orders and stock arrivals will appear here</p>
-            </div>
+                   <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
+                 </button>
+               );
+             })}
+           </div>
+         ) : (
+           <div className="py-20 text-center flex flex-col items-center">
+             <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-4 shadow-inner text-slate-200">
+               <ClipboardList size={36} />
+             </div>
+             <p className="text-slate-500 font-black text-base">No procurement records found</p>
+             <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Orders and stock arrivals will appear here</p>
+           </div>
          )}
       </div>
 

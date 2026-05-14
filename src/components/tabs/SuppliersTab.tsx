@@ -218,57 +218,52 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
       </div>
 
       {/* Vendor List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-         {filteredSuppliers.map(supplier => (
-            <div 
-              key={supplier.id} 
-              onClick={() => { setSelectedSupplierForLedger(supplier); setIsLedgerModalOpen(true); }} 
-              className="group bg-white p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col gap-5 hover:border-indigo-300 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden"
-            >
-               <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 min-w-0">
-                     <div className="w-14 h-14 rounded-[1.25rem] bg-slate-900 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform shrink-0">
-                        <Truck size={28} />
-                     </div>
-                     <div className="min-w-0">
-                        <h4 className="text-base font-black text-slate-900 truncate leading-tight">{supplier.company}</h4>
-                        <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-tight flex items-center gap-1.5 truncate">
-                           <User size={12} className="shrink-0"/> <span className="truncate">{supplier.name}</span>
-                        </p>
-                     </div>
-                  </div>
-                  <ChevronRight size={20} className="text-slate-200 group-hover:text-indigo-400 transition-colors" />
+      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+         {filteredSuppliers.length > 0 ? (
+           <div className="divide-y divide-slate-100">
+             {filteredSuppliers.map(supplier => (
+               <div
+                 key={supplier.id}
+                 className="px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-indigo-50/40 transition-colors group"
+                 onClick={() => { setSelectedSupplierForLedger(supplier); setIsLedgerModalOpen(true); }}
+               >
+                 <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0">
+                   <Truck size={18} />
+                 </div>
+                 <div className="min-w-0 flex-1">
+                   <h4 className="text-sm font-black text-slate-900 truncate leading-tight">{supplier.company}</h4>
+                   <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center gap-1.5 truncate">
+                     <User size={11} className="shrink-0" /> <span className="truncate">{supplier.name}</span>
+                   </p>
+                 </div>
+                 <div className="text-right shrink-0">
+                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Payable</p>
+                   <p className={`text-sm font-black tabular-nums ${supplier.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                     Ksh {supplier.balance.toLocaleString()}
+                   </p>
+                 </div>
+                 <button
+                   onClick={(e) => {
+                     e.stopPropagation();
+                     useStore.getState().setPaymentSupplierId(supplier.id);
+                     if (setActiveTab) setActiveTab('SUPPLIER_PAYMENTS');
+                   }}
+                   className="px-3 py-2 rounded-xl bg-slate-50 text-slate-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-95 font-black text-[9px] uppercase tracking-widest whitespace-nowrap border border-slate-100 shrink-0"
+                 >
+                   Pay
+                 </button>
+                 <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
                </div>
-               
-               <div className="flex items-end justify-between pt-4 border-t border-slate-50">
-                  <div className="flex-1">
-                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Payable Balance</p>
-                     <h3 className={`text-base font-black tabular-nums ${supplier.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                        Ksh {supplier.balance.toLocaleString()}
-                     </h3>
-                  </div>
-                  <button 
-                    onClick={(e) => {
-                       e.stopPropagation();
-                       useStore.getState().setPaymentSupplierId(supplier.id);
-                       if (setActiveTab) setActiveTab('SUPPLIER_PAYMENTS');
-                    }}
-                    className="px-5 py-2.5 rounded-xl bg-slate-50 text-slate-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-95 font-black text-[9px] uppercase tracking-widest whitespace-nowrap border border-slate-100"
-                  >
-                    Make Payment
-                  </button>
-               </div>
-            </div>
-         ))}
-         
-         {filteredSuppliers.length === 0 && (
-            <div className="col-span-full py-32 text-center flex flex-col items-center">
-               <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner text-slate-200">
-                 <Truck size={44} />
-               </div>
-               <p className="text-slate-500 font-black text-lg">No vendor records matched</p>
-               <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Add your first supplier to track procurement</p>
-            </div>
+             ))}
+           </div>
+         ) : (
+           <div className="py-20 text-center flex flex-col items-center">
+             <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-4 shadow-inner text-slate-200">
+               <Truck size={36} />
+             </div>
+             <p className="text-slate-500 font-black text-base">No vendor records matched</p>
+             <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Add your first supplier to track procurement</p>
+           </div>
          )}
       </div>
 

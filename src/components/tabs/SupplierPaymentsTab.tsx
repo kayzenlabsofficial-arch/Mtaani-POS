@@ -173,38 +173,36 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-               {filteredOwed.map(s => (
-                  <div key={s.id} className="group bg-white p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col gap-5 hover:border-rose-300 hover:shadow-xl hover:-translate-y-1 transition-all">
-                     <div className="flex justify-between items-start">
-                        <div className="w-12 h-12 rounded-[1.25rem] bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-600 group-hover:scale-110 transition-transform">
-                           <Building2 size={24} />
+            <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+               {filteredOwed.length > 0 ? (
+                 <div className="divide-y divide-slate-100">
+                   {filteredOwed.map(s => (
+                     <div key={s.id} className="px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-rose-50/40 transition-colors group">
+                        <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-600 shrink-0">
+                           <Building2 size={18} />
                         </div>
-                        <div className="text-right">
-                           <p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">Due Balance</p>
-                           <h3 className="text-lg font-black text-rose-600">Ksh {s.balance.toLocaleString()}</h3>
+                        <div className="min-w-0 flex-1">
+                           <h4 className="text-sm font-black text-slate-900 truncate">{s.company}</h4>
+                           <p className="text-[10px] font-bold text-slate-400 mt-0.5 truncate">{s.name}</p>
                         </div>
+                        <div className="text-right shrink-0 min-w-[100px]">
+                           <p className="text-[9px] font-black text-slate-400 uppercase">Due</p>
+                           <h3 className="text-sm font-black text-rose-600 tabular-nums">Ksh {s.balance.toLocaleString()}</h3>
+                        </div>
+                        <button
+                           onClick={() => openPaymentModal(s)}
+                           className="px-3 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-sm press flex items-center justify-center gap-1.5 shrink-0"
+                        >
+                           <DollarSign size={13} /> Settle
+                        </button>
                      </div>
-                     
-                     <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-black text-slate-900 truncate">{s.company}</h4>
-                        <p className="text-[10px] font-bold text-slate-400 mt-0.5">{s.name}</p>
-                     </div>
-
-                     <button 
-                        onClick={() => openPaymentModal(s)}
-                        className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-lg press flex items-center justify-center gap-2"
-                     >
-                        <DollarSign size={16} /> Record Settlement
-                     </button>
-                  </div>
-               ))}
-               
-               {filteredOwed.length === 0 && (
-                  <div className="col-span-full py-20 bg-slate-50 border-2 border-dashed border-slate-100 rounded-[2.5rem] flex flex-col items-center justify-center text-slate-300">
-                     <CheckCircle2 size={48} className="mb-4 opacity-20" />
-                     <p className="text-xs font-black uppercase tracking-widest opacity-40">Zero Outstanding Liabilities</p>
-                  </div>
+                   ))}
+                 </div>
+               ) : (
+                 <div className="py-20 bg-slate-50 border-2 border-dashed border-slate-100 rounded-[2rem] flex flex-col items-center justify-center text-slate-300">
+                    <CheckCircle2 size={40} className="mb-3 opacity-20" />
+                    <p className="text-xs font-black uppercase tracking-widest opacity-40">Zero Outstanding Liabilities</p>
+                 </div>
                )}
             </div>
          </div>
