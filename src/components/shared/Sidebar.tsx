@@ -1,8 +1,21 @@
-import React, { useState } from 'react';
-
-const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => (
-  <span className={`material-symbols-outlined ${className}`}>{name}</span>
-);
+import React from 'react';
+import {
+  BarChart3,
+  ChevronRight,
+  CircleDollarSign,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  Package,
+  RefreshCw,
+  RotateCcw,
+  Settings,
+  ShoppingBag,
+  ShoppingCart,
+  Store,
+  Truck,
+  Users,
+} from 'lucide-react';
 
 interface SidebarProps {
   activeTab: string;
@@ -14,129 +27,177 @@ interface SidebarProps {
   onOpenProfile: () => void;
 }
 
-const navGroups = [
-  { 
-    id: 'ops', label: 'SALES OPS', items: [
-      { id: 'REGISTER', label: 'Register', icon: 'point_of_sale', desc: 'New sale' },
-      { id: 'DASHBOARD', label: 'Dashboard', icon: 'dashboard', desc: 'Overview' },
-      { id: 'CUSTOMERS', label: 'Customers', icon: 'group', desc: 'CRM' },
-    ]
+const navGroups: Array<{
+  id: string;
+  label: string;
+  items: Array<{
+    id: string;
+    label: string;
+    icon: React.ElementType;
+    desc: string;
+    accent: string;
+    adminOnly?: boolean;
+  }>;
+}> = [
+  {
+    id: 'ops',
+    label: 'Operate',
+    items: [
+      { id: 'REGISTER', label: 'Register', icon: ShoppingCart, desc: 'Checkout desk', accent: 'text-blue-600 bg-blue-50 border-blue-100' },
+      { id: 'DASHBOARD', label: 'Dashboard', icon: LayoutDashboard, desc: 'Daily pulse', accent: 'text-emerald-600 bg-emerald-50 border-emerald-100' },
+      { id: 'CUSTOMERS', label: 'Customers', icon: Users, desc: 'Credit and CRM', accent: 'text-violet-600 bg-violet-50 border-violet-100' },
+    ],
   },
-  { 
-    id: 'inv', label: 'INVENTORY', items: [
-      { id: 'INVENTORY', label: 'Products', icon: 'inventory_2', desc: 'Stock' },
-      { id: 'SUPPLIERS', label: 'Suppliers', icon: 'local_shipping', desc: 'Vendors', adminOnly: true },
-      { id: 'PURCHASES', label: 'Purchases', icon: 'shopping_bag', desc: 'Orders' },
-    ]
+  {
+    id: 'stock',
+    label: 'Stockroom',
+    items: [
+      { id: 'INVENTORY', label: 'Inventory', icon: Package, desc: 'Products and stock', accent: 'text-slate-700 bg-slate-100 border-slate-200' },
+      { id: 'SUPPLIERS', label: 'Suppliers', icon: Truck, desc: 'Vendor records', accent: 'text-cyan-700 bg-cyan-50 border-cyan-100', adminOnly: true },
+      { id: 'PURCHASES', label: 'Purchases', icon: ShoppingBag, desc: 'Orders and goods', accent: 'text-amber-700 bg-amber-50 border-amber-100' },
+    ],
   },
-  { 
-    id: 'fin', label: 'FINANCE', items: [
-      { id: 'EXPENSES', label: 'Expenses', icon: 'payments', desc: 'Costs' },
-      { id: 'REFUNDS', label: 'Refunds', icon: 'keyboard_return', desc: 'Returns' },
-      { id: 'REPORTS', label: 'Reports', icon: 'analytics', desc: 'Analytics', adminOnly: true },
-      { id: 'DOCUMENTS', label: 'Documents', icon: 'receipt_long', desc: 'Receipts' },
-    ]
+  {
+    id: 'finance',
+    label: 'Money',
+    items: [
+      { id: 'EXPENSES', label: 'Expenses', icon: CircleDollarSign, desc: 'Cash outflows', accent: 'text-rose-600 bg-rose-50 border-rose-100' },
+      { id: 'REFUNDS', label: 'Refunds', icon: RotateCcw, desc: 'Returns queue', accent: 'text-orange-700 bg-orange-50 border-orange-100' },
+      { id: 'REPORTS', label: 'Reports', icon: BarChart3, desc: 'Performance', accent: 'text-indigo-600 bg-indigo-50 border-indigo-100', adminOnly: true },
+      { id: 'DOCUMENTS', label: 'Documents', icon: FileText, desc: 'Receipts', accent: 'text-teal-700 bg-teal-50 border-teal-100' },
+    ],
   },
-  { 
-    id: 'admin', label: 'SYSTEM', items: [
-      { id: 'ADMIN_PANEL', label: 'Admin Panel', icon: 'settings', desc: 'Config', adminOnly: true },
-    ]
+  {
+    id: 'system',
+    label: 'Control',
+    items: [
+      { id: 'ADMIN_PANEL', label: 'Admin Panel', icon: Settings, desc: 'Users and policy', accent: 'text-slate-800 bg-slate-100 border-slate-200', adminOnly: true },
+    ],
   },
 ];
 
-export default function Sidebar({ 
-  activeTab, onTabChange, onLogout, onSync, isSyncing, currentUser, onOpenProfile
+export default function Sidebar({
+  activeTab,
+  onTabChange,
+  onLogout,
+  onSync,
+  isSyncing,
+  currentUser,
+  onOpenProfile,
 }: SidebarProps) {
   const isAdminOrManager = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+  const userInitial = currentUser?.name?.charAt(0)?.toUpperCase() || 'U';
 
   return (
-    <aside className="hidden md:flex flex-col w-64 bg-slate-950 h-full flex-shrink-0 relative">
-      
-      {/* Brand */}
-      <div className="px-6 py-6 border-b border-slate-800/60">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 flex-shrink-0">
-            <MaterialIcon name="store" className="text-white" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-sm font-black text-white leading-none">Mtaani POS</h2>
-            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1">Enterprise Cloud POS</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Nav */}
-      <div className="flex-1 overflow-y-auto no-scrollbar py-4">
-        {navGroups.map(group => {
-          const visibleItems = group.items.filter(i => !(i as any).adminOnly || isAdminOrManager);
-          if (visibleItems.length === 0) return null;
-          return (
-            <div key={group.id} className="mb-6 px-3">
-              <p className="text-[9px] font-black text-slate-600 uppercase tracking-[0.2em] px-3 mb-2">{group.label}</p>
-              <div className="space-y-0.5">
-                {visibleItems.map(item => {
-                  const isActive = activeTab === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => onTabChange(item.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-150 group ${
-                        isActive 
-                          ? 'bg-primary shadow-lg shadow-primary/20 text-white' 
-                          : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
-                      }`}
-                    >
-                      <MaterialIcon 
-                        name={item.icon} 
-                        className={`text-lg flex-shrink-0 transition-colors ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'}`}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className={`text-[11px] font-bold leading-none ${isActive ? 'text-white' : ''}`}>{item.label}</p>
-                        <p className={`text-[9px] mt-0.5 ${isActive ? 'text-white/70' : 'text-slate-600'}`}>{item.desc}</p>
-                      </div>
-                      {isActive && (
-                        <div className="w-1.5 h-1.5 rounded-full bg-white/80 flex-shrink-0" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Footer */}
-      <div className="border-t border-slate-800/60 p-4">
-        <button onClick={onOpenProfile} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800/60 transition-all mb-3 group text-left">
-          <div className="w-9 h-9 rounded-xl overflow-hidden border-2 border-slate-700 flex-shrink-0">
-            <img 
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuBanTVrDxgpc9k9_6zty19qXOLkfASYjRkPwQ_ImJ3zEw6tzpyfs7xlMCV1IitVdQ7l1jfwp4DlnS9ATDcQKEJWJ-uq0CWDgk5KkKbpEGNmzP4ld_l4eoeTKGNw70t2T7rIu_M2yTlJNVPd6UXlmcDvkMwlA4K3bf1CDnO8dRt5b1BYZ8b1jbVZ6N4yJQFXev6xV13LNa3awM1O2xkB3Hs7xcWlwHWy2RMXWZ-YWif-Jp2HhuiJRJxSswmn-zRE8ugFa13qjDYidMo"
-              className="w-full h-full object-cover"
-            />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[11px] font-bold text-slate-200 truncate leading-none">{currentUser?.name}</p>
-            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mt-0.5">{currentUser?.role}</p>
-          </div>
-          <MaterialIcon name="chevron_right" className="text-slate-600 group-hover:text-slate-400 text-base" />
+    <aside className="hidden md:flex w-[248px] h-full flex-shrink-0 border-r border-slate-200 bg-slate-50/95">
+      <div className="flex h-full w-full flex-col p-3">
+        <button
+          type="button"
+          onClick={() => onTabChange('DASHBOARD')}
+          className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm transition-all hover:border-primary/30 hover:shadow-md"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white">
+            <Store size={20} />
+          </span>
+          <span className="min-w-0">
+            <span className="block stable-title text-sm font-black leading-none text-slate-950">Mtaani POS</span>
+            <span className="mt-1 block stable-title text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              Fast retail desk
+            </span>
+          </span>
         </button>
 
-        <div className="grid grid-cols-2 gap-2">
-          <button 
-            onClick={onSync}
-            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl border border-slate-800 text-slate-500 hover:text-slate-200 hover:border-slate-600 transition-all text-[10px] font-bold uppercase tracking-widest ${isSyncing ? 'text-primary border-primary/30 bg-primary/5' : ''}`}
+        <nav className="mt-4 flex-1 overflow-y-auto pr-1 custom-scrollbar">
+          {navGroups.map(group => {
+            const visibleItems = group.items.filter(item => !item.adminOnly || isAdminOrManager);
+            if (visibleItems.length === 0) return null;
+
+            return (
+              <div key={group.id} className="mb-5">
+                <p className="px-2 pb-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                  {group.label}
+                </p>
+                <div className="space-y-1">
+                  {visibleItems.map(item => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => onTabChange(item.id)}
+                        className={`relative w-full rounded-xl border px-2.5 py-2.5 text-left transition-all ${
+                          isActive
+                            ? 'border-slate-900 bg-slate-950 text-white shadow-lg shadow-slate-950/10'
+                            : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-950'
+                        }`}
+                      >
+                        <span className="grid grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-2">
+                          <span
+                            className={`flex h-9 w-9 items-center justify-center rounded-lg border transition-all ${
+                              isActive ? 'border-white/10 bg-white/10 text-white' : item.accent
+                            }`}
+                          >
+                            <Icon size={18} />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block stable-title text-[13px] font-black leading-tight">{item.label}</span>
+                            <span className={`mt-0.5 block stable-title text-[10px] font-bold ${isActive ? 'text-white/55' : 'text-slate-400'}`}>
+                              {item.desc}
+                            </span>
+                          </span>
+                          <ChevronRight size={15} className={isActive ? 'text-white/70' : 'text-slate-300'} />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
+
+        <div className="mt-3 border-t border-slate-200 pt-3">
+          <button
+            type="button"
+            onClick={onOpenProfile}
+            className="mb-2 grid w-full grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-left transition-all hover:border-primary/30"
           >
-            <MaterialIcon name="sync" className={`text-base ${isSyncing ? 'animate-spin' : ''}`} />
-            Sync
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-xs font-black text-white">
+              {userInitial}
+            </span>
+            <span className="min-w-0">
+              <span className="block stable-title text-[12px] font-black text-slate-900">{currentUser?.name || 'Current user'}</span>
+              <span className="mt-0.5 block stable-title text-[9px] font-black uppercase tracking-widest text-slate-400">
+                {currentUser?.role || 'Staff'}
+              </span>
+            </span>
+            <ChevronRight size={15} className="text-slate-300" />
           </button>
-          <button 
-            onClick={onLogout}
-            className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-slate-800 text-slate-500 hover:text-rose-400 hover:border-rose-900/50 hover:bg-rose-950/30 transition-all text-[10px] font-bold uppercase tracking-widest"
-          >
-            <MaterialIcon name="logout" className="text-base" />
-            Exit
-          </button>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={onSync}
+              className={`flex items-center justify-center gap-2 rounded-xl border py-2.5 text-[10px] font-black uppercase tracking-widest transition-all ${
+                isSyncing
+                  ? 'border-primary/30 bg-primary/10 text-primary'
+                  : 'border-slate-200 bg-white text-slate-500 hover:border-primary/30 hover:text-primary'
+              }`}
+            >
+              <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
+              Sync
+            </button>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 transition-all hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+            >
+              <LogOut size={14} />
+              Exit
+            </button>
+          </div>
         </div>
       </div>
     </aside>

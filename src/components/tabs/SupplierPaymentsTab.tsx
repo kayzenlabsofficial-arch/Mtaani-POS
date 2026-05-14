@@ -191,24 +191,28 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                {filteredOwed.length > 0 ? (
                  <div className="divide-y divide-slate-100">
                    {filteredOwed.map(s => (
-                     <div key={s.id} className="px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-rose-50/40 transition-colors group">
-                        <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-600 shrink-0">
-                           <Building2 size={18} />
+                     <div key={s.id} className="px-3 sm:px-5 py-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 hover:bg-rose-50/40 transition-colors group">
+                        <div className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3">
+                           <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-600 shrink-0">
+                              <Building2 size={18} />
+                           </div>
+                           <div className="stable-row-copy">
+                              <h4 className="text-sm font-black text-slate-900 stable-title">{s.company}</h4>
+                              <p className="text-[10px] font-bold text-slate-400 mt-0.5 stable-title">{s.name}</p>
+                           </div>
                         </div>
-                        <div className="min-w-0 flex-1">
-                           <h4 className="text-sm font-black text-slate-900 truncate">{s.company}</h4>
-                           <p className="text-[10px] font-bold text-slate-400 mt-0.5 truncate">{s.name}</p>
+                        <div className="stable-actions flex items-center gap-2">
+                           <div className="text-right min-w-[84px]">
+                              <p className="text-[9px] font-black text-slate-400 uppercase">Due</p>
+                              <h3 className="text-sm font-black text-rose-600 tabular-nums whitespace-nowrap">Ksh {s.balance.toLocaleString()}</h3>
+                           </div>
+                           <button
+                              onClick={() => openPaymentModal(s)}
+                              className="px-3 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-sm press flex items-center justify-center gap-1.5 shrink-0"
+                           >
+                              <DollarSign size={13} /> Settle
+                           </button>
                         </div>
-                        <div className="text-right shrink-0 min-w-[100px]">
-                           <p className="text-[9px] font-black text-slate-400 uppercase">Due</p>
-                           <h3 className="text-sm font-black text-rose-600 tabular-nums">Ksh {s.balance.toLocaleString()}</h3>
-                        </div>
-                        <button
-                           onClick={() => openPaymentModal(s)}
-                           className="px-3 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-sm press flex items-center justify-center gap-1.5 shrink-0"
-                        >
-                           <DollarSign size={13} /> Settle
-                        </button>
                      </div>
                    ))}
                  </div>
@@ -244,22 +248,22 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                      sortedPayments.map(p => {
                         const vendor = allSuppliers.find(s => s.id === p.supplierId);
                         return (
-                           <div key={p.id} className="p-4 bg-white border-2 border-slate-50 rounded-2xl flex items-center justify-between group hover:border-emerald-200 transition-all">
-                              <div className="flex items-center gap-4">
+                           <div key={p.id} className="p-4 bg-white border-2 border-slate-50 rounded-2xl grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 group hover:border-emerald-200 transition-all">
+                              <div className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3">
                                  <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
                                     {getMethodIcon(p.paymentMethod)}
                                  </div>
-                                 <div className="min-w-0">
-                                    <h4 className="text-[11px] font-black text-slate-900 truncate leading-tight">{vendor?.company || 'Unknown Vendor'}</h4>
-                                    <div className="flex items-center gap-2 mt-1">
+                                 <div className="stable-row-copy">
+                                    <h4 className="text-[11px] font-black text-slate-900 stable-title leading-tight">{vendor?.company || 'Unknown Vendor'}</h4>
+                                    <div className="flex items-center gap-2 mt-1 overflow-hidden">
                                        <span className="text-[9px] font-bold text-slate-400 uppercase">{new Date(p.timestamp).toLocaleDateString()}</span>
                                        <span className="w-1 h-1 rounded-full bg-slate-200" />
-                                       <span className="text-[9px] font-black text-indigo-500 uppercase">{p.paymentMethod}</span>
+                                       <span className="text-[9px] font-black text-indigo-500 uppercase stable-meta">{p.paymentMethod}</span>
                                     </div>
                                  </div>
                               </div>
-                              <div className="text-right pl-4">
-                                 <p className="text-xs font-black text-slate-900 tabular-nums leading-none">Ksh {p.amount.toLocaleString()}</p>
+                              <div className="text-right stable-actions">
+                                 <p className="text-xs font-black text-slate-900 tabular-nums leading-none whitespace-nowrap">Ksh {p.amount.toLocaleString()}</p>
                                  {p.transactionCode && <p className="text-[8px] font-bold text-emerald-500 mt-1 uppercase truncate max-w-[80px]">{p.transactionCode}</p>}
                               </div>
                            </div>
@@ -270,18 +274,18 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                         const vendor = allSuppliers.find(s => s.id === cn.supplierId);
                         const isPend = cn.status === 'PENDING';
                         return (
-                           <div key={cn.id} className="p-4 bg-white border-2 border-slate-50 rounded-2xl flex items-center justify-between group hover:border-blue-200 transition-all">
-                              <div className="flex items-center gap-4">
+                           <div key={cn.id} className="p-4 bg-white border-2 border-slate-50 rounded-2xl grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 group hover:border-blue-200 transition-all">
+                              <div className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3">
                                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform ${isPend ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
                                     <ArrowUpRight size={18} />
                                  </div>
-                                 <div className="min-w-0">
-                                    <h4 className="text-[11px] font-black text-slate-900 truncate leading-tight">{vendor?.company || 'Unknown Vendor'}</h4>
+                                 <div className="stable-row-copy">
+                                    <h4 className="text-[11px] font-black text-slate-900 stable-title leading-tight">{vendor?.company || 'Unknown Vendor'}</h4>
                                     <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">{new Date(cn.timestamp).toLocaleDateString()}</p>
                                  </div>
                               </div>
-                              <div className="text-right pl-4">
-                                 <p className="text-xs font-black text-slate-900 tabular-nums leading-none">Ksh {cn.amount.toLocaleString()}</p>
+                              <div className="text-right stable-actions">
+                                 <p className="text-xs font-black text-slate-900 tabular-nums leading-none whitespace-nowrap">Ksh {cn.amount.toLocaleString()}</p>
                                  <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border mt-1 inline-block ${isPend ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
                                     {cn.status}
                                  </span>

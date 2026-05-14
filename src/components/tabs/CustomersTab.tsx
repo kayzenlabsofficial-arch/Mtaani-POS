@@ -207,29 +207,33 @@ export default function CustomersTab() {
                  key={customer.id}
                  type="button"
                  onClick={() => openEditCustomer(customer)}
-                 className="w-full text-left px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-indigo-50/40 transition-colors group"
+                 className="w-full text-left px-3 sm:px-5 py-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 hover:bg-indigo-50/40 transition-colors group"
                >
-                 <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 font-black text-sm">
-                   {customer.name.substring(0, 1).toUpperCase()}
-                 </div>
-                 <div className="min-w-0 flex-1">
-                   <h4 className="text-sm font-black text-slate-900 truncate leading-tight">{customer.name}</h4>
-                   <div className="flex items-center gap-2 mt-1 flex-wrap">
-                     <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Phone size={11} /> {customer.phone}</span>
-                     {customer.email && <span className="text-[10px] font-bold text-slate-300 truncate">{customer.email}</span>}
+                 <div className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3">
+                   <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 font-black text-sm">
+                     {customer.name.substring(0, 1).toUpperCase()}
+                   </div>
+                   <div className="stable-row-copy">
+                     <h4 className="text-sm font-black text-slate-900 stable-title leading-tight">{customer.name}</h4>
+                     <div className="flex items-center gap-2 mt-1 overflow-hidden">
+                       <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 flex-shrink-0"><Phone size={11} /> {customer.phone}</span>
+                       {customer.email && <span className="text-[10px] font-bold text-slate-300 stable-meta">{customer.email}</span>}
+                     </div>
                    </div>
                  </div>
-                 <div className="text-right shrink-0">
-                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Spent</p>
-                   <p className="text-sm font-black text-indigo-600 tabular-nums">Ksh {customer.totalSpent.toLocaleString()}</p>
+                 <div className="stable-actions flex items-center gap-3">
+                   <div className="hidden sm:block text-right">
+                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Spent</p>
+                     <p className="text-sm font-black text-indigo-600 tabular-nums whitespace-nowrap">Ksh {customer.totalSpent.toLocaleString()}</p>
+                   </div>
+                   <div className="text-right min-w-[80px]">
+                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Debt</p>
+                     <p className={`text-sm font-black tabular-nums whitespace-nowrap ${customer.balance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                       {customer.balance > 0 ? `Ksh ${customer.balance.toLocaleString()}` : 'Clean'}
+                     </p>
+                   </div>
+                   <ChevronRight size={18} className="hidden sm:block text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
                  </div>
-                 <div className="text-right shrink-0 min-w-[90px]">
-                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Debt</p>
-                   <p className={`text-sm font-black tabular-nums ${customer.balance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                     {customer.balance > 0 ? `Ksh ${customer.balance.toLocaleString()}` : 'Clean'}
-                   </p>
-                 </div>
-                 <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
                </button>
              ))}
            </div>

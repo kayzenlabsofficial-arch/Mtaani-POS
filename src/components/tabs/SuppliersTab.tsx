@@ -232,35 +232,39 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
              {filteredSuppliers.map(supplier => (
                <div
                  key={supplier.id}
-                 className="px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-indigo-50/40 transition-colors group"
+                 className="px-3 sm:px-5 py-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 hover:bg-indigo-50/40 transition-colors group cursor-pointer"
                  onClick={() => { setSelectedSupplierForLedger(supplier); setIsLedgerModalOpen(true); }}
                >
-                 <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0">
-                   <Truck size={18} />
+                 <div className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3">
+                   <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0">
+                     <Truck size={18} />
+                   </div>
+                   <div className="stable-row-copy">
+                     <h4 className="text-sm font-black text-slate-900 stable-title leading-tight">{supplier.company}</h4>
+                     <p className="text-[10px] font-bold text-slate-400 mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden">
+                       <User size={11} className="shrink-0" /> <span className="stable-meta">{supplier.name}</span>
+                     </p>
+                   </div>
                  </div>
-                 <div className="min-w-0 flex-1">
-                   <h4 className="text-sm font-black text-slate-900 truncate leading-tight">{supplier.company}</h4>
-                   <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center gap-1.5 truncate">
-                     <User size={11} className="shrink-0" /> <span className="truncate">{supplier.name}</span>
-                   </p>
+                 <div className="stable-actions flex items-center gap-2">
+                   <div className="text-right">
+                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Payable</p>
+                     <p className={`text-sm font-black tabular-nums whitespace-nowrap ${supplier.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                       Ksh {supplier.balance.toLocaleString()}
+                     </p>
+                   </div>
+                   <button
+                     onClick={(e) => {
+                       e.stopPropagation();
+                       useStore.getState().setPaymentSupplierId(supplier.id);
+                       if (setActiveTab) setActiveTab('SUPPLIER_PAYMENTS');
+                     }}
+                     className="px-3 py-2 rounded-xl bg-slate-50 text-slate-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-95 font-black text-[9px] uppercase tracking-widest whitespace-nowrap border border-slate-100 shrink-0"
+                   >
+                     Pay
+                   </button>
+                   <ChevronRight size={18} className="hidden sm:block text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
                  </div>
-                 <div className="text-right shrink-0">
-                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Payable</p>
-                   <p className={`text-sm font-black tabular-nums ${supplier.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                     Ksh {supplier.balance.toLocaleString()}
-                   </p>
-                 </div>
-                 <button
-                   onClick={(e) => {
-                     e.stopPropagation();
-                     useStore.getState().setPaymentSupplierId(supplier.id);
-                     if (setActiveTab) setActiveTab('SUPPLIER_PAYMENTS');
-                   }}
-                   className="px-3 py-2 rounded-xl bg-slate-50 text-slate-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-95 font-black text-[9px] uppercase tracking-widest whitespace-nowrap border border-slate-100 shrink-0"
-                 >
-                   Pay
-                 </button>
-                 <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
                </div>
              ))}
            </div>

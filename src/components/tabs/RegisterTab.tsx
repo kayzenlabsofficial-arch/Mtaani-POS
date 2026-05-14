@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Ban, CircleDollarSign, Minus, Package, Plus, ScanBarcode, Search, ShoppingCart, Store, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
@@ -8,7 +9,25 @@ import BarcodeScanner from '../shared/BarcodeScanner';
 import { enrichProductsWithBundleStock, isBundleProduct } from '../../utils/bundleInventory';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
-  <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>
+  (() => {
+    const icons: Record<string, React.ElementType> = {
+      add: Plus,
+      remove: Minus,
+      close: X,
+      search: Search,
+      barcode_scanner: ScanBarcode,
+      inventory: Package,
+      inventory_2: Package,
+      shopping_cart: ShoppingCart,
+      payments: CircleDollarSign,
+      block: Ban,
+      store_mall_directory: Store,
+    };
+    const Icon = icons[name] || Package;
+    const { fontSize, ...rest } = style || {};
+    const size = typeof fontSize === 'number' ? fontSize : Number.parseInt(String(fontSize || 20), 10);
+    return <Icon className={className} style={rest} size={Number.isFinite(size) ? size : 20} strokeWidth={2.4} />;
+  })()
 );
 
 // Deterministic color from string
@@ -45,27 +64,29 @@ function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
         isOut ? 'opacity-60 cursor-not-allowed border-slate-100 bg-slate-50/60' : 'cursor-pointer border-slate-100 hover:border-primary/30 hover:bg-blue-50/30 hover:shadow-sm active:scale-[0.995]'
       } ${recentlyAdded ? 'ring-2 ring-primary/30 border-primary/40' : ''}`}
     >
-      <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl ${color} flex items-center justify-center flex-shrink-0 text-white text-xs font-black shadow-sm`}>
-          {initials}
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:gap-3">
+        <div className="grid min-w-0 grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[2.75rem_minmax(0,1fr)] sm:gap-3">
+          <div className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl ${color} flex items-center justify-center flex-shrink-0 text-white text-[11px] sm:text-xs font-black shadow-sm`}>
+            {initials}
+          </div>
+
+          <div className="stable-row-copy">
+            <div className="flex items-center gap-2 min-w-0">
+              <p className="stable-title-2 text-[13px] sm:text-sm font-black leading-tight text-slate-900 group-hover:text-primary transition-colors">{product.name}</p>
+              {product.isTaxable && (
+                <span className="hidden sm:inline-flex text-[8px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full flex-shrink-0">VAT</span>
+              )}
+            </div>
+            <div className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden text-[9px] sm:text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              <span className="stable-meta max-w-[7rem] sm:max-w-none">{product.category || 'General'}</span>
+              {isBundleProduct(product) && <span className="text-emerald-600 flex-shrink-0">bulk</span>}
+              {product.barcode && <span className="hidden sm:inline font-mono normal-case tracking-normal text-slate-500 stable-meta">#{product.barcode}</span>}
+              <span className="flex-shrink-0">{product.unit || 'pcs'}</span>
+            </div>
+          </div>
         </div>
 
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <p className="text-[13px] sm:text-sm font-black text-slate-900 truncate group-hover:text-primary transition-colors">{product.name}</p>
-            {product.isTaxable && (
-              <span className="hidden sm:inline-flex text-[8px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full">VAT</span>
-            )}
-          </div>
-          <div className="mt-1 flex items-center gap-x-2 gap-y-1 flex-wrap text-[9px] sm:text-[10px] font-bold uppercase tracking-wide text-slate-400">
-            <span className="truncate max-w-[120px] sm:max-w-none">{product.category || 'General'}</span>
-            {isBundleProduct(product) && <span className="text-emerald-600">bulk</span>}
-            {product.barcode && <span className="font-mono normal-case tracking-normal text-slate-500">#{product.barcode}</span>}
-            <span>{product.unit || 'pcs'}</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+        <div className="stable-actions flex items-center justify-end gap-2 sm:gap-3">
           <div className="hidden sm:flex flex-col items-end">
             <span className={`text-[9px] font-black px-2 py-1 rounded-full border ${
               isOut ? 'bg-rose-50 text-rose-600 border-rose-100'
@@ -76,14 +97,14 @@ function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
             </span>
           </div>
           <div className="text-right">
-            <p className="text-sm sm:text-base font-black text-slate-900 tabular-nums whitespace-nowrap">
+            <p className="text-[13px] sm:text-base font-black text-slate-900 tabular-nums whitespace-nowrap">
               Ksh {product.sellingPrice?.toLocaleString()}
             </p>
             <p className={`text-[9px] font-black uppercase sm:hidden ${isOut ? 'text-rose-500' : isLow ? 'text-amber-600' : 'text-emerald-600'}`}>
               {isOut ? 'Out' : `${stock} left`}
             </p>
           </div>
-          <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+          <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors flex-shrink-0 ${
             isOut ? 'bg-slate-200 text-slate-400' : 'bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white'
           }`}>
             <MaterialIcon name={isOut ? 'block' : 'add'} style={{ fontSize: '18px' }} />
@@ -129,17 +150,17 @@ function SalePanel({
           </div>
         ) : cart.map(item => (
           <div key={item.id} className="border border-slate-100 rounded-2xl p-3 bg-white">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[13px] font-black text-slate-900 truncate">{item.name}</p>
-                <p className="text-[10px] font-bold text-slate-400">Ksh {item.sellingPrice?.toLocaleString()} each</p>
+            <div className="grid grid-cols-[minmax(0,1fr)_2rem] items-start gap-3">
+              <div className="stable-row-copy">
+                <p className="stable-title-2 text-[13px] font-black leading-tight text-slate-900">{item.name}</p>
+                <p className="text-[10px] font-bold text-slate-400 stable-meta mt-0.5">Ksh {item.sellingPrice?.toLocaleString()} each</p>
               </div>
               <button onClick={() => removeFromCart(item.id)} className="w-8 h-8 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white flex items-center justify-center flex-shrink-0">
                 <MaterialIcon name="close" style={{ fontSize: '16px' }} />
               </button>
             </div>
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-1 bg-slate-50 rounded-xl p-1">
+            <div className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
+              <div className="flex items-center gap-1 bg-slate-50 rounded-xl p-1 stable-actions">
                 <button onClick={() => updateQuantity(item.id, -1)} className="w-8 h-8 rounded-lg bg-white text-slate-600 border border-slate-100 flex items-center justify-center">
                   <MaterialIcon name="remove" style={{ fontSize: '16px' }} />
                 </button>
@@ -154,7 +175,7 @@ function SalePanel({
                   <MaterialIcon name="add" style={{ fontSize: '16px' }} />
                 </button>
               </div>
-              <p className="text-sm font-black text-slate-900 whitespace-nowrap">
+              <p className="text-right text-sm font-black text-slate-900 whitespace-nowrap stable-actions">
                 Ksh {((Number(item.sellingPrice) || 0) * (Number(item.cartQuantity) || 0)).toLocaleString()}
               </p>
             </div>

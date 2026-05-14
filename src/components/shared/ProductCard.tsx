@@ -1,7 +1,13 @@
 import React from 'react';
+import { Package, Plus } from 'lucide-react';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
-  <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>
+  (() => {
+    const Icon = name === 'add' ? Plus : Package;
+    const { fontSize, ...rest } = style || {};
+    const size = typeof fontSize === 'number' ? fontSize : Number.parseInt(String(fontSize || 20), 10);
+    return <Icon className={className} style={rest} size={Number.isFinite(size) ? size : 20} strokeWidth={2.4} />;
+  })()
 );
 
 const PAYMENT_ICONS: Record<string, string> = {
@@ -67,7 +73,7 @@ export function ProductCard({ product, onAdd, recentlyAdded }: ProductCardProps)
       </div>
 
       {/* Name */}
-      <h3 className="text-[13px] font-bold text-slate-900 leading-tight mb-0.5 line-clamp-2 flex-1">
+      <h3 className="stable-title-2 text-[13px] font-bold text-slate-900 leading-tight mb-0.5 flex-1">
         {product.name}
       </h3>
 

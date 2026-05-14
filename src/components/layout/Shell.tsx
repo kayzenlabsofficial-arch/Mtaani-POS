@@ -1,7 +1,54 @@
 import React, { useState } from 'react';
+import {
+  BarChart3,
+  Check,
+  ChevronDown,
+  CircleDollarSign,
+  LayoutDashboard,
+  LogOut,
+  MoreHorizontal,
+  Package,
+  Plus,
+  ReceiptText,
+  RefreshCw,
+  RotateCcw,
+  Settings,
+  ShoppingBag,
+  ShoppingCart,
+  Store,
+  Truck,
+  Users,
+} from 'lucide-react';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: any }) => (
-  <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>
+  (() => {
+    const icons: Record<string, React.ElementType> = {
+      storefront: Store,
+      store: Store,
+      expand_more: ChevronDown,
+      check: Check,
+      sync: RefreshCw,
+      dashboard: LayoutDashboard,
+      point_of_sale: ShoppingCart,
+      inventory_2: Package,
+      more_horiz: MoreHorizontal,
+      group: Users,
+      payments: CircleDollarSign,
+      keyboard_return: RotateCcw,
+      receipt_long: ReceiptText,
+      local_shipping: Truck,
+      shopping_bag: ShoppingBag,
+      analytics: BarChart3,
+      settings: Settings,
+      logout: LogOut,
+      add_shopping_cart: ShoppingCart,
+      add: Plus,
+    };
+    const Icon = icons[name] || MoreHorizontal;
+    const { fontSize, fontVariationSettings, ...rest } = style || {};
+    const size = typeof fontSize === 'number' ? fontSize : Number.parseInt(String(fontSize || 20), 10);
+    return <Icon className={className} style={rest} size={Number.isFinite(size) ? size : 20} strokeWidth={2.4} />;
+  })()
 );
 
 export function TopHeader({ 
@@ -19,23 +66,17 @@ export function TopHeader({
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
 
   return (
-    <header className="w-full top-0 sticky z-50 bg-white border-b border-slate-200">
-       <div className="flex items-center justify-between px-4 md:px-8 h-16 w-full">
+    <header className="w-full top-0 sticky z-50 bg-white/95 backdrop-blur-xl border-b border-slate-200/80">
+       <div className="flex items-center justify-between gap-3 px-3 sm:px-4 md:px-6 h-14 md:h-16 w-full">
           
           {/* Left: Identity */}
           <div className="flex items-center gap-3 min-w-0">
-             <button
-               onClick={onOpenProfile}
-               className="w-10 h-10 rounded-xl overflow-hidden border-2 border-slate-100 hover:border-primary/40 transition-all flex-shrink-0 shadow-sm"
-             >
-               <img 
-                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuBanTVrDxgpc9k9_6zty19qXOLkfASYjRkPwQ_ImJ3zEw6tzpyfs7xlMCV1IitVdQ7l1jfwp4DlnS9ATDcQKEJWJ-uq0CWDgk5KkKbpEGNmzP4ld_l4eoeTKGNw70t2T7rIu_M2yTlJNVPd6UXlmcDvkMwlA4K3bf1CDnO8dRt5b1BYZ8b1jbVZ6N4yJQFXev6xV13LNa3awM1O2xkB3Hs7xcWlwHWy2RMXWZ-YWif-Jp2HhuiJRJxSswmn-zRE8ugFa13qjDYidMo" 
-                 className="w-full h-full object-cover" 
-               />
-             </button>
+             <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-slate-950 text-white border border-slate-800 flex items-center justify-center flex-shrink-0 shadow-sm">
+               <MaterialIcon name="storefront" style={{ fontSize: '20px' }} />
+             </div>
              
              <div className="flex flex-col min-w-0">
-               <span className="text-[11px] font-black text-slate-900 uppercase tracking-widest leading-none truncate">
+               <span className="text-[11px] md:text-xs font-black text-slate-900 uppercase tracking-widest leading-none truncate">
                  {activeBusiness?.name || 'Mtaani POS'}
                </span>
                
@@ -43,7 +84,7 @@ export function TopHeader({
                  <div className="relative">
                    <button
                      onClick={() => setBranchDropdownOpen(v => !v)}
-                     className="flex items-center gap-1 mt-0.5 group"
+                     className="flex items-center gap-1 mt-0.5 group max-w-full"
                    >
                      <span className="text-[10px] font-bold text-primary truncate">
                        {activeBranch?.name || 'Select Branch'}
@@ -65,10 +106,10 @@ export function TopHeader({
                              <button
                                key={b.id}
                                onClick={() => { onBranchChange(b.id); setBranchDropdownOpen(false); }}
-                               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${activeBranch?.id === b.id ? 'bg-primary text-white' : 'hover:bg-slate-50 text-slate-800'}`}
+                               className={`w-full grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${activeBranch?.id === b.id ? 'bg-primary text-white' : 'hover:bg-slate-50 text-slate-800'}`}
                              >
                                <MaterialIcon name="store" style={{ fontSize: '16px' }} />
-                               <span className="text-[11px] font-bold">{b.name}</span>
+                               <span className="text-[11px] font-bold stable-title">{b.name}</span>
                                {activeBranch?.id === b.id && <MaterialIcon name="check" className="ml-auto" style={{ fontSize: '14px' }} />}
                              </button>
                            ))}
@@ -86,7 +127,7 @@ export function TopHeader({
           </div>
 
           {/* Right: Status & Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
              {/* Online/Offline pill */}
              <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-widest transition-colors ${isOnline ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
                 <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
@@ -96,22 +137,22 @@ export function TopHeader({
              {/* Sync button */}
              <button 
                onClick={onSync}
-               className={`p-2.5 rounded-xl border border-slate-200 text-slate-600 hover:border-primary/30 hover:text-primary hover:bg-primary/5 transition-all active:scale-95 ${isSyncing ? 'animate-pulse text-primary border-primary/30 bg-primary/5' : ''}`}
+               className={`w-10 h-10 rounded-xl border border-slate-200 text-slate-600 hover:border-primary/30 hover:text-primary hover:bg-primary/5 transition-all active:scale-95 flex items-center justify-center ${isSyncing ? 'animate-pulse text-primary border-primary/30 bg-primary/5' : ''}`}
                title="Sync data"
              >
                 <MaterialIcon name="sync" className={isSyncing ? 'animate-spin' : ''} style={{ fontSize: '20px' }} />
              </button>
 
              {/* User chip */}
-             <div className="hidden md:flex items-center gap-2 pl-3 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-full">
-               <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-white text-[10px] font-black">
+             <button onClick={onOpenProfile} className="hidden md:flex items-center gap-2 pl-2 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl hover:bg-white hover:border-primary/30 transition-all text-left">
+               <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center text-white text-[10px] font-black flex-shrink-0">
                  {currentUser?.name?.charAt(0)?.toUpperCase()}
                </div>
-               <div className="flex flex-col leading-none">
-                 <span className="text-[11px] font-bold text-slate-800">{currentUser?.name}</span>
+               <div className="flex flex-col leading-none min-w-0">
+                 <span className="text-[11px] font-bold text-slate-800 stable-title max-w-32">{currentUser?.name}</span>
                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{currentUser?.role}</span>
                </div>
-             </div>
+             </button>
           </div>
        </div>
     </header>

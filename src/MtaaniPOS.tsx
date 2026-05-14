@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ShoppingCart } from 'lucide-react';
 import { useLiveQuery } from './clouddb';
 import { db } from './db';
 import { useMtaaniPOS } from './hooks/useMtaaniPOS';
@@ -33,7 +34,7 @@ import ProfileModal from './components/modals/ProfileModal';
 import ExpenseModal from './components/modals/ExpenseModal';
 
 const MaterialIcon = ({ name, className = "", style }: { name: string, className?: string, style?: React.CSSProperties }) => (
-  <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>
+  <ShoppingCart className={className} style={style} size={28} strokeWidth={2.4} aria-label={name} />
 );
 
 export default function MtaaniPOS() {
@@ -179,7 +180,7 @@ export default function MtaaniPOS() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden font-hanken">
+    <div className="flex h-[100dvh] bg-slate-50 overflow-hidden font-hanken">
       <Sidebar 
         activeTab={activeTab} 
         onTabChange={navigateToTab} 
@@ -203,8 +204,8 @@ export default function MtaaniPOS() {
           currentUser={currentUser}
         />
 
-        <main className="flex-1 overflow-y-auto main-scroll relative p-4 md:p-8 lg:p-10">
-          <div className="max-w-[1440px] mx-auto">
+        <main className="flex-1 overflow-y-auto main-scroll app-safe-scroll relative p-3 sm:p-4 md:p-6 lg:p-8">
+          <div className="max-w-[1440px] mx-auto min-h-full">
             {activeTab === 'REGISTER' && <RegisterTab toggleCart={toggleCart} handleCheckout={handleCheckout} />}
             {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={navigateToTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}
             {activeTab === 'INVENTORY' && <InventoryTab />}

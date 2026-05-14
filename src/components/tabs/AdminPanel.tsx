@@ -34,6 +34,27 @@ const COLOR_OPTIONS = [
   { name: 'slate', bg: 'bg-slate-600', text: 'text-slate-700', light: 'bg-slate-50' },
 ];
 
+const ADMIN_TABS = [
+  { id: 'USERS', label: 'Staff', icon: Users },
+  { id: 'BRANCHES', label: 'Branches', icon: Building2 },
+  { id: 'CATEGORIES', label: 'Categories', icon: TagIcon },
+  { id: 'APPROVALS', label: 'Approvals', icon: ShieldCheck },
+  { id: 'FINANCE', label: 'Finance', icon: DollarSign },
+  { id: 'SETTINGS', label: 'Settings', icon: SettingsIcon },
+] as const;
+
+function AdminSectionHeader({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <div className="min-w-0">
+        <h3 className="stable-title text-base font-black text-slate-900">{title}</h3>
+        <p className="stable-title text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">{description}</p>
+      </div>
+      {action && <div className="flex-shrink-0">{action}</div>}
+    </div>
+  );
+}
+
 export default function AdminPanel({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
   const [activeAdminTab, setActiveAdminTab] = useState<'SETTINGS' | 'APPROVALS' | 'USERS' | 'CATEGORIES' | 'BRANCHES' | 'FINANCE'>(() => {
     const requested = sessionStorage.getItem('mtaani_admin_tab');
@@ -309,37 +330,30 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   };
 
   return (
-    <div className="pb-24 animate-in fade-in w-full">
+    <div className="pb-24 animate-in fade-in w-full max-w-6xl mx-auto">
       
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
         <div>
           <h2 className="text-xl font-black text-slate-900">Admin Panel</h2>
-          <div className="flex items-center gap-3 mt-1">
-            <span className="text-[10px] font-bold text-slate-500">{deviceSyncRows.length} Terminals</span>
+          <div className="flex min-w-0 flex-wrap items-center gap-2 mt-1">
+            <span className="text-[10px] font-bold text-slate-500">{deviceSyncRows.length} terminals</span>
             <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-emerald-600">Healthy</span>
+            <span className="text-[10px] font-bold text-emerald-600">{deviceSyncError ? 'Needs attention' : 'Healthy'}</span>
             <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-indigo-600">High Sync Velocity</span>
+            <span className="text-[10px] font-bold text-indigo-600">Live controls</span>
           </div>
         </div>
       </div>
 
       {/* Admin Nav Tabs */}
-      <div className="mb-8">
-        <div ref={scrollRef} className="bg-white/50 backdrop-blur-md p-2 rounded-[2rem] border-2 border-slate-100 flex overflow-x-auto no-scrollbar gap-1.5">
-            {[
-              { id: 'USERS', label: 'Staff', icon: Users },
-              { id: 'BRANCHES', label: 'Branches', icon: Building2 },
-              { id: 'CATEGORIES', label: 'Categories', icon: TagIcon },
-              { id: 'APPROVALS', label: 'Approvals', icon: ShieldCheck },
-              { id: 'FINANCE', label: 'Finance', icon: DollarSign },
-              { id: 'SETTINGS', label: 'Settings', icon: SettingsIcon }
-            ].map(tab => (
+      <div className="mb-6">
+        <div ref={scrollRef} className="flex gap-2 overflow-x-auto no-scrollbar rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+            {ADMIN_TABS.map(tab => (
               <button 
                 key={tab.id}
                 onClick={() => setActiveAdminTab(tab.id as any)}
-                className={`flex-1 flex items-center justify-center gap-2.5 py-3.5 px-5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all press whitespace-nowrap ${activeAdminTab === tab.id ? 'bg-slate-900 text-white shadow-xl' : 'text-slate-400 hover:text-slate-600 hover:bg-white'}`}
+                className={`flex-shrink-0 sm:flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all press whitespace-nowrap ${activeAdminTab === tab.id ? 'bg-slate-950 text-white shadow-md' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'}`}
               >
                 <tab.icon size={16} /> {tab.label}
               </button>
@@ -347,7 +361,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
         </div>
       </div>
 
-      <div className="px-4 space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
          
          {activeAdminTab === 'SETTINGS' && <SettingsTab updateServiceWorker={updateServiceWorker} needRefresh={needRefresh} />}
          {activeAdminTab === 'APPROVALS' && <AdminApprovals />}
@@ -355,21 +369,21 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
          
          {activeAdminTab === 'USERS' && (
            <div className="space-y-6">
-              <div className="flex justify-between items-center bg-white p-6 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
-                 <div>
-                    <h3 className="text-lg font-bold text-slate-900">Staff Management</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Manage staff accounts</p>
-                 </div>
-                 <button 
-                   onClick={() => setIsAddingUser(true)}
-                   className="grad-blue text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 px-6 py-4 rounded-2xl transition-all shadow-blue press"
-                 >
-                    <Plus size={18} /> Add Staff Member
-                 </button>
-              </div>
+              <AdminSectionHeader
+                title="Staff Management"
+                description="Manage staff accounts"
+                action={(
+                  <button
+                    onClick={() => setIsAddingUser(true)}
+                    className="bg-slate-950 text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 px-4 py-3 rounded-xl transition-all shadow-sm press whitespace-nowrap"
+                  >
+                    <Plus size={16} /> Add Staff
+                  </button>
+                )}
+              />
 
               {isAddingUser && (
-                 <div className="bg-slate-50 p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-inner animate-in zoom-in-95">
+                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm animate-in zoom-in-95">
                     <h3 className="text-base font-bold text-slate-900 mb-6 flex items-center gap-2"> <Users className="text-blue-600" /> Add Staff Member</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                        <div>
@@ -415,44 +429,44 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                  </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm divide-y divide-slate-100">
                  {users?.map(user => (
-                    <div key={user.id} className="group bg-white p-6 rounded-[2.5rem] border-2 border-slate-100 shadow-sm flex flex-col gap-6 hover:border-blue-300 hover:shadow-xl transition-all relative overflow-hidden">
-                       <div className="flex justify-between items-start relative z-10">
-                          <div className={`w-14 h-14 rounded-[1.25rem] flex items-center justify-center font-black text-lg shadow-sm group-hover:scale-110 transition-transform ${user.role === 'ADMIN' ? 'bg-indigo-50 text-indigo-600' : 'bg-blue-50 text-blue-600'}`}>
+                    <div key={user.id} className="group relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 sm:px-5 hover:bg-blue-50/30 transition-all overflow-hidden">
+                       <div className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shadow-sm ${user.role === 'ADMIN' ? 'bg-indigo-50 text-indigo-600' : 'bg-blue-50 text-blue-600'}`}>
                              {user.name.charAt(0).toUpperCase()}
                           </div>
-                          <div className="flex items-center gap-1">
-                             <button onClick={() => { setEditingUserId(editingUserId === user.id ? null : user.id); setEditingPassword(''); }} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-all">
-                                <KeyRound size={18} />
-                             </button>
-                             <button onClick={() => handleDeleteUser(user.id)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all">
-                                <Trash2 size={18} />
-                             </button>
+                          <div className="stable-row-copy">
+                             <h4 className="stable-title text-sm font-black text-slate-900 leading-tight">{user.name}</h4>
+                             <div className="flex min-w-0 items-center gap-2 mt-1 overflow-hidden">
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest flex-shrink-0 ${user.role === 'ADMIN' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}`}>
+                                   {user.role}
+                                </span>
+                                {user.branchId && (
+                                   <span className="stable-chip text-[9px] font-black text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full uppercase border border-slate-100">
+                                      {branches?.find(b => b.id === user.branchId)?.name || 'Local'}
+                                   </span>
+                                )}
+                             </div>
                           </div>
                        </div>
 
-                       <div className="relative z-10">
-                          <h4 className="text-base font-black text-slate-900 truncate leading-tight">{user.name}</h4>
-                          <div className="flex flex-wrap items-center gap-2 mt-2">
-                             <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest ${user.role === 'ADMIN' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}`}>
-                                {user.role}
-                             </span>
-                             {user.branchId && (
-                                <span className="text-[9px] font-black text-slate-400 bg-slate-50 px-2.5 py-1 rounded-full flex items-center gap-1.5 uppercase border border-slate-100">
-                                   <Building2 size={10} /> {branches?.find(b => b.id === user.branchId)?.name || 'Local'}
-                                </span>
-                             )}
-                          </div>
+                       <div className="stable-actions flex items-center gap-1">
+                          <button onClick={() => { setEditingUserId(editingUserId === user.id ? null : user.id); setEditingPassword(''); }} className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-all">
+                             <KeyRound size={17} />
+                          </button>
+                          <button onClick={() => handleDeleteUser(user.id)} className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all">
+                             <Trash2 size={17} />
+                          </button>
                        </div>
 
                        {editingUserId === user.id && (
-                          <div className="absolute inset-0 z-20 bg-white/95 backdrop-blur-sm p-6 flex flex-col justify-center animate-in fade-in duration-300">
+                          <div className="absolute inset-0 z-20 bg-white/95 backdrop-blur-sm p-4 flex flex-col justify-center animate-in fade-in duration-300">
                              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Reset Access Key</h4>
                              <input 
                                type="password" 
                                autoFocus
-                               className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none mb-4" 
+                               className="w-full bg-slate-50 border border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black text-slate-900 outline-none mb-4" 
                                placeholder="Min 4 characters"
                                value={editingPassword}
                                onChange={e => setEditingPassword(e.target.value)}
@@ -471,23 +485,21 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
          {activeAdminTab === 'CATEGORIES' && (
            <div className="space-y-6">
-              <div className="flex justify-between items-center bg-white p-6 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
-                 <div>
-                    <h3 className="text-lg font-bold text-slate-900">Product Categories</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Organize your products</p>
-                 </div>
-                 {!isAddingCategory && (
-                    <button 
-                      onClick={() => setIsAddingCategory(true)}
-                      className="grad-indigo text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 px-6 py-4 rounded-2xl transition-all shadow-indigo press"
-                    >
-                       <Plus size={18} /> New Category
-                    </button>
-                 )}
-              </div>
+              <AdminSectionHeader
+                title="Product Categories"
+                description="Organize products into fast checkout groups"
+                action={!isAddingCategory ? (
+                  <button
+                    onClick={() => setIsAddingCategory(true)}
+                    className="bg-slate-950 text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 px-4 py-3 rounded-xl transition-all shadow-sm press whitespace-nowrap"
+                  >
+                    <Plus size={16} /> New Category
+                  </button>
+                ) : undefined}
+              />
 
               {isAddingCategory ? (
-                <div className="bg-slate-50 p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-inner animate-in zoom-in-95">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm animate-in zoom-in-95">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                     <div className="space-y-8">
                       <div>
@@ -544,24 +556,27 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm divide-y divide-slate-100">
                   {categories?.map(cat => {
                     const colorOpt = COLOR_OPTIONS.find(c => c.name === cat.color) || COLOR_OPTIONS[6];
                     const IconComp = ICON_OPTIONS.find(i => i.name === cat.iconName)?.icon || Package;
 
                     return (
-                      <div key={cat.id} className="group bg-white p-5 rounded-[2.5rem] border-2 border-slate-100 shadow-sm flex items-center justify-between hover:border-indigo-300 hover:shadow-xl hover:-translate-y-1 transition-all">
-                        <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-2xl ${colorOpt.light} flex items-center justify-center ${colorOpt.text} border border-slate-50 shadow-sm group-hover:scale-110 transition-transform`}>
-                            <IconComp size={24} />
+                      <div key={cat.id} className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 sm:px-5 hover:bg-indigo-50/30 transition-all">
+                        <div className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl ${colorOpt.light} flex items-center justify-center ${colorOpt.text} border border-slate-100 shadow-sm`}>
+                            <IconComp size={20} />
                           </div>
-                          <h4 className="text-sm font-black text-slate-900">{cat.name}</h4>
+                          <div className="stable-row-copy">
+                            <h4 className="stable-title text-sm font-black text-slate-900">{cat.name}</h4>
+                            <p className="stable-title text-[9px] font-black uppercase tracking-widest text-slate-400 mt-0.5">{cat.iconName} / {cat.color}</p>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                          <button onClick={() => startEditCategory(cat)} className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all">
+                        <div className="stable-actions flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-all">
+                          <button onClick={() => startEditCategory(cat)} className="w-9 h-9 flex items-center justify-center rounded-xl text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all">
                             <Palette size={18} />
                           </button>
-                          <button onClick={() => handleDeleteCategory(cat.id, cat.name)} className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all">
+                          <button onClick={() => handleDeleteCategory(cat.id, cat.name)} className="w-9 h-9 flex items-center justify-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all">
                             <Trash2 size={18} />
                           </button>
                         </div>
@@ -575,21 +590,21 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
           
           {activeAdminTab === 'FINANCE' && (
             <div className="space-y-6">
-               <div className="flex justify-between items-center bg-white p-6 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
-                  <div>
-                     <h3 className="text-lg font-bold text-slate-900">Financial Accounts</h3>
-                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Bank and Cash accounts</p>
-                  </div>
-                  <button 
-                    onClick={() => setIsAddingFinAccount(true)}
-                    className="grad-emerald text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 px-6 py-4 rounded-2xl transition-all shadow-emerald press"
-                  >
-                     <Plus size={18} /> New Account
-                  </button>
-               </div>
+               <AdminSectionHeader
+                 title="Financial Accounts"
+                 description="Bank, M-Pesa, and cash accounts"
+                 action={(
+                   <button
+                     onClick={() => setIsAddingFinAccount(true)}
+                     className="bg-slate-950 text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 px-4 py-3 rounded-xl transition-all shadow-sm press whitespace-nowrap"
+                   >
+                     <Plus size={16} /> New Account
+                   </button>
+                 )}
+               />
 
                {isAddingFinAccount && (
-                 <div className="bg-slate-50 p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-inner animate-in zoom-in-95">
+                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm animate-in zoom-in-95">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                        <div className="lg:col-span-2">
                           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Account Name</label>
@@ -621,34 +636,34 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                  </div>
                )}
 
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm divide-y divide-slate-100">
                   {financialAccounts?.map(acc => (
-                    <div key={acc.id} className="group bg-white p-6 rounded-[2.5rem] border-2 border-slate-100 shadow-sm flex flex-col justify-between hover:border-emerald-300 hover:shadow-xl transition-all relative overflow-hidden">
-                       <div className="flex items-start justify-between mb-6 relative z-10">
-                          <div className="flex items-center gap-4">
-                             <div className="w-14 h-14 rounded-[1.25rem] bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
-                                {acc.type === 'BANK' ? <Building2 size={28} /> : acc.type === 'MPESA' ? <Smartphone size={28} /> : <DollarSign size={28} />}
+                    <div key={acc.id} className="group bg-white px-4 py-4 sm:px-5 hover:bg-emerald-50/20 transition-all relative overflow-hidden">
+                       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 mb-4 relative z-10">
+                          <div className="grid min-w-0 grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-3">
+                             <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shadow-sm">
+                                {acc.type === 'BANK' ? <Building2 size={22} /> : acc.type === 'MPESA' ? <Smartphone size={22} /> : <DollarSign size={22} />}
                              </div>
-                             <div>
-                                <h4 className="text-base font-black text-slate-900 leading-tight">{acc.name}</h4>
-                                <div className="flex items-center gap-2 mt-2">
-                                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{acc.type}</span>
+                             <div className="stable-row-copy">
+                                <h4 className="stable-title text-sm font-black text-slate-900 leading-tight">{acc.name}</h4>
+                                <div className="flex min-w-0 items-center gap-2 mt-1 overflow-hidden">
+                                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex-shrink-0">{acc.type}</span>
                                    <span className="w-1 h-1 rounded-full bg-slate-200" />
                                    {acc.branchId ? (
-                                      <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-1 uppercase">
-                                         <Building2 size={10} /> {branches?.find(b => b.id === acc.branchId)?.name || 'Local'}
+                                      <span className="stable-chip text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase">
+                                         {branches?.find(b => b.id === acc.branchId)?.name || 'Local'}
                                       </span>
                                    ) : (
-                                      <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full flex items-center gap-1 uppercase">
-                                         <Globe size={10} /> Universal
+                                      <span className="stable-chip text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase">
+                                         Universal
                                       </span>
                                    )}
                                 </div>
                              </div>
                           </div>
-                          <div className="text-right">
+                          <div className="text-right stable-actions">
                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Liquid Balance</p>
-                             <h3 className="text-xl font-black text-slate-900 tabular-nums">Ksh {(acc.balance || 0).toLocaleString()}</h3>
+                             <h3 className="text-base sm:text-lg font-black text-slate-900 tabular-nums whitespace-nowrap">Ksh {(acc.balance || 0).toLocaleString()}</h3>
                           </div>
                        </div>
                        
@@ -674,8 +689,8 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                              <button onClick={() => setDepositState({ accountId: null, amount: '', mode: 'DEPOSIT' })} className="w-10 h-10 flex items-center justify-center rounded-xl bg-white text-slate-400 hover:text-slate-600 border-2 border-slate-100"><X size={18}/></button>
                           </div>
                        ) : (
-                          <div className="flex items-center justify-between gap-3 mt-4 pt-6 border-t border-slate-50">
-                             <div className="flex gap-2">
+                          <div className="flex flex-wrap items-center justify-between gap-3 mt-3 pt-4 border-t border-slate-100">
+                             <div className="flex flex-wrap gap-2">
                                 <button onClick={() => setDepositState({ accountId: acc.id, amount: '', mode: 'DEPOSIT' })} className="px-4 py-2.5 bg-slate-50 hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2 border-2 border-transparent hover:border-emerald-200">
                                    <Plus size={14} /> Deposit
                                 </button>
@@ -691,7 +706,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                     </div>
                   ))}
                   {financialAccounts?.length === 0 && (
-                    <div className="col-span-full py-20 bg-slate-50 border-2 border-dashed border-slate-100 rounded-[2.5rem] flex flex-col items-center justify-center text-slate-300">
+                    <div className="py-16 bg-slate-50 border-2 border-dashed border-slate-100 flex flex-col items-center justify-center text-slate-300">
                        <Landmark size={48} className="mb-4 opacity-20" />
                        <p className="text-xs font-black uppercase tracking-widest opacity-40">No Financial Accounts Defined</p>
                     </div>

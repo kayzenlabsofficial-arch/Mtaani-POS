@@ -170,27 +170,29 @@ export default function BranchManagementTab() {
         {(branches || []).length > 0 ? (
           <div className="divide-y divide-slate-100">
             {(branches || []).map(branch => (
-              <div key={branch.id} className={`px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-indigo-50/40 transition-colors group ${branch.isActive ? '' : 'opacity-70'}`}>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${branch.isActive ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-                  <Building2 size={18} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-sm font-black text-slate-900 truncate leading-tight">{branch.name}</h4>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><MapPin size={11} className="text-slate-300" /> {branch.location}</span>
-                    {branch.tillNumber && <span className="text-[10px] font-bold text-slate-300 uppercase">Till {branch.tillNumber}</span>}
+              <div key={branch.id} className={`px-3 sm:px-5 py-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 hover:bg-indigo-50/40 transition-colors group ${branch.isActive ? '' : 'opacity-70'}`}>
+                <div className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${branch.isActive ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                    <Building2 size={18} />
+                  </div>
+                  <div className="stable-row-copy">
+                    <h4 className="text-sm font-black text-slate-900 stable-title leading-tight">{branch.name}</h4>
+                    <div className="flex items-center gap-2 mt-1 overflow-hidden">
+                      <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 stable-meta"><MapPin size={11} className="text-slate-300" /> {branch.location}</span>
+                      {branch.tillNumber && <span className="text-[10px] font-bold text-slate-300 uppercase flex-shrink-0">Till {branch.tillNumber}</span>}
+                    </div>
                   </div>
                 </div>
-                {branch.isActive ? (
-                  <span className="flex items-center gap-1 text-[9px] font-black bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-tighter shrink-0">
-                    <CheckCircle2 size={10} /> Operational
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-[9px] font-black bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full uppercase tracking-tighter shrink-0">
-                    <XCircle size={10} /> Suspended
-                  </span>
-                )}
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="stable-actions flex items-center gap-1.5">
+                  {branch.isActive ? (
+                    <span className="hidden sm:flex items-center gap-1 text-[9px] font-black bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-tighter">
+                      <CheckCircle2 size={10} /> Operational
+                    </span>
+                  ) : (
+                    <span className="hidden sm:flex items-center gap-1 text-[9px] font-black bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full uppercase tracking-tighter">
+                      <XCircle size={10} /> Suspended
+                    </span>
+                  )}
                   <button onClick={() => openEdit(branch)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-50 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all">
                     <Pencil size={15} />
                   </button>
