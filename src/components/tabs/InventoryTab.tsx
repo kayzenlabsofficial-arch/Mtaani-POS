@@ -221,7 +221,7 @@ export default function InventoryTab() {
                 {/* Barcode */}
                 <div className="w-auto md:w-40">
                   <span className="font-mono text-[10px] text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg">
-                    {product.barcode || '—'}
+                    {product.barcode || '---'}
                   </span>
                 </div>
 
@@ -302,7 +302,7 @@ export default function InventoryTab() {
                 { label: 'Cost Price', value: selectedProduct.costPrice ? `Ksh ${selectedProduct.costPrice.toLocaleString()}` : '—' },
                 { label: 'Stock Qty', value: `${selectedProduct.stockQuantity || 0} ${selectedProduct.unit || 'pcs'}` },
                 { label: 'Reorder Point', value: selectedProduct.reorderPoint || 5 },
-                { label: 'Barcode', value: selectedProduct.barcode || '—' },
+                { label: 'Barcode', value: selectedProduct.barcode || '---' },
               ].map(row => (
                 <div key={row.label} className="flex justify-between items-center py-3 border-b border-slate-50">
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{row.label}</span>

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
