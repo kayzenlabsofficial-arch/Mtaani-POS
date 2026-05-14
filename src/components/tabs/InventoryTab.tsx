@@ -164,16 +164,16 @@ export default function InventoryTab() {
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden flex-1 flex flex-col min-h-0">
 
         {/* Table header */}
-        <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 bg-slate-50 border-b border-slate-100 flex-shrink-0">
-          <button className="col-span-5 flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left hover:text-slate-700 transition-colors" onClick={() => toggleSort('name')}>
+        <div className="hidden md:flex items-center gap-4 px-6 py-3 bg-slate-50 border-b border-slate-100 flex-shrink-0">
+          <button className="flex-[1.6] min-w-0 flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left hover:text-slate-700 transition-colors" onClick={() => toggleSort('name')}>
             Product <SortIcon col="name" />
           </button>
-          <div className="col-span-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Barcode</div>
-          <div className="col-span-1 text-[10px] font-black text-slate-400 uppercase tracking-widest">Unit</div>
-          <button className="col-span-2 flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-700 transition-colors" onClick={() => toggleSort('stock')}>
+          <div className="w-40 text-[10px] font-black text-slate-400 uppercase tracking-widest">Barcode</div>
+          <div className="w-20 text-[10px] font-black text-slate-400 uppercase tracking-widest">Unit</div>
+          <button className="w-32 flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-700 transition-colors" onClick={() => toggleSort('stock')}>
             Stock <SortIcon col="stock" />
           </button>
-          <button className="col-span-2 flex items-center gap-1 justify-end text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-700 transition-colors" onClick={() => toggleSort('price')}>
+          <button className="w-32 flex items-center gap-1 justify-end text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-700 transition-colors" onClick={() => toggleSort('price')}>
             Price <SortIcon col="price" />
           </button>
         </div>
@@ -195,20 +195,22 @@ export default function InventoryTab() {
             const catColor = CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length];
 
             return (
-              <div
+              <button
+                type="button"
                 key={product.id}
                 onClick={() => setSelectedProduct(product)}
-                className="grid grid-cols-1 md:grid-cols-12 gap-y-2 md:gap-4 items-center px-4 md:px-6 py-3.5 hover:bg-slate-50 transition-colors cursor-pointer group"
+                className="w-full text-left flex items-center gap-2 sm:gap-4 flex-wrap md:flex-nowrap px-3 sm:px-4 md:px-6 py-2.5 hover:bg-slate-50 transition-colors cursor-pointer group"
               >
                 {/* Product info */}
-                <div className="md:col-span-5 flex items-center gap-3">
+                <div className="flex-[1.6] min-w-[min(100%,14rem)] flex items-center gap-3">
                   <div className={`w-10 h-10 ${colorFor(product.name)} rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm opacity-90`}>
                     <span className="text-white text-xs font-black">{product.name.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase()}</span>
                   </div>
                   <div className="min-w-0">
                     <p className="text-[13px] font-bold text-slate-900 truncate group-hover:text-primary transition-colors">{product.name}</p>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">{product.category}</span>
+                      <span className={`w-1.5 h-1.5 rounded-full ${catColor}`} />
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide truncate">{product.category || 'General'}</span>
                       {product.isTaxable && (
                         <span className="text-[8px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full">VAT</span>
                       )}
@@ -217,19 +219,19 @@ export default function InventoryTab() {
                 </div>
 
                 {/* Barcode */}
-                <div className="md:col-span-2">
+                <div className="w-auto md:w-40">
                   <span className="font-mono text-[10px] text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg">
                     {product.barcode || '—'}
                   </span>
                 </div>
 
                 {/* Unit */}
-                <div className="md:col-span-1">
+                <div className="w-auto md:w-20">
                   <span className="text-[10px] font-bold text-slate-500 uppercase">{product.unit || 'pcs'}</span>
                 </div>
 
                 {/* Stock */}
-                <div className="md:col-span-2 flex items-center gap-2">
+                <div className="w-auto md:w-32 flex items-center gap-2">
                   <span className={`text-[13px] font-black tabular-nums ${isOut ? 'text-rose-600' : isLow ? 'text-amber-600' : 'text-slate-900'}`}>
                     {stock}
                   </span>
@@ -242,13 +244,13 @@ export default function InventoryTab() {
                 </div>
 
                 {/* Price */}
-                <div className="md:col-span-2 text-right">
+                <div className="w-auto md:w-32 text-left md:text-right ml-auto">
                   <p className="text-[13px] font-black text-slate-900 tabular-nums">Ksh {product.sellingPrice?.toLocaleString()}</p>
                   {product.costPrice && (
                     <p className="text-[9px] font-medium text-slate-400">Cost: Ksh {product.costPrice.toLocaleString()}</p>
                   )}
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>

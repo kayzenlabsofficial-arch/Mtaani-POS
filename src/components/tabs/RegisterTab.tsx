@@ -21,108 +21,73 @@ function colorFor(str: string) {
 }
 
 interface ProductTileProps {
+  key?: React.Key;
   product: any;
   onAdd: (p: any) => void;
   recentlyAdded: boolean;
-  viewMode: 'grid' | 'list';
 }
 
-function ProductTile({ product, onAdd, recentlyAdded, viewMode }: ProductTileProps) {
+function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
   const stock = product.stockQuantity || 0;
   const isOut = stock <= 0;
   const isLow = !isOut && stock <= (product.reorderPoint || 5);
   const initials = product.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
   const color = colorFor(product.name);
 
-  if (viewMode === 'list') {
-    return (
-      <div
-        onClick={() => !isOut && onAdd(product)}
-        className={`flex items-center gap-4 bg-white border rounded-xl px-4 py-3 transition-all ${
-          isOut ? 'opacity-55 cursor-not-allowed border-slate-100' : 'cursor-pointer border-slate-100 hover:border-primary/30 hover:shadow-sm active:scale-[0.99]'
-        } ${recentlyAdded ? 'ring-2 ring-primary/30' : ''}`}
-      >
-        <div className={`w-10 h-10 rounded-xl ${color} flex items-center justify-center flex-shrink-0 text-white text-xs font-black`}>
+  return (
+    <button
+      type="button"
+      onClick={() => !isOut && onAdd(product)}
+      disabled={isOut}
+      className={`w-full text-left bg-white border rounded-2xl px-3 py-2.5 sm:px-4 transition-all group ${
+        isOut ? 'opacity-60 cursor-not-allowed border-slate-100 bg-slate-50/60' : 'cursor-pointer border-slate-100 hover:border-primary/30 hover:bg-blue-50/30 hover:shadow-sm active:scale-[0.995]'
+      } ${recentlyAdded ? 'ring-2 ring-primary/30 border-primary/40' : ''}`}
+    >
+      <div className="flex items-center gap-3">
+        <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl ${color} flex items-center justify-center flex-shrink-0 text-white text-xs font-black shadow-sm`}>
           {initials}
         </div>
+
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-slate-900 truncate">{product.name}</p>
-          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">{product.category}</p>
-        </div>
-        {product.barcode && (
-          <span className="text-[9px] font-mono text-slate-400 hidden md:block">{product.barcode}</span>
-        )}
-        <span className={`text-[9px] font-black px-2 py-1 rounded-full border flex-shrink-0 ${
-          isOut ? 'bg-rose-50 text-rose-600 border-rose-100'
-          : isLow ? 'bg-amber-50 text-amber-700 border-amber-100'
-          : 'bg-emerald-50 text-emerald-700 border-emerald-100'
-        }`}>
-          {isOut ? 'Out of stock' : isLow ? `${stock} left` : `${stock} in stock`}
-        </span>
-        <p className="text-sm font-black text-slate-900 tabular-nums flex-shrink-0">
-          Ksh {product.sellingPrice?.toLocaleString()}
-        </p>
-        {!isOut && (
-          <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0 hover:bg-primary hover:text-white transition-colors">
-            <MaterialIcon name="add" style={{ fontSize: '18px' }} />
+          <div className="flex items-center gap-2 min-w-0">
+            <p className="text-[13px] sm:text-sm font-black text-slate-900 truncate group-hover:text-primary transition-colors">{product.name}</p>
+            {product.isTaxable && (
+              <span className="hidden sm:inline-flex text-[8px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full">VAT</span>
+            )}
           </div>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      onClick={() => !isOut && onAdd(product)}
-      className={`relative flex flex-col bg-white border rounded-2xl p-4 transition-all duration-200 select-none group ${
-        isOut ? 'opacity-55 cursor-not-allowed border-slate-100' : 'cursor-pointer border-slate-100 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 active:scale-[0.98]'
-      } ${recentlyAdded ? 'ring-2 ring-primary/40' : ''}`}
-    >
-      {/* Color avatar block */}
-      <div className={`w-full h-16 ${color} rounded-xl mb-3 flex items-center justify-center flex-shrink-0`}>
-        <span className="text-white text-xl font-black tracking-tight">{initials}</span>
-      </div>
-
-      {/* Tags */}
-      <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-        <span className="text-[9px] font-black text-slate-400 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-full uppercase tracking-widest truncate max-w-full">
-          {product.category || 'General'}
-        </span>
-        {product.isTaxable && (
-          <span className="text-[9px] font-black text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-full">VAT</span>
-        )}
-      </div>
-
-      {/* Name */}
-      <h3 className="text-[13px] font-bold text-slate-900 leading-snug mb-1 line-clamp-2">{product.name}</h3>
-
-      {/* Barcode */}
-      {product.barcode && (
-        <p className="text-[9px] font-mono text-slate-400 mb-1 truncate">{product.barcode}</p>
-      )}
-
-      {/* Price */}
-      <p className="text-base font-black text-primary tabular-nums mt-auto pt-2">
-        Ksh {product.sellingPrice?.toLocaleString()}
-      </p>
-
-      {/* Stock status */}
-      <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-50">
-        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isOut ? 'bg-rose-500' : isLow ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
-        <span className={`text-[9px] font-bold uppercase tracking-wide ${isOut ? 'text-rose-500' : isLow ? 'text-amber-600' : 'text-emerald-600'}`}>
-          {isOut ? 'Out of stock' : isLow ? `${stock} left` : `${stock} in stock`}
-        </span>
-      </div>
-
-      {/* Add button */}
-      {!isOut && (
-        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center shadow-md shadow-primary/30">
-            <MaterialIcon name="add" className="text-white" style={{ fontSize: '16px' }} />
+          <div className="mt-1 flex items-center gap-x-2 gap-y-1 flex-wrap text-[9px] sm:text-[10px] font-bold uppercase tracking-wide text-slate-400">
+            <span className="truncate max-w-[120px] sm:max-w-none">{product.category || 'General'}</span>
+            {product.barcode && <span className="font-mono normal-case tracking-normal text-slate-500">#{product.barcode}</span>}
+            <span>{product.unit || 'pcs'}</span>
           </div>
         </div>
-      )}
-    </div>
+
+        <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+          <div className="hidden sm:flex flex-col items-end">
+            <span className={`text-[9px] font-black px-2 py-1 rounded-full border ${
+              isOut ? 'bg-rose-50 text-rose-600 border-rose-100'
+              : isLow ? 'bg-amber-50 text-amber-700 border-amber-100'
+              : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+            }`}>
+              {isOut ? 'Out' : isLow ? `${stock} left` : `${stock} stock`}
+            </span>
+          </div>
+          <div className="text-right">
+            <p className="text-sm sm:text-base font-black text-slate-900 tabular-nums whitespace-nowrap">
+              Ksh {product.sellingPrice?.toLocaleString()}
+            </p>
+            <p className={`text-[9px] font-black uppercase sm:hidden ${isOut ? 'text-rose-500' : isLow ? 'text-amber-600' : 'text-emerald-600'}`}>
+              {isOut ? 'Out' : `${stock} left`}
+            </p>
+          </div>
+          <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+            isOut ? 'bg-slate-200 text-slate-400' : 'bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white'
+          }`}>
+            <MaterialIcon name={isOut ? 'block' : 'add'} style={{ fontSize: '18px' }} />
+          </div>
+        </div>
+      </div>
+    </button>
   );
 }
 
@@ -131,7 +96,6 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const scrollRef = useHorizontalScroll();
 
   // ✅ Only require activeBusinessId — branch does not filter products
@@ -222,15 +186,6 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
           >
             <MaterialIcon name="barcode_scanner" style={{ fontSize: '20px' }} />
           </button>
-
-          {/* Grid/List toggle */}
-          <div className="flex bg-slate-100 p-1 rounded-xl gap-0.5 flex-shrink-0">
-            {(['grid', 'list'] as const).map(v => (
-              <button key={v} onClick={() => setViewMode(v)} className={`p-2 rounded-lg transition-all ${viewMode === v ? 'bg-white shadow text-primary' : 'text-slate-400 hover:text-slate-600'}`}>
-                <MaterialIcon name={v === 'grid' ? 'grid_view' : 'list'} style={{ fontSize: '18px' }} />
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -279,7 +234,7 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
         </div>
       )}
 
-      {/* Product Grid / List */}
+      {/* Product rows */}
       {activeBusinessId && (
         <div className="flex-1 overflow-y-auto no-scrollbar pb-24">
           {sorted.length === 0 ? (
@@ -295,16 +250,10 @@ export default function RegisterTab({ toggleCart }: { toggleCart?: (val: boolean
                 <button onClick={() => setSearchQuery('')} className="mt-4 px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl">Clear Search</button>
               )}
             </div>
-          ) : viewMode === 'grid' ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
-              {sorted.map(p => (
-                <ProductTile key={p.id} product={p} onAdd={handleAddToCart} recentlyAdded={recentlyAdded.has(p.id)} viewMode="grid" />
-              ))}
-            </div>
           ) : (
             <div className="space-y-2">
               {sorted.map(p => (
-                <ProductTile key={p.id} product={p} onAdd={handleAddToCart} recentlyAdded={recentlyAdded.has(p.id)} viewMode="list" />
+                <ProductTile key={p.id} product={p} onAdd={handleAddToCart} recentlyAdded={recentlyAdded.has(p.id)} />
               ))}
             </div>
           )}
