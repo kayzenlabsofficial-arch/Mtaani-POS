@@ -82,6 +82,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     () => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
     [activeBranchId], []
   );
+  const branchSalesInvoices = useLiveQuery(
+    () => activeBranchId ? db.salesInvoices.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
+    [activeBranchId], []
+  );
   const branchExpenses = useLiveQuery(
     () => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
     [activeBranchId], []
@@ -116,9 +120,13 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
   const lowStockItems = displayProducts.filter(p => (p.stockQuantity || 0) <= (p.reorderPoint || 5)).slice(0, 5) || [];
   const todaysTransactions = (branchTransactions || []).filter(t => (t.timestamp || 0) >= getTodayStartMs() && t.status !== 'VOIDED' && t.status !== 'QUOTE');
-  const totalRevenue = todaysTransactions.reduce((a, t) => a + Number(t.total || 0), 0);
+  const todaysInvoices = (branchSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= getTodayStartMs() && invoice.status !== 'CANCELLED');
+  const todaysSalesCount = todaysTransactions.length + todaysInvoices.length;
+  const totalRevenue = todaysTransactions.reduce((a, t) => a + Number(t.total || 0), 0)
+    + todaysInvoices.reduce((a, invoice) => a + Number(invoice.total || 0), 0);
   const salesTrendData = React.useMemo(() => {
     const txs = (branchTransactions || []).filter(t => t.status !== 'VOIDED' && t.status !== 'QUOTE');
+    const invoices = (branchSalesInvoices || []).filter(invoice => invoice.status !== 'CANCELLED');
     if (trendView === 'WEEK') {
       return Array.from({ length: 7 }, (_, index) => {
         const start = localDayStart(Date.now() - (6 - index) * DAY_MS);
@@ -128,7 +136,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           time: day,
           sales: txs
             .filter(t => (t.timestamp || 0) >= start && (t.timestamp || 0) < end)
-            .reduce((sum, t) => sum + Number(t.total || 0), 0),
+            .reduce((sum, t) => sum + Number(t.total || 0), 0)
+            + invoices
+              .filter(invoice => (invoice.issueDate || 0) >= start && (invoice.issueDate || 0) < end)
+              .reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
         };
       });
     }
@@ -142,10 +153,13 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         time: `${String(hour).padStart(2, '0')}:00`,
         sales: txs
           .filter(t => (t.timestamp || 0) >= start && (t.timestamp || 0) < end)
-          .reduce((sum, t) => sum + Number(t.total || 0), 0),
+          .reduce((sum, t) => sum + Number(t.total || 0), 0)
+          + invoices
+            .filter(invoice => (invoice.issueDate || 0) >= start && (invoice.issueDate || 0) < end)
+            .reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
       };
     });
-  }, [branchTransactions, trendView]);
+  }, [branchTransactions, branchSalesInvoices, trendView]);
   const ownerModeActive = canUseOwnerMode(currentUser) && isOwnerModeEnabled(businessSettings);
   const cashSweepActive = ownerModeActive && isOwnerCashSweepEnabled(businessSettings);
   const cashDrawerLimit = getCashDrawerLimit(businessSettings);
@@ -193,6 +207,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
   const getClosureStats = (since: number, until = Date.now()) => {
     const txs = (branchTransactions || []).filter(t => (t.timestamp || 0) >= since && (t.timestamp || 0) <= until && t.status !== 'VOIDED');
+    const invoices = (branchSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= since && (invoice.issueDate || 0) <= until && invoice.status !== 'CANCELLED');
     const expenses = (branchExpenses || []).filter(e => (e.timestamp || 0) >= since && (e.timestamp || 0) <= until && e.status !== 'REJECTED');
     const picks = (branchCashPicks || []).filter(p => (p.timestamp || 0) >= since && (p.timestamp || 0) <= until && p.status !== 'REJECTED');
     const supplierPayments = (branchSupplierPayments || []).filter(p => (p.timestamp || 0) >= since && (p.timestamp || 0) <= until);
@@ -203,9 +218,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       if (tx.paymentMethod === 'SPLIT' && tx.splitPayments?.secondaryMethod === 'MPESA') return sum + Number(tx.splitPayments.secondaryAmount || 0);
       return sum;
     }, 0);
-    const grossSales = txs.reduce((sum, tx) => sum + Number(tx.subtotal ?? tx.total ?? 0), 0);
-    const totalSales = txs.reduce((sum, tx) => sum + Number(tx.total || 0), 0);
-    const taxTotal = txs.reduce((sum, tx) => sum + Number(tx.tax || 0), 0);
+    const grossSales = txs.reduce((sum, tx) => sum + Number(tx.subtotal ?? tx.total ?? 0), 0)
+      + invoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || invoice.total || 0), 0);
+    const totalSales = txs.reduce((sum, tx) => sum + Number(tx.total || 0), 0)
+      + invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+    const taxTotal = txs.reduce((sum, tx) => sum + Number(tx.tax || 0), 0)
+      + invoices.reduce((sum, invoice) => sum + Number(invoice.tax || 0), 0);
     const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
     const totalPicks = picks.reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
@@ -394,16 +412,16 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           color="bg-primary"
         />
         <StatCard
-          label="Transactions"
-          value={todaysTransactions.length || 0}
-          sub="Sales today"
+          label="Sales"
+          value={todaysSalesCount || 0}
+          sub="Sales and invoices today"
           trend={5.2}
           icon="receipt_long"
           color="bg-violet-600"
         />
         <StatCard
           label="Avg. Sale"
-          value={`Ksh ${todaysTransactions.length ? Math.round(totalRevenue / todaysTransactions.length).toLocaleString() : 0}`}
+          value={`Ksh ${todaysSalesCount ? Math.round(totalRevenue / todaysSalesCount).toLocaleString() : 0}`}
           sub="Per transaction"
           trend={-2.1}
           icon="trending_up"

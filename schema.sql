@@ -187,6 +187,41 @@ CREATE TABLE IF NOT EXISTS customerPayments (
     updated_at INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS serviceItems (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    category TEXT,
+    description TEXT,
+    price REAL NOT NULL,
+    taxCategory TEXT DEFAULT 'A',
+    isActive INTEGER DEFAULT 1,
+    businessId TEXT,
+    updated_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS salesInvoices (
+    id TEXT PRIMARY KEY,
+    invoiceNumber TEXT NOT NULL,
+    customerId TEXT NOT NULL,
+    customerName TEXT,
+    customerPhone TEXT,
+    customerEmail TEXT,
+    items TEXT NOT NULL,
+    subtotal REAL NOT NULL,
+    tax REAL NOT NULL,
+    total REAL NOT NULL,
+    paidAmount REAL DEFAULT 0,
+    balance REAL DEFAULT 0,
+    status TEXT NOT NULL,
+    issueDate INTEGER NOT NULL,
+    dueDate INTEGER,
+    notes TEXT,
+    preparedBy TEXT,
+    branchId TEXT,
+    businessId TEXT,
+    updated_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS suppliers (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -342,6 +377,7 @@ CREATE TABLE IF NOT EXISTS branches (
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp);
 CREATE INDEX IF NOT EXISTS idx_stockmovements_product ON stockMovements(productId);
+CREATE INDEX IF NOT EXISTS idx_salesInvoices_customer ON salesInvoices(customerId);
 CREATE INDEX IF NOT EXISTS idx_transactions_branch ON transactions(branchId);
 CREATE INDEX IF NOT EXISTS idx_shifts_branch ON shifts(branchId);
 

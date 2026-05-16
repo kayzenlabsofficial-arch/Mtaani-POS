@@ -46,6 +46,7 @@ const navGroups: Array<{
       { id: 'REGISTER', label: 'Register', icon: ShoppingCart, desc: 'Checkout desk', accent: 'text-blue-600 bg-blue-50 border-blue-100' },
       { id: 'DASHBOARD', label: 'Dashboard', icon: LayoutDashboard, desc: 'Daily pulse', accent: 'text-emerald-600 bg-emerald-50 border-emerald-100' },
       { id: 'CUSTOMERS', label: 'Customers', icon: Users, desc: 'Credit and CRM', accent: 'text-violet-600 bg-violet-50 border-violet-100' },
+      { id: 'INVOICES', label: 'Invoices', icon: FileText, desc: 'Bills and services', accent: 'text-blue-700 bg-blue-50 border-blue-100' },
     ],
   },
   {

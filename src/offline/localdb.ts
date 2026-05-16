@@ -5,6 +5,7 @@ export type OfflineCacheTable =
   | 'categories'
   | 'customers'
   | 'customerPayments'
+  | 'serviceItems'
   | 'suppliers'
   | 'settings'
   | 'branches'

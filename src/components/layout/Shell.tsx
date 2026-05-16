@@ -204,6 +204,7 @@ export function MobileNav({ activeTab, onTabChange, onToggleMore, isMoreMenuOpen
 export function MoreOptionsMenu({ onTabChange, onLogout, onClose }: any) {
   const quickAccess = [
     { id: 'CUSTOMERS', label: 'Customers', icon: 'group', color: 'bg-blue-500' },
+    { id: 'INVOICES', label: 'Invoices', icon: 'receipt_long', color: 'bg-cyan-600' },
     { id: 'EXPENSES', label: 'Expenses', icon: 'payments', color: 'bg-rose-500' },
     { id: 'REFUNDS', label: 'Returns', icon: 'keyboard_return', color: 'bg-amber-500' },
     { id: 'DOCUMENTS', label: 'Receipts', icon: 'receipt_long', color: 'bg-violet-500' },

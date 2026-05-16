@@ -223,6 +223,50 @@ export interface CustomerPayment {
   updated_at?: number;
 }
 
+export interface ServiceItem {
+  id: string;
+  name: string;
+  category: string;
+  description?: string;
+  price: number;
+  taxCategory: 'A' | 'E';
+  isActive: boolean | number;
+  businessId: string;
+  updated_at?: number;
+}
+
+export interface SalesInvoiceItem {
+  itemType: 'PRODUCT' | 'SERVICE' | 'CUSTOM';
+  itemId?: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  taxCategory?: 'A' | 'E';
+}
+
+export interface SalesInvoice {
+  id: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  items: SalesInvoiceItem[];
+  subtotal: number;
+  tax: number;
+  total: number;
+  paidAmount: number;
+  balance: number;
+  status: 'SENT' | 'PARTIAL' | 'PAID' | 'CANCELLED';
+  issueDate: number;
+  dueDate?: number;
+  notes?: string;
+  preparedBy?: string;
+  branchId: string;
+  businessId: string;
+  updated_at?: number;
+}
+
 export interface Supplier {
   id: string;
   name: string;
@@ -410,6 +454,8 @@ class MtaaniCloudDB {
   stockMovements      = new CloudTable<StockMovement>('stockMovements');
   customers           = new CloudTable<Customer>('customers');
   customerPayments    = new CloudTable<CustomerPayment>('customerPayments');
+  serviceItems        = new CloudTable<ServiceItem>('serviceItems');
+  salesInvoices       = new CloudTable<SalesInvoice>('salesInvoices');
   suppliers           = new CloudTable<Supplier>('suppliers');
   supplierPayments    = new CloudTable<SupplierPayment>('supplierPayments');
   expenses            = new CloudTable<Expense>('expenses');
@@ -444,6 +490,8 @@ class MtaaniCloudDB {
     this.stockMovements.reset();
     this.customers.reset();
     this.customerPayments.reset();
+    this.serviceItems.reset();
+    this.salesInvoices.reset();
     this.suppliers.reset();
     this.supplierPayments.reset();
     this.expenses.reset();
@@ -498,6 +546,8 @@ class MtaaniCloudDB {
         this.stockMovements.reload(),
         this.customers.reload(),
         this.customerPayments.reload(),
+        this.serviceItems.reload(),
+        this.salesInvoices.reload(),
         this.suppliers.reload(),
         this.supplierPayments.reload(),
         this.expenses.reload(),

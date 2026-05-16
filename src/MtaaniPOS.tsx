@@ -20,6 +20,7 @@ import SuppliersTab from './components/tabs/SuppliersTab';
 import ExpensesTab from './components/tabs/ExpensesTab';
 import RefundsTab from './components/tabs/RefundsTab';
 import PurchasesTab from './components/tabs/PurchasesTab';
+import SalesInvoicesTab from './components/tabs/SalesInvoicesTab';
 import SupplierPaymentsTab from './components/tabs/SupplierPaymentsTab';
 import DocumentsTab from './components/tabs/DocumentsTab';
 import ReportsTab from './components/tabs/ReportsTab';
@@ -216,6 +217,7 @@ export default function MtaaniPOS() {
             {activeTab === 'CUSTOMERS' && <CustomersTab />}
             {activeTab === 'SUPPLIERS' && <SuppliersTab setActiveTab={navigateToTab} financialAccounts={financialAccounts || []} />}
             {activeTab === 'PURCHASES' && <PurchasesTab />}
+            {activeTab === 'INVOICES' && <SalesInvoicesTab />}
             {activeTab === 'EXPENSES' && <ExpensesTab />}
             {activeTab === 'SUPPLIER_PAYMENTS' && <SupplierPaymentsTab financialAccounts={financialAccounts || []} />}
             {activeTab === 'REFUNDS' && <RefundsTab setActiveTab={navigateToTab} />}

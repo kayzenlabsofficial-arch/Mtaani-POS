@@ -89,6 +89,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const isSale = selectedRecord.recordType === 'SALE';
   const isExpense = selectedRecord.recordType === 'EXPENSE';
   const isPayment = selectedRecord.recordType === 'SUPPLIER_PAYMENT';
+  const isSalesInvoice = selectedRecord.recordType === 'SALES_INVOICE';
   const isPO = selectedRecord.recordType === 'PURCHASE_ORDER';
   const isReport = selectedRecord.recordType === 'CLOSE_DAY_REPORT';
   const isDailySummary = selectedRecord.recordType === 'DAILY_SUMMARY';
@@ -122,7 +123,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     if (!selectedRecord) return;
     setIsSharing(true);
     try {
-      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isPO ? 'Purchase-Order' : isReport ? 'Shift-Report' : 'Summary';
+      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isSalesInvoice ? 'Invoice' : isPO ? 'Purchase-Order' : isReport ? 'Shift-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
       
       const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
@@ -160,7 +161,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     if (!selectedRecord) return;
     setIsSavingPDF(true);
     try {
-      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isPO ? 'Purchase-Order' : isReport ? 'Shift-Report' : 'Summary';
+      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isSalesInvoice ? 'Invoice' : isPO ? 'Purchase-Order' : isReport ? 'Shift-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
 
       const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
@@ -213,16 +214,18 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                      isSale ? 'bg-green-100 text-green-600' : 
                      isExpense ? 'bg-orange-100 text-orange-600' : 
                      isPayment ? 'bg-purple-100 text-purple-600' :
+                     isSalesInvoice ? 'bg-blue-100 text-blue-600' :
                      isReport ? 'bg-slate-900 text-white' :
                      isDailySummary ? 'bg-blue-600 text-white' :
                      'bg-blue-100 text-blue-600'
                   }`}>
-                     {isSale ? <ReceiptText size={28} /> : isExpense ? <Wallet size={28} /> : isPayment ? <DollarSign size={28} /> : isReport ? <CalendarCheck size={28} /> : isDailySummary ? <PackagePlus size={28} /> : <ClipboardList size={28} />}
+                     {isSale ? <ReceiptText size={28} /> : isExpense ? <Wallet size={28} /> : isPayment ? <DollarSign size={28} /> : isSalesInvoice ? <FileText size={28} /> : isReport ? <CalendarCheck size={28} /> : isDailySummary ? <PackagePlus size={28} /> : <ClipboardList size={28} />}
                   </div>
                   <h2 className="text-2xl font-black text-slate-900 tracking-tight ">
                      {isSale ? `Sales receipt` : 
                       isExpense ? `Expense Document` : 
                       isPayment ? 'Supplier Payment Note' :
+                      isSalesInvoice ? 'Customer Invoice' :
                       isReport ? 'End of Shift Report' :
                       isDailySummary ? 'Daily Business Report' :
                       (isPO && selectedRecord.approvalStatus === 'PENDING') ? 'Purchase Order Waiting Approval' :
@@ -233,7 +236,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                       Reference: {selectedRecord.invoiceNumber || (String(selectedRecord.id || '').startsWith('PO-') ? selectedRecord.id : String(selectedRecord.id || '').split('-')[0].toUpperCase())}
                   </p>
                   <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400 mt-2  ">
-                     <Calendar size={12} /> {new Date(selectedRecord.orderDate || selectedRecord.timestamp || Date.now()).toLocaleString('en-KE')}
+                     <Calendar size={12} /> {new Date(selectedRecord.issueDate || selectedRecord.orderDate || selectedRecord.timestamp || Date.now()).toLocaleString('en-KE')}
                   </div>
                   <div className="flex flex-col items-center gap-2 mt-4 bg-slate-50/50 p-3 rounded-2xl border border-slate-100/50 min-w-[200px]">
                       <div className="text-[10px] font-black text-slate-600 flex items-center gap-2">
@@ -261,6 +264,16 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                          'bg-blue-100 text-blue-700'
                      }`}>
                          {selectedRecord.status}
+                     </span>
+                  )}
+                  {isSalesInvoice && (
+                     <span className={`mt-4 text-[10px] font-black px-3 py-1 rounded-full no-print ${
+                         selectedRecord.status === 'PAID' ? 'bg-green-100 text-green-700' :
+                         selectedRecord.status === 'PARTIAL' ? 'bg-amber-100 text-amber-700' :
+                         selectedRecord.status === 'CANCELLED' ? 'bg-slate-100 text-slate-500' :
+                         'bg-blue-100 text-blue-700'
+                     }`}>
+                         {selectedRecord.status === 'SENT' ? 'UNPAID' : selectedRecord.status}
                      </span>
                   )}
               </div>
@@ -326,6 +339,49 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                              </div>
                          )}
                      </>
+                 )}
+
+                 {isSalesInvoice && (
+                    <div className="space-y-4">
+                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                          <p className="text-[10px] font-black text-slate-400 mb-2">Customer</p>
+                          <p className="text-sm font-bold text-slate-900">{selectedRecord.customerName}</p>
+                          <p className="text-xs font-bold text-slate-500">{selectedRecord.customerPhone || 'No phone'}</p>
+                       </div>
+                       <div className="space-y-3">
+                          {selectedRecord.items.map((item: any, idx: number) => {
+                            const amount = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+                            const tax = item.taxCategory === 'A' ? amount * 0.16 : 0;
+                            return (
+                              <div key={idx} className="flex justify-between items-center text-sm bg-white p-3 rounded-xl border border-slate-100">
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-bold text-slate-900 truncate">{item.name}</p>
+                                  <p className="text-[11px] text-slate-500 font-medium">{item.quantity} x Ksh {(item.unitPrice || 0).toLocaleString()} {item.taxCategory === 'A' ? '+ VAT' : ''}</p>
+                                </div>
+                                <span className="font-black text-slate-900">Ksh {(amount + tax).toLocaleString()}</span>
+                              </div>
+                            );
+                          })}
+                       </div>
+                       <div className="pt-4 border-t border-dashed border-slate-200 space-y-2">
+                          <div className="flex justify-between text-xs font-bold text-slate-500">
+                            <span>Before VAT</span>
+                            <span>Ksh {(selectedRecord.subtotal || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-xs font-bold text-slate-500">
+                            <span>VAT</span>
+                            <span>Ksh {(selectedRecord.tax || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-xs font-bold text-emerald-600">
+                            <span>Paid</span>
+                            <span>Ksh {(selectedRecord.paidAmount || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between items-end pt-2">
+                            <span className="text-sm font-black text-slate-400">Balance</span>
+                            <span className="text-2xl font-black text-blue-600">Ksh {(selectedRecord.balance || 0).toLocaleString()}</span>
+                          </div>
+                       </div>
+                    </div>
                  )}
 
                  {/* Expense Details */}

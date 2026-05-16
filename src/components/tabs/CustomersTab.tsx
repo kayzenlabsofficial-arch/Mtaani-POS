@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Plus, Users, Phone, Mail, ChevronRight, X, User, Trash2, Smartphone, Loader2, CheckCircle2, Save, ArrowLeft, ReceiptText, FileDown, WalletCards, Banknote } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
-import { db, type Customer, type CustomerPayment, type Transaction } from '../../db';
+import { db, type Customer, type CustomerPayment, type SalesInvoice, type Transaction } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { MpesaService } from '../../services/mpesa';
@@ -64,6 +64,13 @@ export default function CustomersTab() {
     [statementCustomerId, activeBranchId],
     []
   );
+  const statementInvoices = useLiveQuery(
+    () => statementCustomerId && activeBranchId
+      ? db.salesInvoices.where('branchId').equals(activeBranchId).and(i => i.customerId === statementCustomerId && i.status !== 'CANCELLED').toArray()
+      : Promise.resolve([]),
+    [statementCustomerId, activeBranchId],
+    []
+  );
 
   if (!allCustomers) {
       return (
@@ -106,10 +113,22 @@ export default function CustomersTab() {
     return timestamp >= start.getTime() && timestamp <= end.getTime();
   };
   const filteredCreditSales = creditSales.filter(sale => inStatementDateRange(Number(sale.timestamp) || 0));
+  const filteredStatementInvoices = (statementInvoices || []).filter(invoice => inStatementDateRange(Number(invoice.issueDate) || 0));
   const filteredStatementPayments = (statementPayments || []).filter(payment => inStatementDateRange(Number(payment.timestamp) || 0));
-  const totalCreditSales = filteredCreditSales.reduce((sum, sale) => sum + getCreditAmount(sale), 0);
+  const totalCreditSales = filteredCreditSales.reduce((sum, sale) => sum + getCreditAmount(sale), 0)
+    + filteredStatementInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
   const totalPayments = filteredStatementPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const statementRows = [
+    ...filteredStatementInvoices.map((invoice: SalesInvoice) => ({
+      id: invoice.id,
+      timestamp: invoice.issueDate,
+      type: 'INVOICE' as const,
+      title: invoice.invoiceNumber,
+      detail: invoice.items.map(item => `${item.name} x ${item.quantity}`).join(', '),
+      debit: Number(invoice.total || 0),
+      credit: 0,
+      method: invoice.status,
+    })),
     ...filteredCreditSales.map(sale => ({
       id: sale.id,
       timestamp: sale.timestamp,
@@ -302,7 +321,11 @@ export default function CustomersTab() {
     if (!statementCustomer) return;
     try {
       const { generateAndDownloadCustomerStatement } = await import('../../utils/shareUtils');
-      await generateAndDownloadCustomerStatement(statementCustomer, filteredCreditSales, filteredStatementPayments);
+      await generateAndDownloadCustomerStatement(
+        statementCustomer,
+        [...filteredCreditSales, ...filteredStatementInvoices.map(invoice => ({ ...invoice, recordType: 'SALES_INVOICE' }))],
+        filteredStatementPayments
+      );
       success("Customer statement exported.");
     } catch (err) {
       console.error('Customer statement export failed', err);
@@ -342,7 +365,7 @@ export default function CustomersTab() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-white border border-slate-100 rounded-2xl p-5">
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Credit Sales</p>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Invoices & Credit Sales</p>
             <p className="text-2xl font-black text-slate-900 tabular-nums">Ksh {totalCreditSales.toLocaleString()}</p>
           </div>
           <div className="bg-white border border-slate-100 rounded-2xl p-5">
@@ -359,8 +382,8 @@ export default function CustomersTab() {
           <section className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm font-black text-slate-900">Credit Statement</h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sales on credit and customer payments</p>
+                <h3 className="text-sm font-black text-slate-900">Customer Statement</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Invoices, credit sales, and payments</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button

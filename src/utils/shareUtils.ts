@@ -740,6 +740,55 @@ export function buildStatementPDF(s: any, invoices: any[], payments: any[], cred
 
 
 // ─── Download trigger (works everywhere, no share sheet needed) ───────────────
+function buildSalesInvoicePDF(invoice: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'): Blob {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  let y = banner(
+    doc,
+    invoice?.status === 'PAID' ? 'Paid Invoice' : 'Sales Invoice',
+    safeStr(invoice?.invoiceNumber || invoice?.id, 'INV'),
+    new Date(invoice?.issueDate || Date.now()).toLocaleDateString(),
+    bizName
+  );
+
+  y = kvRow(doc, 'Customer', safeStr(invoice?.customerName), y);
+  y = kvRow(doc, 'Phone', safeStr(invoice?.customerPhone, '-'), y);
+  if (invoice?.customerEmail) y = kvRow(doc, 'Email', safeStr(invoice.customerEmail), y);
+  y = kvRow(doc, 'Business Location', location, y);
+  y = kvRow(doc, 'Due Date', invoice?.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'No due date', y);
+  y = kvRow(doc, 'Status', safeStr(invoice?.status), y, invoice?.status === 'PAID' ? green : invoice?.status === 'PARTIAL' ? orange : red);
+  y = hLine(doc, y + 2);
+
+  const itemRows = (Array.isArray(invoice?.items) ? invoice.items : []).map((item: any) => {
+    const qty = safe(item.quantity);
+    const price = safe(item.unitPrice);
+    const amount = qty * price;
+    const vat = item.taxCategory === 'A' ? amount * 0.16 : 0;
+    return [
+      safeStr(item.name),
+      safeStr(item.itemType || 'ITEM'),
+      String(qty),
+      ksh(price),
+      ksh(vat),
+      ksh(amount + vat),
+    ];
+  });
+
+  y = table(doc, ['Item', 'Type', 'Qty', 'Price', 'VAT', 'Total'], [58, 22, 16, 28, 25, 31], itemRows, y);
+  y = kvRow(doc, 'Subtotal', ksh(invoice?.subtotal), y);
+  y = kvRow(doc, 'VAT', ksh(invoice?.tax), y);
+  y = kvRow(doc, 'Paid', ksh(invoice?.paidAmount), y, green);
+  y = kvRow(doc, 'Balance', ksh(invoice?.balance), y, safe(invoice?.balance) > 0 ? red : green);
+  y = bigTotal(doc, 'Invoice Total', ksh(invoice?.total), y + 3, brandBlue);
+
+  if (invoice?.notes) {
+    y = hLine(doc, y + 2);
+    kvRow(doc, 'Notes', safeStr(invoice.notes), y);
+  }
+
+  footer(doc);
+  return doc.output('blob');
+}
+
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -756,6 +805,7 @@ function buildPDF(record: any, supplier?: any, bizName?: string, location?: stri
   switch (record?.recordType) {
     case 'SALE':             return buildReceipt(record, bizName, location);
     case 'EXPENSE':          return buildReceipt(record, bizName, location); // fallback or buildExpense with location
+    case 'SALES_INVOICE':    return buildSalesInvoicePDF(record, bizName, location);
     case 'PURCHASE_ORDER':   return buildPO(record, supplier, bizName);
     case 'SUPPLIER_PAYMENT': return buildRemittance(record, supplier?.company || supplier, bizName);
     case 'CLOSE_DAY_REPORT':
@@ -801,6 +851,12 @@ export async function generateAndShareDocument(
 }
 
 // ─── Legacy: used by Reports tab to capture chart view ───────────────────────
+export async function generateAndDownloadSalesInvoice(invoice: any, bizName?: string, location?: string) {
+  const blob = buildSalesInvoicePDF(invoice, bizName, location);
+  const ref = safeStr(invoice?.invoiceNumber || invoice?.id || 'Invoice').replace(/\s+/g, '-');
+  download(blob, `Invoice-${ref}`);
+}
+
 export async function shareDocument(elementId: string, filename: string) {
   const { default: html2canvas } = await import('html2canvas');
   const el = document.getElementById(elementId);
@@ -829,15 +885,16 @@ export async function generateAndDownloadCustomerStatement(customer: any, sales:
   y = hLine(doc, y + 2);
 
   const creditAmount = (sale: any) => {
+    if (sale.recordType === 'SALES_INVOICE') return safe(sale.total);
     if (sale.paymentMethod === 'CREDIT') return safe(sale.total);
     if (sale.paymentMethod === 'SPLIT' && sale.splitPayments?.secondaryMethod === 'CREDIT') return safe(sale.splitPayments.secondaryAmount);
     return 0;
   };
   const rows = [
     ...(sales || []).map(sale => [
-      new Date(sale.timestamp).toLocaleDateString(),
-      'SALE',
-      safeStr(sale.id, '').split('-')[0].toUpperCase(),
+      new Date(sale.recordType === 'SALES_INVOICE' ? sale.issueDate : sale.timestamp).toLocaleDateString(),
+      sale.recordType === 'SALES_INVOICE' ? 'INVOICE' : 'SALE',
+      sale.recordType === 'SALES_INVOICE' ? safeStr(sale.invoiceNumber) : safeStr(sale.id, '').split('-')[0].toUpperCase(),
       (sale.items || []).map((item: any) => `${item.name} x ${item.quantity}`).join(', ').slice(0, 44),
       ksh(creditAmount(sale)),
       '',
