@@ -194,8 +194,42 @@ export async function setupRemoteDB(): Promise<void> {
 export class CloudTable<T extends { id: string }> {
   private cache = new Map<string, T>();
   private loaded = false;
+  private loadedScopeKey: string | null = null;
 
   constructor(public readonly name: string) {}
+
+  private async currentScope(): Promise<{ key: string; canHydrate: boolean }> {
+    if (this.name === 'businesses' || this.name === 'loginAttempts' || this.name.startsWith('system')) {
+      return { key: `${this.name}:unscoped`, canHydrate: true };
+    }
+
+    const { useStore } = await import('./store');
+    const businessId = useStore.getState().activeBusinessId;
+    const branchId = useStore.getState().activeBranchId;
+
+    if (!businessId) {
+      return { key: `${this.name}:no-business`, canHydrate: false };
+    }
+
+    if (CLIENT_GLOBAL_TABLES.has(this.name)) {
+      return { key: `${this.name}:business:${businessId}`, canHydrate: true };
+    }
+
+    if (!branchId) {
+      return { key: `${this.name}:business:${businessId}:no-branch`, canHydrate: false };
+    }
+
+    return { key: `${this.name}:business:${businessId}:branch:${branchId}`, canHydrate: true };
+  }
+
+  private clearIfScopeChanged(scopeKey: string): boolean {
+    if (this.loadedScopeKey === scopeKey) return false;
+    this.cache.clear();
+    this.loaded = false;
+    this.loadedScopeKey = scopeKey;
+    emitChange();
+    return true;
+  }
 
   /**
    * Clears the local cache and marks table as not loaded.
@@ -204,30 +238,40 @@ export class CloudTable<T extends { id: string }> {
   reset(): void {
     this.cache.clear();
     this.loaded = false;
+    this.loadedScopeKey = null;
     emitChange();
   }
 
   // ── Hydration ─────────────────────────────────────────────────────────────
 
   async hydrate(): Promise<void> {
+    const scope = await this.currentScope();
+    this.clearIfScopeChanged(scope.key);
+
+    if (!scope.canHydrate) {
+      this.cache.clear();
+      this.loaded = true;
+      this.loadedScopeKey = scope.key;
+      emitChange();
+      return;
+    }
+
     try {
-      const { useStore } = await import('./store');
-      const businessId = useStore.getState().activeBusinessId;
-      const branchId = useStore.getState().activeBranchId;
-      
-      if (!businessId && this.name !== 'businesses' && this.name !== 'loginAttempts' && !this.name.startsWith('system')) {
-        return;
-      }
-
-      if (businessId && !branchId && !CLIENT_GLOBAL_TABLES.has(this.name)) {
-        return;
-      }
-
       const rows: T[] = await d1Fetch(this.name, 'GET');
+      const latestScope = await this.currentScope();
+      if (latestScope.key !== scope.key) {
+        this.cache.clear();
+        this.loaded = false;
+        this.loadedScopeKey = latestScope.key;
+        emitChange();
+        return;
+      }
+
       // Only clear and update if we successfully got data
       this.cache.clear();
       rows.forEach(r => this.cache.set(r.id, r));
       this.loaded = true;
+      this.loadedScopeKey = scope.key;
       emitChange(); // Trigger UI update
     } catch (e) {
       console.error(`[CloudDB] Failed to hydrate "${this.name}":`, e);
@@ -237,7 +281,8 @@ export class CloudTable<T extends { id: string }> {
   }
 
   private async ensure(): Promise<void> {
-    if (!this.loaded) await this.hydrate();
+    const scope = await this.currentScope();
+    if (!this.loaded || this.loadedScopeKey !== scope.key) await this.hydrate();
   }
 
   // ── Reads ──────────────────────────────────────────────────────────────────

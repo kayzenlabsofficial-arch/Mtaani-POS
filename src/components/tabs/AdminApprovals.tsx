@@ -12,11 +12,11 @@ export default function AdminApprovals() {
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
 
-  const pendingAdjustments = useLiveQuery(() => activeBranchId ? db.stockAdjustmentRequests.where('branchId').equals(activeBranchId).and(x => x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBranchId], []);
-  const pendingPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).and(x => x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBranchId], []);
-  const pendingExpenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).and(x => x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBranchId], []);
-  const pendingRefunds = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).and(x => x.status === 'PENDING_REFUND').toArray() : Promise.resolve([]), [activeBranchId], []);
-  const pendingPOs = useLiveQuery(() => activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).and(x => x.approvalStatus === 'PENDING').toArray() : Promise.resolve([]), [activeBranchId], []);
+  const pendingAdjustments = useLiveQuery(() => activeBusinessId && activeBranchId ? db.stockAdjustmentRequests.where('branchId').equals(activeBranchId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
+  const pendingPicks = useLiveQuery(() => activeBusinessId && activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
+  const pendingExpenses = useLiveQuery(() => activeBusinessId && activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
+  const pendingRefunds = useLiveQuery(() => activeBusinessId && activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING_REFUND').toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
+  const pendingPOs = useLiveQuery(() => activeBusinessId && activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).and(x => x.businessId === activeBusinessId && x.approvalStatus === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
   const allSuppliers = useLiveQuery(
     () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],

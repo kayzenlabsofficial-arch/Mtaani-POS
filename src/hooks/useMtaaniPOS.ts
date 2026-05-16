@@ -110,6 +110,11 @@ export function useMtaaniPOS() {
         return;
       }
 
+      if (activeBusinessId !== biz.id) {
+        db.resetTenantCaches();
+        clearCart();
+        setActiveBranchId(null);
+      }
       setActiveBusinessId(biz.id);
       await new Promise(r => setTimeout(r, 0));
 
@@ -131,11 +136,16 @@ export function useMtaaniPOS() {
         login(user);
         success(`Welcome back, ${user.name}!`);
       } else {
+        db.resetTenantCaches();
         setActiveBusinessId(null);
+        setActiveBranchId(null);
         setLoginError("Invalid username or password.");
         await recordFailedAttempt(businessCode);
       }
     } catch (err) {
+      db.resetTenantCaches();
+      setActiveBusinessId(null);
+      setActiveBranchId(null);
       setLoginError("Connection failed. Please try again.");
     } finally {
       setIsLoggingIn(false);
@@ -144,6 +154,7 @@ export function useMtaaniPOS() {
 
   const handleLogout = () => {
     if (confirm("Are you sure you want to logout?")) {
+      db.resetTenantCaches();
       logout();
       setActiveBusinessId(null);
       setActiveBranchId(null);

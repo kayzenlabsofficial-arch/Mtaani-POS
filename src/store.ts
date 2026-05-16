@@ -123,12 +123,9 @@ export const useStore = create<POSState>()(
     }),
     {
       name: 'mtaani-pos-storage',
-      partialize: (state) => ({
-        cart: state.cart,
-        activeBranchId: state.activeBranchId,
-        activeBusinessId: state.activeBusinessId,
-        selectedCustomerId: state.selectedCustomerId,
-      }),
+      version: 2,
+      migrate: () => ({}),
+      partialize: () => ({}),
     }
   )
 );
