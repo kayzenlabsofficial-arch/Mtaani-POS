@@ -24,38 +24,125 @@ const sf = (d: jsPDF, c: RGB) => d.setFillColor(c[0], c[1], c[2]);
 const st = (d: jsPDF, c: RGB) => d.setTextColor(c[0], c[1], c[2]);
 const sd = (d: jsPDF, c: RGB) => d.setDrawColor(c[0], c[1], c[2]);
 
+function textValue(value: any, fallback = '-'): string {
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).replace(/\s+/g, ' ').trim();
+  return text || fallback;
+}
+
+function fitLine(doc: jsPDF, value: any, maxWidth: number): string {
+  const text = textValue(value);
+  if (doc.getTextWidth(text) <= maxWidth) return text;
+
+  const suffix = '...';
+  if (doc.getTextWidth(suffix) > maxWidth) return '';
+
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const candidate = `${text.slice(0, mid).trimEnd()}${suffix}`;
+    if (doc.getTextWidth(candidate) <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  return `${text.slice(0, lo).trimEnd()}${suffix}`;
+}
+
+function splitToFit(doc: jsPDF, value: any, maxWidth: number, maxLines = 2): string[] {
+  const text = textValue(value);
+  const raw = doc.splitTextToSize(text, Math.max(1, maxWidth));
+  const lines = (Array.isArray(raw) ? raw : [String(raw)]).filter(Boolean);
+  if (lines.length <= maxLines) return lines.length ? lines : ['-'];
+
+  const kept = lines.slice(0, maxLines);
+  kept[maxLines - 1] = fitLine(doc, [kept[maxLines - 1], ...lines.slice(maxLines)].join(' '), maxWidth);
+  return kept;
+}
+
+function pageBottom(doc: jsPDF): number {
+  return doc.internal.pageSize.getHeight() - 18;
+}
+
 // ─── Shared drawing primitives ────────────────────────────────────────────────
 function banner(doc: jsPDF, title: string, ref: string, date: string, bizName = 'MTAANI POS'): number {
-  sf(doc, brandBlue);
-  doc.rect(M, 10, W, 35, 'F');
-  sf(doc, brandBlueDark);
-  doc.rect(M, 10, 4, 35, 'F');
-  sf(doc, [37, 99, 235] as RGB);
-  doc.rect(M + W - 44, 10, 44, 35, 'F');
+  const top = 10;
+  const rightPanelW = 58;
+  const rightX = M + W - rightPanelW;
+  const rightMax = rightPanelW - 10;
+  const leftMax = W - rightPanelW - 16;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
+  const bizLines = splitToFit(doc, bizName.toUpperCase(), leftMax, 2);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  const locationLines = splitToFit(doc, 'Mtaani Street, Nairobi CBD, Kenya', leftMax, 1);
+  const contactLines = splitToFit(doc, 'Email: hello@mtaanipos.co.ke | Tel: +254 700 123 456', leftMax, 1);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  const titleLines = splitToFit(doc, title.toUpperCase(), rightMax, 2);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  const refLines = splitToFit(doc, `DOCUMENT REF: ${ref}`, rightMax, 2);
+  const dateLines = splitToFit(doc, `DATE: ${date}`, rightMax, 1);
+
+  const leftNeeded = 13 + bizLines.length * 5.5 + locationLines.length * 4 + contactLines.length * 4;
+  const rightNeeded = 11 + titleLines.length * 5 + 2 + refLines.length * 4 + dateLines.length * 4;
+  const headerH = Math.max(38, leftNeeded, rightNeeded);
+
+  sf(doc, brandBlue);
+  doc.rect(M, top, W, headerH, 'F');
+  sf(doc, brandBlueDark);
+  doc.rect(M, top, 4, headerH, 'F');
+  sf(doc, [37, 99, 235] as RGB);
+  doc.rect(rightX, top, rightPanelW, headerH, 'F');
+
+  let leftY = top + 12;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
   st(doc, white);
-  doc.text(bizName.toUpperCase(), M + 5, 22);
+  bizLines.forEach(line => {
+    doc.text(line, M + 5, leftY);
+    leftY += 5.5;
+  });
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   st(doc, brandBlueLight);
-  doc.text('Mtaani Street, Nairobi CBD, Kenya', M + 5, 29);
-  doc.text('Email: hello@mtaanipos.co.ke | Tel: +254 700 123 456', M + 5, 34);
+  leftY += 1.5;
+  locationLines.forEach(line => {
+    doc.text(line, M + 5, leftY);
+    leftY += 4;
+  });
+  contactLines.forEach(line => {
+    doc.text(line, M + 5, leftY);
+    leftY += 4;
+  });
 
+  let rightY = top + 11;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   st(doc, white);
-  doc.text(title.toUpperCase(), M + W - 5, 21, { align: 'right' });
+  titleLines.forEach(line => {
+    doc.text(line, M + W - 5, rightY, { align: 'right' });
+    rightY += 5;
+  });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   st(doc, brandBlueLight);
-  doc.text('DOCUMENT REF: ' + ref, M + W - 5, 29, { align: 'right' });
-  doc.text('DATE: ' + date, M + W - 5, 34, { align: 'right' });
+  rightY += 2;
+  refLines.forEach(line => {
+    doc.text(line, M + W - 5, rightY, { align: 'right' });
+    rightY += 4;
+  });
+  dateLines.forEach(line => {
+    doc.text(line, M + W - 5, rightY, { align: 'right' });
+    rightY += 4;
+  });
 
-  return 52; // y after header
+  return top + headerH + 8; // y after header
 }
 
 function hLine(doc: jsPDF, y: number): number {
@@ -69,11 +156,12 @@ function kvRow(doc: jsPDF, label: string, value: string, y: number, valC: RGB = 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   st(doc, slate400);
-  doc.text(label.toUpperCase() + ':', M, y);
+  doc.text(fitLine(doc, label.toUpperCase() + ':', 32), M, y);
   doc.setFont('helvetica', 'normal');
   st(doc, valC);
-  doc.text(value || '—', M + 35, y); // Aligned to a fixed offset for better look
-  return y + 6;
+  const lines = splitToFit(doc, value || '-', W - 37, 3);
+  doc.text(lines, M + 35, y);
+  return y + Math.max(6, lines.length * 4.5);
 }
 
 /** Manual table with borders */
@@ -84,52 +172,74 @@ function table(
   rows: string[][],
   y: number
 ): number {
-  const RH = 8;
+  const headerH = 8;
+  const minRowH = 8;
+  const lineH = 3.8;
+  const rawTotal = colW.reduce((sum, width) => sum + width, 0) || W;
+  const widths = colW.map(width => width * (W / rawTotal));
   const xs: number[] = [M];
-  colW.forEach((w, i) => xs.push(xs[i] + w));
+  widths.forEach((width, i) => xs.push(xs[i] + width));
+  const rightAligned = (header: string) => /amount|debit|credit|balance|expected|reported|variance|total/i.test(header);
 
-  // Header
-  sf(doc, brandBlue);
-  doc.rect(M, y, W, RH, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  st(doc, white);
-  headers.forEach((h, i) => {
-    const isRight = i >= 2;
-    const tx = isRight ? xs[i] + colW[i] - 2 : xs[i] + 2;
-    doc.text(h, tx, y + 5.5, { align: isRight ? 'right' : 'left' });
-  });
-  y += RH;
+  const drawHeader = () => {
+    sf(doc, brandBlue);
+    doc.rect(M, y, W, headerH, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    st(doc, white);
+    headers.forEach((header, i) => {
+      const isRight = rightAligned(header);
+      const tx = isRight ? xs[i] + widths[i] - 2 : xs[i] + 2;
+      doc.text(fitLine(doc, header, widths[i] - 4), tx, y + 5.3, { align: isRight ? 'right' : 'left' });
+    });
+    y += headerH;
+  };
 
-  // Rows
-  doc.setLineWidth(0.1);
-  sd(doc, slate100);
+  drawHeader();
+
   rows.forEach((cells, ri) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    const wrapped = headers.map((_, i) => splitToFit(doc, cells[i] ?? '', widths[i] - 4, 3));
+    const rowH = Math.max(minRowH, 4 + Math.max(...wrapped.map(lines => lines.length)) * lineH);
+
+    if (y + rowH > pageBottom(doc)) {
+      footer(doc);
+      doc.addPage();
+      y = 18;
+      drawHeader();
+    }
+
     if (ri % 2 === 0) {
       sf(doc, [250, 252, 255] as RGB);
-      doc.rect(M, y, W, RH, 'F');
+      doc.rect(M, y, W, rowH, 'F');
     }
-    // Draw horizontal line for each row
-    doc.line(M, y + RH, M + W, y + RH);
-    
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    st(doc, slate900);
-    cells.forEach((cell, i) => {
-      const isRight = i >= 2;
-      const tx = isRight ? xs[i] + colW[i] - 2 : xs[i] + 2;
-      doc.text(cell ?? '', tx, y + 5.5, { align: isRight ? 'right' : 'left' });
-    });
-    y += RH;
-  });
 
-  // Vertical lines for columns
-  xs.forEach(x => doc.line(x, y - (rows.length + 1) * RH, x, y));
+    sd(doc, slate100);
+    doc.setLineWidth(0.12);
+    widths.forEach((width, i) => {
+      doc.rect(xs[i], y, width, rowH);
+    });
+
+    st(doc, slate900);
+    wrapped.forEach((lines, i) => {
+      const isRight = rightAligned(headers[i]);
+      const tx = isRight ? xs[i] + widths[i] - 2 : xs[i] + 2;
+      doc.text(lines, tx, y + 4.8, { align: isRight ? 'right' : 'left' });
+    });
+    y += rowH;
+  });
 
   return y + 6;
 }
 
 function bigTotal(doc: jsPDF, label: string, value: string, y: number, color: RGB): number {
+  if (y + 24 > pageBottom(doc)) {
+    footer(doc);
+    doc.addPage();
+    y = 18;
+  }
+
   sf(doc, color);
   doc.rect(M, y, W, 18, 'F');
   sf(doc, [255, 255, 255] as RGB);
@@ -137,10 +247,10 @@ function bigTotal(doc: jsPDF, label: string, value: string, y: number, color: RG
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   st(doc, color === brandBlue ? brandBlueLight : slate100);
-  doc.text(label, M + 6, y + 7);
+  doc.text(fitLine(doc, label, W - 12), M + 6, y + 7);
   doc.setFontSize(16);
   st(doc, white);
-  doc.text(value, M + W - 6, y + 13, { align: 'right' });
+  doc.text(fitLine(doc, value, W - 12), M + W - 6, y + 13, { align: 'right' });
   return y + 25;
 }
 
@@ -154,7 +264,7 @@ function footer(doc: jsPDF) {
   doc.setFontSize(7);
   st(doc, slate600);
   doc.text(
-    `Official Document Generated by Mtaani POS • ${new Date().toLocaleString()} • E-TIMS Certified`,
+    fitLine(doc, `Official Document Generated by Mtaani POS - ${new Date().toLocaleString()} - E-TIMS Certified`, W),
     M + W / 2, y, { align: 'center' }
   );
 }
@@ -547,13 +657,16 @@ export function buildStatementPDF(s: any, invoices: any[], payments: any[], cred
 
   // Supplier Summary
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); st(doc, slate900);
-  doc.text(s.company.toUpperCase(), M, y);
-  y += 5;
+  const companyLines = splitToFit(doc, safeStr(s.company).toUpperCase(), W, 2);
+  doc.text(companyLines, M, y);
+  y += companyLines.length * 5;
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8); st(doc, slate600);
-  doc.text(`Contact: ${s.name} | Tel: ${s.phone}`, M, y);
-  y += 4;
-  doc.text(`Email: ${s.email || 'N/A'}`, M, y);
-  y += 10;
+  const contactLines = splitToFit(doc, `Contact: ${safeStr(s.name)} | Tel: ${safeStr(s.phone)}`, W, 2);
+  doc.text(contactLines, M, y);
+  y += contactLines.length * 4;
+  const emailLines = splitToFit(doc, `Email: ${safeStr(s.email, 'N/A')}`, W, 2);
+  doc.text(emailLines, M, y);
+  y += emailLines.length * 4 + 6;
 
   // Big Balance Box
   const safe = (n: any) => Number(n) || 0;
@@ -565,7 +678,7 @@ export function buildStatementPDF(s: any, invoices: any[], payments: any[], cred
   doc.setFontSize(9); doc.setFont('helvetica', 'bold');
   doc.text('OUTSTANDING LEDGER BALANCE', M + 6, y + 8);
   doc.setFontSize(18);
-  doc.text(ksh(s.balance), M + W - 6, y + 14, { align: 'right' });
+  doc.text(fitLine(doc, ksh(s.balance), W - 12), M + W - 6, y + 14, { align: 'right' });
   y += 30;
 
   // Transaction Table

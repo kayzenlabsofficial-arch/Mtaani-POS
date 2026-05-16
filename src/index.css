@@ -399,3 +399,31 @@ button, a, input, select, textarea {
 .sidebar-enter {
   animation: slide-from-left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* Mobile surface contrast */
+@media (max-width: 767px) {
+  body {
+    background: #e8edf5;
+  }
+
+  .main-scroll {
+    background:
+      linear-gradient(180deg, #f5f8fc 0%, #edf2f8 11rem, #e8edf5 100%);
+  }
+
+  .main-scroll :where(section, aside, div).bg-white:where(.rounded-2xl, .rounded-\[2\.5rem\], .rounded-\[40px\], .rounded-t-\[40px\]) {
+    border-color: #d8e0ec;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.06),
+      0 14px 30px rgba(15, 23, 42, 0.08);
+  }
+
+  .main-scroll :where(section, aside, div).bg-white:where(.border, .border-2):not(.border-transparent) {
+    border-color: #d8e0ec;
+  }
+
+  .main-scroll :where(input, select, textarea).bg-white:not(:focus) {
+    border-color: #cbd5e1;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+}
