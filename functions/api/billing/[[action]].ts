@@ -342,7 +342,7 @@ async function triggerBillingStk(request: Request, env: Env, body: any) {
   });
 
   const stkData = await stkRes.json() as any;
-  if (!stkRes.ok || stkData.errorCode) throw new Error(`Billing STK Push failed: ${JSON.stringify(stkData)}`);
+  if (!stkRes.ok || stkData.errorCode) throw new Error(`Software M-Pesa request failed: ${JSON.stringify(stkData)}`);
 
   const paymentId = `billpay_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
   await env.DB.prepare(`
@@ -356,7 +356,7 @@ async function triggerBillingStk(request: Request, env: Env, body: any) {
     paymentId,
     invoiceId: invoice.id,
     checkoutRequestId: stkData.CheckoutRequestID,
-    message: stkData.CustomerMessage || 'Software payment prompt sent.',
+    message: stkData.CustomerMessage || 'Software payment request sent.',
   });
 }
 

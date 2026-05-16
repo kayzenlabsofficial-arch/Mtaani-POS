@@ -395,7 +395,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                          <input type="text" className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-xl px-5 py-3 text-sm font-bold text-slate-900 outline-none shadow-sm" placeholder="Minimum 4 characters" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
                        </div>
                        <div>
-                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Operational Role</label>
+                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Staff Role</label>
                          <div className="flex gap-2">
                             <button onClick={() => setNewUser({...newUser, role: 'CASHIER'})} className={`flex-1 py-4.5 rounded-2xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${newUser.role === 'CASHIER' ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-400 border-transparent hover:border-slate-200'}`}>
                                 Standard Cashier
@@ -655,7 +655,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                                       </span>
                                    ) : (
                                       <span className="stable-chip text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase">
-                                         Universal
+                                         All Branches
                                       </span>
                                    )}
                                 </div>

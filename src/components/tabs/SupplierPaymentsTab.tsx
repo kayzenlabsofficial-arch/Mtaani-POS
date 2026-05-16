@@ -69,7 +69,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
           payment,
           activeBranchId: activeBranchId!,
           activeBusinessId: activeBusinessId!,
-          preparedBy: useStore.getState().currentUser?.name || 'Authorized Staff',
+          preparedBy: useStore.getState().currentUser?.name || 'Staff',
           shiftId: useStore.getState().activeShift?.id,
         });
         success("Payment recorded successfully.");
@@ -98,13 +98,13 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
-          <h2 className="text-xl font-black text-slate-900">Debt Settlement</h2>
+          <h2 className="text-xl font-black text-slate-900">Supplier Payments</h2>
           <div className="flex items-center gap-3 mt-1">
-            <span className="text-[10px] font-bold text-rose-600">Payables: Ksh {totalDebt.toLocaleString()}</span>
+            <span className="text-[10px] font-bold text-rose-600">To pay: Ksh {totalDebt.toLocaleString()}</span>
             <span className="text-slate-300">·</span>
             <span className="text-[10px] font-bold text-indigo-600">Credits: Ksh {totalPendingCredit.toLocaleString()}</span>
             <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-slate-500">{suppliersOwed.length} Creditors</span>
+            <span className="text-[10px] font-bold text-slate-500">{suppliersOwed.length} suppliers</span>
           </div>
         </div>
       </div>
@@ -115,13 +115,13 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
          <div className="lg:col-span-3 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                  <ArrowDownLeft size={14} className="text-rose-500" /> Outstanding Balances
+                  <ArrowDownLeft size={14} className="text-rose-500" /> Money Owed
                </h3>
                <div className="relative group sm:w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={14} />
                   <input 
                     type="text" 
-                    placeholder="Filter vendors..." 
+                    placeholder="Search suppliers..." 
                     value={paySearch} 
                     onChange={(e) => setPaySearch(e.target.value)}
                     className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-primary/15 focus:border-primary outline-none shadow-sm transition-all"
@@ -152,7 +152,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                               onClick={() => openPaymentModal(s)}
                               className="px-3 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-sm press flex items-center justify-center gap-1.5 shrink-0"
                            >
-                              <DollarSign size={13} /> Settle
+                              <DollarSign size={13} /> Pay
                            </button>
                         </div>
                      </div>
@@ -161,7 +161,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                ) : (
                  <div className="py-20 bg-slate-50 border-2 border-dashed border-slate-100 rounded-[2rem] flex flex-col items-center justify-center text-slate-300">
                     <CheckCircle2 size={40} className="mb-3 opacity-20" />
-                    <p className="text-xs font-black uppercase tracking-widest opacity-40">Zero Outstanding Liabilities</p>
+                    <p className="text-xs font-black uppercase tracking-widest opacity-40">No supplier debt</p>
                  </div>
                )}
             </div>
@@ -196,7 +196,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                                     {getMethodIcon(p.paymentMethod)}
                                  </div>
                                  <div className="stable-row-copy">
-                                    <h4 className="text-[11px] font-black text-slate-900 stable-title leading-tight">{vendor?.company || 'Unknown Vendor'}</h4>
+                                    <h4 className="text-[11px] font-black text-slate-900 stable-title leading-tight">{vendor?.company || 'Unknown Supplier'}</h4>
                                     <div className="flex items-center gap-2 mt-1 overflow-hidden">
                                        <span className="text-[9px] font-bold text-slate-400 uppercase">{new Date(p.timestamp).toLocaleDateString()}</span>
                                        <span className="w-1 h-1 rounded-full bg-slate-200" />
@@ -222,7 +222,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                                     <ArrowUpRight size={18} />
                                  </div>
                                  <div className="stable-row-copy">
-                                    <h4 className="text-[11px] font-black text-slate-900 stable-title leading-tight">{vendor?.company || 'Unknown Vendor'}</h4>
+                                    <h4 className="text-[11px] font-black text-slate-900 stable-title leading-tight">{vendor?.company || 'Unknown Supplier'}</h4>
                                     <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">{new Date(cn.timestamp).toLocaleDateString()}</p>
                                  </div>
                               </div>
@@ -240,7 +240,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                   {(activeHistoryTab === 'PAYMENTS' ? sortedPayments : sortedCredits).length === 0 && (
                      <div className="py-20 text-center flex flex-col items-center opacity-30">
                         <History size={40} className="mb-4" />
-                        <p className="text-[10px] font-black uppercase tracking-widest">No activity log found</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest">No records found</p>
                      </div>
                   )}
                </div>

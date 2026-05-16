@@ -53,7 +53,7 @@ const navGroups: Array<{
     label: 'Stockroom',
     items: [
       { id: 'INVENTORY', label: 'Inventory', icon: Package, desc: 'Products and stock', accent: 'text-slate-700 bg-slate-100 border-slate-200' },
-      { id: 'SUPPLIERS', label: 'Suppliers', icon: Truck, desc: 'Vendor records', accent: 'text-cyan-700 bg-cyan-50 border-cyan-100', adminOnly: true },
+      { id: 'SUPPLIERS', label: 'Suppliers', icon: Truck, desc: 'Supplier list', accent: 'text-cyan-700 bg-cyan-50 border-cyan-100', adminOnly: true },
       { id: 'PURCHASES', label: 'Purchases', icon: ShoppingBag, desc: 'Orders and goods', accent: 'text-amber-700 bg-amber-50 border-amber-100' },
     ],
   },
@@ -61,7 +61,7 @@ const navGroups: Array<{
     id: 'finance',
     label: 'Money',
     items: [
-      { id: 'EXPENSES', label: 'Expenses', icon: CircleDollarSign, desc: 'Cash outflows', accent: 'text-rose-600 bg-rose-50 border-rose-100' },
+      { id: 'EXPENSES', label: 'Expenses', icon: CircleDollarSign, desc: 'Money spent', accent: 'text-rose-600 bg-rose-50 border-rose-100' },
       { id: 'REFUNDS', label: 'Refunds', icon: RotateCcw, desc: 'Returns queue', accent: 'text-orange-700 bg-orange-50 border-orange-100' },
       { id: 'REPORTS', label: 'Reports', icon: BarChart3, desc: 'Performance', accent: 'text-indigo-600 bg-indigo-50 border-indigo-100', adminOnly: true },
       { id: 'DOCUMENTS', label: 'Documents', icon: FileText, desc: 'Receipts', accent: 'text-teal-700 bg-teal-50 border-teal-100' },

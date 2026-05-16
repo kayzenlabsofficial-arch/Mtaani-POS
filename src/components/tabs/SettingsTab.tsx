@@ -111,7 +111,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
             aiDailyRequestLimit: Math.min(200, Math.max(1, Number(aiSettings.aiDailyRequestLimit) || 20)),
             businessId: activeBusinessId!,
         });
-        success("Business configuration saved successfully!");
+        success("Business settings saved.");
       } catch (err) {
         console.error(err);
       } finally {
@@ -132,18 +132,18 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
         <div>
           <h2 className="text-xl font-black text-slate-900">System Settings</h2>
           <div className="flex items-center gap-3 mt-1">
-            <span className="text-[10px] font-bold text-slate-500">Business Identity</span>
+            <span className="text-[10px] font-bold text-slate-500">Business Info</span>
             <span className="text-slate-300">·</span>
             <span className="text-[10px] font-bold text-emerald-600">Hardware Profile</span>
             <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-indigo-600">Enterprise Runtime</span>
+            <span className="text-[10px] font-bold text-indigo-600">App Version</span>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
          
-         {/* Left: Business Identity */}
+         {/* Left: Business Info */}
          <div className="space-y-6">
             <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
                <h3 className="text-base font-bold text-slate-900 mb-6 flex items-center gap-2">
@@ -180,13 +180,13 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                </div>
             </div>
 
-            {/* System Update Node */}
+            {/* System Updates */}
             <div className="bg-slate-900 p-8 rounded-[2.5rem] border-2 border-slate-800 text-white relative overflow-hidden group">
                <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-6">
                   <div>
                       <h4 className="text-base font-bold leading-tight">Software Updates</h4>
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                        Status: {needRefresh ? 'Critical Update Pending' : 'Enterprise v2.4 Certified'}
+                        Status: {needRefresh ? 'Update ready' : 'App is up to date'}
                       </p>
                   </div>
                   <button 
@@ -399,7 +399,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                   <ShieldAlert size={32} />
                </div>
                <div>
-                  <h4 className="text-base font-black text-rose-900 leading-tight">Hardened Policy Node</h4>
+                  <h4 className="text-base font-black text-rose-900 leading-tight">Safety Settings</h4>
                   <p className="text-[10px] font-bold text-rose-600/60 uppercase tracking-widest mt-1">
                     Environment: {isAdmin ? 'Root Administrator' : 'Standard User'} Access
                   </p>

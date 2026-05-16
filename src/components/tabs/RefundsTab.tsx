@@ -34,7 +34,7 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
             <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
                 <RotateCcw size={32} className="text-slate-300" />
             </div>
-            <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Auditing Returns...</p>
+            <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Loading returns...</p>
         </div>
     );
   }

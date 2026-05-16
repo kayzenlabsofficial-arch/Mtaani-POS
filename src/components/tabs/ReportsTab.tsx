@@ -324,9 +324,9 @@ export default function ReportsTab() {
         {/* Global Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard title="Total Revenue" value={totalRevenue} icon={<TrendingUp size={24}/>} color="indigo" subtitle={`${filteredTransactions.length} orders processed`} />
-          <StatCard title="Net Profit" value={netProfit} icon={<Target size={24}/>} color={netProfit >= 0 ? "emerald" : "rose"} subtitle={`Post-COGS, expenses${deductTaxInPL ? ' & VAT' : ''}`} />
-          <StatCard title="Gross Margin" value={((grossProfit / (totalRevenue || 1)) * 100)} unit="%" icon={<Layers size={24}/>} color="blue" subtitle="Efficiency of goods" />
-          <StatCard title="Expense Rate" value={((totalExpenseAmount / (totalRevenue || 1)) * 100)} unit="%" icon={<Activity size={24}/>} color="amber" subtitle="Burn vs Revenue" />
+          <StatCard title="Net Profit" value={netProfit} icon={<Target size={24}/>} color={netProfit >= 0 ? "emerald" : "rose"} subtitle={`After stock cost, expenses${deductTaxInPL ? ' and VAT' : ''}`} />
+          <StatCard title="Profit Margin" value={((grossProfit / (totalRevenue || 1)) * 100)} unit="%" icon={<Layers size={24}/>} color="blue" subtitle="Profit made from sales" />
+          <StatCard title="Expense Share" value={((totalExpenseAmount / (totalRevenue || 1)) * 100)} unit="%" icon={<Activity size={24}/>} color="amber" subtitle="Expenses compared to sales" />
         </div>
 
         {/* Primary Analytical Charts */}
@@ -374,7 +374,7 @@ export default function ReportsTab() {
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                 <p className="text-[10px] font-black text-slate-400 uppercase">Total Burn</p>
+                 <p className="text-[10px] font-black text-slate-400 uppercase">Total Spent</p>
                  <p className="text-lg font-black text-slate-900 leading-none">Ksh {totalExpenseAmount.toLocaleString()}</p>
               </div>
             </div>
@@ -412,23 +412,23 @@ export default function ReportsTab() {
              </div>
              <div className="mt-6 flex justify-center gap-6">
                 <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500 rounded-sm"/> <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Revenue</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-indigo-500 rounded-sm"/> <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Profit Contribution</span></div>
+                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-indigo-500 rounded-sm"/> <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Profit</span></div>
              </div>
           </section>
 
           <section className="bg-white rounded-[2.5rem] overflow-hidden border-2 border-slate-100 shadow-sm">
             <div className="px-8 py-6 border-b-2 border-slate-50 bg-slate-50/50">
-              <h3 className="text-lg font-bold text-slate-900">Summary Stats</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Performance Summary</p>
+              <h3 className="text-lg font-bold text-slate-900">Quick Summary</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">How the business is doing</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <tbody className="divide-y-2 divide-slate-50 text-sm">
-                  <SummaryRow metric="Net Profitability" value={`Ksh ${Math.floor(netProfit).toLocaleString()}`} target="Positive" ok={netProfit >= 0} />
-                  <SummaryRow metric="Gross Margin %" value={`${((grossProfit / (totalRevenue || 1)) * 100).toFixed(1)}%`} target="> 25%" ok={((grossProfit / (totalRevenue || 1)) * 100) >= 25} />
-                  <SummaryRow metric="Avg. Basket Size" value={`Ksh ${Math.floor(averageBasket).toLocaleString()}`} target="Ksh 500+" ok={averageBasket >= 500} />
-                  <SummaryRow metric="Stock Health" value={`${lowStockCount} Low SKU`} target="< 10" ok={lowStockCount < 10} />
-                  <SummaryRow metric="Credit Exposure" value={`${creditTransactions} Tx`} target="< 15%" ok={creditTransactions <= (filteredTransactions.length * 0.15)} />
+                  <SummaryRow metric="Net Profit" value={`Ksh ${Math.floor(netProfit).toLocaleString()}`} target="Above zero" ok={netProfit >= 0} />
+                  <SummaryRow metric="Profit Margin" value={`${((grossProfit / (totalRevenue || 1)) * 100).toFixed(1)}%`} target="Above 25%" ok={((grossProfit / (totalRevenue || 1)) * 100) >= 25} />
+                  <SummaryRow metric="Average Sale" value={`Ksh ${Math.floor(averageBasket).toLocaleString()}`} target="Ksh 500+" ok={averageBasket >= 500} />
+                  <SummaryRow metric="Low Stock Items" value={`${lowStockCount} items`} target="Less than 10" ok={lowStockCount < 10} />
+                  <SummaryRow metric="Credit Sales" value={`${creditTransactions} sales`} target="Under 15%" ok={creditTransactions <= (filteredTransactions.length * 0.15)} />
                 </tbody>
               </table>
             </div>
@@ -446,7 +446,7 @@ export default function ReportsTab() {
                   <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-indigo">
                     <Activity size={28} />
                   </div>
-                  Product Analysis
+                  Product Sales Details
                 </h3>
                 <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-3 opacity-60">Detailed product sales</p>
               </div>
@@ -470,26 +470,26 @@ export default function ReportsTab() {
             {selectedProduct ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 animate-in slide-in-from-bottom-8 duration-500">
                  <div className="bg-white/5 backdrop-blur-sm border-2 border-white/5 p-8 rounded-[2rem] hover:bg-white/10 transition-all">
-                    <p className="text-indigo-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><Layers size={14}/> Volume Sales</p>
+                    <p className="text-indigo-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><Layers size={14}/> Units Sold</p>
                     <div className="flex items-baseline gap-2">
                        <h4 className="text-5xl font-black tabular-nums">{productStats.totalQty}</h4>
                        <span className="text-sm font-bold text-slate-500 uppercase">{selectedProduct.unit || 'Units'}</span>
                     </div>
                  </div>
                  <div className="bg-white/5 backdrop-blur-sm border-2 border-white/5 p-8 rounded-[2rem] hover:bg-white/10 transition-all">
-                    <p className="text-emerald-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><TrendingUp size={14}/> SKU Revenue</p>
+                    <p className="text-emerald-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><TrendingUp size={14}/> Product Sales</p>
                     <h4 className="text-4xl font-black tabular-nums">Ksh {productStats.totalRevenue.toLocaleString()}</h4>
                  </div>
                  <div className="bg-white/5 backdrop-blur-sm border-2 border-white/5 p-8 rounded-[2rem] hover:bg-white/10 transition-all">
-                    <p className="text-amber-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><Package size={14}/> Stock Health</p>
+                    <p className="text-amber-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><Package size={14}/> Stock Left</p>
                     <h4 className={`text-4xl font-black tabular-nums ${selectedProduct.stockQuantity < 10 ? 'text-rose-500' : 'text-white'}`}>{selectedProduct.stockQuantity}</h4>
                  </div>
                  <div className="grad-indigo p-8 rounded-[2rem] shadow-indigo flex flex-col justify-between">
                     <div>
-                       <p className="text-indigo-200 text-[10px] font-black uppercase tracking-widest mb-2">Profit Contribution</p>
+                       <p className="text-indigo-200 text-[10px] font-black uppercase tracking-widest mb-2">Profit</p>
                        <h4 className="text-3xl font-black truncate">Ksh {(productPerf[selectedProduct.id]?.profit || 0).toLocaleString()}</h4>
                     </div>
-                    <div className="text-[10px] font-black bg-white/20 px-4 py-1.5 rounded-full w-fit uppercase tracking-widest">Net Margin: {(( (productPerf[selectedProduct.id]?.profit || 0) / (productStats.totalRevenue || 1) ) * 100).toFixed(1)}%</div>
+                    <div className="text-[10px] font-black bg-white/20 px-4 py-1.5 rounded-full w-fit uppercase tracking-widest">Profit Rate: {(( (productPerf[selectedProduct.id]?.profit || 0) / (productStats.totalRevenue || 1) ) * 100).toFixed(1)}%</div>
                  </div>
               </div>
             ) : (

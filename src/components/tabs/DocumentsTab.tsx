@@ -55,7 +55,7 @@ export default function DocumentsTab() {
            <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
               <FileSearch size={32} className="text-slate-300" />
            </div>
-           <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Hydrating Ledger...</p>
+           <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Loading records...</p>
         </div>
       );
   }
@@ -160,13 +160,13 @@ export default function DocumentsTab() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
-          <h2 className="text-xl font-black text-slate-900">Digital Archive</h2>
+          <h2 className="text-xl font-black text-slate-900">Documents</h2>
           <div className="flex items-center gap-3 mt-1">
             <span className="text-[10px] font-bold text-slate-500">{unifiedRecords.length} records</span>
             <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-emerald-600">Verified</span>
+            <span className="text-[10px] font-bold text-emerald-600">Saved</span>
             <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-indigo-600">Cloud Storage</span>
+            <span className="text-[10px] font-bold text-indigo-600">Online backup</span>
           </div>
         </div>
       </div>
@@ -175,15 +175,15 @@ export default function DocumentsTab() {
       <div ref={scrollRef} className="mb-6 overflow-x-auto no-scrollbar pb-2">
         <div className="flex gap-2 min-w-max">
            {[
-             { id: 'ALL', label: 'Universal Feed' },
+             { id: 'ALL', label: 'All Documents' },
              { id: 'APPROVALS', label: 'Pending Approvals' },
-             { id: 'SALES', label: 'Sales Orders' },
-             { id: 'MPESA', label: 'M-Pesa Ledger' },
-             { id: 'EXPENSES', label: 'Operational Costs' },
-             { id: 'SUPPLIER_PAYMENTS', label: 'Settlements' },
-             { id: 'INVOICES', label: 'Vendor Invoices' },
+             { id: 'SALES', label: 'Sales Receipts' },
+             { id: 'MPESA', label: 'M-Pesa Payments' },
+             { id: 'EXPENSES', label: 'Expenses' },
+             { id: 'SUPPLIER_PAYMENTS', label: 'Supplier Payments' },
+             { id: 'INVOICES', label: 'Supplier Bills' },
              { id: 'SHIFTS', label: 'Shift Reports' },
-             { id: 'DAILY', label: 'Master Summary' }
+             { id: 'DAILY', label: 'Daily Summary' }
            ].map(type => (
              <button 
                key={type.id} 
@@ -302,16 +302,16 @@ export default function DocumentsTab() {
                   </div>
                   {utilized && row.linkedReceiptNumber && (
                     <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                      POS Receipt #{row.linkedReceiptNumber}
+                      Used on receipt #{row.linkedReceiptNumber}
                     </p>
                   )}
                 </div>
                 <div className="hidden sm:flex flex-col items-end gap-1 shrink-0">
                   <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest ${utilized ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
-                    {row.utilizationStatus}
+                    {utilized ? 'Used' : 'Unused'}
                   </span>
                   <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest ${paid ? 'bg-emerald-50 text-emerald-700' : row.paymentStatus === 'PENDING' ? 'bg-slate-100 text-slate-600' : 'bg-rose-50 text-rose-700'}`}>
-                    {row.paymentStatus}
+                    {row.paymentStatus === 'PAID' ? 'Paid' : row.paymentStatus === 'PENDING' ? 'Waiting' : 'Failed'}
                   </span>
                 </div>
                 <div className="text-right shrink-0 min-w-[90px]">
@@ -387,15 +387,15 @@ export default function DocumentsTab() {
                    <h4 className="text-sm font-black text-slate-900 truncate">
                      {isSale ? `Receipt #${r.id.split('-')[0].toUpperCase()}` : 
                       isExp ? `Expense: ${r.category}` : 
-                      isPay ? 'Supplier Settlement' :
-                      isShift ? `Shift Closure` :
-                      isDaily ? `Business Summary` :
+                      isPay ? 'Supplier Payment' :
+                      isShift ? `Shift Report` :
+                      isDaily ? `Daily Summary` :
                       `Invoice #${r.invoiceNumber || r.id.split('-')[0].toUpperCase()}`}
                    </h4>
                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(r.timestamp).toLocaleDateString()}</span>
                       <span className="w-1 h-1 rounded-full bg-slate-200" />
-                      <span className="text-[10px] font-bold text-slate-400 truncate max-w-[120px]">{r.description || r.reference || 'Automated entry'}</span>
+                      <span className="text-[10px] font-bold text-slate-400 truncate max-w-[120px]">{r.description || r.reference || 'Saved record'}</span>
                    </div>
                 </div>
                 <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter shrink-0 ${
@@ -406,8 +406,8 @@ export default function DocumentsTab() {
                 }`}>
                   {isSale ? r.status : 
                    r.recordType === 'PURCHASE_ORDER' ? (r.paymentStatus || 'UNPAID') :
-                   isShift ? 'FINALIZED' :
-                   isDaily ? 'MASTERED' :
+                   isShift ? 'Closed' :
+                   isDaily ? 'Done' :
                    r.recordType.replace('_', ' ')}
                 </span>
                 <div className="text-right shrink-0 min-w-[100px]">

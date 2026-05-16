@@ -34,11 +34,11 @@ export function LoginScreen({
           </div>
           <h1 className="text-5xl font-black text-white mb-4 tracking-tight">Mtaani POS</h1>
           <p className="text-blue-100 text-lg font-medium max-w-xs mx-auto leading-relaxed">
-            Enterprise-grade point of sale for modern Kenyan businesses.
+            Simple sales, stock, and money tracking for Kenyan businesses.
           </p>
           <div className="mt-12 grid grid-cols-3 gap-6 text-center">
             {[
-              { icon: Cloud, label: 'Cloud Sync' },
+              { icon: Cloud, label: 'Online Backup' },
               { icon: Wifi, label: 'Works Offline' },
               { icon: ShieldCheck, label: 'Secure' },
             ].map(f => {

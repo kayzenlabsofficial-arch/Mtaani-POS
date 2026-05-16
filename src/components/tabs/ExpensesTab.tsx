@@ -165,7 +165,7 @@ export default function ExpensesTab() {
               <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
                   <FileMinus size={32} className="text-slate-300" />
               </div>
-              <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Loading Financial Ledger...</p>
+              <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Loading expenses...</p>
           </div>
       );
   }

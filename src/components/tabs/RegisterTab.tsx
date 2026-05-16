@@ -196,10 +196,10 @@ function SalePanel({
 
   const paymentOptions = [
     { id: 'CASH' as const, label: 'Cash', icon: Banknote, desc: 'Cash received and change due' },
-    { id: 'MPESA' as const, label: 'M-Pesa', icon: Smartphone, desc: 'STK prompt or receipt code' },
-    { id: 'PDQ' as const, label: 'PDQ', icon: CreditCard, desc: 'Card terminal reference' },
+    { id: 'MPESA' as const, label: 'M-Pesa', icon: Smartphone, desc: 'Phone request or receipt code' },
+    { id: 'PDQ' as const, label: 'Card', icon: CreditCard, desc: 'Card machine reference' },
     { id: 'SPLIT' as const, label: 'Split', icon: Split, desc: 'Cash plus another method' },
-    { id: 'CREDIT' as const, label: 'Credit', icon: UserRound, desc: 'Post to customer account' },
+    { id: 'CREDIT' as const, label: 'Credit', icon: UserRound, desc: 'Save as customer debt' },
   ];
   const checkoutSteps = [
     { id: 'ITEMS', label: 'Items' },
@@ -279,7 +279,7 @@ function SalePanel({
       if (attempts > 36) {
         window.clearInterval(interval);
         setMpesaState('FAILED');
-        error('M-Pesa prompt timed out. Confirm manually if payment arrived.');
+        error('M-Pesa request timed out. Check if the customer paid.');
         return;
       }
 
@@ -319,19 +319,19 @@ function SalePanel({
   };
 
   const sendMpesaPrompt = async () => {
-    if (!activeBusinessId || !activeBranchId) return error('Select a branch before sending M-Pesa prompt.');
-    if (!mpesaPhone.trim()) return warning('Enter the customer phone number for the M-Pesa prompt.');
+    if (!activeBusinessId || !activeBranchId) return error('Select a branch before sending an M-Pesa request.');
+    if (!mpesaPhone.trim()) return warning('Enter the customer phone number for the M-Pesa request.');
     if (cart.length === 0 || total <= 0 || mpesaState === 'PUSHING' || mpesaState === 'POLLING') return;
 
     setMpesaState('PUSHING');
     const res = await MpesaService.triggerStkPush(mpesaPhone.trim(), total, `SALE-${Date.now()}`, activeBusinessId, activeBranchId);
     if (res.success && res.checkoutRequestId) {
       setMpesaState('POLLING');
-      success('Prompt sent. Waiting up to 3 minutes for confirmation.');
+      success('M-Pesa request sent. Waiting up to 3 minutes for payment.');
       pollMpesaAndComplete(res.checkoutRequestId);
     } else {
       setMpesaState('FAILED');
-      error(res.error || 'Could not send M-Pesa prompt.');
+      error(res.error || 'Could not send M-Pesa request.');
     }
   };
 
@@ -376,7 +376,7 @@ function SalePanel({
 
       if (paymentMode === 'SPLIT') {
         if (splitCashAmount <= 0 || splitCashAmount >= total) {
-          warning('Enter the cash part so the balance can go to M-Pesa, PDQ, or credit.');
+          warning('Enter the cash part so the balance can go to M-Pesa, card, or credit.');
           return;
         }
         let verifiedMpesa: any | null = null;
@@ -428,7 +428,7 @@ function SalePanel({
     }
     if (paymentMode === 'SPLIT') {
       if (splitCashAmount <= 0 || splitCashAmount >= total) {
-        warning('Enter the cash part so the balance can go to M-Pesa, PDQ, or credit.');
+        warning('Enter the cash part so the balance can go to M-Pesa, card, or credit.');
         return false;
       }
       if (splitSecondaryMethod === 'MPESA') {
@@ -447,6 +447,7 @@ function SalePanel({
 
   const selectedPaymentOption = paymentOptions.find(option => option.id === paymentWindow) || paymentOptions.find(option => option.id === paymentMode) || paymentOptions[0];
   const SelectedPaymentIcon = selectedPaymentOption.icon;
+  const paymentLabel = (method: string) => method === 'MPESA' ? 'M-Pesa' : method === 'PDQ' ? 'Card' : method;
 
   return (
     <aside className={`bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col min-h-[22rem] lg:sticky lg:top-0 lg:max-h-[calc(100vh-9rem)] shadow-sm ${className}`}>
@@ -561,7 +562,7 @@ function SalePanel({
             <span className="block text-sm font-black text-rose-700 tabular-nums truncate">Ksh {discountAmount.toLocaleString()}</span>
           </div>
           <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 min-w-0">
-            <span className="block text-[9px] font-black text-emerald-700 uppercase tracking-widest">Payable</span>
+            <span className="block text-[9px] font-black text-emerald-700 uppercase tracking-widest">To Pay</span>
             <span className="block text-sm font-black text-emerald-950 tabular-nums truncate">Ksh {total.toLocaleString()}</span>
           </div>
         </div>
@@ -633,7 +634,7 @@ function SalePanel({
         <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
           <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Selected method</p>
           <div className="mt-1 flex items-center justify-between gap-3">
-            <span className="text-sm font-black text-blue-950">{paymentMode === 'MPESA' ? 'M-Pesa' : paymentMode}</span>
+            <span className="text-sm font-black text-blue-950">{paymentLabel(paymentMode)}</span>
             <button
               type="button"
               onClick={() => setPaymentWindow(paymentMode)}
@@ -652,7 +653,7 @@ function SalePanel({
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Payment</span>
-                <span className="text-xs font-black text-slate-900">{paymentMode === 'MPESA' ? 'M-Pesa' : paymentMode}</span>
+                <span className="text-xs font-black text-slate-900">{paymentLabel(paymentMode)}</span>
               </div>
               {selectedCustomer && (
                 <div className="flex items-center justify-between gap-3">
@@ -666,7 +667,7 @@ function SalePanel({
                   <p className="text-sm font-black text-slate-900 tabular-nums">Ksh {subtotal.toLocaleString()}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Payable</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">To Pay</p>
                   <p className="text-lg font-black text-emerald-700 tabular-nums">Ksh {total.toLocaleString()}</p>
                 </div>
               </div>
@@ -768,7 +769,7 @@ function SalePanel({
                   <p className="mt-1 truncate text-sm font-black text-rose-700">Ksh {discountAmount.toLocaleString()}</p>
                 </div>
                 <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-3">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700">Payable</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700">To Pay</p>
                   <p className="mt-1 truncate text-sm font-black text-emerald-950">Ksh {total.toLocaleString()}</p>
                 </div>
               </div>
@@ -800,7 +801,7 @@ function SalePanel({
               {paymentWindow === 'MPESA' && (
                 <div className="space-y-3">
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">STK prompt</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">M-Pesa phone request</p>
                     <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                       <input
                         value={mpesaPhone}
@@ -816,7 +817,7 @@ function SalePanel({
                         data-testid="mpesa-prompt"
                         className="h-12 rounded-2xl bg-emerald-600 px-5 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
                       >
-                        {mpesaState === 'PUSHING' || mpesaState === 'POLLING' ? 'Waiting' : 'Send Prompt'}
+                        {mpesaState === 'PUSHING' || mpesaState === 'POLLING' ? 'Waiting' : 'Send Request'}
                       </button>
                     </div>
                   </div>
@@ -845,7 +846,7 @@ function SalePanel({
 
                   {mpesaState !== 'IDLE' && (
                     <p className={`rounded-2xl px-4 py-3 text-[10px] font-black uppercase tracking-widest ${mpesaState === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : mpesaState === 'FAILED' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
-                      {mpesaState === 'PUSHING' ? 'Sending prompt' : mpesaState === 'POLLING' ? 'Awaiting customer PIN' : mpesaState === 'SUCCESS' ? 'Payment confirmed' : 'Prompt failed or timed out'}
+                      {mpesaState === 'PUSHING' ? 'Sending request' : mpesaState === 'POLLING' ? 'Waiting for customer PIN' : mpesaState === 'SUCCESS' ? 'Payment received' : 'Request failed or timed out'}
                     </p>
                   )}
                   {mpesaVerification && (
@@ -858,7 +859,7 @@ function SalePanel({
 
               {paymentWindow === 'PDQ' && (
                 <label className="block">
-                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">PDQ reference</span>
+                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Card machine reference</span>
                   <div className="relative mt-2">
                     <CreditCard className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input
@@ -875,7 +876,7 @@ function SalePanel({
               {paymentWindow === 'CREDIT' && (
                 <div className="space-y-3">
                   <label className="block">
-                    <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Customer account</span>
+                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Customer</span>
                     <select
                       value={selectedCustomerId}
                       onChange={(event) => setSelectedCustomerId(event.target.value)}
@@ -920,7 +921,7 @@ function SalePanel({
                         className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
                       >
                         <option value="MPESA">M-Pesa</option>
-                        <option value="PDQ">PDQ</option>
+                        <option value="PDQ">Card</option>
                         <option value="CREDIT">Credit</option>
                       </select>
                     </label>

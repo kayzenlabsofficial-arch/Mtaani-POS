@@ -73,7 +73,7 @@ export default function BillingBanner({ activeBusinessId, currentUser }: Props) 
         setPaymentId('');
         window.clearInterval(timer);
       } else if (attempts >= 48) {
-        setStatusMessage('The prompt is still pending. You can check again shortly.');
+        setStatusMessage('The M-Pesa request is still waiting. You can check again shortly.');
         setPaymentId('');
         window.clearInterval(timer);
       }
@@ -84,7 +84,7 @@ export default function BillingBanner({ activeBusinessId, currentUser }: Props) 
   const handleSendPrompt = async () => {
     if (!activeBusinessId || isSending) return;
     const numericAmount = Math.ceil(Number(amount || 0));
-    if (!phone.trim()) return setStatusMessage('Enter the phone number to prompt.');
+    if (!phone.trim()) return setStatusMessage('Enter the phone number to send the M-Pesa request.');
     if (numericAmount <= 0) return setStatusMessage('Enter a valid payment amount.');
     if (account?.allowPartial && numericAmount < minPartial) return setStatusMessage(`Minimum payment is ${money(minPartial)}.`);
 
@@ -102,7 +102,7 @@ export default function BillingBanner({ activeBusinessId, currentUser }: Props) 
       return;
     }
     setPaymentId(data.paymentId);
-    setStatusMessage(data.message || 'M-Pesa prompt sent. Waiting for confirmation.');
+    setStatusMessage(data.message || 'M-Pesa request sent. Waiting for payment.');
   };
 
   if (!activeBusinessId || !invoice || !showBanner || isHidden || balance <= 0) return null;
@@ -216,7 +216,7 @@ export default function BillingBanner({ activeBusinessId, currentUser }: Props) 
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-700 px-5 py-4 text-xs font-black uppercase tracking-widest text-white transition-all hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSending || paymentId ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />}
-                {paymentId ? 'Waiting for Payment' : 'Send STK Prompt'}
+                {paymentId ? 'Waiting for Payment' : 'Send M-Pesa Request'}
               </button>
             </div>
           </div>

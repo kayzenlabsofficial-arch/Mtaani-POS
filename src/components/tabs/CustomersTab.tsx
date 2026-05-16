@@ -210,7 +210,7 @@ export default function CustomersTab() {
         startPolling(res.checkoutRequestId, amount);
       } else {
         setMpesaState('FAILED');
-        error(res.error || "STK Push failed");
+        error(res.error || "Could not send M-Pesa request");
       }
     } catch (err) {
       setMpesaState('FAILED');
@@ -438,7 +438,7 @@ export default function CustomersTab() {
               >
                 <option value="CASH">Cash</option>
                 <option value="MPESA">M-Pesa</option>
-                <option value="PDQ">PDQ</option>
+                <option value="PDQ">Card Machine</option>
                 <option value="BANK">Bank</option>
                 <option value="CHEQUE">Cheque</option>
               </select>
@@ -692,7 +692,7 @@ function CustomerProfileModal({
                               onClick={onMpesaRepayment}
                               className="px-6 py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-emerald active:scale-95 transition-all flex items-center gap-2"
                             >
-                              Push
+                              Send Request
                             </button>
                          </div>
                        ) : (
@@ -703,9 +703,9 @@ function CustomerProfileModal({
                                <Loader2 className="text-indigo-600 animate-spin" size={24} />
                             )}
                             <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
-                               {mpesaState === 'PUSHING' ? 'Sending STK Prompt...' : 
+                               {mpesaState === 'PUSHING' ? 'Sending M-Pesa request...' : 
                                 mpesaState === 'POLLING' ? 'Awaiting Customer PIN...' : 
-                                mpesaState === 'SUCCESS' ? 'Repayment Confirmed!' : 'Processing...'}
+                                mpesaState === 'SUCCESS' ? 'Payment received!' : 'Working...'}
                             </span>
                          </div>
                        )}
@@ -715,11 +715,11 @@ function CustomerProfileModal({
 
               <div className="flex gap-4 mt-auto">
                  <button onClick={onClose} disabled={isSaving} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press disabled:opacity-50">
-                   Dismiss
+                   Cancel
                  </button>
                  <button onClick={onSave} disabled={!customerForm.name || isSaving} className="flex-[2] grad-blue text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-blue press flex items-center justify-center gap-3">
                    {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                   {isSaving ? 'Processing...' : 'Save Record'}
+                   {isSaving ? 'Saving...' : 'Save Customer'}
                  </button>
               </div>
            </div>

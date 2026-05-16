@@ -85,7 +85,7 @@ export default function PurchasesTab() {
               supplierId: poForm.supplierId,
               items: poItems.map(item => ({ ...item, receivedQuantity: 0 })),
               totalAmount,
-              preparedBy: selectedPOToEdit.preparedBy || currentUser?.name || 'Authorized Staff',
+              preparedBy: selectedPOToEdit.preparedBy || currentUser?.name || 'Staff',
               ...(autoApprove ? { approvalStatus: 'APPROVED', approvedBy: currentUser?.name || 'Owner' } : {}),
               branchId: activeBranchId!
            });
@@ -110,7 +110,7 @@ export default function PurchasesTab() {
               status: 'PENDING',
               approvalStatus: autoApprove ? 'APPROVED' : 'PENDING',
               orderDate: Date.now(),
-              preparedBy: currentUser?.name || 'Authorized Staff',
+              preparedBy: currentUser?.name || 'Staff',
               approvedBy: autoApprove ? currentUser?.name || 'Owner' : undefined,
               branchId: activeBranchId!,
               businessId: activeBusinessId!
@@ -188,7 +188,7 @@ export default function PurchasesTab() {
             totalAmount: totalReceivedCost,
             receivedDate: Date.now(),
             invoiceNumber,
-            receivedBy: currentUser?.name || 'Authorized Staff',
+            receivedBy: currentUser?.name || 'Staff',
             updated_at: Date.now(),
         });
 
@@ -244,13 +244,13 @@ export default function PurchasesTab() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
-          <h2 className="text-xl font-black text-slate-900">Procurement</h2>
+          <h2 className="text-xl font-black text-slate-900">Purchases</h2>
           <div className="flex items-center gap-3 mt-1">
             <span className="text-[10px] font-bold text-amber-600">{pendingApproval} pending</span>
             <span className="text-slate-300">·</span>
             <span className="text-[10px] font-bold text-blue-600">{awaitingArrival} awaiting arrival</span>
             <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-slate-500">Vol: Ksh {totalPurchases.toLocaleString()}</span>
+            <span className="text-[10px] font-bold text-slate-500">Total: Ksh {totalPurchases.toLocaleString()}</span>
           </div>
         </div>
         <button
@@ -268,7 +268,7 @@ export default function PurchasesTab() {
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={16} />
           <input
             type="text"
-            placeholder="Search by vendor, PO # or invoice number..."
+            placeholder="Search by supplier, order number, or invoice number..."
             value={purchaseSearch}
             onChange={(e) => setPurchaseSearch(e.target.value)}
             className="w-full pl-10 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/15 focus:border-primary outline-none shadow-sm transition-all"
@@ -335,7 +335,7 @@ export default function PurchasesTab() {
              <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-4 shadow-inner text-slate-200">
                <ClipboardList size={36} />
              </div>
-             <p className="text-slate-500 font-black text-base">No procurement records found</p>
+             <p className="text-slate-500 font-black text-base">No purchase orders found</p>
              <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Orders and stock arrivals will appear here</p>
            </div>
          )}
@@ -353,14 +353,14 @@ export default function PurchasesTab() {
                    <ClipboardList size={24} />
                  </div>
                  <div>
-                   <h2 className="text-xl font-black text-slate-900 tracking-tight">{selectedPOToEdit ? 'Edit Purchase Order' : 'New Procurement Order'}</h2>
-                   <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Supply Chain Request</p>
+                   <h2 className="text-xl font-black text-slate-900 tracking-tight">{selectedPOToEdit ? 'Edit Purchase Order' : 'New Purchase Order'}</h2>
+                   <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Order stock from a supplier</p>
                  </div>
               </div>
 
               <div className="space-y-6 mb-10">
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Select Registered Vendor</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Select Supplier</label>
                     <SearchableSelect
                       value={poForm.supplierId}
                       onChange={(v) => setPoForm({ supplierId: v })}
@@ -376,7 +376,7 @@ export default function PurchasesTab() {
                  </div>
                  
                  <div className="bg-slate-50 rounded-[2rem] p-6 border-2 border-slate-100 space-y-4">
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">SKU Selection</h4>
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Choose Products</h4>
                     <div className="relative group">
                        <input 
                            type="text" 
@@ -447,11 +447,11 @@ export default function PurchasesTab() {
 
               <div className="sticky bottom-0 bg-white flex gap-4 mt-auto pt-6 pb-2 border-t border-slate-50">
                  <button onClick={() => { setIsPOModalOpen(false); setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); }} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
-                   Dismiss
+                   Cancel
                  </button>
                  <button data-testid="purchase-save-order" onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0 || isSaving} className="flex-[2] grad-indigo text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-indigo press flex items-center justify-center gap-3">
                    {selectedPOToEdit ? <Save size={18}/> : <PackagePlus size={18}/>}
-                   {isSaving ? 'Saving...' : selectedPOToEdit ? 'Commit Changes' : 'Process PO'}
+                   {isSaving ? 'Saving...' : selectedPOToEdit ? 'Save Changes' : 'Create Order'}
                  </button>
               </div>
            </div>
@@ -477,7 +477,7 @@ export default function PurchasesTab() {
 
               <div className="space-y-6 mb-10">
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Vendor Invoice Number</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Supplier Invoice Number</label>
                     <input data-testid="purchase-receive-invoice" type="text" value={receiveInvoices[selectedPO.id] || ''} onChange={e => setReceiveInvoices({...receiveInvoices, [selectedPO.id]: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 focus:bg-white rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="e.g. INV/2026/001" />
                  </div>
 
@@ -533,11 +533,11 @@ export default function PurchasesTab() {
 
               <div className="sticky bottom-0 bg-white flex gap-4 mt-auto pt-6 pb-2 border-t border-slate-50">
                  <button onClick={() => setIsReceivePOModalOpen(false)} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
-                   Dismiss
+                   Cancel
                  </button>
                  <button data-testid="purchase-confirm-arrival" onClick={handleReceivePO} disabled={!receiveInvoices[selectedPO.id] || isSaving} className="flex-[2] bg-emerald-600 text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-emerald press flex items-center justify-center gap-3">
                    {isSaving ? <Loader2 size={18} className="animate-spin" /> : <CheckSquare size={18}/>}
-                   {isSaving ? 'Processing...' : 'Confirm Arrival'}
+                   {isSaving ? 'Saving...' : 'Confirm Goods Received'}
                  </button>
               </div>
            </div>

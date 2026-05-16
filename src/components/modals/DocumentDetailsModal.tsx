@@ -122,7 +122,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     if (!selectedRecord) return;
     setIsSharing(true);
     try {
-      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Remittance' : isPO ? 'Invoice' : isReport ? 'Z-Report' : 'Summary';
+      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isPO ? 'Purchase-Order' : isReport ? 'Shift-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
       
       const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
@@ -160,7 +160,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     if (!selectedRecord) return;
     setIsSavingPDF(true);
     try {
-      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Remittance' : isPO ? 'Invoice' : isReport ? 'Z-Report' : 'Summary';
+      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isPO ? 'Purchase-Order' : isReport ? 'Shift-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
 
       const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
@@ -222,12 +222,12 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                   <h2 className="text-2xl font-black text-slate-900 tracking-tight ">
                      {isSale ? `Sales receipt` : 
                       isExpense ? `Expense Document` : 
-                      isPayment ? 'Supplier Remittance Advice' :
-                      isReport ? 'End of Shift Z-Reading' :
-                      isDailySummary ? 'Daily Business Audit' :
-                      (isPO && selectedRecord.approvalStatus === 'PENDING') ? 'Pending LPO' :
+                      isPayment ? 'Supplier Payment Note' :
+                      isReport ? 'End of Shift Report' :
+                      isDailySummary ? 'Daily Business Report' :
+                      (isPO && selectedRecord.approvalStatus === 'PENDING') ? 'Purchase Order Waiting Approval' :
                       isPO ? 'Purchase Order' :
-                      `Procurement Document`}
+                      `Purchase Document`}
                   </h2>
                   <p className="text-xs font-bold text-slate-500  tracking-[0.2em] mt-1">
                       Reference: {selectedRecord.invoiceNumber || (String(selectedRecord.id || '').startsWith('PO-') ? selectedRecord.id : String(selectedRecord.id || '').split('-')[0].toUpperCase())}
@@ -241,7 +241,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                              <User size={10} />
                           </div>
                           <span className=" ">Prepared by:</span>
-                          <span className="text-blue-600 font-bold">{selectedRecord.preparedBy || selectedRecord.cashierName || selectedRecord.userName || 'Authorized Staff'}</span>
+                          <span className="text-blue-600 font-bold">{selectedRecord.preparedBy || selectedRecord.cashierName || selectedRecord.userName || 'Staff'}</span>
                        </div>
 
                      {(isPO || isExpense || selectedRecord.recordType === 'STOCK_ADJUSTMENT') && (
@@ -480,7 +480,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
                        {/* Fiscal Header Style */}
                        <div className="text-center py-4 border-b border-dashed border-slate-200">
-                          <p className="text-[10px] font-black  tracking-[0.2em] text-slate-400 mb-1">Official Z-Reading</p>
+                              <p className="text-[10px] font-black  tracking-[0.2em] text-slate-400 mb-1">Shift Report</p>
                           <p className="text-xs font-bold text-slate-600">Shift ID: {selectedRecord.shiftId || 'N/A'}</p>
                           <p className="text-xs font-bold text-slate-600">Cashier: {selectedRecord.cashierName}</p>
                        </div>
@@ -522,7 +522,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                                 {(Number(selectedRecord.difference) || 0) === 0 ? <CheckCircle2 size={24}/> : <AlertTriangle size={24}/>}
                              </div>
                              <div>
-                                <p className="text-[10px] font-black   text-slate-400">Cashier Variance</p>
+                                <p className="text-[10px] font-black   text-slate-400">Cash Difference</p>
                                 <h4 className={`text-xl font-black ${(Number(selectedRecord.difference) || 0) === 0 ? 'text-green-700' : 'text-red-700'}`}>
                                    Ksh {(Number(selectedRecord.difference) || 0).toLocaleString()}
                                 </h4>
@@ -530,7 +530,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                           </div>
                           {(Number(selectedRecord.difference) || 0) !== 0 && (
                              <p className="text-[11px] font-bold text-red-600 leading-relaxed bg-white/50 p-3 rounded-xl border border-red-100 italic">
-                                * This discrepancy of Ksh {Math.abs(Number(selectedRecord.difference) || 0).toLocaleString()} has been logged and will be charged to the cashier account for reconciliation.
+                                * This cash difference of Ksh {Math.abs(Number(selectedRecord.difference) || 0).toLocaleString()} has been saved for follow up.
                              </p>
                           )}
                        </div>
@@ -564,7 +564,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                              <p className="text-2xl font-black text-slate-900">Ksh {(Number(selectedRecord.totalSales) || 0).toLocaleString()}</p>
                           </div>
                           <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 text-center">
-                             <p className="text-[10px] font-black text-slate-400   mb-1">Staff Variance</p>
+                             <p className="text-[10px] font-black text-slate-400   mb-1">Staff Cash Difference</p>
                              <p className={`text-2xl font-black ${(Number(selectedRecord.totalVariance) || 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>
                                 Ksh {(Number(selectedRecord.totalVariance) || 0).toLocaleString()}
                              </p>
@@ -598,7 +598,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                        <div className="pt-6 border-t border-dashed border-slate-200">
                           <div className="flex justify-between items-end border-b border-slate-100 pb-4">
                              <div>
-                                <p className="text-[10px] font-black text-slate-400   mb-1">Tax Audit</p>
+                                <p className="text-[10px] font-black text-slate-400   mb-1">Tax Check</p>
                                 <h4 className="text-sm font-bold text-slate-500">e-TIMS 16% VAT Summary</h4>
                              </div>
                              <div className="text-right">
@@ -609,7 +609,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                           
                           <div className="flex flex-col items-center justify-center py-6 gap-2 opacity-30 italic">
                               <ShieldCheck className="text-slate-400" size={24} />
-                              <p className="text-[10px] font-bold text-slate-500 text-center">Verified Daily Business Closure Record. All shifts confirmed and ledger entries finalized.</p>
+                              <p className="text-[10px] font-bold text-slate-500 text-center">Day closed. All shifts are saved.</p>
                           </div>
                        </div>
                     </div>
@@ -620,7 +620,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
 
          {/* Footer Actions - Sticky at bottom */}
           <div className="p-4 flex flex-col gap-2 bg-white border-t border-slate-100 no-print shadow-[0_-4px_12px_rgba(0,0,0,0.03)] relative z-20">
-            {/* LPO Receiving Action */}
+            {/* Receive Goods Action */}
             {onReceive && isPO && selectedRecord.approvalStatus === 'APPROVED' && selectedRecord.status === 'PENDING' && (
                <button
                  onClick={() => { onReceive(selectedRecord); setSelectedRecord(null); }}
@@ -697,7 +697,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                     disabled={selectedRecord.status !== 'PAID' && selectedRecord.status !== 'PARTIAL_REFUND'}
                     className="col-span-2 py-3.5 bg-orange-600 text-white font-black text-xs   rounded-xl disabled:opacity-50 transition-colors active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-orange-600/20"
                   >
-                    <RotateCcw size={16} /> {isAdmin ? 'Process Return' : 'Request Return'}
+                    <RotateCcw size={16} /> {isAdmin ? 'Return Items' : 'Ask to Return'}
                   </button>
                 )
             )}

@@ -136,7 +136,7 @@ export class MPesaService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`STK Push failed: ${response.status} - ${errorText}`);
+        throw new Error(`M-Pesa request failed: ${response.status} - ${errorText}`);
       }
 
       const data: STKPushResponse = await response.json();
@@ -147,7 +147,7 @@ export class MPesaService {
 
       return data;
     } catch (error) {
-      console.error('STK Push error:', error);
+      console.error('M-Pesa request error:', error);
       throw error;
     }
   }

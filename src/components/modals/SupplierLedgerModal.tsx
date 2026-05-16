@@ -140,7 +140,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
     try {
       const { generateAndDownloadStatement } = await import('../../utils/shareUtils');
       await generateAndDownloadStatement(supplier, filteredInvoices, filteredPayments, filteredCreditNotes);
-      success("Statement generated successfully.");
+      success("Statement created.");
     } catch (err) {
       console.error('Sharing failed', err);
       error("Failed to generate statement.");
@@ -155,7 +155,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
       
       <div className="bg-white w-full max-w-2xl h-full sm:h-[85vh] sm:rounded-2xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
          
-         {/* Ledger Header */}
+         {/* Statement Header */}
          <div id="printable-content" className="print-document-a4 h-full flex flex-col">
             <div className="p-6 sm:p-8 pb-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
                 <div className="flex items-center gap-4 sm:gap-5 min-w-0">
@@ -170,7 +170,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                         </p>
                         <div className="flex gap-2 mt-3 no-print overflow-x-auto no-scrollbar">
                            <button onClick={() => onEdit(supplier)} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black   flex items-center gap-1 hover:bg-slate-200 transition-all shrink-0">
-                              <Edit size={12} /> Edit Profile
+                              <Edit size={12} /> Edit Supplier
                            </button>
                            <button 
                             onClick={handlePrintStatement} 
@@ -178,13 +178,13 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                             className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black   flex items-center gap-1 hover:bg-slate-200 transition-all disabled:opacity-50 shrink-0"
                            >
                               {isSharing ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />}
-                              {isSharing ? 'Generating...' : 'Statement'}
+                              {isSharing ? 'Making...' : 'Statement'}
                            </button>
                         </div>
                     </div>
                 </div>
                 <div className="sm:text-right w-full sm:w-auto">
-                    <p className="text-[10px] font-black text-slate-400  tracking-[0.2em] mb-1">Current Ledger Balance</p>
+                    <p className="text-[10px] font-black text-slate-400  tracking-[0.2em] mb-1">Current Balance</p>
                     <h3 className={`text-2xl sm:text-4xl font-black tabular-nums break-words ${supplier.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
                         Ksh {supplier.balance.toLocaleString()}
                     </h3>
@@ -229,7 +229,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                 {activeTab === 'INVOICES' && (
                     <div className="space-y-3">
                         <div className="hidden print:block mb-8">
-                           <h3 className="text-lg font-black   border-b pb-2">Purchase Invoices Statement</h3>
+                           <h3 className="text-lg font-black   border-b pb-2">Supplier Bills Statement</h3>
                         </div>
                         {filteredInvoices.length === 0 ? (
                             <div className="py-20 text-center text-slate-400 flex flex-col items-center">
@@ -281,9 +281,9 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                             <CheckCircle2 size={20} />
                                         </div>
                                         <div>
-                                            <p className="text-sm font-black text-slate-900">{pay.reference || 'Vendor Payment'}</p>
+                                            <p className="text-sm font-black text-slate-900">{pay.reference || 'Supplier Payment'}</p>
                                             <p className="text-[10px] font-bold text-slate-400 ">
-                                               {new Date(pay.timestamp).toLocaleDateString()} • via {pay.paymentMethod}
+                                               {new Date(pay.timestamp).toLocaleDateString()} • paid by {pay.paymentMethod === 'MPESA' ? 'M-Pesa' : pay.paymentMethod}
                                                {pay.preparedBy && <span className="ml-2 text-purple-500 font-black">@{pay.preparedBy}</span>}
                                             </p>
                                         </div>

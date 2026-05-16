@@ -43,7 +43,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
               <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
                   <Truck size={32} className="text-slate-300" />
               </div>
-              <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Loading Supply Chain...</p>
+              <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Loading suppliers...</p>
           </div>
       );
   }
@@ -54,7 +54,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
   );
 
   const totalPayables = allSuppliers.reduce((acc, s) => acc + (s.balance || 0), 0);
-  const activeVendors = allSuppliers.length;
+  const supplierCount = allSuppliers.length;
 
   const openAddSupplier = () => {
       setEditingSupplier(null);
@@ -112,7 +112,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
           payment,
           activeBranchId: activeBranchId!,
           activeBusinessId: activeBusinessId!,
-          preparedBy: useStore.getState().currentUser?.name || 'Authorized Staff',
+          preparedBy: useStore.getState().currentUser?.name || 'Staff',
           shiftId: useStore.getState().activeShift?.id,
         });
         success("Payment recorded successfully.");
@@ -134,10 +134,10 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
         <div>
           <h2 className="text-xl font-black text-slate-900">Suppliers</h2>
           <div className="flex items-center gap-3 mt-1">
-            <span className="text-[10px] font-bold text-slate-500">{activeVendors} vendors</span>
+            <span className="text-[10px] font-bold text-slate-500">{supplierCount} suppliers</span>
             <span className="text-slate-300">·</span>
             <span className={`text-[10px] font-bold ${totalPayables > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-              Ksh {totalPayables.toLocaleString()} payable
+              Ksh {totalPayables.toLocaleString()} to pay
             </span>
           </div>
         </div>
@@ -168,7 +168,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
         </div>
       </div>
 
-      {/* Vendor List */}
+      {/* Supplier List */}
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
          {filteredSuppliers.length > 0 ? (
            <div className="divide-y divide-slate-100">
@@ -192,7 +192,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
                  </div>
                  <div className="stable-actions flex items-center gap-2">
                    <div className="text-right">
-                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Payable</p>
+                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Amount Owed</p>
                      <p className={`text-sm font-black tabular-nums whitespace-nowrap ${supplier.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                        Ksh {supplier.balance.toLocaleString()}
                      </p>
@@ -218,8 +218,8 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
              <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-4 shadow-inner text-slate-200">
                <Truck size={36} />
              </div>
-             <p className="text-slate-500 font-black text-base">No vendor records matched</p>
-             <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Add your first supplier to track procurement</p>
+             <p className="text-slate-500 font-black text-base">No suppliers found</p>
+             <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Add your first supplier to track purchases</p>
            </div>
          )}
       </div>
@@ -237,8 +237,8 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
                      <Briefcase size={22} />
                    </div>
                    <div>
-                     <h2 className="text-xl font-black text-slate-900 tracking-tight">{editingSupplier ? 'Vendor Profile' : 'New Vendor'}</h2>
-                     <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Procurement Registry</p>
+                     <h2 className="text-xl font-black text-slate-900 tracking-tight">{editingSupplier ? 'Supplier Details' : 'New Supplier'}</h2>
+                     <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Supplier list</p>
                    </div>
                  </div>
                  {editingSupplier && isAdmin && (
@@ -254,9 +254,9 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
                     <input type="text" value={supplierForm.company} onChange={e => setSupplierForm({...supplierForm, company: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="e.g. Fresh Farms Ltd" />
                  </div>
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Primary Contact Person</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Contact Person</label>
                     <div className="relative">
-                       <input type="text" value={supplierForm.name} onChange={e => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl pl-14 pr-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="Key Account Manager" />
+                       <input type="text" value={supplierForm.name} onChange={e => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl pl-14 pr-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="Person to call" />
                        <User size={18} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" />
                     </div>
                  </div>
@@ -285,17 +285,17 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
 
               <div className="flex gap-4 mt-auto pt-6 border-t border-slate-50">
                  <button onClick={() => setIsSupplierModalOpen(false)} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
-                   Dismiss
+                   Cancel
                  </button>
                  <button onClick={handleSaveSupplier} disabled={!supplierForm.company} className="flex-[2] bg-slate-900 text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-xl press">
-                   Save Record
+                   Save Supplier
                  </button>
               </div>
            </div>
         </div>
       )}
 
-      {/* Ledger & Payment Modals */}
+      {/* Statement & Payment Modals */}
       <SupplierPaymentModal 
         isOpen={isPaymentModalOpen}
         onClose={() => setIsPaymentModalOpen(false)}

@@ -160,7 +160,7 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
                 disabled={selectedReceipt.status !== 'PAID' && selectedReceipt.status !== 'PARTIAL_REFUND'}
                 className="col-span-2 py-3 bg-orange-600 text-white font-black rounded-xl text-xs   disabled:opacity-50 transition-colors active:scale-95 flex items-center justify-center gap-2"
                >
-                 <RotateCcw size={16} /> Process Returns
+                 <RotateCcw size={16} /> Return Items
                </button>
             )}
          </div>

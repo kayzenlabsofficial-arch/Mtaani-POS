@@ -129,13 +129,13 @@ export default function BranchManagementTab() {
       return;
     }
 
-    if (confirm(`CRITICAL: Deleting branch "${b.name}" will permanently erase its specific records. Are you absolutely sure?`)) {
+    if (confirm(`Delete branch "${b.name}"? Its records will also be removed. This cannot be undone.`)) {
       setSaving(true);
       try {
         await db.branches.delete(b.id);
         success("Branch permanently removed.");
       } catch (err) {
-        error("Deletion failed. Branch may have associated data.");
+        error("Could not delete this branch. It may still have records linked to it.");
       } finally {
         setSaving(false);
       }
@@ -148,24 +148,24 @@ export default function BranchManagementTab() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
-          <h2 className="text-xl font-black text-slate-900">Distribution Network</h2>
+          <h2 className="text-xl font-black text-slate-900">Branches</h2>
           <div className="flex items-center gap-3 mt-1">
-            <span className="text-[10px] font-bold text-slate-500">{branches?.length} Nodes</span>
+            <span className="text-[10px] font-bold text-slate-500">{branches?.length} branches</span>
             <span className="text-slate-300">·</span>
             <span className="text-[10px] font-bold text-emerald-600">{(branches || []).filter(b => b.isActive).length} Active</span>
             <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-indigo-600">Real-time Sync</span>
+            <span className="text-[10px] font-bold text-indigo-600">Online backup</span>
           </div>
         </div>
         <button
           onClick={openNew}
           className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
         >
-          <Plus size={18} /> Deploy New Node
+          <Plus size={18} /> Add Branch
         </button>
       </div>
 
-      {/* Branch Node Rows */}
+      {/* Branch Rows */}
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
         {(branches || []).length > 0 ? (
           <div className="divide-y divide-slate-100">
@@ -186,11 +186,11 @@ export default function BranchManagementTab() {
                 <div className="stable-actions flex items-center gap-1.5">
                   {branch.isActive ? (
                     <span className="hidden sm:flex items-center gap-1 text-[9px] font-black bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-tighter">
-                      <CheckCircle2 size={10} /> Operational
+                      <CheckCircle2 size={10} /> Open
                     </span>
                   ) : (
                     <span className="hidden sm:flex items-center gap-1 text-[9px] font-black bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full uppercase tracking-tighter">
-                      <XCircle size={10} /> Suspended
+                      <XCircle size={10} /> Closed
                     </span>
                   )}
                   <button onClick={() => openEdit(branch)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-50 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all">
@@ -208,8 +208,8 @@ export default function BranchManagementTab() {
             <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-4 shadow-inner text-slate-200">
               <Globe size={36} />
             </div>
-            <p className="text-slate-500 font-black text-base">No branch nodes deployed</p>
-            <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Initiate deployment to expand your network</p>
+            <p className="text-slate-500 font-black text-base">No branches yet</p>
+            <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Add a branch to start selling there</p>
           </div>
         )}
       </div>
@@ -227,10 +227,10 @@ export default function BranchManagementTab() {
                   </div>
                   <div>
                     <h3 className="text-xl font-black text-slate-900">
-                      {editingId ? 'Node Configuration' : 'Node Deployment'}
+                      {editingId ? 'Branch Details' : 'Add Branch'}
                     </h3>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                      {editingId ? 'Syncing Station Parameters' : 'Provisioning New Fleet Member'}
+                      {editingId ? 'Edit this branch' : 'Create a new branch'}
                     </p>
                   </div>
                </div>
@@ -240,7 +240,7 @@ export default function BranchManagementTab() {
             <div className="space-y-8">
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Node Identity *</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Branch Name *</label>
                     <input
                       type="text"
                       value={form.name}
@@ -264,7 +264,7 @@ export default function BranchManagementTab() {
 
                <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Secure Link Phone</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Branch Phone</label>
                     <input
                       type="tel"
                       value={form.phone}
@@ -297,28 +297,28 @@ export default function BranchManagementTab() {
 
                <div className="p-8 bg-indigo-50/50 rounded-[2.5rem] border-2 border-indigo-100">
                   <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-6 flex items-center gap-2">
-                    <Smartphone size={14} /> Daraja API Settlement Protocol
+                    <Smartphone size={14} /> M-Pesa Settings
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                      <div>
-                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Environment</label>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Mode</label>
                        <SearchableSelect
                          value={form.mpesaEnv}
                          onChange={(v) => setForm(f => ({ ...f, mpesaEnv: v as any }))}
                          options={[
-                           { value: 'sandbox', label: 'Sandbox (Staging)', keywords: 'sandbox test testing' },
-                           { value: 'production', label: 'Production (Live)', keywords: 'production live' },
+                           { value: 'sandbox', label: 'Test Mode', keywords: 'sandbox test testing' },
+                           { value: 'production', label: 'Live Mode', keywords: 'production live' },
                          ]}
                          buttonClassName="rounded-2xl px-6 py-4.5 font-black text-slate-900 bg-white border-transparent"
                        />
                      </div>
                      <div>
-                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Channel Type</label>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa Type</label>
                        <SearchableSelect
                          value={form.mpesaType}
                          onChange={(v) => setForm(f => ({ ...f, mpesaType: v as any }))}
                          options={[
-                           { value: 'paybill', label: 'Paybill Hub', keywords: 'paybill' },
+                           { value: 'paybill', label: 'Paybill', keywords: 'paybill' },
                            { value: 'buygoods', label: 'Buy Goods (Till)', keywords: 'buy goods till' },
                          ]}
                          buttonClassName="rounded-2xl px-6 py-4.5 font-black text-slate-900 bg-white border-transparent"
@@ -327,7 +327,7 @@ export default function BranchManagementTab() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                      <div>
-                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">App Consumer Key</label>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa App Key</label>
                        <input
                          type="text"
                          value={form.mpesaConsumerKey}
@@ -337,7 +337,7 @@ export default function BranchManagementTab() {
                        />
                      </div>
                      <div>
-                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">App Consumer Secret</label>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa App Secret</label>
                        <input
                          type="password"
                          value={form.mpesaConsumerSecret}
@@ -360,13 +360,13 @@ export default function BranchManagementTab() {
                        />
                      </div>
                      <div>
-                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">LNM Online Passkey</label>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa Passkey</label>
                        <input
                          type="password"
                          value={form.mpesaPasskey}
                          onChange={e => setForm(f => ({ ...f, mpesaPasskey: e.target.value }))}
                          className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm"
-                         placeholder="STK Passkey"
+                         placeholder="M-Pesa passkey"
                        />
                      </div>
                   </div>
@@ -378,14 +378,14 @@ export default function BranchManagementTab() {
                  onClick={() => { setIsFormOpen(false); setEditingId(null); setForm(BLANK); }}
                  className="flex-1 py-5 bg-white text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-2xl border-2 border-slate-100 press"
                >
-                 Abort Changes
+                 Cancel
                </button>
                <button
                  onClick={handleSave}
                  disabled={!form.name.trim() || !form.location.trim() || saving}
                  className="flex-[2] grad-blue text-white font-black text-[10px] uppercase tracking-widest rounded-2xl shadow-blue press disabled:opacity-50"
                >
-                 {saving ? 'Syncing...' : editingId ? 'Update Node Fleet' : 'Initiate Deployment'}
+                 {saving ? 'Saving...' : editingId ? 'Save Branch' : 'Add Branch'}
                </button>
             </div>
           </div>

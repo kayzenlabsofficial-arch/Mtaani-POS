@@ -60,7 +60,7 @@ export interface MpesaLedgerRow {
 
 export const MpesaService = {
   /**
-   * Triggers an STK Push to the specified phone number.
+   * Sends an M-Pesa phone request to the specified phone number.
    */
   async triggerStkPush(phone: string, amount: number, reference: string = 'POS', businessId: string, branchId: string): Promise<StkPushResponse> {
     try {
@@ -78,13 +78,13 @@ export const MpesaService = {
       });
       return await res.json();
     } catch (err: any) {
-      console.error('STK Push Request Failed:', err);
+      console.error('M-Pesa Request Failed:', err);
       return { error: err.message || 'Network error' };
     }
   },
 
   /**
-   * Polls the status of an existing STK Push request.
+   * Checks the status of an existing M-Pesa phone request.
    */
   async checkStatus(checkoutRequestId: string): Promise<MpesaStatusResponse> {
     try {
@@ -169,7 +169,7 @@ export const MpesaService = {
   }): Promise<{ rows: MpesaLedgerRow[]; total: number; error?: string }> {
     try {
       if (typeof window !== 'undefined' && navigator.onLine === false) {
-        return { rows: [], total: 0, error: 'Offline: M-Pesa ledger requires internet.' };
+        return { rows: [], total: 0, error: 'Offline: M-Pesa payments need internet.' };
       }
       const apiKey = await getApiKey();
       const params = new URLSearchParams({
@@ -191,10 +191,10 @@ export const MpesaService = {
         cache: 'no-store',
       });
       const data: any = await res.json().catch(() => ({}));
-      if (!res.ok) return { rows: [], total: 0, error: data?.error || `M-Pesa ledger failed (${res.status})` };
+      if (!res.ok) return { rows: [], total: 0, error: data?.error || `M-Pesa payments failed (${res.status})` };
       return { rows: data.rows || [], total: Number(data.total || 0) };
     } catch (err: any) {
-      console.error('M-Pesa Ledger Failed:', err);
+      console.error('M-Pesa Payments Failed:', err);
       return { rows: [], total: 0, error: err.message || 'Network error' };
     }
   }

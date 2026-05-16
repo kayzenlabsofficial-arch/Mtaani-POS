@@ -125,7 +125,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       ? 'https://api.safaricom.co.ke'
       : 'https://sandbox.safaricom.co.ke';
 
-    console.log(`[M-Pesa] Triggering STK Push (${mpesaType}) for branch=${body.branchId} env=${isProd ? 'PRODUCTION' : 'SANDBOX'}`);
+    console.log(`[M-Pesa] Sending phone request (${mpesaType}) for branch=${body.branchId} env=${isProd ? 'PRODUCTION' : 'SANDBOX'}`);
 
     // 2. Generate OAuth Token
     const authString = btoa(`${consumerKey}:${consumerSecret}`);
@@ -140,7 +140,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     const { access_token } = await tokenRes.json() as any;
 
-    // 3. Prepare STK Push Payload
+    // 3. Prepare M-Pesa phone request
     const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
     const password = btoa(`${shortcode}${passkey}${timestamp}`);
     
@@ -181,7 +181,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     // We don't have CheckoutRequestID yet, but we can generate a temporary internal ID or wait for response.
     // Safaricom returns CheckoutRequestID in the response.
     
-    // Send STK Push Request
+    // Send M-Pesa phone request
     const stkRes = await fetch(`${baseUrl}/mpesa/stkpush/v1/processrequest`, {
       method: 'POST',
       headers: {
@@ -194,7 +194,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const stkData = await stkRes.json() as any;
 
     if (!stkRes.ok || stkData.errorCode) {
-       throw new Error(`STK Push failed: ${JSON.stringify(stkData)}`);
+       throw new Error(`M-Pesa request failed: ${JSON.stringify(stkData)}`);
     }
 
     // 5. SECURE LOGGING: Save the pending request to D1
@@ -237,12 +237,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     return new Response(JSON.stringify({ 
       success: true, 
-      message: stkData.CustomerMessage || 'STK Push sent successfully',
+      message: stkData.CustomerMessage || 'M-Pesa request sent successfully',
       checkoutRequestId: stkData.CheckoutRequestID
     }), { headers: jsonHeaders() });
 
   } catch (err: any) {
-    console.error("[STK Push Error]:", err);
+    console.error("[M-Pesa Request Error]:", err);
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: jsonHeaders() });
   }
 };

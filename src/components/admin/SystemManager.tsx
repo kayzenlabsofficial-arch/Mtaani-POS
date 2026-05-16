@@ -96,13 +96,13 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
   };
 
   const handleClearLockout = async () => {
-    if (!confirm(`Break security lockout for ${business.name}?`)) return;
+    if (!confirm(`Unlock login for ${business.name}?`)) return;
     setIsProcessing(true);
     try {
       await resetAttempts(business.code);
-      success('Security lockout cleared');
+      success('Login unlocked.');
     } catch (err) {
-      error('Failed to clear lockout');
+      error('Could not unlock login.');
     } finally {
       setIsProcessing(false);
     }
@@ -169,7 +169,7 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
             </div>
             <div className="min-w-0">
               <h3 className="truncate text-xl font-black text-white sm:text-2xl">{business.name}</h3>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">Tenant Control Center | {business.code}</p>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">Business Settings | {business.code}</p>
             </div>
           </div>
           <button onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-800 text-slate-400 transition-all hover:text-white">
@@ -303,7 +303,7 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
 
             <section className="rounded-3xl border border-slate-800 bg-slate-950 p-5 lg:col-span-2">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <h4 className="text-sm font-black uppercase tracking-tight text-white">Authorized Users</h4>
+                <h4 className="text-sm font-black uppercase tracking-tight text-white">Users</h4>
                 <span className="rounded-full bg-slate-900 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{users?.length || 0} Users</span>
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -330,11 +330,11 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
               </div>
               <div className="mt-5 flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900 p-4">
                 <div>
-                  <h4 className="text-xs font-bold uppercase tracking-tight text-white">Brute-Force Status</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-tight text-white">Login Safety</h4>
                   <p className="mt-1 text-[11px] font-medium text-slate-500">
                     {lockout?.lockedUntil && Date.now() < lockout.lockedUntil
                       ? `Locked until ${new Date(lockout.lockedUntil).toLocaleTimeString()}`
-                      : lockout?.count ? `${lockout.count} failed attempts detected` : 'Security status optimal. No locks active.'}
+                      : lockout?.count ? `${lockout.count} failed login tries` : 'No login problems.'}
                   </p>
                 </div>
                 {(lockout?.count || (lockout?.lockedUntil && Date.now() < lockout.lockedUntil)) && (
@@ -342,7 +342,7 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
                     onClick={handleClearLockout}
                     className="rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-error transition-all hover:bg-error hover:text-white"
                   >
-                    Break Lockout
+                    Unlock Login
                   </button>
                 )}
               </div>
@@ -446,7 +446,7 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
             </div>
             <div>
               <h1 className="text-2xl font-black tracking-tight">System Admin</h1>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">Management and Software Billing</p>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">Businesses and Software Billing</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -460,7 +460,7 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
 
         <section className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Tenants</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Businesses</p>
             <p className="mt-2 text-3xl font-black">{businesses?.length || 0}</p>
           </div>
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
@@ -503,7 +503,7 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
                 <h4 className="text-xs font-bold uppercase tracking-wider">Billing Logic</h4>
               </div>
               <p className="text-[11px] font-medium leading-relaxed text-blue-100/70">
-                Each tenant gets a monthly bill calculated from the base fee, active branch count, per-branch fee, and any discount you set. Turn on the banner when you want them prompted to pay.
+                Each business gets a monthly bill from the base fee, active branches, branch fee, and any discount you set. Turn on the banner when you want them to pay.
               </p>
             </div>
           </div>
@@ -513,10 +513,10 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
               <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <h3 className="flex items-center gap-3 text-xl font-black">
                   <MaterialIcon name="hub" className="text-secondary" />
-                  Entity Registry
+                  Businesses
                 </h3>
                 <div className="rounded-full border border-slate-800 bg-slate-950 px-4 py-1.5 text-[10px] font-bold text-slate-500">
-                  {isBillingLoading ? 'Loading billing...' : `${businesses?.length || 0} Registered Tenants`}
+                  {isBillingLoading ? 'Loading billing...' : `${businesses?.length || 0} businesses`}
                 </div>
               </div>
 
@@ -567,7 +567,7 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
                 {(!businesses || businesses.length === 0) && (
                   <div className="flex h-64 flex-col items-center justify-center text-slate-700">
                     <MaterialIcon name="cloud_off" className="mb-2 text-4xl" />
-                    <p className="text-sm font-bold uppercase tracking-tighter">No entities provisioned</p>
+                    <p className="text-sm font-bold uppercase tracking-tighter">No businesses yet</p>
                   </div>
                 )}
               </div>
