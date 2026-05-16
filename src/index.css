@@ -49,7 +49,7 @@
 }
 
 html {
-  font-size: 16px;
+  font-size: 16px !important;
   -webkit-text-size-adjust: none;
   text-size-adjust: none;
 }
@@ -66,6 +66,7 @@ body {
   font-family: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-size: 1rem;
   color: var(--on-background);
   background: #f8fafc;
 }
@@ -402,6 +403,10 @@ button, a, input, select, textarea {
 
 /* Mobile surface contrast */
 @media (max-width: 767px) {
+  html {
+    font-size: 16px !important;
+  }
+
   body {
     background: #e8edf5;
   }
@@ -425,5 +430,23 @@ button, a, input, select, textarea {
   .main-scroll :where(input, select, textarea).bg-white:not(:focus) {
     border-color: #cbd5e1;
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+}
+
+@media (max-width: 430px) {
+  html {
+    font-size: 15.5px !important;
+  }
+}
+
+@media (max-width: 390px) {
+  html {
+    font-size: 14.75px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  html {
+    font-size: 14px !important;
   }
 }

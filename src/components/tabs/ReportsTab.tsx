@@ -238,22 +238,22 @@ export default function ReportsTab() {
   };
 
   return (
-    <div className="pb-24 animate-in fade-in w-full px-4">
+    <div className="pb-24 animate-in fade-in w-full max-w-full overflow-x-hidden px-3 sm:px-4">
       
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div>
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
+        <div className="min-w-0">
           <h2 className="text-xl font-black text-slate-900">Financial Reports</h2>
-          <div className="flex items-center gap-3 mt-1">
+          <div className="mt-1 flex max-w-full flex-wrap items-center gap-x-3 gap-y-1">
             <span className="text-[10px] font-bold text-slate-500">{filteredTransactions.length} orders processed</span>
             <span className="text-slate-300">·</span>
             <span className={`text-[10px] font-bold ${netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>Net: Ksh {netProfit.toLocaleString()}</span>
-            <span className="text-slate-300">Â·</span>
-            <span className="text-[10px] font-bold text-slate-500">{periodLabel}</span>
+            <span className="hidden text-slate-300 sm:inline">Â·</span>
+            <span className="min-w-0 max-w-full truncate text-[10px] font-bold text-slate-500">{periodLabel}</span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex bg-slate-100 p-1 rounded-xl">
+        <div className="flex w-full flex-col gap-2 md:w-auto md:items-end">
+          <div className="no-scrollbar flex w-full max-w-full overflow-x-auto rounded-xl bg-slate-100 p-1 md:w-auto">
              {[
                { id: 'TODAY', label: 'Today' },
                { id: 'WEEK', label: 'Week' },
@@ -266,7 +266,7 @@ export default function ReportsTab() {
                <button 
                  key={range.id} 
                  onClick={() => setDateRange(range.id as any)}
-                 className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${dateRange === range.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                 className={`h-9 flex-shrink-0 px-3 rounded-lg text-[11px] font-bold transition-all ${dateRange === range.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                >
                  {range.label}
                </button>
@@ -277,41 +277,45 @@ export default function ReportsTab() {
               type="month"
               value={selectedMonth}
               onChange={event => setSelectedMonth(event.target.value)}
-              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 md:w-44"
             />
           )}
           {dateRange === 'CUSTOM' && (
-            <div className="flex items-center gap-2">
+            <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto md:items-center">
               <input
                 type="date"
                 value={customStart}
                 onChange={event => setCustomStart(event.target.value)}
-                className="h-10 w-36 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                className="h-11 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 md:w-36"
               />
               <input
                 type="date"
                 value={customEnd}
                 onChange={event => setCustomEnd(event.target.value)}
-                className="h-10 w-36 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                className="h-11 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 md:w-36"
               />
             </div>
           )}
-          <button
-            type="button"
-            onClick={() => setDeductTaxInPL(v => !v)}
-            className={`h-10 px-4 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${
-              deductTaxInPL
-                ? 'bg-blue-50 border-blue-200 text-blue-700'
-                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-            }`}
-            title="Toggle whether VAT is deducted when calculating P&L"
-          >
-            Tax {deductTaxInPL ? 'On' : 'Off'}
-          </button>
-          <button onClick={handleExportProfitLoss} disabled={isSharing} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-50 active:scale-[0.98] transition-all">
-             {isSharing ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-             <span className="hidden sm:inline">{isSharing ? 'Exporting...' : 'Export P&L'}</span>
-          </button>
+          <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto md:items-center">
+            <button
+              type="button"
+              onClick={() => setDeductTaxInPL(v => !v)}
+              aria-pressed={deductTaxInPL}
+              className={`flex h-11 items-center justify-center gap-2 rounded-xl border px-3 text-[10px] font-black uppercase tracking-widest transition-all md:px-4 md:text-[11px] ${
+                deductTaxInPL
+                  ? 'bg-blue-50 border-blue-200 text-blue-700'
+                  : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+              }`}
+              title="Toggle whether VAT is deducted when calculating P&L"
+            >
+              <Scale size={15} />
+              VAT {deductTaxInPL ? 'On' : 'Off'}
+            </button>
+            <button onClick={handleExportProfitLoss} disabled={isSharing} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 active:scale-[0.98] disabled:opacity-50 md:px-4">
+               {isSharing ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+               <span>{isSharing ? 'Exporting...' : 'Export P&L'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
