@@ -156,6 +156,7 @@ function SalePanel({
   const { warning, error, success } = useToast();
   const [checkoutStep, setCheckoutStep] = useState<'ITEMS' | 'PAYMENT' | 'REVIEW'>('ITEMS');
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT'>('CASH');
+  const [paymentWindow, setPaymentWindow] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT' | null>(null);
   const [discountType, setDiscountType] = useState<'FIXED' | 'PERCENT'>('FIXED');
   const [discountValue, setDiscountValue] = useState('');
   const [cashTendered, setCashTendered] = useState('');
@@ -194,11 +195,11 @@ function SalePanel({
   const selectedCustomer = customers?.find((customer) => customer.id === selectedCustomerId);
 
   const paymentOptions = [
-    { id: 'CASH' as const, label: 'Cash', icon: Banknote },
-    { id: 'MPESA' as const, label: 'M-Pesa', icon: Smartphone },
-    { id: 'PDQ' as const, label: 'PDQ', icon: CreditCard },
-    { id: 'SPLIT' as const, label: 'Split', icon: Split },
-    { id: 'CREDIT' as const, label: 'Credit', icon: UserRound },
+    { id: 'CASH' as const, label: 'Cash', icon: Banknote, desc: 'Cash received and change due' },
+    { id: 'MPESA' as const, label: 'M-Pesa', icon: Smartphone, desc: 'STK prompt or receipt code' },
+    { id: 'PDQ' as const, label: 'PDQ', icon: CreditCard, desc: 'Card terminal reference' },
+    { id: 'SPLIT' as const, label: 'Split', icon: Split, desc: 'Cash plus another method' },
+    { id: 'CREDIT' as const, label: 'Credit', icon: UserRound, desc: 'Post to customer account' },
   ];
   const checkoutSteps = [
     { id: 'ITEMS', label: 'Items' },
@@ -218,12 +219,18 @@ function SalePanel({
 
   const runCheckout = async (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => {
     const result = await onCheckout(status, method, options);
-    if (result) onCheckoutSuccess?.();
+    if (result) {
+      setPaymentWindow(null);
+      onCheckoutSuccess?.();
+    }
     return result;
   };
 
   React.useEffect(() => {
-    if (cart.length === 0) setCheckoutStep('ITEMS');
+    if (cart.length === 0) {
+      setCheckoutStep('ITEMS');
+      setPaymentWindow(null);
+    }
   }, [cart.length]);
 
   React.useEffect(() => {
@@ -406,31 +413,40 @@ function SalePanel({
   };
 
   const goToReview = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0) return false;
     if ((paymentMode === 'CREDIT' || (paymentMode === 'SPLIT' && splitSecondaryMethod === 'CREDIT')) && !selectedCustomer) {
       warning('Choose a registered customer before putting any amount on credit.');
-      return;
+      return false;
     }
     if (paymentMode === 'CASH' && cashTendered && tendered < total) {
       warning('Amount received must cover the sale total.');
-      return;
+      return false;
     }
     if (paymentMode === 'MPESA') {
       const verified = await ensureMpesaUsable(mpesaRef, total);
-      if (!verified?.usable) return;
+      if (!verified?.usable) return false;
     }
     if (paymentMode === 'SPLIT') {
       if (splitCashAmount <= 0 || splitCashAmount >= total) {
         warning('Enter the cash part so the balance can go to M-Pesa, PDQ, or credit.');
-        return;
+        return false;
       }
       if (splitSecondaryMethod === 'MPESA') {
         const verified = await ensureMpesaUsable(splitSecondaryRef, splitSecondaryAmount);
-        if (!verified?.usable) return;
+        if (!verified?.usable) return false;
       }
     }
     setCheckoutStep('REVIEW');
+    return true;
   };
+
+  const continueFromPaymentWindow = async () => {
+    const ready = await goToReview();
+    if (ready) setPaymentWindow(null);
+  };
+
+  const selectedPaymentOption = paymentOptions.find(option => option.id === paymentWindow) || paymentOptions.find(option => option.id === paymentMode) || paymentOptions[0];
+  const SelectedPaymentIcon = selectedPaymentOption.icon;
 
   return (
     <aside className={`bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col min-h-[22rem] lg:sticky lg:top-0 lg:max-h-[calc(100vh-9rem)] shadow-sm ${className}`}>
@@ -573,175 +589,60 @@ function SalePanel({
           </select>
         </div>
 
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {paymentOptions.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               type="button"
-              onClick={() => setPaymentMode(id)}
+              onClick={() => {
+                setPaymentMode(id);
+                setPaymentWindow(id);
+              }}
               onPointerUp={(event) => {
                 if (event.pointerType === 'touch') {
                   event.preventDefault();
                   setPaymentMode(id);
+                  setPaymentWindow(id);
                 }
               }}
               onTouchEnd={(event) => {
                 event.preventDefault();
                 setPaymentMode(id);
+                setPaymentWindow(id);
               }}
               data-testid={`payment-${id.toLowerCase()}`}
-              className={`h-12 rounded-xl border px-2 flex flex-col items-center justify-center gap-0.5 text-[10px] font-black transition-colors ${
+              className={`min-h-16 rounded-2xl border px-3 py-3 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 text-left transition-colors ${
                 paymentMode === id
                   ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
               }`}
             >
-              <Icon className="w-4 h-4" strokeWidth={2.4} />
-              <span className="truncate max-w-full">{label}</span>
+              <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${paymentMode === id ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600'}`}>
+                <Icon className="w-5 h-5" strokeWidth={2.4} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-black text-slate-900">{label}</span>
+                <span className="block truncate text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                  {paymentOptions.find(option => option.id === id)?.desc}
+                </span>
+              </span>
+              <ArrowRight size={15} />
             </button>
           ))}
         </div>
-
-        {paymentMode === 'CASH' && (
-          <div className="grid grid-cols-2 gap-2">
-            <label className="relative min-w-0">
-              <Calculator className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="number"
-                min="0"
-                value={cashTendered}
-                onChange={(event) => setCashTendered(event.target.value)}
-                placeholder="Cash received"
-                data-testid="cash-received"
-                className="w-full h-11 pl-9 pr-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-              />
-            </label>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 min-w-0">
-              <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Change</span>
-              <span className="block text-sm font-black text-slate-900 tabular-nums truncate">Ksh {changeDue.toLocaleString()}</span>
-            </div>
-          </div>
-        )}
-
-        {paymentMode === 'MPESA' && (
-          <div className="space-y-2">
-            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2">
-              <input
-                value={mpesaPhone}
-                onChange={(event) => setMpesaPhone(event.target.value)}
-                placeholder="Customer phone for STK prompt"
-                data-testid="mpesa-phone"
-                className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-              />
-              <button
-                type="button"
-                onClick={sendMpesaPrompt}
-                disabled={mpesaState === 'PUSHING' || mpesaState === 'POLLING' || isCheckingOut}
-                data-testid="mpesa-prompt"
-                className="h-11 px-4 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {mpesaState === 'PUSHING' || mpesaState === 'POLLING' ? 'Waiting...' : 'Send Prompt'}
-              </button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2">
-              <input
-                value={mpesaRef}
-                onChange={(event) => setMpesaRef(event.target.value.toUpperCase())}
-                placeholder="Or enter M-Pesa receipt code manually"
-                data-testid="mpesa-reference"
-                className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold uppercase outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-              />
-              <button
-                type="button"
-                onClick={() => verifyMpesaCode(mpesaRef, total)}
-                disabled={isVerifyingMpesa || !mpesaRef.trim()}
-                className="h-11 px-4 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-                Verify
-              </button>
-            </div>
-            {mpesaState !== 'IDLE' && (
-              <p className={`text-[10px] font-black uppercase tracking-widest ${mpesaState === 'SUCCESS' ? 'text-emerald-600' : mpesaState === 'FAILED' ? 'text-rose-600' : 'text-blue-600'}`}>
-                {mpesaState === 'PUSHING' ? 'Sending prompt...' : mpesaState === 'POLLING' ? 'Awaiting customer PIN for up to 3 minutes...' : mpesaState === 'SUCCESS' ? 'Payment confirmed' : 'Prompt failed or timed out'}
-              </p>
-            )}
-            {mpesaVerification && (
-              <p className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${mpesaVerification.usable ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
-                {mpesaVerification.message || (mpesaVerification.usable ? 'M-Pesa code verified' : 'M-Pesa code not usable')}
-              </p>
-            )}
-          </div>
-        )}
-
-        {paymentMode === 'PDQ' && (
-          <input
-            value={pdqRef}
-            onChange={(event) => setPdqRef(event.target.value)}
-            placeholder="PDQ terminal reference"
-            data-testid="pdq-reference"
-            className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-          />
-        )}
-
-        {(paymentMode === 'CREDIT' || paymentMode === 'SPLIT') && (
-          <select
-            value={selectedCustomerId}
-            onChange={(event) => setSelectedCustomerId(event.target.value)}
-            data-testid="customer-select"
-            className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-          >
-            <option value="">Select registered customer</option>
-            {customers?.map((customer) => (
-              <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` - ${customer.phone}` : ''}</option>
-            ))}
-          </select>
-        )}
-
-        {paymentMode === 'SPLIT' && (
-          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_7rem] gap-2">
-            <input
-              type="number"
-              min="0"
-              max={total}
-              value={splitCash}
-              onChange={(event) => setSplitCash(event.target.value)}
-              placeholder="Cash part"
-              data-testid="split-cash"
-              className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-            />
-            <select
-              value={splitSecondaryMethod}
-              onChange={(event) => setSplitSecondaryMethod(event.target.value as 'MPESA' | 'PDQ' | 'CREDIT')}
-              data-testid="split-method"
-              className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-2 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Selected method</p>
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <span className="text-sm font-black text-blue-950">{paymentMode === 'MPESA' ? 'M-Pesa' : paymentMode}</span>
+            <button
+              type="button"
+              onClick={() => setPaymentWindow(paymentMode)}
+              className="rounded-xl bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-blue-700"
             >
-              <option value="MPESA">M-Pesa</option>
-              <option value="PDQ">PDQ</option>
-              <option value="CREDIT">Credit</option>
-            </select>
-            <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2">
-              <input
-                value={splitSecondaryRef}
-                onChange={(event) => setSplitSecondaryRef(splitSecondaryMethod === 'MPESA' ? event.target.value.toUpperCase() : event.target.value)}
-                placeholder={`${splitSecondaryMethod} reference (Ksh ${splitSecondaryAmount.toLocaleString()})`}
-                data-testid="split-reference"
-                className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-              />
-              {splitSecondaryMethod === 'MPESA' && (
-                <button
-                  type="button"
-                  onClick={() => verifyMpesaCode(splitSecondaryRef, splitSecondaryAmount)}
-                  disabled={isVerifyingMpesa || !splitSecondaryRef.trim()}
-                  className="h-11 px-4 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-                  Verify
-                </button>
-              )}
-            </div>
+              Open details
+            </button>
           </div>
-        )}
+        </div>
 
           </>
         )}
@@ -832,6 +733,265 @@ function SalePanel({
           </div>
         )}
       </div>
+
+      {paymentWindow && checkoutStep === 'PAYMENT' && (
+        <div className="fixed inset-0 z-[180] flex items-end justify-center bg-slate-950/65 p-3 backdrop-blur-sm sm:items-center">
+          <div className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-white">
+                  <SelectedPaymentIcon size={21} strokeWidth={2.4} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Payment method</p>
+                  <h3 className="truncate text-lg font-black text-slate-950">{selectedPaymentOption.label}</h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentWindow(null)}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-slate-500"
+                aria-label="Close payment window"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4 overflow-y-auto p-5">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-3">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Subtotal</p>
+                  <p className="mt-1 truncate text-sm font-black text-slate-900">Ksh {subtotal.toLocaleString()}</p>
+                </div>
+                <div className="rounded-2xl border border-rose-100 bg-rose-50 px-3 py-3">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Discount</p>
+                  <p className="mt-1 truncate text-sm font-black text-rose-700">Ksh {discountAmount.toLocaleString()}</p>
+                </div>
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-3">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700">Payable</p>
+                  <p className="mt-1 truncate text-sm font-black text-emerald-950">Ksh {total.toLocaleString()}</p>
+                </div>
+              </div>
+
+              {paymentWindow === 'CASH' && (
+                <div className="space-y-3">
+                  <label className="block">
+                    <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Cash received</span>
+                    <div className="relative mt-2">
+                      <Calculator className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="number"
+                        min="0"
+                        value={cashTendered}
+                        onChange={(event) => setCashTendered(event.target.value)}
+                        placeholder={`Ksh ${total.toLocaleString()}`}
+                        data-testid="cash-received"
+                        className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                      />
+                    </div>
+                  </label>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Change due</p>
+                    <p className="mt-1 text-2xl font-black text-slate-950">Ksh {changeDue.toLocaleString()}</p>
+                  </div>
+                </div>
+              )}
+
+              {paymentWindow === 'MPESA' && (
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">STK prompt</p>
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                      <input
+                        value={mpesaPhone}
+                        onChange={(event) => setMpesaPhone(event.target.value)}
+                        placeholder="Customer phone"
+                        data-testid="mpesa-phone"
+                        className="h-12 w-full rounded-2xl border border-emerald-100 bg-white px-4 text-sm font-bold outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={sendMpesaPrompt}
+                        disabled={mpesaState === 'PUSHING' || mpesaState === 'POLLING' || isCheckingOut}
+                        data-testid="mpesa-prompt"
+                        className="h-12 rounded-2xl bg-emerald-600 px-5 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+                      >
+                        {mpesaState === 'PUSHING' || mpesaState === 'POLLING' ? 'Waiting' : 'Send Prompt'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">M-Pesa receipt code</p>
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                      <input
+                        value={mpesaRef}
+                        onChange={(event) => setMpesaRef(event.target.value.toUpperCase())}
+                        placeholder="Receipt code"
+                        data-testid="mpesa-reference"
+                        className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold uppercase outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => verifyMpesaCode(mpesaRef, total)}
+                        disabled={isVerifyingMpesa || !mpesaRef.trim()}
+                        className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-5 text-[10px] font-black uppercase tracking-widest text-blue-700 disabled:opacity-50"
+                      >
+                        {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                        Verify
+                      </button>
+                    </div>
+                  </div>
+
+                  {mpesaState !== 'IDLE' && (
+                    <p className={`rounded-2xl px-4 py-3 text-[10px] font-black uppercase tracking-widest ${mpesaState === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : mpesaState === 'FAILED' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
+                      {mpesaState === 'PUSHING' ? 'Sending prompt' : mpesaState === 'POLLING' ? 'Awaiting customer PIN' : mpesaState === 'SUCCESS' ? 'Payment confirmed' : 'Prompt failed or timed out'}
+                    </p>
+                  )}
+                  {mpesaVerification && (
+                    <p className={`rounded-2xl px-4 py-3 text-[10px] font-black uppercase tracking-widest ${mpesaVerification.usable ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
+                      {mpesaVerification.message || (mpesaVerification.usable ? 'M-Pesa code verified' : 'M-Pesa code not usable')}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {paymentWindow === 'PDQ' && (
+                <label className="block">
+                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">PDQ reference</span>
+                  <div className="relative mt-2">
+                    <CreditCard className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={pdqRef}
+                      onChange={(event) => setPdqRef(event.target.value)}
+                      placeholder="Terminal reference"
+                      data-testid="pdq-reference"
+                      className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                    />
+                  </div>
+                </label>
+              )}
+
+              {paymentWindow === 'CREDIT' && (
+                <div className="space-y-3">
+                  <label className="block">
+                    <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Customer account</span>
+                    <select
+                      value={selectedCustomerId}
+                      onChange={(event) => setSelectedCustomerId(event.target.value)}
+                      data-testid="customer-select"
+                      className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                    >
+                      <option value="">Select registered customer</option>
+                      {customers?.map((customer) => (
+                        <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` - ${customer.phone}` : ''}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Credit amount</p>
+                    <p className="mt-1 text-2xl font-black text-amber-950">Ksh {total.toLocaleString()}</p>
+                  </div>
+                </div>
+              )}
+
+              {paymentWindow === 'SPLIT' && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Cash part</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max={total}
+                        value={splitCash}
+                        onChange={(event) => setSplitCash(event.target.value)}
+                        placeholder="Cash amount"
+                        data-testid="split-cash"
+                        className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Balance method</span>
+                      <select
+                        value={splitSecondaryMethod}
+                        onChange={(event) => setSplitSecondaryMethod(event.target.value as 'MPESA' | 'PDQ' | 'CREDIT')}
+                        data-testid="split-method"
+                        className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                      >
+                        <option value="MPESA">M-Pesa</option>
+                        <option value="PDQ">PDQ</option>
+                        <option value="CREDIT">Credit</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Balance</p>
+                    <p className="mt-1 text-xl font-black text-slate-950">Ksh {splitSecondaryAmount.toLocaleString()}</p>
+                  </div>
+
+                  {splitSecondaryMethod === 'CREDIT' && (
+                    <select
+                      value={selectedCustomerId}
+                      onChange={(event) => setSelectedCustomerId(event.target.value)}
+                      data-testid="customer-select"
+                      className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                    >
+                      <option value="">Select registered customer</option>
+                      {customers?.map((customer) => (
+                        <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` - ${customer.phone}` : ''}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {splitSecondaryMethod !== 'CREDIT' && (
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                      <input
+                        value={splitSecondaryRef}
+                        onChange={(event) => setSplitSecondaryRef(splitSecondaryMethod === 'MPESA' ? event.target.value.toUpperCase() : event.target.value)}
+                        placeholder={`${splitSecondaryMethod} reference`}
+                        data-testid="split-reference"
+                        className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                      />
+                      {splitSecondaryMethod === 'MPESA' && (
+                        <button
+                          type="button"
+                          onClick={() => verifyMpesaCode(splitSecondaryRef, splitSecondaryAmount)}
+                          disabled={isVerifyingMpesa || !splitSecondaryRef.trim()}
+                          className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-5 text-[10px] font-black uppercase tracking-widest text-blue-700 disabled:opacity-50"
+                        >
+                          {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                          Verify
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 border-t border-slate-100 bg-slate-50 p-4">
+              <button
+                type="button"
+                onClick={() => setPaymentWindow(null)}
+                className="h-12 rounded-2xl border border-slate-200 bg-white px-5 text-[10px] font-black uppercase tracking-widest text-slate-600"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                onClick={() => void continueFromPaymentWindow()}
+                disabled={isVerifyingMpesa}
+                className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-primary px-5 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+              >
+                {isVerifyingMpesa ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />}
+                Continue to Review
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
