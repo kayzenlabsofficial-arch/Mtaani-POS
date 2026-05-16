@@ -7,6 +7,7 @@ import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import { useToast } from '../../context/ToastContext';
 import BarcodeScanner from '../shared/BarcodeScanner';
 import { enrichProductsWithBundleStock, isBundleProduct } from '../../utils/bundleInventory';
+import { MpesaService } from '../../services/mpesa';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -148,12 +149,15 @@ function SalePanel({
 }) {
   const { cart, removeFromCart, updateQuantity, setQuantity, clearCart } = useStore();
   const activeBusinessId = useStore((state) => state.activeBusinessId);
-  const { warning } = useToast();
+  const activeBranchId = useStore((state) => state.activeBranchId);
+  const { warning, error, success } = useToast();
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT'>('CASH');
   const [discountType, setDiscountType] = useState<'FIXED' | 'PERCENT'>('FIXED');
   const [discountValue, setDiscountValue] = useState('');
   const [cashTendered, setCashTendered] = useState('');
   const [mpesaRef, setMpesaRef] = useState('');
+  const [mpesaPhone, setMpesaPhone] = useState('');
+  const [mpesaState, setMpesaState] = useState<'IDLE' | 'PUSHING' | 'POLLING' | 'SUCCESS' | 'FAILED'>('IDLE');
   const [pdqRef, setPdqRef] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [splitCash, setSplitCash] = useState('');
@@ -204,6 +208,49 @@ function SalePanel({
     const result = await onCheckout(status, method, options);
     if (result) onCheckoutSuccess?.();
     return result;
+  };
+
+  const pollMpesaAndComplete = (requestId: string) => {
+    let attempts = 0;
+    const interval = window.setInterval(async () => {
+      attempts++;
+      if (attempts > 18) {
+        window.clearInterval(interval);
+        setMpesaState('FAILED');
+        error('M-Pesa prompt timed out. Confirm manually if payment arrived.');
+        return;
+      }
+
+      const res = await MpesaService.checkStatus(requestId);
+      if (res.found && res.resultCode === 0) {
+        window.clearInterval(interval);
+        const receipt = res.receiptNumber || requestId;
+        setMpesaRef(receipt);
+        setMpesaState('SUCCESS');
+        await runCheckout('PAID', 'MPESA', { ...baseOptions(), mpesaRef: receipt, paymentReference: receipt });
+        success(`M-Pesa confirmed: ${receipt}`);
+      } else if (res.found && res.resultCode !== 0) {
+        window.clearInterval(interval);
+        setMpesaState('FAILED');
+        error(res.resultDesc || 'M-Pesa payment was not completed.');
+      }
+    }, 5000);
+  };
+
+  const sendMpesaPrompt = async () => {
+    if (!activeBusinessId || !activeBranchId) return error('Select a branch before sending M-Pesa prompt.');
+    if (!mpesaPhone.trim()) return warning('Enter the customer phone number for the M-Pesa prompt.');
+    if (cart.length === 0 || total <= 0 || mpesaState === 'PUSHING' || mpesaState === 'POLLING') return;
+
+    setMpesaState('PUSHING');
+    const res = await MpesaService.triggerStkPush(mpesaPhone.trim(), total, `SALE-${Date.now()}`, activeBusinessId, activeBranchId);
+    if (res.success && res.checkoutRequestId) {
+      setMpesaState('POLLING');
+      pollMpesaAndComplete(res.checkoutRequestId);
+    } else {
+      setMpesaState('FAILED');
+      error(res.error || 'Could not send M-Pesa prompt.');
+    }
   };
 
   const submitCheckout = async () => {
@@ -411,13 +458,38 @@ function SalePanel({
         )}
 
         {paymentMode === 'MPESA' && (
-          <input
-            value={mpesaRef}
-            onChange={(event) => setMpesaRef(event.target.value)}
-            placeholder="M-Pesa code or phone reference"
-            data-testid="mpesa-reference"
-            className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-          />
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <input
+                value={mpesaPhone}
+                onChange={(event) => setMpesaPhone(event.target.value)}
+                placeholder="Customer phone for STK prompt"
+                data-testid="mpesa-phone"
+                className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+              <button
+                type="button"
+                onClick={sendMpesaPrompt}
+                disabled={mpesaState === 'PUSHING' || mpesaState === 'POLLING' || isCheckingOut}
+                data-testid="mpesa-prompt"
+                className="h-11 px-4 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {mpesaState === 'PUSHING' || mpesaState === 'POLLING' ? 'Waiting...' : 'Send Prompt'}
+              </button>
+            </div>
+            <input
+              value={mpesaRef}
+              onChange={(event) => setMpesaRef(event.target.value)}
+              placeholder="Or enter M-Pesa receipt code manually"
+              data-testid="mpesa-reference"
+              className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            />
+            {mpesaState !== 'IDLE' && (
+              <p className={`text-[10px] font-black uppercase tracking-widest ${mpesaState === 'SUCCESS' ? 'text-emerald-600' : mpesaState === 'FAILED' ? 'text-rose-600' : 'text-blue-600'}`}>
+                {mpesaState === 'PUSHING' ? 'Sending prompt...' : mpesaState === 'POLLING' ? 'Awaiting customer PIN...' : mpesaState === 'SUCCESS' ? 'Payment confirmed' : 'Prompt failed or timed out'}
+              </p>
+            )}
+          </div>
         )}
 
         {paymentMode === 'PDQ' && (

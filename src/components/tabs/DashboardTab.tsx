@@ -52,10 +52,14 @@ const chartData = [
 export default function DashboardTab({ setActiveTab, openExpenseModal }: DashboardTabProps) {
   const [trendView, setTrendView] = useState<'DAY' | 'WEEK'>('DAY');
   const [isBankingExcess, setIsBankingExcess] = useState(false);
+  const [isClosingShift, setIsClosingShift] = useState(false);
+  const [isClosingDay, setIsClosingDay] = useState(false);
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
-  const { success, error } = useToast();
+  const activeShift = useStore(state => state.activeShift);
+  const setActiveShift = useStore(state => state.setActiveShift);
+  const { success, error, warning } = useToast();
   const branches = useLiveQuery(
     () => activeBusinessId ? db.branches.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],
@@ -93,6 +97,14 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     () => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
     [activeBranchId], []
   );
+  const branchCustomerPayments = useLiveQuery(
+    () => activeBranchId ? db.customerPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
+    [activeBranchId], []
+  );
+  const branchReports = useLiveQuery(
+    () => activeBranchId ? db.endOfDayReports.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
+    [activeBranchId], []
+  );
   const pendingApprovalCount = useLiveQuery(async () => {
     if (!activeBranchId) return 0;
     const [expenses, refunds, purchaseOrders, picks] = await Promise.all([
@@ -117,6 +129,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     expenses: branchExpenses || [],
     cashPicks: branchCashPicks || [],
     supplierPayments: branchSupplierPayments || [],
+    customerPayments: branchCustomerPayments || [],
     since: getTodayStartMs(),
   }).actualCashDrawer);
   const sweepAmount = Math.max(0, actualCashDrawer - cashFloatTarget);
@@ -151,6 +164,125 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     }
   };
 
+  const getClosureStats = (since: number, until = Date.now()) => {
+    const txs = (branchTransactions || []).filter(t => (t.timestamp || 0) >= since && (t.timestamp || 0) <= until && t.status !== 'VOIDED');
+    const expenses = (branchExpenses || []).filter(e => (e.timestamp || 0) >= since && (e.timestamp || 0) <= until && e.status !== 'REJECTED');
+    const picks = (branchCashPicks || []).filter(p => (p.timestamp || 0) >= since && (p.timestamp || 0) <= until && p.status !== 'REJECTED');
+    const supplierPayments = (branchSupplierPayments || []).filter(p => (p.timestamp || 0) >= since && (p.timestamp || 0) <= until);
+    const customerPayments = (branchCustomerPayments || []).filter(p => (p.timestamp || 0) >= since && (p.timestamp || 0) <= until);
+    const drawer = calculateCashDrawer({ transactions: txs, expenses, cashPicks: picks, supplierPayments, customerPayments, since });
+    const mpesaSales = txs.reduce((sum, tx) => {
+      if (tx.paymentMethod === 'MPESA') return sum + Number(tx.total || 0);
+      if (tx.paymentMethod === 'SPLIT' && tx.splitPayments?.secondaryMethod === 'MPESA') return sum + Number(tx.splitPayments.secondaryAmount || 0);
+      return sum;
+    }, 0);
+    const grossSales = txs.reduce((sum, tx) => sum + Number(tx.subtotal ?? tx.total ?? 0), 0);
+    const totalSales = txs.reduce((sum, tx) => sum + Number(tx.total || 0), 0);
+    const taxTotal = txs.reduce((sum, tx) => sum + Number(tx.tax || 0), 0);
+    const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const totalPicks = picks.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+    return {
+      txs,
+      grossSales,
+      totalSales,
+      taxTotal,
+      cashSales: drawer.cashSales + drawer.customerCashPayments,
+      mpesaSales,
+      totalExpenses,
+      totalPicks,
+      expectedCash: Math.max(0, drawer.actualCashDrawer),
+    };
+  };
+
+  const handleCloseShift = async () => {
+    if (!activeBranchId || !activeBusinessId || !currentUser || isClosingShift) return;
+    const since = Number(activeShift?.startTime || getTodayStartMs());
+    const stats = getClosureStats(since);
+    if (stats.txs.length === 0 && !confirm('No sales found for this shift. Close it anyway?')) return;
+
+    const reportedInput = window.prompt('Enter counted cash in drawer', String(Math.round(stats.expectedCash)));
+    if (reportedInput === null) return;
+    const reportedCash = Number(reportedInput);
+    if (!Number.isFinite(reportedCash) || reportedCash < 0) return warning('Enter a valid counted cash amount.');
+
+    setIsClosingShift(true);
+    try {
+      const now = Date.now();
+      const shiftId = activeShift?.id || `shift_${activeBranchId}_${new Date().toISOString().slice(0, 10)}_${currentUser.id}`;
+      await db.endOfDayReports.add({
+        id: `eod_${activeBranchId}_${now}`,
+        shiftId,
+        timestamp: now,
+        totalSales: stats.totalSales,
+        grossSales: stats.grossSales,
+        taxTotal: stats.taxTotal,
+        cashSales: stats.cashSales,
+        mpesaSales: stats.mpesaSales,
+        totalExpenses: stats.totalExpenses,
+        totalPicks: stats.totalPicks,
+        totalRefunds: 0,
+        expectedCash: stats.expectedCash,
+        reportedCash,
+        difference: reportedCash - stats.expectedCash,
+        cashierName: currentUser.name,
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+      });
+
+      if (activeShift?.id) {
+        await db.shifts.update(activeShift.id, { status: 'CLOSED', endTime: now, updated_at: now });
+      } else {
+        await db.shifts.add({
+          id: shiftId,
+          startTime: since,
+          endTime: now,
+          cashierName: currentUser.name,
+          status: 'CLOSED',
+          branchId: activeBranchId,
+          businessId: activeBusinessId,
+        } as any);
+      }
+      setActiveShift(null);
+      success('Shift closed and Z-report saved.');
+    } catch (err: any) {
+      error(err.message || 'Failed to close shift.');
+    } finally {
+      setIsClosingShift(false);
+    }
+  };
+
+  const handleCloseDay = async () => {
+    if (!activeBranchId || !activeBusinessId || isClosingDay) return;
+    if (!confirm('Close the business day and create the daily summary?')) return;
+    const since = getTodayStartMs();
+    const stats = getClosureStats(since);
+    const todaysReports = (branchReports || []).filter(report => (report.timestamp || 0) >= since);
+
+    setIsClosingDay(true);
+    try {
+      await db.dailySummaries.add({
+        id: `day_${activeBranchId}_${new Date().toISOString().slice(0, 10)}_${Date.now()}`,
+        date: since,
+        shiftIds: todaysReports.map(report => report.shiftId || report.id),
+        totalSales: stats.totalSales,
+        grossSales: stats.grossSales,
+        taxTotal: stats.taxTotal,
+        totalExpenses: stats.totalExpenses,
+        totalPicks: stats.totalPicks,
+        totalVariance: todaysReports.reduce((sum, report) => sum + Number(report.difference || 0), 0),
+        timestamp: Date.now(),
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+      });
+      success('Business day closed and daily summary saved.');
+    } catch (err: any) {
+      error(err.message || 'Failed to close day.');
+    } finally {
+      setIsClosingDay(false);
+    }
+  };
+
   const quickActions = [
     { id: 'REGISTER', label: 'New Sale', icon: 'point_of_sale', color: 'bg-primary' },
     { id: 'REPORTS', label: 'Reports', icon: 'analytics', color: 'bg-violet-600' },
@@ -158,6 +290,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     { id: 'REFUNDS', label: 'Refund', icon: 'keyboard_return', color: 'bg-amber-500' },
     { id: 'CUSTOMERS', label: 'Customers', icon: 'group', color: 'bg-teal-600' },
     { id: 'INVENTORY', label: 'Inventory', icon: 'inventory_2', color: 'bg-indigo-600' },
+    { fn: handleCloseShift, label: 'Close Shift', icon: 'assignment_turned_in', color: 'bg-blue-600', busy: isClosingShift },
+    { fn: handleCloseDay, label: 'Close Day', icon: 'event_available', color: 'bg-slate-900', busy: isClosingDay },
   ];
 
   return (
@@ -320,7 +454,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                   <div className={`w-10 h-10 ${action.color} rounded-xl flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform`}>
                     <MaterialIcon name={action.icon} className="text-white text-lg" />
                   </div>
-                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight text-center">{action.label}</span>
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight text-center">{(action as any).busy ? 'Working...' : action.label}</span>
                 </button>
               ))}
             </div>

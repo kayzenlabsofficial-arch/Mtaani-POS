@@ -27,6 +27,7 @@ export default function ReportsTab() {
   const [selectedMonth, setSelectedMonth] = useState(monthInput);
   const [customStart, setCustomStart] = useState(todayInput);
   const [customEnd, setCustomEnd] = useState(todayInput);
+  const [deductTaxInPL, setDeductTaxInPL] = useState(true);
   const [selectedProductId, setSelectedProductId] = React.useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   
@@ -168,7 +169,8 @@ export default function ReportsTab() {
   const totalExpenseAmount = filteredExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
   const grossSales = filteredTransactions.reduce((sum, t) => sum + Number(t.subtotal ?? t.total ?? 0), 0);
   const totalDiscounts = filteredTransactions.reduce((sum, t) => sum + Number(t.discountAmount || 0), 0);
-  const grossProfit = totalRevenue - estimatedCOGS - totalTax;
+  const taxImpact = deductTaxInPL ? totalTax : 0;
+  const grossProfit = totalRevenue - estimatedCOGS - taxImpact;
   const netProfit = grossProfit - totalExpenseAmount;
   const averageBasket = filteredTransactions.length > 0 ? totalRevenue / filteredTransactions.length : 0;
   const topProducts = Object.values(productPerf).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
@@ -223,6 +225,7 @@ export default function ReportsTab() {
         expenses: totalExpenseAmount,
         netProfit,
         tax: totalTax,
+        deductTaxInPL,
         creditSales: creditSalesAmount,
         orderCount: filteredTransactions.length,
         expenseBreakdown: expenseData,
@@ -293,6 +296,18 @@ export default function ReportsTab() {
               />
             </div>
           )}
+          <button
+            type="button"
+            onClick={() => setDeductTaxInPL(v => !v)}
+            className={`h-10 px-4 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${
+              deductTaxInPL
+                ? 'bg-blue-50 border-blue-200 text-blue-700'
+                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+            }`}
+            title="Toggle whether VAT is deducted when calculating P&L"
+          >
+            Tax {deductTaxInPL ? 'On' : 'Off'}
+          </button>
           <button onClick={handleExportProfitLoss} disabled={isSharing} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-50 active:scale-[0.98] transition-all">
              {isSharing ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
              <span className="hidden sm:inline">{isSharing ? 'Exporting...' : 'Export P&L'}</span>
@@ -305,7 +320,7 @@ export default function ReportsTab() {
         {/* Global Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard title="Total Revenue" value={totalRevenue} icon={<TrendingUp size={24}/>} color="indigo" subtitle={`${filteredTransactions.length} orders processed`} />
-          <StatCard title="Net Profit" value={netProfit} icon={<Target size={24}/>} color={netProfit >= 0 ? "emerald" : "rose"} subtitle="Post-COGS & Expenses" />
+          <StatCard title="Net Profit" value={netProfit} icon={<Target size={24}/>} color={netProfit >= 0 ? "emerald" : "rose"} subtitle={`Post-COGS, expenses${deductTaxInPL ? ' & VAT' : ''}`} />
           <StatCard title="Gross Margin" value={((grossProfit / (totalRevenue || 1)) * 100)} unit="%" icon={<Layers size={24}/>} color="blue" subtitle="Efficiency of goods" />
           <StatCard title="Expense Rate" value={((totalExpenseAmount / (totalRevenue || 1)) * 100)} unit="%" icon={<Activity size={24}/>} color="amber" subtitle="Burn vs Revenue" />
         </div>

@@ -19,6 +19,12 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
   const [activeTab, setActiveTab] = useState<'INVOICES' | 'PAYMENTS' | 'CREDIT_NOTES'>('INVOICES');
   const [isAddCreditNoteOpen, setIsAddCreditNoteOpen] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const todayInput = new Date().toISOString().split('T')[0];
+  const [dateMode, setDateMode] = useState<'ALL' | 'CUSTOM'>('ALL');
+  const [dateStart, setDateStart] = useState(todayInput);
+  const [dateEnd, setDateEnd] = useState(todayInput);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const [creditNoteForm, setCreditNoteForm] = useState({ amount: '', reference: '', reason: '', productId: '', quantity: '1' });
   const { success, error } = useToast();
 
@@ -37,7 +43,31 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
     [supplier]
   );
 
+  React.useEffect(() => {
+    setPage(1);
+  }, [activeTab, dateMode, dateStart, dateEnd]);
+
   if (!supplier) return null;
+
+  const inDateRange = (timestamp?: number) => {
+    if (dateMode === 'ALL') return true;
+    const start = new Date(dateStart || todayInput);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(dateEnd || dateStart || todayInput);
+    end.setHours(23, 59, 59, 999);
+    const ts = Number(timestamp) || 0;
+    return ts >= start.getTime() && ts <= end.getTime();
+  };
+
+  const filteredInvoices = (invoices || []).filter(inv => inDateRange(inv.receivedDate || inv.orderDate));
+  const filteredPayments = (payments || []).filter(payment => inDateRange(payment.timestamp));
+  const filteredCreditNotes = (creditNotes || []).filter(note => inDateRange(note.timestamp));
+  const activeRows = activeTab === 'INVOICES' ? filteredInvoices : activeTab === 'PAYMENTS' ? filteredPayments : filteredCreditNotes;
+  const totalPages = Math.max(1, Math.ceil(activeRows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pagedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const pagedPayments = filteredPayments.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const pagedCreditNotes = filteredCreditNotes.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handleAddCreditNote = async () => {
     try {
@@ -109,7 +139,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
     setIsSharing(true);
     try {
       const { generateAndDownloadStatement } = await import('../../utils/shareUtils');
-      await generateAndDownloadStatement(supplier, invoices || [], payments || [], creditNotes || []);
+      await generateAndDownloadStatement(supplier, filteredInvoices, filteredPayments, filteredCreditNotes);
       success("Statement generated successfully.");
     } catch (err) {
       console.error('Sharing failed', err);
@@ -178,6 +208,22 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                 ))}
             </div>
 
+            <div className="px-6 sm:px-8 py-3 border-b border-slate-100 no-print flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={() => setDateMode('ALL')} className={`h-9 px-3 rounded-xl border text-[9px] font-black uppercase tracking-widest ${dateMode === 'ALL' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}>All Dates</button>
+                    <button onClick={() => setDateMode('CUSTOM')} className={`h-9 px-3 rounded-xl border text-[9px] font-black uppercase tracking-widest ${dateMode === 'CUSTOM' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-600 border-slate-200'}`}>Custom</button>
+                    {dateMode === 'CUSTOM' && (
+                        <>
+                            <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)} className="h-9 rounded-xl border border-slate-200 px-2 text-xs font-bold outline-none focus:border-blue-500" />
+                            <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)} className="h-9 rounded-xl border border-slate-200 px-2 text-xs font-bold outline-none focus:border-blue-500" />
+                        </>
+                    )}
+                </div>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                  Showing {activeRows.length === 0 ? 0 : ((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, activeRows.length)} of {activeRows.length}
+                </p>
+            </div>
+
             {/* List Content */}
             <div className="flex-1 overflow-y-auto no-scrollbar p-8 print:p-0">
                 {activeTab === 'INVOICES' && (
@@ -185,13 +231,13 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                         <div className="hidden print:block mb-8">
                            <h3 className="text-lg font-black   border-b pb-2">Purchase Invoices Statement</h3>
                         </div>
-                        {invoices?.length === 0 ? (
+                        {filteredInvoices.length === 0 ? (
                             <div className="py-20 text-center text-slate-400 flex flex-col items-center">
                                 <FileText size={40} className="mb-3 opacity-20" />
                                 <p className="text-sm font-bold">No purchase invoices found.</p>
                             </div>
                         ) : (
-                            invoices?.map(inv => (
+                            pagedInvoices.map(inv => (
                                 <div key={inv.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between hover:border-slate-300 transition-all">
                                     <div className="flex items-center gap-4">
                                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${inv.paymentStatus === 'PAID' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
@@ -222,13 +268,13 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
 
                 {activeTab === 'PAYMENTS' && (
                     <div className="space-y-3">
-                         {payments?.length === 0 ? (
+                         {filteredPayments.length === 0 ? (
                             <div className="py-20 text-center text-slate-400 flex flex-col items-center">
                                 <DollarSign size={40} className="mb-3 opacity-20" />
                                 <p className="text-sm font-bold">No payments recorded.</p>
                             </div>
                         ) : (
-                            payments?.map(pay => (
+                            pagedPayments.map(pay => (
                                 <div key={pay.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between hover:border-slate-300 transition-all">
                                     <div className="flex items-center gap-4">
                                         <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
@@ -260,13 +306,13 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                 <Plus size={14} /> New Credit Note
                             </button>
                         </div>
-                        {creditNotes?.length === 0 ? (
+                        {filteredCreditNotes.length === 0 ? (
                             <div className="py-20 text-center text-slate-400 flex flex-col items-center">
                                 <Ban size={40} className="mb-3 opacity-20" />
                                 <p className="text-sm font-bold">No credit notes found.</p>
                             </div>
                         ) : (
-                            creditNotes?.map(cn => (
+                            pagedCreditNotes.map(cn => (
                                 <div key={cn.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between hover:border-slate-300 transition-all">
                                     <div className="flex items-center gap-4">
                                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${cn.status === 'ALLOCATED' ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600'}`}>
@@ -301,6 +347,13 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                     </div>
                 )}
             </div>
+            {activeRows.length > pageSize && (
+              <div className="px-6 sm:px-8 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3 no-print">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-40">Previous 50</button>
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Page {currentPage} of {totalPages}</span>
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-40">Next 50</button>
+              </div>
+            )}
          </div>
 
          {/* Close Button Mobile */}

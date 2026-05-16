@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Search, CheckCircle2, FileText, RotateCcw, Receipt, ArrowUpRight, ArrowDownLeft, Wallet, Landmark, ClipboardList, CalendarCheck, Activity, ShoppingBag, Clock, SlidersHorizontal, ChevronRight, X, FileSearch, Archive, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Search, CheckCircle2, FileText, RotateCcw, Receipt, ArrowUpRight, ArrowDownLeft, Wallet, Landmark, ClipboardList, CalendarCheck, Activity, ShoppingBag, Clock, SlidersHorizontal, ChevronRight, X, FileSearch, Archive, ShieldCheck, ChevronLeft, ChevronRight as NextIcon, CalendarDays } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction } from '../../db';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
@@ -16,6 +16,12 @@ export default function DocumentsTab() {
   const [docSearch, setDocSearch] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
   const [filterType, setFilterType] = useState<'ALL' | 'APPROVALS' | 'SALES' | 'EXPENSES' | 'SUPPLIER_PAYMENTS' | 'INVOICES' | 'SHIFTS' | 'DAILY'>('ALL');
+  const todayInput = new Date().toISOString().split('T')[0];
+  const [dateMode, setDateMode] = useState<'ALL' | 'CUSTOM'>('ALL');
+  const [dateStart, setDateStart] = useState(todayInput);
+  const [dateEnd, setDateEnd] = useState(todayInput);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const scrollRef = useHorizontalScroll();
   const { success, error } = useToast();
 
@@ -77,6 +83,14 @@ export default function DocumentsTab() {
                           (r.reference?.toLowerCase().includes(docSearch.toLowerCase()));
     
     if (!matchesSearch) return false;
+    if (dateMode === 'CUSTOM') {
+      const start = new Date(dateStart || todayInput);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(dateEnd || dateStart || todayInput);
+      end.setHours(23, 59, 59, 999);
+      const ts = Number(r.timestamp) || 0;
+      if (ts < start.getTime() || ts > end.getTime()) return false;
+    }
     if (filterType === 'ALL') return true;
     if (filterType === 'SALES' && r.recordType === 'SALE') return true;
     if (filterType === 'EXPENSES' && r.recordType === 'EXPENSE') return true;
@@ -86,6 +100,13 @@ export default function DocumentsTab() {
     if (filterType === 'DAILY' && r.recordType === 'DAILY_SUMMARY') return true;
     return false;
   });
+  const totalPages = Math.max(1, Math.ceil(filteredDocs.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pagedDocs = filteredDocs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [docSearch, filterType, dateMode, dateStart, dateEnd]);
 
   return (
     <div className="pb-24 animate-in fade-in w-full">
@@ -129,7 +150,7 @@ export default function DocumentsTab() {
       </div>
 
       {filterType !== 'APPROVALS' && (
-        <div className="mb-6">
+        <div className="mb-6 space-y-3">
           <div className="relative group">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={16} />
             <input
@@ -145,6 +166,43 @@ export default function DocumentsTab() {
               </button>
             )}
           </div>
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDateMode('ALL')}
+                className={`h-10 px-4 rounded-xl border text-[10px] font-black uppercase tracking-widest ${dateMode === 'ALL' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}
+              >
+                All Dates
+              </button>
+              <button
+                type="button"
+                onClick={() => setDateMode('CUSTOM')}
+                className={`h-10 px-4 rounded-xl border text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${dateMode === 'CUSTOM' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-600 border-slate-200'}`}
+              >
+                <CalendarDays size={14} /> Custom
+              </button>
+              {dateMode === 'CUSTOM' && (
+                <>
+                  <input
+                    type="date"
+                    value={dateStart}
+                    onChange={event => setDateStart(event.target.value)}
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                  />
+                  <input
+                    type="date"
+                    value={dateEnd}
+                    onChange={event => setDateEnd(event.target.value)}
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                  />
+                </>
+              )}
+            </div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              Showing {filteredDocs.length === 0 ? 0 : ((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filteredDocs.length)} of {filteredDocs.length}
+            </p>
+          </div>
         </div>
       )}
 
@@ -154,7 +212,7 @@ export default function DocumentsTab() {
          </div>
       ) : (
         <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
-           {filteredDocs.map(r => {
+           {pagedDocs.map(r => {
              const isSale = r.recordType === 'SALE';
              const isExp = r.recordType === 'EXPENSE';
              const isPay = r.recordType === 'SUPPLIER_PAYMENT';
@@ -226,6 +284,27 @@ export default function DocumentsTab() {
                  <p className="text-slate-500 font-black text-base">No records matched your filter</p>
                  <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Adjust search or filter parameters</p>
               </div>
+           )}
+           {filteredDocs.length > pageSize && (
+             <div className="px-4 sm:px-5 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
+               <button
+                 type="button"
+                 onClick={() => setPage(p => Math.max(1, p - 1))}
+                 disabled={currentPage <= 1}
+                 className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-40 flex items-center gap-2"
+               >
+                 <ChevronLeft size={14} /> Previous 50
+               </button>
+               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Page {currentPage} of {totalPages}</span>
+               <button
+                 type="button"
+                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                 disabled={currentPage >= totalPages}
+                 className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-40 flex items-center gap-2"
+               >
+                 Next 50 <NextIcon size={14} />
+               </button>
+             </div>
            )}
         </div>
       )}

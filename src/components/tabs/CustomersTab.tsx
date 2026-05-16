@@ -13,6 +13,12 @@ export default function CustomersTab() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
   const [statementCustomerId, setStatementCustomerId] = useState<string | null>(null);
+  const todayInput = new Date().toISOString().split('T')[0];
+  const [statementDateMode, setStatementDateMode] = useState<'ALL' | 'CUSTOM'>('ALL');
+  const [statementStart, setStatementStart] = useState(todayInput);
+  const [statementEnd, setStatementEnd] = useState(todayInput);
+  const [statementPage, setStatementPage] = useState(1);
+  const statementPageSize = 50;
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
     method: 'CASH' as CustomerPayment['paymentMethod'],
@@ -91,10 +97,20 @@ export default function CustomersTab() {
   const creditSales = (statementSales || [])
     .filter(sale => getCreditAmount(sale) > 0 && sale.status !== 'VOIDED')
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-  const totalCreditSales = creditSales.reduce((sum, sale) => sum + getCreditAmount(sale), 0);
-  const totalPayments = (statementPayments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const inStatementDateRange = (timestamp: number) => {
+    if (statementDateMode === 'ALL') return true;
+    const start = new Date(statementStart || todayInput);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(statementEnd || statementStart || todayInput);
+    end.setHours(23, 59, 59, 999);
+    return timestamp >= start.getTime() && timestamp <= end.getTime();
+  };
+  const filteredCreditSales = creditSales.filter(sale => inStatementDateRange(Number(sale.timestamp) || 0));
+  const filteredStatementPayments = (statementPayments || []).filter(payment => inStatementDateRange(Number(payment.timestamp) || 0));
+  const totalCreditSales = filteredCreditSales.reduce((sum, sale) => sum + getCreditAmount(sale), 0);
+  const totalPayments = filteredStatementPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const statementRows = [
-    ...creditSales.map(sale => ({
+    ...filteredCreditSales.map(sale => ({
       id: sale.id,
       timestamp: sale.timestamp,
       type: 'SALE' as const,
@@ -104,7 +120,7 @@ export default function CustomersTab() {
       credit: 0,
       method: sale.paymentMethod || 'CREDIT',
     })),
-    ...(statementPayments || []).map(payment => ({
+    ...filteredStatementPayments.map(payment => ({
       id: payment.id,
       timestamp: payment.timestamp,
       type: 'PAYMENT' as const,
@@ -115,6 +131,13 @@ export default function CustomersTab() {
       method: payment.paymentMethod,
     })),
   ].sort((a, b) => b.timestamp - a.timestamp);
+  const statementTotalPages = Math.max(1, Math.ceil(statementRows.length / statementPageSize));
+  const currentStatementPage = Math.min(statementPage, statementTotalPages);
+  const pagedStatementRows = statementRows.slice((currentStatementPage - 1) * statementPageSize, currentStatementPage * statementPageSize);
+
+  React.useEffect(() => {
+    setStatementPage(1);
+  }, [statementCustomerId, statementDateMode, statementStart, statementEnd]);
 
   const openAddCustomer = () => {
       setEditingCustomer(null);
@@ -125,6 +148,8 @@ export default function CustomersTab() {
   const openStatement = (customer: Customer) => {
       window.history.pushState({ ...(window.history.state || {}), mtaaniTab: true, tab: 'CUSTOMERS', customerStatementId: customer.id }, '');
       setStatementCustomerId(customer.id);
+      setStatementDateMode('ALL');
+      setStatementPage(1);
       setPaymentForm({ amount: customer.balance > 0 ? String(customer.balance) : '', method: 'CASH', reference: '' });
   }
 
@@ -277,7 +302,7 @@ export default function CustomersTab() {
     if (!statementCustomer) return;
     try {
       const { generateAndDownloadCustomerStatement } = await import('../../utils/shareUtils');
-      await generateAndDownloadCustomerStatement(statementCustomer, creditSales, statementPayments || []);
+      await generateAndDownloadCustomerStatement(statementCustomer, filteredCreditSales, filteredStatementPayments);
       success("Customer statement exported.");
     } catch (err) {
       console.error('Customer statement export failed', err);
@@ -332,12 +357,33 @@ export default function CustomersTab() {
 
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6">
           <section className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-black text-slate-900">Credit Statement</h3>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sales on credit and customer payments</p>
               </div>
-              <ReceiptText className="text-slate-300" size={22} />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStatementDateMode('ALL')}
+                  className={`h-9 px-3 rounded-xl border text-[9px] font-black uppercase tracking-widest ${statementDateMode === 'ALL' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}
+                >
+                  All Dates
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatementDateMode('CUSTOM')}
+                  className={`h-9 px-3 rounded-xl border text-[9px] font-black uppercase tracking-widest ${statementDateMode === 'CUSTOM' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-600 border-slate-200'}`}
+                >
+                  Custom
+                </button>
+                {statementDateMode === 'CUSTOM' && (
+                  <>
+                    <input type="date" value={statementStart} onChange={e => setStatementStart(e.target.value)} className="h-9 rounded-xl border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none focus:border-primary" />
+                    <input type="date" value={statementEnd} onChange={e => setStatementEnd(e.target.value)} className="h-9 rounded-xl border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none focus:border-primary" />
+                  </>
+                )}
+              </div>
             </div>
             <div className="divide-y divide-slate-100">
               {statementRows.length === 0 ? (
@@ -345,7 +391,7 @@ export default function CustomersTab() {
                   <WalletCards size={40} className="mx-auto mb-3 opacity-30" />
                   <p className="text-sm font-bold">No credit activity for this customer.</p>
                 </div>
-              ) : statementRows.map(row => (
+              ) : pagedStatementRows.map(row => (
                 <div key={`${row.type}-${row.id}`} className="px-4 sm:px-5 py-4 grid grid-cols-[2.5rem_minmax(0,1fr)_auto] gap-3 items-center">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${row.type === 'PAYMENT' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
                     {row.type === 'PAYMENT' ? <Banknote size={18} /> : <ReceiptText size={18} />}
@@ -365,6 +411,13 @@ export default function CustomersTab() {
                 </div>
               ))}
             </div>
+            {statementRows.length > statementPageSize && (
+              <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
+                <button onClick={() => setStatementPage(p => Math.max(1, p - 1))} disabled={currentStatementPage <= 1} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-40">Previous 50</button>
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Page {currentStatementPage} of {statementTotalPages}</span>
+                <button onClick={() => setStatementPage(p => Math.min(statementTotalPages, p + 1))} disabled={currentStatementPage >= statementTotalPages} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-40">Next 50</button>
+              </div>
+            )}
           </section>
 
           <aside className="bg-white border border-slate-100 rounded-2xl p-5 h-fit">
