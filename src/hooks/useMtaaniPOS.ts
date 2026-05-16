@@ -282,14 +282,18 @@ export function useMtaaniPOS() {
       await db.transactions.add(newTransaction);
 
       if (mpesaPaymentCode) {
-        MpesaService.markUtilized({
+        const utilization = await MpesaService.markUtilized({
           code: mpesaPaymentCode,
           transactionId,
           businessId: activeBusinessId!,
           branchId: activeBranchId!,
           customerId: effectiveCustomerId,
           customerName: effectiveCustomerName,
-        }).catch(err => console.warn('[M-Pesa] Could not mark payment utilized:', err));
+        });
+        if (utilization.error) {
+          await db.transactions.delete(transactionId).catch(() => {});
+          throw new Error(utilization.error);
+        }
       }
 
       if (effectiveCustomerId) {
