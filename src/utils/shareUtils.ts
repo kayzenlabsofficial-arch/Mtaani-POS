@@ -271,6 +271,19 @@ function footer(doc: jsPDF) {
 
 function safe(n: any): number { return Number(n) || 0; }
 function ksh(n: any): string { return `Ksh ${safe(n).toLocaleString()}`; }
+function looksLikeOpaqueId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    || /^demo_branch_/i.test(value)
+    || value.length > 28;
+}
+
+function branchLabel(record: any, fallback = 'Main Branch'): string {
+  const named = safeStr(record?.branchName || record?.branch?.name || record?.branchLabel, '');
+  if (named) return named;
+  const raw = safeStr(record?.branchId, '');
+  if (!raw || looksLikeOpaqueId(raw)) return fallback;
+  return raw;
+}
 function safeStr(s: any, fallback = '—'): string {
   if (s === null || s === undefined) return fallback;
   return String(s) || fallback;
@@ -302,7 +315,7 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
   st(doc, slate600);
   doc.text(location, TW / 2, y, { align: 'center' });
   y += 4;
-  doc.text(`Cashier: ${safeStr(r.cashierName)} | Branch: ${safeStr(r.branchId, 'MAIN')}`, TW / 2, y, { align: 'center' });
+  doc.text(`Cashier: ${safeStr(r.cashierName)} | Branch: ${branchLabel(r)}`, TW / 2, y, { align: 'center' });
   y += 8;
   
   // Info
@@ -565,7 +578,7 @@ function buildReport(r: any, bizName = 'MTAANI POS'): Blob {
   sf(doc, [248, 250, 252] as RGB);
   doc.roundedRect(M, summaryTop - 4, W, 25, 3, 3, 'F');
   y = kvRow(doc, 'Report Type', isDaily ? 'Daily Summary' : 'Shift Close (Z-Reading)', y);
-  y = kvRow(doc, 'Branch', safeStr(r.branchId, 'MAIN'), y);
+  y = kvRow(doc, 'Branch', branchLabel(r), y);
   y = kvRow(doc, 'Prepared By', safeStr(r.cashierName, 'System'), y);
   y += 6;
 

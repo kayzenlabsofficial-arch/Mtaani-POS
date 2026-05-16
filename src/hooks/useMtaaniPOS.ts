@@ -91,6 +91,21 @@ export function useMtaaniPOS() {
       return;
     }
 
+    try {
+      const rootRes = await fetch('/api/root-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      if (rootRes.ok) {
+        const rootUser = await rootRes.json();
+        login(rootUser as any);
+        return;
+      }
+    } catch {
+      // Local/offline dev can still use the compile-time root credentials above.
+    }
+
     if (!businessCode) {
       setLoginError("Please enter your Business Code.");
       return;

@@ -31,6 +31,11 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   const storeName = businessSettings?.storeName || 'MTAANI POS';
   const storeLocation = businessSettings?.location || 'Nairobi, Kenya';
+  const activeRecordBranch = useLiveQuery(
+    () => selectedRecord?.branchId ? db.branches.get(selectedRecord.branchId) : Promise.resolve(undefined),
+    [selectedRecord?.branchId],
+    undefined
+  );
 
   // Fetch contextual data based on record type
   const supplier = useLiveQuery(
@@ -120,7 +125,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
       const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Remittance' : isPO ? 'Invoice' : isReport ? 'Z-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
       
-      const recordWithDetails = { ...selectedRecord };
+      const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
       if (isPayment) {
         const pIds = selectedRecord.purchaseOrderIds || (selectedRecord.purchaseOrderId ? [selectedRecord.purchaseOrderId] : []);
         const pos = await db.purchaseOrders.bulkGet(pIds);
@@ -158,7 +163,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
       const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Remittance' : isPO ? 'Invoice' : isReport ? 'Z-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
 
-      const recordWithDetails = { ...selectedRecord };
+      const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
       if (isPayment) {
         const pIds = selectedRecord.purchaseOrderIds || (selectedRecord.purchaseOrderId ? [selectedRecord.purchaseOrderId] : []);
         const pos = await db.purchaseOrders.bulkGet(pIds);

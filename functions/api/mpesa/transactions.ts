@@ -109,9 +109,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           WHERE t.businessId = m.businessId
             AND t.branchId = m.branchId
             AND (
-              UPPER(COALESCE(t.mpesaCode, '')) = UPPER(COALESCE(m.receiptNumber, ''))
-              OR UPPER(COALESCE(t.mpesaReference, '')) = UPPER(COALESCE(m.receiptNumber, ''))
-              OR UPPER(COALESCE(t.mpesaCheckoutRequestId, '')) = UPPER(COALESCE(m.checkoutRequestId, ''))
+              (
+                COALESCE(m.receiptNumber, '') != ''
+                AND (
+                  UPPER(COALESCE(t.mpesaCode, '')) = UPPER(m.receiptNumber)
+                  OR UPPER(COALESCE(t.mpesaReference, '')) = UPPER(m.receiptNumber)
+                )
+              )
+              OR (
+                COALESCE(m.checkoutRequestId, '') != ''
+                AND UPPER(COALESCE(t.mpesaCheckoutRequestId, '')) = UPPER(m.checkoutRequestId)
+              )
             )
           LIMIT 1
         )) AS linkedTransactionId,
@@ -121,9 +129,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           WHERE t.businessId = m.businessId
             AND t.branchId = m.branchId
             AND (
-              UPPER(COALESCE(t.mpesaCode, '')) = UPPER(COALESCE(m.receiptNumber, ''))
-              OR UPPER(COALESCE(t.mpesaReference, '')) = UPPER(COALESCE(m.receiptNumber, ''))
-              OR UPPER(COALESCE(t.mpesaCheckoutRequestId, '')) = UPPER(COALESCE(m.checkoutRequestId, ''))
+              (
+                COALESCE(m.receiptNumber, '') != ''
+                AND (
+                  UPPER(COALESCE(t.mpesaCode, '')) = UPPER(m.receiptNumber)
+                  OR UPPER(COALESCE(t.mpesaReference, '')) = UPPER(m.receiptNumber)
+                )
+              )
+              OR (
+                COALESCE(m.checkoutRequestId, '') != ''
+                AND UPPER(COALESCE(t.mpesaCheckoutRequestId, '')) = UPPER(m.checkoutRequestId)
+              )
             )
           LIMIT 1
         )) AS linkedCustomerName

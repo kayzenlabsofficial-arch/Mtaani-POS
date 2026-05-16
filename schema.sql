@@ -460,3 +460,61 @@ CREATE TABLE IF NOT EXISTS aiUsage (
     updated_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_aiUsage_scope ON aiUsage(businessId, userId, day);
+
+CREATE TABLE IF NOT EXISTS billingAccounts (
+    businessId TEXT PRIMARY KEY,
+    monthlyBaseFee REAL DEFAULT 3000,
+    pricePerBranch REAL DEFAULT 500,
+    discountType TEXT DEFAULT 'FIXED',
+    discountValue REAL DEFAULT 0,
+    dueDay INTEGER DEFAULT 5,
+    bannerEnabled INTEGER DEFAULT 0,
+    bannerMessage TEXT,
+    allowPartial INTEGER DEFAULT 1,
+    minPaymentAmount REAL DEFAULT 500,
+    status TEXT DEFAULT 'ACTIVE',
+    updated_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS billingInvoices (
+    id TEXT PRIMARY KEY,
+    businessId TEXT NOT NULL,
+    period TEXT NOT NULL,
+    branchCount INTEGER DEFAULT 0,
+    monthlyBaseFee REAL DEFAULT 0,
+    pricePerBranch REAL DEFAULT 0,
+    subtotal REAL DEFAULT 0,
+    discountType TEXT DEFAULT 'FIXED',
+    discountValue REAL DEFAULT 0,
+    discountAmount REAL DEFAULT 0,
+    totalDue REAL DEFAULT 0,
+    amountPaid REAL DEFAULT 0,
+    balance REAL DEFAULT 0,
+    dueDate INTEGER,
+    status TEXT DEFAULT 'PENDING',
+    notes TEXT,
+    created_at INTEGER,
+    updated_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_billingInvoices_business ON billingInvoices(businessId, period);
+
+CREATE TABLE IF NOT EXISTS billingPayments (
+    id TEXT PRIMARY KEY,
+    invoiceId TEXT NOT NULL,
+    businessId TEXT NOT NULL,
+    amount REAL NOT NULL,
+    method TEXT NOT NULL,
+    status TEXT DEFAULT 'PAID',
+    receiptNumber TEXT,
+    phoneNumber TEXT,
+    checkoutRequestId TEXT,
+    merchantRequestId TEXT,
+    resultCode INTEGER,
+    resultDesc TEXT,
+    recordedBy TEXT,
+    notes TEXT,
+    timestamp INTEGER,
+    updated_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_billingPayments_invoice ON billingPayments(invoiceId, status);
+CREATE INDEX IF NOT EXISTS idx_billingPayments_checkout ON billingPayments(checkoutRequestId);

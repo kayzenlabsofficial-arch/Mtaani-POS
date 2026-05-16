@@ -25,6 +25,7 @@ import DocumentsTab from './components/tabs/DocumentsTab';
 import ReportsTab from './components/tabs/ReportsTab';
 import AdminPanel from './components/tabs/AdminPanel';
 import AIAssistant from './components/ai/AIAssistant';
+import BillingBanner from './components/billing/BillingBanner';
 
 // Layout & Shell
 import Sidebar from './components/shared/Sidebar';
@@ -204,6 +205,8 @@ export default function MtaaniPOS() {
           onOpenProfile={() => setIsProfileModalOpen(true)}
           currentUser={currentUser}
         />
+
+        <BillingBanner activeBusinessId={activeBusinessId} currentUser={currentUser} />
 
         <main className="flex-1 overflow-y-auto main-scroll app-safe-scroll relative bg-slate-100 md:bg-transparent p-3 pb-28 sm:p-4 sm:pb-28 md:p-6 md:pb-6 lg:p-8">
           <div className="max-w-[1440px] mx-auto min-h-full">
