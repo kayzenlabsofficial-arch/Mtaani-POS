@@ -308,17 +308,17 @@ export default function InventoryTab() {
         </div>
         <button onClick={() => openProductModal()} className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start">
           <MaterialIcon name="add" style={{ fontSize: '20px' }} />
-          Add Product
+          Add product
         </button>
       </div>
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Total Products', value: products?.length || 0, icon: 'inventory_2', color: 'bg-primary', unit: '' },
-          { label: 'Stock Value', value: `Ksh ${totalValue.toLocaleString()}`, icon: 'payments', color: 'bg-emerald-600', unit: '' },
-          { label: 'Low Stock', value: lowStock, icon: 'warning', color: 'bg-amber-500', unit: 'items' },
-          { label: 'Out of Stock', value: outOfStock, icon: 'do_not_disturb_on', color: 'bg-rose-600', unit: 'items' },
+          { label: 'Total products', value: products?.length || 0, icon: 'inventory_2', color: 'bg-primary', unit: '' },
+          { label: 'Stock value', value: `Ksh ${totalValue.toLocaleString()}`, icon: 'payments', color: 'bg-emerald-600', unit: '' },
+          { label: 'Low stock', value: lowStock, icon: 'warning', color: 'bg-amber-500', unit: 'items' },
+          { label: 'Out of stock', value: outOfStock, icon: 'do_not_disturb_on', color: 'bg-rose-600', unit: 'items' },
         ].map(kpi => (
           <div key={kpi.label} className="bg-white border border-slate-100 rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all">
             <div className={`w-10 h-10 ${kpi.color} rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm`}>
@@ -427,7 +427,7 @@ export default function InventoryTab() {
                       <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide stable-meta">{product.category || 'General'}</span>
                       <span className="md:hidden text-[9px] font-black text-slate-500 uppercase flex-shrink-0">{stock} {product.unit || 'pcs'}</span>
                       {isBundleProduct(product) && (
-                        <span className="text-[8px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full flex-shrink-0">BULK</span>
+                        <span className="text-[8px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full flex-shrink-0">Bulk</span>
                       )}
                       {product.taxCategory === 'A' && (
                         <span className="hidden sm:inline-flex text-[8px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full flex-shrink-0">VAT</span>
@@ -454,13 +454,13 @@ export default function InventoryTab() {
                     {stock}
                   </span>
                   {isBundleProduct(product) && (
-                    <span className="text-[8px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full">AUTO</span>
+                    <span className="text-[8px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full">Auto</span>
                   )}
                   {isLow && !isOut && (
-                    <span className="text-[8px] font-black bg-amber-50 text-amber-700 border border-amber-100 px-1.5 py-0.5 rounded-full">LOW</span>
+                    <span className="text-[8px] font-black bg-amber-50 text-amber-700 border border-amber-100 px-1.5 py-0.5 rounded-full">Low</span>
                   )}
                   {isOut && (
-                    <span className="text-[8px] font-black bg-rose-50 text-rose-700 border border-rose-100 px-1.5 py-0.5 rounded-full">OUT</span>
+                    <span className="text-[8px] font-black bg-rose-50 text-rose-700 border border-rose-100 px-1.5 py-0.5 rounded-full">Out</span>
                   )}
                 </div>
 
@@ -512,17 +512,17 @@ export default function InventoryTab() {
                   <h4 className="text-lg font-black text-slate-900 leading-tight">{selectedProduct.name}</h4>
                   <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mt-1">{selectedProduct.category}</p>
                   {selectedProduct.taxCategory === 'A' && (
-                    <span className="text-[9px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-2 py-0.5 rounded-full mt-1 inline-block">VAT Applicable</span>
+                    <span className="text-[9px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-2 py-0.5 rounded-full mt-1 inline-block">VAT applicable</span>
                   )}
                 </div>
               </div>
 
               {/* Details grid */}
               {[
-                { label: 'Selling Price', value: `Ksh ${selectedProduct.sellingPrice?.toLocaleString()}` },
-                { label: 'Cost Price', value: selectedProduct.costPrice ? `Ksh ${selectedProduct.costPrice.toLocaleString()}` : '—' },
-                { label: isBundleProduct(selectedProduct) ? 'Available From Ingredients' : 'Stock Qty', value: `${selectedProduct.stockQuantity || 0} ${selectedProduct.unit || 'pcs'}` },
-                { label: 'Reorder Point', value: selectedProduct.reorderPoint || 5 },
+                { label: 'Selling price', value: `Ksh ${selectedProduct.sellingPrice?.toLocaleString()}` },
+                { label: 'Cost price', value: selectedProduct.costPrice ? `Ksh ${selectedProduct.costPrice.toLocaleString()}` : '—' },
+                { label: isBundleProduct(selectedProduct) ? 'Available from ingredients' : 'Stock qty', value: `${selectedProduct.stockQuantity || 0} ${selectedProduct.unit || 'pcs'}` },
+                { label: 'Reorder point', value: selectedProduct.reorderPoint || 5 },
                 { label: 'Barcode', value: selectedProduct.barcode || '---' },
               ].map(row => (
                 <div key={row.label} className="flex justify-between items-center py-3 border-b border-slate-50">
@@ -533,10 +533,10 @@ export default function InventoryTab() {
 
               <div className="grid grid-cols-2 gap-3 pt-2">
                 {[
-                  { label: 'Units Sold', value: soldUnits.toLocaleString(), color: 'text-blue-600' },
+                  { label: 'Units sold', value: soldUnits.toLocaleString(), color: 'text-blue-600' },
                   { label: 'Revenue', value: `Ksh ${revenue.toLocaleString()}`, color: 'text-emerald-600' },
-                  { label: 'Gross Profit', value: `Ksh ${grossProfit.toLocaleString()}`, color: grossProfit >= 0 ? 'text-slate-900' : 'text-rose-600' },
-                  { label: 'Stock In / Out', value: `${movementIn.toLocaleString()} / ${movementOut.toLocaleString()}`, color: 'text-indigo-600' },
+                  { label: 'Gross profit', value: `Ksh ${grossProfit.toLocaleString()}`, color: grossProfit >= 0 ? 'text-slate-900' : 'text-rose-600' },
+                  { label: 'Stock in / out', value: `${movementIn.toLocaleString()} / ${movementOut.toLocaleString()}`, color: 'text-indigo-600' },
                 ].map(metric => (
                   <div key={metric.label} className="bg-slate-50 border border-slate-100 rounded-2xl p-3">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{metric.label}</p>
@@ -548,7 +548,7 @@ export default function InventoryTab() {
               <div className="bg-slate-950 rounded-2xl p-4 text-white">
                 <div className="flex items-center justify-between mb-3">
                   <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">8-Day Performance</p>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">8-day performance</p>
                     <p className="text-xs font-bold text-slate-200">Sales value and unit movement</p>
                   </div>
                   <MaterialIcon name="monitoring" className="text-emerald-300" style={{ fontSize: '20px' }} />
@@ -574,7 +574,7 @@ export default function InventoryTab() {
 
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recent Movement</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recent movement</p>
                   <span className="text-[9px] font-bold text-slate-400">{(selectedMovements || []).length} entries</span>
                 </div>
                 <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar">
@@ -624,22 +624,22 @@ export default function InventoryTab() {
           <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsRestocking(false)} />
           <div className="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 z-10">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-black text-slate-900">Restock Item</h3>
+              <h3 className="text-lg font-black text-slate-900">Restock item</h3>
               <button onClick={() => setIsRestocking(false)} className="w-9 h-9 rounded-xl bg-slate-50 text-slate-400 hover:text-slate-700">
                 <MaterialIcon name="close" style={{ fontSize: '20px' }} />
               </button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Quantity Received</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Quantity received</label>
                 <input type="number" step="any" value={restockQty} onChange={e => setRestockQty(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="0" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Latest Unit Cost</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Latest unit cost</label>
                 <input type="number" step="any" value={restockCost} onChange={e => setRestockCost(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="Optional" />
               </div>
               <button onClick={handleRestock} disabled={!restockQty || Number(restockQty) <= 0} className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50">
-                Update Stock
+                Update stock
               </button>
             </div>
           </div>
@@ -652,7 +652,7 @@ export default function InventoryTab() {
           <div className="relative bg-white w-full max-w-lg max-h-[92vh] overflow-y-auto no-scrollbar rounded-t-3xl sm:rounded-2xl shadow-2xl p-6 z-10">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="text-xl font-black text-slate-900">{editingProduct ? 'Edit Product' : 'Add Product'}</h3>
+                <h3 className="text-xl font-black text-slate-900">{editingProduct ? 'Edit product' : 'Add product'}</h3>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inventory master record</p>
               </div>
               <button onClick={() => setIsProductModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:text-slate-700">
@@ -661,7 +661,7 @@ export default function InventoryTab() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Product Name</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Product name</label>
                 <input value={productForm.name} onChange={e => setProductForm({ ...productForm, name: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="e.g. 2kg Maize Flour" autoFocus />
               </div>
               <div>
@@ -673,15 +673,15 @@ export default function InventoryTab() {
                 <input value={productForm.barcode} onChange={e => setProductForm({ ...productForm, barcode: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="Auto if blank" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Selling Price</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Selling price</label>
                 <input type="number" value={productForm.sellingPrice} onChange={e => setProductForm({ ...productForm, sellingPrice: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Cost Price</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Cost price</label>
                 <input type="number" value={productForm.costPrice} onChange={e => setProductForm({ ...productForm, costPrice: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Stock Qty</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Stock qty</label>
                 {productForm.isBundle ? (
                   <div className="w-full bg-emerald-50 border-2 border-emerald-100 rounded-xl px-4 py-3 text-sm font-black text-emerald-700">
                     Auto from ingredients
@@ -695,11 +695,11 @@ export default function InventoryTab() {
                 <input value={productForm.unit} onChange={e => setProductForm({ ...productForm, unit: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Reorder Point</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Reorder point</label>
                 <input type="number" step="any" value={productForm.reorderPoint} onChange={e => setProductForm({ ...productForm, reorderPoint: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tax Category</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tax category</label>
                 <select value={productForm.taxCategory} onChange={e => setProductForm({ ...productForm, taxCategory: e.target.value as any })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none">
                   <option value="A">A - VAT</option>
                   <option value="C">C - Zero Rated</option>
@@ -717,7 +717,7 @@ export default function InventoryTab() {
                       <MaterialIcon name="restaurant" style={{ fontSize: '20px' }} />
                     </span>
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-widest">Bulk / Recipe Item</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest">Bulk / recipe item</p>
                       <p className="text-xs font-bold mt-0.5">Stock is calculated from ingredients</p>
                     </div>
                   </div>
@@ -739,7 +739,7 @@ export default function InventoryTab() {
                       onClick={() => setIngredientRows([...ingredientRows, { ingredientProductId: '', quantity: '1' }])}
                       className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest"
                     >
-                      Add Ingredient
+                      Add ingredient
                     </button>
                   </div>
 
@@ -783,7 +783,7 @@ export default function InventoryTab() {
             <div className="flex gap-3 mt-6 pt-4 border-t border-slate-100">
               <button onClick={() => setIsProductModalOpen(false)} className="flex-1 py-3.5 bg-slate-100 text-slate-500 rounded-xl text-xs font-black uppercase tracking-widest">Cancel</button>
               <button onClick={handleSaveProduct} disabled={!productForm.name.trim() || !productForm.sellingPrice} className="flex-[2] py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50">
-                {editingProduct ? 'Save Changes' : 'Create Product'}
+                {editingProduct ? 'Save changes' : 'Create product'}
               </button>
             </div>
           </div>

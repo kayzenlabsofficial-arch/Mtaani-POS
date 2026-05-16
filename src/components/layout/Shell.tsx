@@ -87,7 +87,7 @@ export function TopHeader({
                      className="flex items-center gap-1 mt-0.5 group max-w-full"
                    >
                      <span className="text-[10px] font-bold text-primary truncate">
-                       {activeBranch?.name || 'Select Branch'}
+                       {activeBranch?.name || 'Select branch'}
                      </span>
                      <MaterialIcon 
                        name="expand_more" 
@@ -101,7 +101,7 @@ export function TopHeader({
                        <div className="fixed inset-0 z-40" onClick={() => setBranchDropdownOpen(false)} />
                        <div className="absolute top-full left-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 min-w-[200px] overflow-hidden">
                          <div className="p-2">
-                           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-3 py-2">Switch Branch</p>
+                           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-3 py-2">Switch branch</p>
                            {branches.map((b: any) => (
                              <button
                                key={b.id}
@@ -120,7 +120,7 @@ export function TopHeader({
                  </div>
                ) : (
                  <span className="text-[10px] font-semibold text-slate-500 truncate mt-0.5">
-                   {activeBranch?.name || 'Main Shop'}
+                   {activeBranch?.name || 'Main shop'}
                  </span>
                )}
              </div>
@@ -150,7 +150,9 @@ export function TopHeader({
                </div>
                <div className="flex flex-col leading-none min-w-0">
                  <span className="text-[11px] font-bold text-slate-800 stable-title max-w-32">{currentUser?.name}</span>
-                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{currentUser?.role}</span>
+                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                   {currentUser?.role === 'ADMIN' ? 'Admin' : currentUser?.role === 'CASHIER' ? 'Cashier' : currentUser?.role}
+                 </span>
                </div>
              </button>
           </div>
@@ -227,9 +229,9 @@ export function MoreOptionsMenu({ onTabChange, onLogout, onClose }: any) {
         </div>
         
         <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-8">
-          {/* Quick Access */}
+          {/* Quick access */}
           <div className="mb-6">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Quick Access</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Quick access</p>
             <div className="grid grid-cols-4 gap-3">
               {quickAccess.map(item => (
                 <button 
@@ -266,14 +268,14 @@ export function MoreOptionsMenu({ onTabChange, onLogout, onClose }: any) {
           </div>
         </div>
 
-        {/* Sign Out */}
+        {/* Sign out */}
         <div className="px-5 pb-8 pt-4 border-t border-slate-100 flex-shrink-0">
           <button 
             onClick={onLogout} 
             className="w-full py-4 rounded-2xl border-2 border-rose-100 bg-rose-50 text-rose-600 font-bold text-sm hover:bg-rose-600 hover:text-white hover:border-rose-600 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
           >
             <MaterialIcon name="logout" style={{ fontSize: '18px' }} />
-            Sign Out
+            Sign out
           </button>
         </div>
       </div>

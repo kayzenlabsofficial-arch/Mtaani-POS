@@ -101,6 +101,21 @@ button, a, input, select, textarea {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Keep interface copy readable. Older screens used tiny all-caps labels with
+   wide spacing; reset that app-wide so labels render in normal sentence style. */
+:where(.uppercase) {
+  text-transform: none !important;
+}
+
+:where(.tracking-tighter, .tracking-tight, .tracking-wide, .tracking-wider, .tracking-widest),
+:where([class*="tracking-["]) {
+  letter-spacing: 0 !important;
+}
+
+:where(.small-caps) {
+  font-variant-caps: normal !important;
+}
+
 @layer utilities {
 
   /* ── Animations ─────────────────────────────────────── */

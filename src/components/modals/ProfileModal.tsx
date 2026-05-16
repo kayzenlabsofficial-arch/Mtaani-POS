@@ -45,6 +45,7 @@ export default function ProfileModal({ isOpen, onClose, currentUser }: ProfileMo
           'Content-Type': 'application/json',
           'X-API-Key': apiKey,
         },
+        credentials: 'same-origin',
         cache: 'no-store',
         body: JSON.stringify({ currentPassword, newPassword }),
       });

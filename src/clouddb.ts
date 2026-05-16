@@ -111,6 +111,7 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
     const res = await fetch(url, {
       method,
       headers,
+      credentials: 'same-origin',
       // CRITICAL: Bypass service worker & browser cache — always fetch fresh from D1
       cache: 'no-store',
       ...(body !== undefined && { body: JSON.stringify(body) }),
@@ -197,6 +198,7 @@ async function d1Delete(table: string, id: string): Promise<void> {
   const res = await fetch(`${API}/${table}/${id}`, { 
     method: 'DELETE',
     headers,
+    credentials: 'same-origin',
     cache: 'no-store'
   });
   if (!res.ok) throw new Error(`DELETE /api/data/${table}/${id} → ${res.status}`);

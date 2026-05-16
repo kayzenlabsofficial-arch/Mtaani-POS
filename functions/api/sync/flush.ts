@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { hardenTransactionBatch, PolicyError } from '../salesSecurity';
 
 interface Env {
   DB: D1Database;
@@ -13,9 +14,8 @@ type Mutation = {
 };
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
 };
 
 function json(body: any, status = 200) {
@@ -64,6 +64,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const mutations: Mutation[] = Array.isArray(body?.mutations) ? body.mutations : [];
   
   if (mutations.length === 0) return json({ success: true, applied: 0, skipped: 0 });
+  if (mutations.length > 25) return json({ error: 'Too many offline sales in one sync request.' }, 413);
+  if (mutations.some(m => m.table !== 'transactions' || m.op !== 'UPSERT' || !String(m.idempotencyKey || '').trim())) {
+    return json({ error: 'Offline sync only accepts valid sale records.' }, 400);
+  }
 
   // 1. Batch Idempotency Check
   // We use INSERT OR IGNORE to atomically check if this key was already processed.
@@ -84,118 +88,41 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     return json({ success: true, applied: 0, skipped: skippedCount });
   }
 
-  // 2. Collect Product IDs for Stock Deduction
-  const productIds = new Set<string>();
-  validMutations.forEach(m => {
-    const items = m.payload?.items || [];
-    items.forEach((it: any) => {
-      const productId = it.productId || it.id;
-      if (productId) productIds.add(productId);
-    });
-  });
-
-  const productsMap = new Map();
-  if (productIds.size > 0) {
-    const ids = Array.from(productIds);
-    const placeholders = ids.map(() => '?').join(',');
-    const { results } = await env.DB.prepare(
-      `SELECT id, name, isBundle, components, stockQuantity FROM products WHERE businessId = ? AND id IN (${placeholders})`
-    ).bind(businessId, ...ids).all();
-    results.forEach((p: any) => productsMap.set(p.id, deserializeRow(p)));
-  }
-
-  const bundleIds = Array.from(productsMap.values())
-    .filter((p: any) => p.isBundle === 1 || p.isBundle === true || p.isBundle === '1')
-    .map((p: any) => p.id);
-  const ingredientsMap = new Map<string, any[]>();
-  if (bundleIds.length > 0) {
-    const placeholders = bundleIds.map(() => '?').join(',');
-    const { results } = await env.DB.prepare(
-      `SELECT productId, ingredientProductId, quantity FROM productIngredients WHERE businessId = ? AND productId IN (${placeholders})`
-    ).bind(businessId, ...bundleIds).all();
-    results.forEach((row: any) => {
-      const arr = ingredientsMap.get(row.productId) || [];
-      arr.push(deserializeRow(row));
-      ingredientsMap.set(row.productId, arr);
-    });
-  }
-
-  // 3. Build Final Batch (Transactions + Stock Updates + Movements)
+  // 2. Build Final Batch. The Worker recalculates totals and stock from server data.
   const finalBatch: D1PreparedStatement[] = [];
   
   // Cache transaction table columns for schema safety
   const { results: pragma } = await env.DB.prepare(`PRAGMA table_info('transactions')`).all();
   const validTxCols = new Set((pragma as any[]).map((r: any) => r.name));
 
-  for (const m of validMutations) {
-    if (m.table !== 'transactions' || m.op !== 'UPSERT') continue;
+  const transactionMutations = validMutations.filter(m => m.table === 'transactions' && m.op === 'UPSERT');
+  const payloads = transactionMutations.map(m => m.payload || {});
+  let sideEffects: D1PreparedStatement[] = [];
+  try {
+    sideEffects = await hardenTransactionBatch({
+      db: env.DB,
+      businessId,
+      branchId,
+      principal: auth.principal,
+      service: auth.service,
+      sourceLabel: 'Sale (Sync)',
+    }, payloads);
+  } catch (err: any) {
+    const status = err instanceof PolicyError ? err.status : 400;
+    return json({ error: err?.message || 'Offline sale was rejected.' }, status);
+  }
 
-    const payload = m.payload || {};
+  for (const payload of payloads) {
     payload.businessId = businessId;
     payload.branchId = branchId;
 
-    // A. Transaction Upsert
     const cols = Object.keys(payload).filter((k) => validTxCols.has(k));
     if (cols.length > 0) {
       const sql = `INSERT OR REPLACE INTO transactions (${cols.map((c) => '"' + c + '"').join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
       finalBatch.push(env.DB.prepare(sql).bind(...cols.map((c) => serializeValue(payload[c]))));
     }
-
-    // B. Stock Logic (Skip if not PAID)
-    if (payload.status !== 'PAID') continue;
-
-    const items = payload.items || [];
-    const txRef = payload.id?.split('-')[0].toUpperCase() || 'SYNC';
-    const txTime = payload.timestamp || Date.now();
-
-    for (const item of items) {
-      const itemProductId = item.productId || item.id;
-      const p = productsMap.get(itemProductId);
-      if (!p) continue;
-
-      const saleQty = Number(item.cartQuantity || item.quantity) || 0;
-      if (saleQty <= 0) continue;
-
-      const isBundle = p.isBundle === 1 || p.isBundle === true || p.isBundle === '1';
-      if (isBundle) {
-        // Deduct from components
-        const components = ingredientsMap.get(p.id)?.map((row: any) => ({
-          productId: row.ingredientProductId,
-          quantity: row.quantity,
-        })) || (Array.isArray(p.components) ? p.components : []);
-        for (const comp of components) {
-          const deductQty = (Number(comp.quantity) || 0) * saleQty;
-          if (deductQty <= 0) continue;
-
-          // Update stock
-          finalBatch.push(
-            env.DB.prepare(`UPDATE products SET stockQuantity = MAX(0, stockQuantity - ?) WHERE id = ? AND businessId = ?`)
-              .bind(deductQty, comp.productId, businessId)
-          );
-          // Record movement
-          finalBatch.push(
-            env.DB.prepare(
-              `INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-            ).bind(crypto.randomUUID(), comp.productId, 'OUT', -deductQty, txTime, `Bundle Sale (Sync) #${txRef} (${p.name})`, branchId, businessId, payload.shiftId)
-          );
-        }
-      } else {
-        // Regular product deduction
-        finalBatch.push(
-          env.DB.prepare(`UPDATE products SET stockQuantity = MAX(0, stockQuantity - ?) WHERE id = ? AND businessId = ?`)
-            .bind(saleQty, itemProductId, businessId)
-        );
-        // Record movement
-        finalBatch.push(
-          env.DB.prepare(
-            `INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          ).bind(crypto.randomUUID(), itemProductId, 'OUT', -saleQty, txTime, `Sale (Sync) #${txRef}`, branchId, businessId, payload.shiftId)
-        );
-      }
-    }
   }
+  finalBatch.push(...sideEffects);
 
   // Execute final batch in chunks (to stay within D1 limits if many items are synced)
   if (finalBatch.length > 0) {

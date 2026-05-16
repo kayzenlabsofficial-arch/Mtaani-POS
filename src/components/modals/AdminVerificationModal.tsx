@@ -32,6 +32,7 @@ export default function AdminVerificationModal({ actionDescription, onSuccess, o
           'X-Business-ID': activeBusinessId,
           ...(activeBranchId ? { 'X-Branch-ID': activeBranchId } : {}),
         },
+        credentials: 'same-origin',
         cache: 'no-store',
         body: JSON.stringify({ businessId: activeBusinessId, pin }),
       });
@@ -55,7 +56,7 @@ export default function AdminVerificationModal({ actionDescription, onSuccess, o
             <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center mb-3">
                <ShieldAlert size={28} />
             </div>
-            <h2 className="text-lg font-black text-slate-900">Admin Override</h2>
+            <h2 className="text-lg font-black text-slate-900">Admin override</h2>
             <p className="text-xs font-bold text-red-600 mt-1  tracking-tight">{actionDescription}</p>
          </div>
          <div className="p-6">

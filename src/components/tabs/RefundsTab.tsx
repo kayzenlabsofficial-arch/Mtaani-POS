@@ -152,7 +152,7 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
                    </div>
                  </div>
                  <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter shrink-0 ${t.status === 'REFUNDED' ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>
-                   {t.status}
+                   {t.status === 'REFUNDED' ? 'Refunded' : t.status === 'PARTIAL_REFUND' ? 'Part refund' : t.status}
                  </span>
                  <div className="text-right shrink-0 min-w-[100px]">
                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Amount</p>

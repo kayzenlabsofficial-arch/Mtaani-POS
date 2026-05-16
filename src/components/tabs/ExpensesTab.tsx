@@ -191,14 +191,14 @@ export default function ExpensesTab() {
             data-testid="expenses-setup-accounts"
             className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-50 active:scale-[0.98] transition-all self-start"
           >
-            <BookOpen size={16} /> Setup Accounts
+            <BookOpen size={16} /> Setup accounts
           </button>
           <button
             onClick={() => setIsExpenseModalOpen(true)}
             data-testid="expenses-log-expense"
             className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
           >
-            <Plus size={18} /> Log Expense
+            <Plus size={18} /> Log expense
           </button>
         </div>
       </div>
@@ -241,13 +241,13 @@ export default function ExpensesTab() {
                 </div>
                 <div className="flex items-center gap-5 pl-4 border-l border-slate-50">
                    <div className="text-right">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Amount Paid</p>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Amount paid</p>
                       <h3 className="text-lg font-black text-orange-600 tabular-nums leading-none">
                          Ksh {expense.amount.toLocaleString()}
                       </h3>
                       <div className="flex items-center justify-end gap-1.5 mt-2">
                          <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border ${expense.source === 'TILL' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`}>
-                            {expense.source === 'TILL' ? 'TILL' : 'ACC'}
+                            {expense.source === 'TILL' ? 'Till' : 'Account'}
                          </span>
                          {expense.userName && (
                            <span className="text-[8px] font-black text-slate-400 uppercase flex items-center gap-1">

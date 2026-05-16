@@ -27,7 +27,6 @@ type BillingAccount = {
 };
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
 };
@@ -51,6 +50,13 @@ function boolInt(value: unknown, fallback = 0) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 function currentPeriod(now = new Date()) {
@@ -365,7 +371,7 @@ async function triggerBillingStk(request: Request, env: Env, body: any) {
 async function handleCallback(action: string[], request: Request, env: Env) {
   const receivedSecret = action[1];
   const expectedSecret = env.BILLING_MPESA_CALLBACK_SECRET;
-  if (!expectedSecret || receivedSecret !== expectedSecret) return json({ ResultCode: 1, ResultDesc: 'Unauthorized' }, 401);
+  if (!expectedSecret || !receivedSecret || !timingSafeEqual(receivedSecret, expectedSecret)) return json({ ResultCode: 1, ResultDesc: 'Unauthorized' }, 401);
   const data = await request.json().catch(() => null) as any;
   const callbackData = data?.Body?.stkCallback;
   if (!callbackData) return json({ ResultCode: 0, ResultDesc: 'Ignored' });

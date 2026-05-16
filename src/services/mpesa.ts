@@ -74,6 +74,8 @@ export const MpesaService = {
           'Content-Type': 'application/json',
           'X-API-Key': apiKey,
         },
+        credentials: 'same-origin',
+        cache: 'no-store',
         body: JSON.stringify({ phone, amount, reference, businessId, branchId })
       });
       return await res.json();
@@ -93,7 +95,9 @@ export const MpesaService = {
       }
       const apiKey = await getApiKey();
       const res = await fetch(`${API_BASE}/status/${checkoutRequestId}`, {
-        headers: { 'X-API-Key': apiKey }
+        headers: { 'X-API-Key': apiKey },
+        credentials: 'same-origin',
+        cache: 'no-store',
       });
       return await res.json();
     } catch (err: any) {
@@ -116,6 +120,8 @@ export const MpesaService = {
           'X-Business-ID': businessId,
           'X-Branch-ID': branchId,
         },
+        credentials: 'same-origin',
+        cache: 'no-store',
         body: JSON.stringify({ code, amount, businessId, branchId }),
       });
       const data: any = await res.json().catch(() => ({}));
@@ -147,6 +153,8 @@ export const MpesaService = {
           'X-Business-ID': input.businessId,
           'X-Branch-ID': input.branchId,
         },
+        credentials: 'same-origin',
+        cache: 'no-store',
         body: JSON.stringify(input),
       });
       const data: any = await res.json().catch(() => ({}));
@@ -188,6 +196,7 @@ export const MpesaService = {
           'X-Business-ID': input.businessId,
           'X-Branch-ID': input.branchId,
         },
+        credentials: 'same-origin',
         cache: 'no-store',
       });
       const data: any = await res.json().catch(() => ({}));

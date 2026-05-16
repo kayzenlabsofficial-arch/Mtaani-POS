@@ -453,7 +453,7 @@ function SalePanel({
     <aside className={`bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col min-h-[22rem] lg:sticky lg:top-0 lg:max-h-[calc(100vh-9rem)] shadow-sm ${className}`}>
       <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
         <div>
-          <h3 className="text-sm font-black text-slate-900">Current Sale</h3>
+          <h3 className="text-sm font-black text-slate-900">Current sale</h3>
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{itemCount.toLocaleString()} item{itemCount === 1 ? '' : 's'}</p>
         </div>
         {cart.length > 0 && (
@@ -729,7 +729,7 @@ function SalePanel({
               className="h-12 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <MaterialIcon name="payments" style={{ fontSize: '18px' }} />
-              {isCheckingOut ? 'Saving Sale...' : 'Complete and Print'}
+              {isCheckingOut ? 'Saving sale...' : 'Complete and print'}
             </button>
           </div>
         )}
@@ -817,7 +817,7 @@ function SalePanel({
                         data-testid="mpesa-prompt"
                         className="h-12 rounded-2xl bg-emerald-600 px-5 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
                       >
-                        {mpesaState === 'PUSHING' || mpesaState === 'POLLING' ? 'Waiting' : 'Send Request'}
+                        {mpesaState === 'PUSHING' || mpesaState === 'POLLING' ? 'Waiting' : 'Send request'}
                       </button>
                     </div>
                   </div>

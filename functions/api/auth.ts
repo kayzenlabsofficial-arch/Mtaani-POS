@@ -1,4 +1,4 @@
-import { createSessionToken, hashPassword, json, verifyPassword } from './authUtils';
+import { clearSessionCookie, createSessionCookie, createSessionToken, hashPassword, isPasswordHashCurrent, json, rejectUntrustedBrowserOrigin, verifyPassword } from './authUtils';
 
 interface Env {
   DB: D1Database;
@@ -8,8 +8,7 @@ interface Env {
 }
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'POST, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
@@ -51,9 +50,24 @@ function safeUser(user: any) {
   };
 }
 
-export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
+export const onRequestOptions: PagesFunction<Env> = async ({ request }) => {
+  const blocked = rejectUntrustedBrowserOrigin(request);
+  if (blocked) return blocked;
+  return new Response(null, { headers: corsHeaders });
+};
+
+export const onRequestDelete: PagesFunction<Env> = async ({ request }) => {
+  const blocked = rejectUntrustedBrowserOrigin(request);
+  if (blocked) return blocked;
+  return json({ success: true }, 200, {
+    ...corsHeaders,
+    'Set-Cookie': clearSessionCookie(request),
+  });
+};
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const blocked = rejectUntrustedBrowserOrigin(request);
+  if (blocked) return blocked;
   if (!env.API_SECRET) return json({ error: 'Server is not configured.' }, 500, corsHeaders);
   if (!env.DB) return json({ error: 'Database is not configured.' }, 500, corsHeaders);
 
@@ -64,18 +78,31 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   if (!username || !password) return json({ error: 'Enter username and password.' }, 400, corsHeaders);
 
-  if (env.ROOT_USERNAME && env.ROOT_PASSWORD && username === env.ROOT_USERNAME && password === env.ROOT_PASSWORD) {
-    const token = await createSessionToken(env.API_SECRET, {
-      userId: 'root',
-      userName: 'System Root',
-      role: 'ROOT',
-    });
-    return json({ user: { id: 'root', name: 'System Root', role: 'ROOT' }, token, businessId: null, branchId: null }, 200, corsHeaders);
+  if (env.ROOT_USERNAME && username === env.ROOT_USERNAME) {
+    const rootLockoutId = `ROOT_LOGIN:${username.toLowerCase()}`;
+    const rootLockout = await getLockout(env.DB, rootLockoutId);
+    if (rootLockout.locked) return json({ error: rootLockout.message }, 423, corsHeaders);
+
+    if (env.ROOT_PASSWORD && password === env.ROOT_PASSWORD) {
+      await clearFailure(env.DB, rootLockoutId);
+      const token = await createSessionToken(env.API_SECRET, {
+        userId: 'root',
+        userName: 'System Root',
+        role: 'ROOT',
+      });
+      return json({ user: { id: 'root', name: 'System Root', role: 'ROOT' }, businessId: null, branchId: null }, 200, {
+        ...corsHeaders,
+        'Set-Cookie': createSessionCookie(request, token),
+      });
+    }
+
+    await recordFailure(env.DB, rootLockoutId);
+    return json({ error: 'Invalid username or password.' }, 401, corsHeaders);
   }
 
   if (!businessCode) return json({ error: 'Enter the business code.' }, 400, corsHeaders);
 
-  const lockoutId = businessCode;
+  const lockoutId = `LOGIN:${businessCode}:${username.toLowerCase()}`;
   const lockout = await getLockout(env.DB, lockoutId);
   if (lockout.locked) return json({ error: lockout.message }, 423, corsHeaders);
 
@@ -101,7 +128,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await clearFailure(env.DB, lockoutId);
 
-  if (user.password === password) {
+  if (!isPasswordHashCurrent(String(user.password || ''))) {
     await env.DB.prepare('UPDATE users SET password = ?, updated_at = ? WHERE id = ? AND businessId = ?')
       .bind(await hashPassword(password), Date.now(), user.id, business.id)
       .run();
@@ -116,13 +143,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const cleanUser = safeUser({ ...user, branchId });
+  const branchScope = cleanUser.role === 'ADMIN' || cleanUser.role === 'ROOT'
+    ? (user.branchId || undefined)
+    : (branchId || undefined);
   const token = await createSessionToken(env.API_SECRET, {
     userId: cleanUser.id,
     userName: cleanUser.name,
     role: cleanUser.role,
     businessId: business.id,
-    branchId: user.branchId || undefined,
+    branchId: branchScope,
   });
 
-  return json({ user: cleanUser, token, businessId: business.id, branchId }, 200, corsHeaders);
+  return json({ user: cleanUser, businessId: business.id, branchId }, 200, {
+    ...corsHeaders,
+    'Set-Cookie': createSessionCookie(request, token),
+  });
 };

@@ -34,7 +34,7 @@ export function ProductCard({ product, onAdd, recentlyAdded }: ProductCardProps)
   const stockDot = isOutOfStock ? 'bg-rose-500' : isLowStock ? 'bg-amber-500' : 'bg-emerald-500';
 
   const stockLabel = isOutOfStock
-    ? 'Out of Stock'
+    ? 'Out of stock'
     : isLowStock
     ? `Low — ${stock} left`
     : `${stock} in stock`;
@@ -110,7 +110,7 @@ export function ProductCard({ product, onAdd, recentlyAdded }: ProductCardProps)
       {isOutOfStock && (
         <div className="absolute inset-0 rounded-2xl flex items-end justify-center pb-3 pointer-events-none">
           <div className="bg-slate-900/70 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full backdrop-blur-sm">
-            Out of Stock
+            Out of stock
           </div>
         </div>
       )}

@@ -114,7 +114,7 @@ export default function AdminApprovals() {
     return (
         <div className="flex flex-col items-center justify-center h-full p-10 opacity-50">
             <div className="w-10 h-10 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-            <p className="text-sm font-bold text-slate-400  ">Loading Approvals...</p>
+            <p className="text-sm font-bold text-slate-400  ">Loading approvals...</p>
         </div>
     );
   }
@@ -131,7 +131,7 @@ export default function AdminApprovals() {
          {/* Expenses */}
          <div className="space-y-4">
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 sticky top-0 bg-slate-100 py-2 z-10">
-               <FileMinus size={16} className="text-orange-500" /> Pending Expenses
+               <FileMinus size={16} className="text-orange-500" /> Pending expenses
             </h3>
             <div className="space-y-2">
                {pendingExpenses.length === 0 ? (
@@ -160,7 +160,7 @@ export default function AdminApprovals() {
          {/* Refunds */}
          <div className="space-y-4">
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 sticky top-0 bg-slate-100 py-2 z-10">
-               <RotateCcw size={16} className="text-red-500" /> Refund Requests
+               <RotateCcw size={16} className="text-red-500" /> Refund requests
             </h3>
             <div className="space-y-2">
                {pendingRefunds.length === 0 ? (
@@ -174,7 +174,7 @@ export default function AdminApprovals() {
                               <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">@{t.cashierName || 'System'}</span>
                               <Eye size={12} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                            </div>
-                           <p className="text-[10px] text-slate-500 font-medium">Items: {t.items?.length || 0} • {t.timestamp ? new Date(t.timestamp).toLocaleDateString() : 'Unknown Date'}</p>
+                           <p className="text-[10px] text-slate-500 font-medium">Items: {t.items?.length || 0} • {t.timestamp ? new Date(t.timestamp).toLocaleDateString() : 'Unknown date'}</p>
                            <h3 className="text-lg font-black text-slate-900 mt-1">Ksh {(t.total || 0).toLocaleString()}</h3>
                         </div>
                         <div className="bg-slate-50 text-slate-400 p-2 rounded-xl group-hover:bg-blue-50 group-hover:text-blue-600 transition-all">
@@ -189,7 +189,7 @@ export default function AdminApprovals() {
          {/* Purchase Orders */}
          <div className="space-y-4">
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 sticky top-0 bg-slate-100 py-2 z-10">
-               <PackagePlus size={16} className="text-blue-500" /> Purchase Orders to Approve
+               <PackagePlus size={16} className="text-blue-500" /> Purchase orders to approve
             </h3>
             <div className="space-y-2">
                {pendingPOs.length === 0 ? (
@@ -200,14 +200,14 @@ export default function AdminApprovals() {
                         <div className="flex justify-between items-start mb-2">
                            <div>
                               <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                                 {allSuppliers?.find(s => s.id === po.supplierId)?.company || 'Unknown Supplier'}
+                                 {allSuppliers?.find(s => s.id === po.supplierId)?.company || 'Unknown supplier'}
                                  <Eye size={12} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                               </h4>
                               <p className="text-xs text-slate-500 font-medium">PO #{po.id ? (po.id.startsWith('PO-') ? po.id : po.id.split('-')[0].toUpperCase()) : 'Unknown'} • {po.orderDate ? new Date(po.orderDate).toLocaleDateString() : 'Unknown'} • Items: {po.items?.length || 0}</p>
                            </div>
                            <div className="flex flex-col items-end">
                               <h3 className="text-base font-black text-blue-600">Ksh {(po.totalAmount || 0).toLocaleString()}</h3>
-                              <div className="mt-2 text-[9px] font-black   text-slate-400 bg-slate-50 px-2 py-1 rounded">Pending Review</div>
+                              <div className="mt-2 text-[9px] font-black   text-slate-400 bg-slate-50 px-2 py-1 rounded">Pending review</div>
                            </div>
                         </div>
                      </div>
@@ -219,7 +219,7 @@ export default function AdminApprovals() {
          {/* Stock Adjustments */}
          <div className="space-y-4">
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 sticky top-0 bg-slate-100 py-2 z-10">
-               <Package size={16} className="text-blue-500" /> Stock Adjustments
+               <Package size={16} className="text-blue-500" /> Stock adjustments
             </h3>
             <div className="space-y-2">
                {pendingAdjustments.length === 0 ? (
@@ -228,7 +228,7 @@ export default function AdminApprovals() {
                   pendingAdjustments.map(req => (
                      <div key={req.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                         <div className="flex justify-between items-start mb-2">
-                           <h4 className="text-sm font-bold text-slate-900">{req.productName || 'Unknown Product'}</h4>
+                           <h4 className="text-sm font-bold text-slate-900">{req.productName || 'Unknown product'}</h4>
                            <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Clock size={10} /> {req.timestamp ? new Date(req.timestamp).toLocaleDateString() : 'Unknown'}</span>
                                {req.preparedBy && <span className="text-[9px] font-black text-blue-500  tracking-tighter">By: {req.preparedBy}</span>}
                         </div>
@@ -257,7 +257,7 @@ export default function AdminApprovals() {
          {/* Banking */}
          <div className="space-y-4">
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 sticky top-0 bg-slate-100 py-2 z-10">
-               <Banknote size={16} className="text-green-500" /> Pending Banking
+               <Banknote size={16} className="text-green-500" /> Pending banking
             </h3>
             <div className="space-y-2">
                {pendingPicks.length === 0 ? (
@@ -267,17 +267,17 @@ export default function AdminApprovals() {
                       <div key={p.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center justify-between">
                          <div>
                             <div className="flex items-center gap-1.5 mb-1">
-                               <p className="text-xs font-bold text-slate-900">Cash Pickup</p>
+                               <p className="text-xs font-bold text-slate-900">Cash pickup</p>
                                {p.userName && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">@{p.userName}</span>}
                             </div>
-                            <p className="text-[10px] text-slate-500 font-semibold">{p.timestamp ? new Date(p.timestamp).toLocaleString() : 'Unknown Time'}</p>
+                            <p className="text-[10px] text-slate-500 font-semibold">{p.timestamp ? new Date(p.timestamp).toLocaleString() : 'Unknown time'}</p>
                             <h3 className="text-lg font-black text-slate-900 mt-1">Ksh {(p.amount || 0).toLocaleString()}</h3>
                          </div>
                          <button 
                             onClick={() => handleConfirmBanking(p.id)}
                             className="bg-green-100 h-10 px-4 text-green-700 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-green-600 hover:text-white transition-all active:scale-95"
                          >
-                            <Check size={16} /> Confirm Banked
+                            <Check size={16} /> Confirm banked
                          </button>
                       </div>
                   ))

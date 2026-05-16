@@ -12,6 +12,10 @@ import { useToast } from '../../context/ToastContext';
 import { getBusinessSettings } from '../../utils/settings';
 import { MpesaService, type MpesaLedgerRow } from '../../services/mpesa';
 
+const sentenceValue = (value: unknown, fallback = '') => {
+  const text = String(value || fallback).replace(/_/g, ' ').toLowerCase();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
+};
 
 export default function DocumentsTab() {
   const [docSearch, setDocSearch] = useState("");
@@ -179,15 +183,15 @@ export default function DocumentsTab() {
       <div ref={scrollRef} className="mb-6 overflow-x-auto no-scrollbar pb-2">
         <div className="flex gap-2 min-w-max">
            {[
-             { id: 'ALL', label: 'All Documents' },
-             { id: 'APPROVALS', label: 'Pending Approvals' },
-             { id: 'SALES', label: 'Sales Receipts' },
-             { id: 'MPESA', label: 'M-Pesa Payments' },
+             { id: 'ALL', label: 'All documents' },
+             { id: 'APPROVALS', label: 'Pending approvals' },
+             { id: 'SALES', label: 'Sales receipts' },
+             { id: 'MPESA', label: 'M-Pesa payments' },
              { id: 'EXPENSES', label: 'Expenses' },
-             { id: 'SUPPLIER_PAYMENTS', label: 'Supplier Payments' },
-             { id: 'INVOICES', label: 'Invoices & Bills' },
-             { id: 'SHIFTS', label: 'Shift Reports' },
-             { id: 'DAILY', label: 'Daily Summary' }
+             { id: 'SUPPLIER_PAYMENTS', label: 'Supplier payments' },
+             { id: 'INVOICES', label: 'Invoices & bills' },
+             { id: 'SHIFTS', label: 'Shift reports' },
+             { id: 'DAILY', label: 'Daily summary' }
            ].map(type => (
              <button 
                key={type.id} 
@@ -224,7 +228,7 @@ export default function DocumentsTab() {
                 onClick={() => setDateMode('ALL')}
                 className={`h-10 px-4 rounded-xl border text-[10px] font-black uppercase tracking-widest ${dateMode === 'ALL' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}
               >
-                All Dates
+                All dates
               </button>
               <button
                 type="button"
@@ -394,10 +398,10 @@ export default function DocumentsTab() {
                    <h4 className="text-sm font-black text-slate-900 truncate">
                      {isSale ? `Receipt #${r.id.split('-')[0].toUpperCase()}` : 
                       isExp ? `Expense: ${r.category}` : 
-                      isPay ? 'Supplier Payment' :
-                      isSalesInvoice ? `Customer Invoice #${r.invoiceNumber}` :
-                      isShift ? `Shift Report` :
-                      isDaily ? `Daily Summary` :
+                      isPay ? 'Supplier payment' :
+                      isSalesInvoice ? `Customer invoice #${r.invoiceNumber}` :
+                      isShift ? `Shift report` :
+                      isDaily ? `Daily summary` :
                       `Invoice #${r.invoiceNumber || r.id.split('-')[0].toUpperCase()}`}
                    </h4>
                    <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -413,12 +417,12 @@ export default function DocumentsTab() {
                   isSalesInvoice ? 'bg-blue-50 text-blue-600' :
                   'bg-blue-50 text-blue-600'
                 }`}>
-                  {isSale ? r.status : 
-                   isSalesInvoice ? (r.status === 'SENT' ? 'Unpaid' : r.status) :
-                   r.recordType === 'PURCHASE_ORDER' ? (r.paymentStatus || 'UNPAID') :
+                  {isSale ? sentenceValue(r.status) : 
+                   isSalesInvoice ? (r.status === 'SENT' ? 'Unpaid' : sentenceValue(r.status)) :
+                   r.recordType === 'PURCHASE_ORDER' ? sentenceValue(r.paymentStatus, 'UNPAID') :
                    isShift ? 'Closed' :
                    isDaily ? 'Done' :
-                   r.recordType.replace('_', ' ')}
+                   sentenceValue(r.recordType)}
                 </span>
                 <div className="text-right shrink-0 min-w-[100px]">
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Value</p>

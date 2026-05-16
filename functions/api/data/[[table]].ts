@@ -1,4 +1,5 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBranch, canAccessBusiness, hashPassword, isPasswordHashCurrent } from '../authUtils';
+import { hardenTransactionBatch, PolicyError } from '../salesSecurity';
 
 interface Env {
   DB: D1Database;
@@ -18,9 +19,23 @@ const GLOBAL_TABLES = new Set(['users', 'branches', 'settings', 'expenseAccounts
 // Truly unscoped tables: not filtered by businessId/branchId
 const UNSCOPED_TABLES = new Set(['businesses', 'loginAttempts']);
 const ADMIN_WRITE_TABLES = new Set(['users', 'branches', 'settings', 'expenseAccounts', 'financialAccounts', 'categories']);
+const MANAGER_WRITE_TABLES = new Set([
+  'products', 'productIngredients', 'serviceItems', 'suppliers',
+  'purchaseOrders', 'supplierPayments', 'creditNotes', 'salesInvoices',
+  'stockMovements', 'expenses',
+]);
+const CASHIER_WRITE_TABLES = new Set([
+  'transactions', 'customers', 'customerPayments', 'shifts',
+  'cashPicks', 'endOfDayReports', 'dailySummaries', 'stockAdjustmentRequests',
+]);
+const STAFF_ROLES = new Set(['ADMIN', 'MANAGER', 'CASHIER']);
+const MANAGER_DELETE_TABLES = new Set([
+  'products', 'productIngredients', 'serviceItems', 'suppliers',
+  'purchaseOrders', 'supplierPayments', 'creditNotes', 'salesInvoices',
+  'customers', 'expenses', 'stockAdjustmentRequests',
+]);
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID'
 };
@@ -97,6 +112,162 @@ function deserializeRow(row: Record<string, any>): Record<string, any> {
     }
   }
   return out;
+}
+
+function isAdminLike(role: string): boolean {
+  return role === 'ADMIN' || role === 'ROOT';
+}
+
+function canWriteTable(role: string, table: string, service: boolean): boolean {
+  if (service || isAdminLike(role)) return true;
+  if (role === 'MANAGER') return MANAGER_WRITE_TABLES.has(table) || CASHIER_WRITE_TABLES.has(table);
+  if (role === 'CASHIER') return CASHIER_WRITE_TABLES.has(table);
+  return false;
+}
+
+function canDeleteTable(role: string, table: string, service: boolean): boolean {
+  if (service || isAdminLike(role)) return true;
+  if (role === 'MANAGER') return MANAGER_DELETE_TABLES.has(table);
+  return false;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function trimText(value: unknown, max = 160): string | undefined {
+  const text = String(value ?? '').trim();
+  if (!text) return undefined;
+  return text.slice(0, max);
+}
+
+async function existingRowsById(db: D1Database, table: string, businessId: string, ids: string[]) {
+  const rows = new Map<string, Record<string, any>>();
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  if (uniqueIds.length === 0) return rows;
+  const placeholders = uniqueIds.map(() => '?').join(',');
+  const { results } = await db.prepare(`SELECT * FROM ${table} WHERE businessId = ? AND id IN (${placeholders})`)
+    .bind(businessId, ...uniqueIds)
+    .all();
+  (results as any[]).forEach(row => rows.set(String(row.id), deserializeRow(row)));
+  return rows;
+}
+
+async function protectCustomerTotals(db: D1Database, businessId: string, branchId: string | null, principalRole: string, service: boolean, items: any[]) {
+  if (service || isAdminLike(principalRole)) return;
+  if (!branchId) throw new PolicyError('Branch is required for customer changes.', 400);
+  const existing = await existingRowsById(db, 'customers', businessId, items.map(item => String(item?.id || '').trim()));
+  items.forEach(item => {
+    const saved = existing.get(String(item?.id || '').trim());
+    if (saved?.branchId && saved.branchId !== branchId) {
+      throw new PolicyError('You cannot change customers from another branch.', 403);
+    }
+    item.name = trimText(item.name, 120) || saved?.name || 'Customer';
+    item.phone = trimText(item.phone, 40) || saved?.phone || '';
+    item.email = trimText(item.email, 120) || saved?.email || '';
+    item.totalSpent = Number(saved?.totalSpent || 0);
+    item.balance = Number(saved?.balance || 0);
+    item.branchId = saved?.branchId || branchId;
+  });
+}
+
+async function hardenCustomerPaymentWrites(db: D1Database, businessId: string, branchId: string, principalName: string, items: any[]) {
+  const sideEffects: D1PreparedStatement[] = [];
+  const existing = await existingRowsById(db, 'customerPayments', businessId, items.map(item => String(item?.id || '').trim()));
+  const methods = new Set(['CASH', 'MPESA', 'BANK', 'PDQ', 'CHEQUE']);
+  const now = Date.now();
+
+  for (const item of items) {
+    const id = String(item?.id || '').trim();
+    if (!id) throw new PolicyError('Customer payment ID is required.');
+    if (existing.has(id)) throw new PolicyError('Customer payment records cannot be edited after saving.', 403);
+    const customerId = trimText(item.customerId, 120);
+    if (!customerId) throw new PolicyError('Customer is required for payment.');
+    const amount = roundMoney(asNumber(item.amount));
+    if (amount <= 0 || amount > 10_000_000) throw new PolicyError('Payment amount is invalid.');
+
+    const method = String(item.paymentMethod || '').toUpperCase();
+    item.customerId = customerId;
+    item.amount = amount;
+    item.paymentMethod = methods.has(method) ? method : 'CASH';
+    item.transactionCode = trimText(item.transactionCode, 80);
+    item.reference = trimText(item.reference, 160) || 'Customer payment';
+    item.preparedBy = trimText(item.preparedBy, 120) || principalName;
+    item.timestamp = Math.min(asNumber(item.timestamp, now), now + 5 * 60 * 1000);
+    item.updated_at = now;
+
+    sideEffects.push(
+      db.prepare(`UPDATE customers SET balance = MAX(0, COALESCE(balance, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ?`)
+        .bind(amount, now, customerId, businessId)
+    );
+  }
+  return sideEffects;
+}
+
+function looksLikeStoredPassword(value: string): boolean {
+  return isPasswordHashCurrent(value)
+    || /^[a-f0-9]{64}$/i.test(value)
+    || value.startsWith('$2a$')
+    || value.startsWith('$2b$')
+    || value.startsWith('$2y$');
+}
+
+async function hardenUserWrites(db: D1Database, businessId: string, principalRole: string, principalUserId: string, service: boolean, items: any[]) {
+  const existing = await existingRowsById(db, 'users', businessId, items.map(item => String(item?.id || '').trim()));
+  const adminCountRow = await db.prepare("SELECT COUNT(*) AS count FROM users WHERE businessId = ? AND role = 'ADMIN'")
+    .bind(businessId)
+    .first<any>();
+  const currentAdminCount = Number(adminCountRow?.count || 0);
+
+  for (const item of items) {
+    const id = String(item?.id || crypto.randomUUID()).trim();
+    item.id = id;
+    const saved = existing.get(id);
+
+    const role = String(item.role || saved?.role || 'CASHIER').trim().toUpperCase();
+    if (role === 'ROOT' || !STAFF_ROLES.has(role)) {
+      throw new PolicyError('Staff role is not allowed.', 403);
+    }
+    if (!service && principalRole !== 'ROOT' && saved?.role === 'ADMIN' && role !== 'ADMIN' && currentAdminCount <= 1) {
+      throw new PolicyError('The last administrator cannot be changed.', 403);
+    }
+
+    item.name = trimText(item.name, 120) || saved?.name || 'Staff Member';
+    item.role = role;
+    item.branchId = role === 'ADMIN' ? (trimText(item.branchId, 120) || null) : (trimText(item.branchId, 120) || saved?.branchId || null);
+    item.updated_at = Date.now();
+
+    const providedPassword = String(item.password || '');
+    if (providedPassword) {
+      if (!service && looksLikeStoredPassword(providedPassword)) {
+        throw new PolicyError('Password must be entered as text so the server can secure it.', 400);
+      }
+      item.password = isPasswordHashCurrent(providedPassword) ? providedPassword : await hashPassword(providedPassword);
+    } else if (saved?.password) {
+      item.password = saved.password;
+    } else {
+      throw new PolicyError('Password is required for new staff accounts.', 400);
+    }
+  }
+}
+
+async function enforceGlobalBranchOwnership(db: D1Database, table: string, businessId: string, branchId: string | null, principalRole: string, service: boolean, items: any[]) {
+  if (service || isAdminLike(principalRole)) return;
+  if (!branchId) throw new PolicyError('Branch is required for this change.', 400);
+  if (table !== 'suppliers') return;
+  const existing = await existingRowsById(db, table, businessId, items.map(item => String(item?.id || '').trim()));
+  items.forEach(item => {
+    const saved = existing.get(String(item?.id || '').trim());
+    if (saved?.branchId && saved.branchId !== branchId) {
+      throw new PolicyError('You cannot change records from another branch.', 403);
+    }
+    item.branchId = saved?.branchId || branchId;
+  });
 }
 
 const BRANCH_MPESA_LOCKED_FIELDS = [
@@ -377,7 +548,35 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       }
 
       if (GLOBAL_TABLES.has(table)) {
-        const { results } = await env.DB.prepare(`SELECT * FROM ${table} WHERE businessId = ?`).bind(businessId).all();
+        let results: any[] = [];
+        if (table === 'users' && !isAdminLike(principal.role)) {
+          const query = await env.DB.prepare(`SELECT * FROM users WHERE businessId = ? AND id = ?`)
+            .bind(businessId, principal.userId)
+            .all();
+          results = (query.results as any[]) || [];
+        } else if (table === 'branches' && !isAdminLike(principal.role) && principal.branchId) {
+          const query = await env.DB.prepare(`SELECT * FROM branches WHERE businessId = ? AND id = ?`)
+            .bind(businessId, principal.branchId)
+            .all();
+          results = (query.results as any[]) || [];
+        } else if (table === 'customers' && principal.role === 'CASHIER' && branchId) {
+          const query = await env.DB.prepare(`SELECT * FROM customers WHERE businessId = ? AND (branchId IS NULL OR branchId = ?)`)
+            .bind(businessId, branchId)
+            .all();
+          results = (query.results as any[]) || [];
+        } else if (table === 'financialAccounts' && principal.role === 'CASHIER') {
+          results = [];
+        } else if ((table === 'suppliers' || table === 'expenseAccounts') && principal.role === 'CASHIER') {
+          results = [];
+        } else if (table === 'financialAccounts' && principal.role === 'MANAGER' && principal.branchId) {
+          const query = await env.DB.prepare(`SELECT * FROM financialAccounts WHERE businessId = ? AND (branchId IS NULL OR branchId = ?)`)
+            .bind(businessId, principal.branchId)
+            .all();
+          results = (query.results as any[]) || [];
+        } else {
+          const query = await env.DB.prepare(`SELECT * FROM ${table} WHERE businessId = ?`).bind(businessId).all();
+          results = (query.results as any[]) || [];
+        }
         return new Response(JSON.stringify(redactRows(table, results.map(deserializeRow))), { headers: jsonHeaders() });
       } else {
         // Branch-specific table (and branchId is provided)
@@ -391,6 +590,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       const body = await request.json() as any;
       const items = Array.isArray(body) ? body : [body];
       if (items.length === 0) return new Response(JSON.stringify({ success: true, count: 0 }), { headers: jsonHeaders() });
+      if (items.length > 250) return new Response(JSON.stringify({ error: 'Too many records in one request' }), { status: 413, headers: jsonHeaders() });
 
       // Normalize business code to uppercase at write time.
       if (table === 'businesses') {
@@ -406,8 +606,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });
       }
 
-      if (ADMIN_WRITE_TABLES.has(table) && principal.role !== 'ADMIN' && principal.role !== 'ROOT' && !service) {
-        return new Response(JSON.stringify({ error: 'Admin access required' }), { status: 403, headers: jsonHeaders() });
+      if (!canWriteTable(principal.role, table, service)) {
+        return new Response(JSON.stringify({ error: 'You are not allowed to change this data.' }), { status: 403, headers: jsonHeaders() });
       }
 
       if (table === 'branches') {
@@ -432,6 +632,34 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
       }
 
+      let sideEffects: D1PreparedStatement[] = [];
+      try {
+        if (table === 'users') {
+          await hardenUserWrites(env.DB, businessId!, principal.role, principal.userId, service, items);
+        }
+        if (table === 'customers') {
+          await protectCustomerTotals(env.DB, businessId!, branchId, principal.role, service, items);
+        }
+        if (table === 'suppliers') {
+          await enforceGlobalBranchOwnership(env.DB, table, businessId!, branchId, principal.role, service, items);
+        }
+        if (table === 'customerPayments') {
+          sideEffects.push(...await hardenCustomerPaymentWrites(env.DB, businessId!, branchId!, principal.userName, items));
+        }
+        if (table === 'transactions') {
+          sideEffects = await hardenTransactionBatch({
+            db: env.DB,
+            businessId: businessId!,
+            branchId: branchId!,
+            principal,
+            service,
+          }, items);
+        }
+      } catch (err: any) {
+        const status = err instanceof PolicyError ? err.status : 400;
+        return new Response(JSON.stringify({ error: err?.message || 'Request was rejected.' }), { status, headers: jsonHeaders() });
+      }
+
       const { results: pragma } = await env.DB.prepare(`PRAGMA table_info('${table}')`).all();
       const validCols = new Set(pragma.map((r: any) => r.name));
       const cols = Object.keys(items[0]).filter(k => validCols.has(k));
@@ -440,7 +668,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       const sql = `INSERT OR REPLACE INTO ${table} (${cols.map(c => '"' + c + '"').join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
       const stmt = env.DB.prepare(sql);
       const batch = items.map(item => stmt.bind(...cols.map(col => serializeValue(item[col]))));
-      await env.DB.batch(batch);
+      await env.DB.batch([...batch, ...sideEffects]);
       return new Response(JSON.stringify({ success: true, count: items.length }), { headers: jsonHeaders() });
     }
 
@@ -465,10 +693,40 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         await env.DB.prepare(`DELETE FROM loginAttempts WHERE id = ?`).bind(id).run();
       } else if (GLOBAL_TABLES.has(table)) {
         if (!businessId || !canAccessBusiness(principal, businessId)) return new Response(JSON.stringify({ error: 'X-Business-ID required for DELETE' }), { status: 400, headers: jsonHeaders() });
-        if (ADMIN_WRITE_TABLES.has(table) && principal.role !== 'ADMIN' && principal.role !== 'ROOT' && !service) return new Response(JSON.stringify({ error: 'Admin access required' }), { status: 403, headers: jsonHeaders() });
+        if (!canDeleteTable(principal.role, table, service)) return new Response(JSON.stringify({ error: 'You are not allowed to delete this data.' }), { status: 403, headers: jsonHeaders() });
+        if (table === 'users' && !service && principal.role !== 'ROOT') {
+          if (id === principal.userId) {
+            return new Response(JSON.stringify({ error: 'You cannot delete your own signed-in account.' }), { status: 403, headers: jsonHeaders() });
+          }
+          const user = await env.DB.prepare('SELECT role FROM users WHERE id = ? AND businessId = ? LIMIT 1')
+            .bind(id, businessId)
+            .first<any>();
+          if (user?.role === 'ADMIN') {
+            const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE businessId = ? AND role = 'ADMIN'")
+              .bind(businessId)
+              .first<any>();
+            if (Number(row?.count || 0) <= 1) {
+              return new Response(JSON.stringify({ error: 'The last administrator cannot be deleted.' }), { status: 403, headers: jsonHeaders() });
+            }
+          }
+        }
         await env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ?`).bind(id, businessId).run();
       } else {
         if (!businessId || !branchId || !canAccessBusiness(principal, businessId) || !canAccessBranch(principal, branchId)) return new Response(JSON.stringify({ error: 'X-Business-ID and X-Branch-ID required for DELETE' }), { status: 400, headers: jsonHeaders() });
+        if (!canDeleteTable(principal.role, table, service)) {
+          if (table !== 'transactions' || principal.role !== 'CASHIER') {
+            return new Response(JSON.stringify({ error: 'You are not allowed to delete this data.' }), { status: 403, headers: jsonHeaders() });
+          }
+          const transaction = await env.DB.prepare(
+            `SELECT cashierId, timestamp FROM transactions WHERE id = ? AND businessId = ? AND branchId = ? LIMIT 1`
+          ).bind(id, businessId, branchId).first<any>();
+          const isOwnRecentSale = transaction
+            && String(transaction.cashierId || '') === principal.userId
+            && Date.now() - Number(transaction.timestamp || 0) <= 2 * 60 * 1000;
+          if (!isOwnRecentSale) {
+            return new Response(JSON.stringify({ error: 'Cashier accounts can only undo their own just-created sale.' }), { status: 403, headers: jsonHeaders() });
+          }
+        }
         await env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ? AND branchId = ?`).bind(id, businessId, branchId).run();
       }
       return new Response(JSON.stringify({ success: true }), { headers: jsonHeaders() });
@@ -478,6 +736,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   } catch (err: any) {
     console.error('[Worker Error]', err);
-    return new Response(JSON.stringify({ error: 'Worker Error', message: err.message }), { status: 500, headers: jsonHeaders() });
+    return new Response(JSON.stringify({ error: 'Request failed.' }), { status: 500, headers: jsonHeaders() });
   }
 };

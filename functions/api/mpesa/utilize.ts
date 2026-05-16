@@ -6,7 +6,6 @@ interface Env {
 }
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Business-ID, X-Branch-ID',
 };
@@ -20,6 +19,16 @@ function json(data: unknown, status = 200) {
 
 function normaliseCode(value: unknown) {
   return String(value || '').replace(/\s+/g, '').trim().toUpperCase();
+}
+
+function asNumber(value: unknown, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function parseMaybeJson(value: unknown) {
+  if (!value || typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch { return value; }
 }
 
 async function ensureMpesaLedgerSchema(db: D1Database) {
@@ -79,7 +88,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     await ensureMpesaLedgerSchema(env.DB);
     const transaction = await env.DB.prepare(`
-      SELECT id, customerId, customerName
+      SELECT id, customerId, customerName, total, paymentMethod, splitPayments
       FROM transactions
       WHERE id = ? AND businessId = ? AND branchId = ?
       LIMIT 1
@@ -103,6 +112,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     if (!payment) return json({ error: 'M-Pesa payment not found.' }, 404);
     if (Number(payment.resultCode) !== 0) return json({ error: payment.resultDesc || 'M-Pesa payment is not paid.' }, 409);
+
+    const splitPayments = parseMaybeJson(transaction.splitPayments) as any;
+    const expectedMpesaAmount = String(transaction.paymentMethod || '').toUpperCase() === 'SPLIT'
+      && String(splitPayments?.secondaryMethod || '').toUpperCase() === 'MPESA'
+        ? asNumber(splitPayments?.secondaryAmount, 0)
+        : asNumber(transaction.total, 0);
+    if (expectedMpesaAmount > 0 && asNumber(payment.amount, 0) + 0.01 < expectedMpesaAmount) {
+      return json({ error: `M-Pesa paid amount is below the receipt amount.` }, 409);
+    }
 
     const existingLink = payment.utilizedTransactionId
       ? { id: payment.utilizedTransactionId }

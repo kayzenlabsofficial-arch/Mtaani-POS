@@ -216,9 +216,9 @@ export default function BarcodeScanner({ onScan, onClose, isInline = false }: Ba
             {flashSuccess ? <Zap size={16} className="text-white" /> : <Camera size={16} className="text-white" />}
           </div>
           <div>
-            <h2 className="text-white font-black text-xs leading-tight">Barcode Scanner</h2>
+            <h2 className="text-white font-black text-xs leading-tight">Barcode scanner</h2>
             <p className="text-slate-400 text-[8px] font-bold  ">
-              {scannerState === 'scanning' ? 'Live — Point at barcode' : scannerState === 'requesting' ? 'Starting camera...' : scannerState === 'error' ? 'Camera Error' : 'Initializing...'}
+              {scannerState === 'scanning' ? 'Live — Point at barcode' : scannerState === 'requesting' ? 'Starting camera...' : scannerState === 'error' ? 'Camera error' : 'Initializing...'}
             </p>
           </div>
         </div>
@@ -227,7 +227,7 @@ export default function BarcodeScanner({ onScan, onClose, isInline = false }: Ba
             <button
               onClick={toggleTorch}
               className={`w-8 h-8 ${torchEnabled ? 'bg-yellow-500 text-slate-900' : 'bg-slate-800 text-slate-400'} rounded-lg flex items-center justify-center hover:opacity-80 transition-all`}
-              title="Toggle Flashlight"
+              title="Toggle flashlight"
             >
               <Sun size={16} />
             </button>
@@ -240,7 +240,7 @@ export default function BarcodeScanner({ onScan, onClose, isInline = false }: Ba
         </div>
       </div>
 
-      {/* Camera Viewport */}
+      {/* Camera viewport */}
       <div className="relative mx-4 mb-2 rounded-2xl overflow-hidden bg-slate-800" style={{ aspectRatio: isInline ? '16/9' : '4/3' }}>
         {/* Html5Qrcode mounts its video element here */}
         <div id={containerId} className="w-full h-full" />
@@ -292,12 +292,12 @@ export default function BarcodeScanner({ onScan, onClose, isInline = false }: Ba
       <div className="px-5 pb-5 flex items-center justify-between gap-4">
         {lastScanned ? (
           <div className="flex flex-col min-w-0">
-            <p className="text-[7px] font-black text-slate-500  ">Last Scanned</p>
+            <p className="text-[7px] font-black text-slate-500  ">Last scanned</p>
             <p className={`text-[11px] font-black font-mono truncate ${flashSuccess ? 'text-green-400' : 'text-slate-200'}`}>{lastScanned}</p>
           </div>
         ) : (
           <div className="flex flex-col">
-            <p className="text-slate-500 text-[7px] font-black  ">Ready to Scan</p>
+            <p className="text-slate-500 text-[7px] font-black  ">Ready to scan</p>
             <p className="text-slate-600 text-[6px] font-medium">Native BarcodeDetector + ML fallback</p>
           </div>
         )}

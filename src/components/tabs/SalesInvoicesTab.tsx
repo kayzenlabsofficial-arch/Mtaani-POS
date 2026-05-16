@@ -43,6 +43,7 @@ const toDayStart = (value: string) => {
 const isVatLine = (line: Pick<SalesInvoiceItem, 'taxCategory'>) => line.taxCategory === 'A';
 const lineAmount = (line: Pick<SalesInvoiceItem, 'quantity' | 'unitPrice'>) => (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0);
 const lineVat = (line: Pick<SalesInvoiceItem, 'quantity' | 'unitPrice' | 'taxCategory'>) => isVatLine(line) ? lineAmount(line) * 0.16 : 0;
+const itemTypeLabel = (value: SalesInvoiceItem['itemType']) => value.charAt(0) + value.slice(1).toLowerCase();
 const invoiceTotals = (lines: SalesInvoiceItem[]) => {
   const subtotal = lines.reduce((sum, line) => sum + lineAmount(line), 0);
   const tax = lines.reduce((sum, line) => sum + lineVat(line), 0);
@@ -450,7 +451,7 @@ export default function SalesInvoicesTab() {
     <div className="w-full animate-in fade-in pb-28 md:pb-8">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-xl font-black text-slate-900">Sales Invoices</h2>
+          <h2 className="text-xl font-black text-slate-900">Sales invoices</h2>
           <div className="mt-1 flex flex-wrap items-center gap-3 text-[10px] font-bold text-slate-500">
             <span>{invoices.length} invoices</span>
             <span className="text-slate-300">|</span>
@@ -479,15 +480,15 @@ export default function SalesInvoicesTab() {
 
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Not Cleared</p>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Not cleared</p>
           <p className="mt-1 text-2xl font-black tabular-nums text-rose-600">{money(unpaidTotal)}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Cleared This Month</p>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Cleared this month</p>
           <p className="mt-1 text-2xl font-black tabular-nums text-emerald-600">{money(paidThisMonth)}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Ready Services</p>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Ready services</p>
           <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{activeServices.length}</p>
         </div>
       </div>
@@ -514,9 +515,9 @@ export default function SalesInvoicesTab() {
               onChange={e => setStatusFilter(e.target.value as any)}
               className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-widest text-slate-600 outline-none"
             >
-              <option value="ALL">All Status</option>
-              <option value="SENT">Not Cleared</option>
-              <option value="PARTIAL">Part Cleared</option>
+              <option value="ALL">All status</option>
+              <option value="SENT">Not cleared</option>
+              <option value="PARTIAL">Part cleared</option>
               <option value="PAID">Cleared</option>
               <option value="CANCELLED">Cancelled</option>
             </select>
@@ -607,7 +608,7 @@ export default function SalesInvoicesTab() {
           <div className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
-                <h3 className="text-base font-black text-slate-900">New Invoice</h3>
+                <h3 className="text-base font-black text-slate-900">New invoice</h3>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">For products, services, or custom work</p>
               </div>
               <button onClick={() => setIsInvoiceModalOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
@@ -630,7 +631,7 @@ export default function SalesInvoicesTab() {
                       />
                     </label>
                     <label className="block">
-                      <span className="mb-2 ml-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Due Date</span>
+                      <span className="mb-2 ml-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Due date</span>
                       <input
                         type="date"
                         value={invoiceForm.dueDate}
@@ -708,7 +709,7 @@ export default function SalesInvoicesTab() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-black text-slate-900">{line.name}</p>
                           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                            {line.itemType} | Qty {line.quantity} | {isVatLine(line) ? 'VAT' : 'No VAT'}
+                            {itemTypeLabel(line.itemType)} | Qty {line.quantity} | {isVatLine(line) ? 'VAT' : 'No VAT'}
                           </p>
                         </div>
                         <div className="flex items-center gap-3">
@@ -729,7 +730,7 @@ export default function SalesInvoicesTab() {
                 </div>
 
                 <aside className="h-fit rounded-2xl border border-slate-200 bg-slate-950 p-5 text-white">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-200">Invoice Total</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-200">Invoice total</p>
                   <p className="mt-2 text-3xl font-black tabular-nums">{money(totals.total)}</p>
                   <div className="mt-5 space-y-2 text-sm font-bold">
                     <div className="flex justify-between"><span className="text-slate-400">Before VAT</span><span>{money(totals.subtotal)}</span></div>
@@ -741,7 +742,7 @@ export default function SalesInvoicesTab() {
                     disabled={isSaving}
                     className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-xs font-black uppercase tracking-widest text-white disabled:opacity-50"
                   >
-                    <Send size={16} /> {isSaving ? 'Saving...' : 'Create Invoice'}
+                    <Send size={16} /> {isSaving ? 'Saving...' : 'Create invoice'}
                   </button>
                 </aside>
               </div>
@@ -755,7 +756,7 @@ export default function SalesInvoicesTab() {
           <div className="w-full max-w-lg rounded-t-[2rem] bg-white p-5 shadow-2xl sm:rounded-[2rem]">
             <div className="mb-5 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-black text-slate-900">{editingService ? 'Edit Service' : 'Add Service'}</h3>
+                <h3 className="text-base font-black text-slate-900">{editingService ? 'Edit service' : 'Add service'}</h3>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">For service provider invoices</p>
               </div>
               <button onClick={() => setIsServiceModalOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
@@ -782,7 +783,7 @@ export default function SalesInvoicesTab() {
                 </label>
               </div>
               <button onClick={saveService} disabled={isSaving} className="h-12 w-full rounded-xl bg-primary text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">
-                {isSaving ? 'Saving...' : 'Save Service'}
+                {isSaving ? 'Saving...' : 'Save service'}
               </button>
             </div>
           </div>
@@ -817,7 +818,7 @@ export default function SalesInvoicesTab() {
                   <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2">
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-black text-slate-900">{item.name}</span>
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{item.itemType} | Qty {item.quantity}</span>
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{itemTypeLabel(item.itemType)} | Qty {item.quantity}</span>
                     </span>
                     <span className="text-sm font-black tabular-nums text-slate-900">{money(lineAmount(item) + lineVat(item))}</span>
                   </div>
@@ -852,7 +853,7 @@ export default function SalesInvoicesTab() {
           <div className="w-full max-w-md rounded-t-[2rem] bg-white p-5 shadow-2xl sm:rounded-[2rem]">
             <div className="mb-5 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-black text-slate-900">Clear Invoice Balance</h3>
+                <h3 className="text-base font-black text-slate-900">Clear invoice balance</h3>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{paymentInvoice.invoiceNumber}</p>
               </div>
               <button onClick={() => setPaymentInvoice(null)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
@@ -870,7 +871,7 @@ export default function SalesInvoicesTab() {
               </select>
               <input value={paymentForm.reference} onChange={e => setPaymentForm(prev => ({ ...prev, reference: e.target.value }))} placeholder="Code or note" className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary" />
               <button onClick={applyPayment} disabled={isSaving} className="h-12 w-full rounded-xl bg-emerald-600 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">
-                {isSaving ? 'Saving...' : 'Clear Balance'}
+                {isSaving ? 'Saving...' : 'Clear balance'}
               </button>
             </div>
           </div>
@@ -888,8 +889,8 @@ function StatusPill({ status }: { status: SalesInvoice['status'] }) {
     CANCELLED: 'bg-slate-100 text-slate-500',
   };
   const labels: Record<SalesInvoice['status'], string> = {
-    SENT: 'Not Cleared',
-    PARTIAL: 'Part Cleared',
+    SENT: 'Not cleared',
+    PARTIAL: 'Part cleared',
     PAID: 'Cleared',
     CANCELLED: 'Cancelled',
   };

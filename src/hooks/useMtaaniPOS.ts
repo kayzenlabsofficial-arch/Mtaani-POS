@@ -98,6 +98,7 @@ export function useMtaaniPOS() {
       const authRes = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         cache: 'no-store',
         body: JSON.stringify({ businessCode: businessCode.trim().toUpperCase(), username: username.trim(), password }),
       });
@@ -115,7 +116,7 @@ export function useMtaaniPOS() {
       setActiveBusinessId(authData.businessId || null);
       setActiveBranchId(authData.branchId || null);
       await new Promise(r => setTimeout(r, 0));
-      login(authData.user, authData.token);
+      login(authData.user, authData.token || null);
       setPassword('');
       success(`Welcome back, ${authData.user?.name || 'there'}!`);
     } catch (err: any) {
@@ -130,6 +131,7 @@ export function useMtaaniPOS() {
 
   const handleLogout = () => {
     if (confirm("Are you sure you want to logout?")) {
+      fetch('/api/auth', { method: 'DELETE', cache: 'no-store', credentials: 'same-origin' }).catch(() => {});
       db.resetTenantCaches();
       logout();
       setActiveBusinessId(null);
@@ -230,12 +232,6 @@ export function useMtaaniPOS() {
       const effectiveCustomerName = checkoutData.customerName || customerName;
       const paymentReference = mpesaRef || checkoutData.mpesaRef || checkoutData.pdqRef || checkoutData.paymentReference;
       const mpesaPaymentCode = method === 'MPESA' || splitPayments?.secondaryMethod === 'MPESA' ? paymentReference : undefined;
-      const creditAmount = method === 'CREDIT'
-        ? finalTotal
-        : method === 'SPLIT' && splitPayments?.secondaryMethod === 'CREDIT'
-          ? Number(splitPayments.secondaryAmount) || 0
-          : 0;
-
       const transactionId = crypto.randomUUID();
       const newTransaction: Transaction = {
         id: transactionId,
@@ -296,51 +292,6 @@ export function useMtaaniPOS() {
         if (utilization.error) {
           await db.transactions.delete(transactionId).catch(() => {});
           throw new Error(utilization.error);
-        }
-      }
-
-      if (effectiveCustomerId) {
-        const customer = await db.customers.get(effectiveCustomerId);
-        if (customer) {
-          await db.customers.update(effectiveCustomerId, {
-            totalSpent: (Number(customer.totalSpent) || 0) + finalTotal,
-            balance: (Number(customer.balance) || 0) + creditAmount,
-            updated_at: Date.now()
-          });
-        }
-      }
-      
-      for (const item of cart) {
-        const prod = await db.products.get(item.id);
-        if (prod) {
-          const saleQty = Number(item.cartQuantity) || 0;
-          if (isBundleProduct(prod)) {
-            const ingredients = getProductIngredients(prod, productIngredients);
-            for (const row of ingredients) {
-              const ingredient = await db.products.get(row.ingredientProductId);
-              if (!ingredient) continue;
-              const deductQty = row.quantity * saleQty;
-              await db.products.update(ingredient.id, {
-                stockQuantity: Math.max(0, (ingredient.stockQuantity || 0) - deductQty),
-                updated_at: Date.now()
-              });
-              await db.stockMovements.add({
-                id: crypto.randomUUID(),
-                productId: ingredient.id,
-                type: 'OUT',
-                quantity: -deductQty,
-                timestamp: Date.now(),
-                reference: `Bundle Sale #${transactionId.split('-')[0].toUpperCase()} (${item.name})`,
-                branchId: activeBranchId!,
-                businessId: activeBusinessId!,
-              });
-            }
-          } else {
-            await db.products.update(item.id, {
-              stockQuantity: Math.max(0, (prod.stockQuantity || 0) - saleQty),
-              updated_at: Date.now()
-            });
-          }
         }
       }
 

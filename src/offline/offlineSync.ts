@@ -35,6 +35,7 @@ export async function sendHeartbeat(args?: { cashierName?: string }): Promise<vo
       'X-Business-ID': businessId,
       'X-Branch-ID': branchId,
     },
+    credentials: 'same-origin',
     cache: 'no-store',
     body: JSON.stringify({
       deviceId: getDeviceId(),
@@ -79,6 +80,7 @@ export async function flushOutboxNow(): Promise<{ flushed: number }> {
           'X-Business-ID': businessId,
           'X-Branch-ID': branchId,
         },
+        credentials: 'same-origin',
         cache: 'no-store',
         body: JSON.stringify({
           deviceId: getDeviceId(),

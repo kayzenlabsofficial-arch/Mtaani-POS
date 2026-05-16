@@ -181,7 +181,7 @@ export default function BranchManagementTab() {
           onClick={openNew}
           className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
         >
-          <Plus size={18} /> Add Branch
+          <Plus size={18} /> Add branch
         </button>
       </div>
 
@@ -247,7 +247,7 @@ export default function BranchManagementTab() {
                   </div>
                   <div>
                     <h3 className="text-xl font-black text-slate-900">
-                      {editingId ? 'Branch Details' : 'Add Branch'}
+                      {editingId ? 'Branch details' : 'Add branch'}
                     </h3>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
                       {editingId ? 'Edit this branch' : 'Create a new branch'}
@@ -260,7 +260,7 @@ export default function BranchManagementTab() {
             <div className="space-y-8">
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Branch Name *</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Branch name *</label>
                     <input
                       type="text"
                       value={form.name}
@@ -271,7 +271,7 @@ export default function BranchManagementTab() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Physical Location *</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Physical location *</label>
                     <input
                       type="text"
                       value={form.location}
@@ -284,7 +284,7 @@ export default function BranchManagementTab() {
 
                <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Branch Phone</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Branch phone</label>
                     <input
                       type="tel"
                       value={form.phone}
@@ -294,7 +294,7 @@ export default function BranchManagementTab() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa Till #</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa till #</label>
                     <input
                       type="text"
                       value={form.tillNumber}
@@ -304,7 +304,7 @@ export default function BranchManagementTab() {
                     />
                   </div>
                   <div className="col-span-2 lg:col-span-1">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">KRA Tax PIN</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">KRA tax PIN</label>
                     <input
                       type="text"
                       value={form.kraPin}
@@ -317,12 +317,12 @@ export default function BranchManagementTab() {
 
                <div className="p-8 bg-indigo-50/50 rounded-[2.5rem] border-2 border-indigo-100">
                   <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-6 flex items-center gap-2">
-                    <Smartphone size={14} /> M-Pesa Settings
+                    <Smartphone size={14} /> M-Pesa settings
                   </h4>
                   <div className="mb-6 rounded-2xl border border-indigo-100 bg-white p-4">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Security Check</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Security check</p>
                         <p className="mt-1 text-xs font-bold text-slate-400">
                           {branchBeingEdited?.mpesaConfigured ? 'Credentials are saved and hidden.' : 'No saved credentials shown here.'}
                         </p>
@@ -343,7 +343,7 @@ export default function BranchManagementTab() {
                         value={mpesaGate.confirmationText}
                         onChange={e => setMpesaGate(g => ({ ...g, confirmationText: e.target.value }))}
                         className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold uppercase tracking-widest text-slate-900 outline-none focus:border-indigo-500"
-                        placeholder="Type UPDATE MPESA"
+                        placeholder="Type update mpesa"
                       />
                     </div>
                     <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
@@ -358,21 +358,21 @@ export default function BranchManagementTab() {
                          onChange={(v) => setForm(f => ({ ...f, mpesaEnv: v as any }))}
                          disabled={!isMpesaUnlocked}
                          options={[
-                           { value: 'sandbox', label: 'Test Mode', keywords: 'sandbox test testing' },
-                           { value: 'production', label: 'Live Mode', keywords: 'production live' },
+                           { value: 'sandbox', label: 'Test mode', keywords: 'sandbox test testing' },
+                           { value: 'production', label: 'Live mode', keywords: 'production live' },
                          ]}
                          buttonClassName="rounded-2xl px-6 py-4.5 font-black text-slate-900 bg-white border-transparent"
                        />
                      </div>
                      <div>
-                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa Type</label>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa type</label>
                        <SearchableSelect
                          value={form.mpesaType}
                          onChange={(v) => setForm(f => ({ ...f, mpesaType: v as any }))}
                          disabled={!isMpesaUnlocked}
                          options={[
                            { value: 'paybill', label: 'Paybill', keywords: 'paybill' },
-                           { value: 'buygoods', label: 'Buy Goods (Till)', keywords: 'buy goods till' },
+                           { value: 'buygoods', label: 'Buy goods (till)', keywords: 'buy goods till' },
                          ]}
                          buttonClassName="rounded-2xl px-6 py-4.5 font-black text-slate-900 bg-white border-transparent"
                        />
@@ -380,37 +380,37 @@ export default function BranchManagementTab() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                      <div>
-                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa App Key</label>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa app key</label>
                        <input
                          type="text"
                          value={form.mpesaConsumerKey}
                          onChange={e => setForm(f => ({ ...f, mpesaConsumerKey: e.target.value }))}
                          disabled={!isMpesaUnlocked}
                          className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                         placeholder={branchBeingEdited?.mpesaConsumerKeySet ? 'Saved. Enter new key to replace' : 'Consumer Key'}
+                         placeholder={branchBeingEdited?.mpesaConsumerKeySet ? 'Saved. Enter new key to replace' : 'Consumer key'}
                        />
                      </div>
                      <div>
-                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa App Secret</label>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">M-Pesa app secret</label>
                        <input
                          type="password"
                          value={form.mpesaConsumerSecret}
                          onChange={e => setForm(f => ({ ...f, mpesaConsumerSecret: e.target.value }))}
                          disabled={!isMpesaUnlocked}
                          className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                         placeholder={branchBeingEdited?.mpesaConsumerSecretSet ? 'Saved. Enter new secret to replace' : 'Consumer Secret'}
+                         placeholder={branchBeingEdited?.mpesaConsumerSecretSet ? 'Saved. Enter new secret to replace' : 'Consumer secret'}
                        />
                      </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                      <div>
-                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Store Number</label>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Store number</label>
                        <input
                          type="text"
                          value={form.mpesaStoreNumber}
                          onChange={e => setForm(f => ({ ...f, mpesaStoreNumber: e.target.value }))}
                          className={`w-full border-2 rounded-2xl px-6 py-4.5 text-sm font-black transition-all outline-none ${form.mpesaType === 'buygoods' && isMpesaUnlocked ? 'bg-white border-transparent focus:border-indigo-500 text-slate-900' : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'}`}
-                         placeholder="Required for Till"
+                         placeholder="Required for till"
                          disabled={form.mpesaType !== 'buygoods' || !isMpesaUnlocked}
                        />
                      </div>
@@ -441,7 +441,7 @@ export default function BranchManagementTab() {
                  disabled={!form.name.trim() || !form.location.trim() || saving}
                  className="flex-[2] grad-blue text-white font-black text-[10px] uppercase tracking-widest rounded-2xl shadow-blue press disabled:opacity-50"
                >
-                 {saving ? 'Saving...' : editingId ? 'Save Branch' : 'Add Branch'}
+                 {saving ? 'Saving...' : editingId ? 'Save branch' : 'Add branch'}
                </button>
             </div>
           </div>

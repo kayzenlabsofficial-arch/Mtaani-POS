@@ -49,7 +49,7 @@ node scripts/db-setup.js --help
 
 The script uses the following environment variables:
 
-- `VITE_API_SECRET`: API secret for authentication (defaults to value from `.env`)
+- `API_SECRET` or `MTAANI_API_SECRET`: service API secret for authentication. There is no default secret.
 - `API_BASE_URL`: Base URL for API calls (defaults to `http://localhost:8788`)
 
 ## Configuration

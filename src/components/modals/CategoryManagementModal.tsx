@@ -100,7 +100,7 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
               <TagIcon size={24} />
             </div>
             <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Manage Categories</h2>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">Manage categories</h2>
               <p className="text-slate-400 text-xs font-bold  ">Organize your inventory</p>
             </div>
           </div>
@@ -159,7 +159,7 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
                   Cancel
                 </button>
                 <button onClick={handleSave} className="flex-[2] grad-blue text-white px-6 py-4 font-black text-xs   rounded-2xl transition-all shadow-blue press flex items-center justify-center gap-2">
-                  <Save size={18} /> {editingId ? 'Update' : 'Create'} Category
+                  <Save size={18} /> {editingId ? 'Update' : 'Create'} category
                 </button>
               </div>
             </div>

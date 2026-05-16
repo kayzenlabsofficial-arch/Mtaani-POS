@@ -4,10 +4,16 @@ interface Env {
 }
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-API-Key'
 };
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
 
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env, params } = context;
@@ -32,7 +38,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       });
     }
 
-    if (!receivedSecret || receivedSecret !== expectedSecret) {
+    if (!receivedSecret || !timingSafeEqual(String(receivedSecret), expectedSecret)) {
       console.warn(`[M-PESA SECURITY ALERT]: Unauthorized callback attempt.`);
       return new Response(JSON.stringify({ ResultCode: 1, ResultDesc: "Unauthorized" }), { 
         status: 401,

@@ -290,7 +290,7 @@ export default function ReportsTab() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
         <div className="min-w-0">
-          <h2 className="text-xl font-black text-slate-900">Financial Reports</h2>
+          <h2 className="text-xl font-black text-slate-900">Financial reports</h2>
           <div className="mt-1 flex max-w-full flex-wrap items-center gap-x-3 gap-y-1">
             <span className="text-[10px] font-bold text-slate-500">{salesDocumentCount} sales documents</span>
             <span className="text-slate-300">·</span>
@@ -370,10 +370,10 @@ export default function ReportsTab() {
         
         {/* Global Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard title="Total Revenue" value={totalRevenue} icon={<TrendingUp size={24}/>} color="indigo" subtitle={`${salesDocumentCount} sales documents`} />
-          <StatCard title="Net Profit" value={netProfit} icon={<Target size={24}/>} color={netProfit >= 0 ? "emerald" : "rose"} subtitle={`After stock cost, expenses${deductTaxInPL ? ' and VAT' : ''}`} />
-          <StatCard title="Profit Margin" value={((grossProfit / (totalRevenue || 1)) * 100)} unit="%" icon={<Layers size={24}/>} color="blue" subtitle="Profit made from sales" />
-          <StatCard title="Expense Share" value={((totalExpenseAmount / (totalRevenue || 1)) * 100)} unit="%" icon={<Activity size={24}/>} color="amber" subtitle="Expenses compared to sales" />
+          <StatCard title="Total revenue" value={totalRevenue} icon={<TrendingUp size={24}/>} color="indigo" subtitle={`${salesDocumentCount} sales documents`} />
+          <StatCard title="Net profit" value={netProfit} icon={<Target size={24}/>} color={netProfit >= 0 ? "emerald" : "rose"} subtitle={`After stock cost, expenses${deductTaxInPL ? ' and VAT' : ''}`} />
+          <StatCard title="Profit margin" value={((grossProfit / (totalRevenue || 1)) * 100)} unit="%" icon={<Layers size={24}/>} color="blue" subtitle="Profit made from sales" />
+          <StatCard title="Expense share" value={((totalExpenseAmount / (totalRevenue || 1)) * 100)} unit="%" icon={<Activity size={24}/>} color="amber" subtitle="Expenses compared to sales" />
         </div>
 
         {/* Primary Analytical Charts */}
@@ -383,7 +383,7 @@ export default function ReportsTab() {
             <div className="relative z-10">
               <h3 className="font-bold text-slate-900 text-lg flex items-center gap-3 mb-8">
                 <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center"> <BarChart3 size={20} /> </div>
-                Sales Trend
+                Sales trend
               </h3>
               <div className="h-[320px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -421,7 +421,7 @@ export default function ReportsTab() {
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                 <p className="text-[10px] font-black text-slate-400 uppercase">Total Spent</p>
+                 <p className="text-[10px] font-black text-slate-400 uppercase">Total spent</p>
                  <p className="text-lg font-black text-slate-900 leading-none">Ksh {totalExpenseAmount.toLocaleString()}</p>
               </div>
             </div>
@@ -444,7 +444,7 @@ export default function ReportsTab() {
           <section className="bg-white rounded-[2.5rem] p-8 border-2 border-slate-100 shadow-sm">
              <h3 className="font-bold text-slate-900 text-lg flex items-center gap-3 mb-8">
                 <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center"> <ShoppingBag size={20} /> </div>
-                Category Sales
+                Category sales
              </h3>
              <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -465,17 +465,17 @@ export default function ReportsTab() {
 
           <section className="bg-white rounded-[2.5rem] overflow-hidden border-2 border-slate-100 shadow-sm">
             <div className="px-8 py-6 border-b-2 border-slate-50 bg-slate-50/50">
-              <h3 className="text-lg font-bold text-slate-900">Quick Summary</h3>
+              <h3 className="text-lg font-bold text-slate-900">Quick summary</h3>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">How the business is doing</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <tbody className="divide-y-2 divide-slate-50 text-sm">
-                  <SummaryRow metric="Net Profit" value={`Ksh ${Math.floor(netProfit).toLocaleString()}`} target="Above zero" ok={netProfit >= 0} />
-                  <SummaryRow metric="Profit Margin" value={`${((grossProfit / (totalRevenue || 1)) * 100).toFixed(1)}%`} target="Above 25%" ok={((grossProfit / (totalRevenue || 1)) * 100) >= 25} />
-                  <SummaryRow metric="Average Sale" value={`Ksh ${Math.floor(averageBasket).toLocaleString()}`} target="Ksh 500+" ok={averageBasket >= 500} />
-                  <SummaryRow metric="Low Stock Items" value={`${lowStockCount} items`} target="Less than 10" ok={lowStockCount < 10} />
-                  <SummaryRow metric="Credit Sales" value={`${creditTransactions} sales`} target="Under 15%" ok={creditTransactions <= (filteredTransactions.length * 0.15)} />
+                  <SummaryRow metric="Net profit" value={`Ksh ${Math.floor(netProfit).toLocaleString()}`} target="Above zero" ok={netProfit >= 0} />
+                  <SummaryRow metric="Profit margin" value={`${((grossProfit / (totalRevenue || 1)) * 100).toFixed(1)}%`} target="Above 25%" ok={((grossProfit / (totalRevenue || 1)) * 100) >= 25} />
+                  <SummaryRow metric="Average sale" value={`Ksh ${Math.floor(averageBasket).toLocaleString()}`} target="Ksh 500+" ok={averageBasket >= 500} />
+                  <SummaryRow metric="Low stock items" value={`${lowStockCount} items`} target="Less than 10" ok={lowStockCount < 10} />
+                  <SummaryRow metric="Credit sales" value={`${creditTransactions} sales`} target="Under 15%" ok={creditTransactions <= (filteredTransactions.length * 0.15)} />
                 </tbody>
               </table>
             </div>
@@ -493,12 +493,12 @@ export default function ReportsTab() {
                   <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-indigo">
                     <Activity size={28} />
                   </div>
-                  Product Sales Details
+                  Product sales details
                 </h3>
                 <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-3 opacity-60">Detailed product sales</p>
               </div>
               <div className="w-full md:w-96">
-                <label className="block text-[10px] font-bold text-indigo-400 uppercase tracking-[0.2em] mb-3 ml-2">Select Product</label>
+                <label className="block text-[10px] font-bold text-indigo-400 uppercase tracking-[0.2em] mb-3 ml-2">Select product</label>
                 <SearchableSelect
                   value={selectedProductId || ''}
                   onChange={(v) => setSelectedProductId(v || null)}
@@ -517,18 +517,18 @@ export default function ReportsTab() {
             {selectedProduct ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 animate-in slide-in-from-bottom-8 duration-500">
                  <div className="bg-white/5 backdrop-blur-sm border-2 border-white/5 p-8 rounded-[2rem] hover:bg-white/10 transition-all">
-                    <p className="text-indigo-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><Layers size={14}/> Units Sold</p>
+                    <p className="text-indigo-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><Layers size={14}/> Units sold</p>
                     <div className="flex items-baseline gap-2">
                        <h4 className="text-5xl font-black tabular-nums">{productStats.totalQty}</h4>
-                       <span className="text-sm font-bold text-slate-500 uppercase">{selectedProduct.unit || 'Units'}</span>
+                       <span className="text-sm font-bold text-slate-500 uppercase">{selectedProduct.unit || 'units'}</span>
                     </div>
                  </div>
                  <div className="bg-white/5 backdrop-blur-sm border-2 border-white/5 p-8 rounded-[2rem] hover:bg-white/10 transition-all">
-                    <p className="text-emerald-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><TrendingUp size={14}/> Product Sales</p>
+                    <p className="text-emerald-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><TrendingUp size={14}/> Product sales</p>
                     <h4 className="text-4xl font-black tabular-nums">Ksh {productStats.totalRevenue.toLocaleString()}</h4>
                  </div>
                  <div className="bg-white/5 backdrop-blur-sm border-2 border-white/5 p-8 rounded-[2rem] hover:bg-white/10 transition-all">
-                    <p className="text-amber-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><Package size={14}/> Stock Left</p>
+                    <p className="text-amber-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><Package size={14}/> Stock left</p>
                     <h4 className={`text-4xl font-black tabular-nums ${selectedProduct.stockQuantity < 10 ? 'text-rose-500' : 'text-white'}`}>{selectedProduct.stockQuantity}</h4>
                  </div>
                  <div className="grad-indigo p-8 rounded-[2rem] shadow-indigo flex flex-col justify-between">
@@ -536,7 +536,7 @@ export default function ReportsTab() {
                        <p className="text-indigo-200 text-[10px] font-black uppercase tracking-widest mb-2">Profit</p>
                        <h4 className="text-3xl font-black truncate">Ksh {(productPerf[selectedProduct.id]?.profit || 0).toLocaleString()}</h4>
                     </div>
-                    <div className="text-[10px] font-black bg-white/20 px-4 py-1.5 rounded-full w-fit uppercase tracking-widest">Profit Rate: {(( (productPerf[selectedProduct.id]?.profit || 0) / (productStats.totalRevenue || 1) ) * 100).toFixed(1)}%</div>
+                    <div className="text-[10px] font-black bg-white/20 px-4 py-1.5 rounded-full w-fit uppercase tracking-widest">Profit rate: {(( (productPerf[selectedProduct.id]?.profit || 0) / (productStats.totalRevenue || 1) ) * 100).toFixed(1)}%</div>
                  </div>
               </div>
             ) : (
@@ -597,7 +597,7 @@ function SummaryRow({ metric, value, target, ok }: { metric: string; value: stri
         <div className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center justify-center w-fit border ${
           ok ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'
         }`}>
-          {ok ? 'Target Met' : 'Off Track'}
+          {ok ? 'Target met' : 'Off track'}
         </div>
       </td>
     </tr>

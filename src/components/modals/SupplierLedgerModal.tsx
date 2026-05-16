@@ -15,6 +15,11 @@ interface SupplierLedgerModalProps {
   products?: any[];
 }
 
+const sentenceValue = (value: unknown, fallback = '') => {
+  const text = String(value || fallback).replace(/_/g, ' ').toLowerCase();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
+};
+
 export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, shiftId, products }: SupplierLedgerModalProps) {
   const [activeTab, setActiveTab] = useState<'INVOICES' | 'PAYMENTS' | 'CREDIT_NOTES'>('INVOICES');
   const [isAddCreditNoteOpen, setIsAddCreditNoteOpen] = useState(false);
@@ -63,6 +68,11 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
   const filteredPayments = (payments || []).filter(payment => inDateRange(payment.timestamp));
   const filteredCreditNotes = (creditNotes || []).filter(note => inDateRange(note.timestamp));
   const activeRows = activeTab === 'INVOICES' ? filteredInvoices : activeTab === 'PAYMENTS' ? filteredPayments : filteredCreditNotes;
+  const tabLabels: Record<'INVOICES' | 'PAYMENTS' | 'CREDIT_NOTES', string> = {
+    INVOICES: 'Invoices',
+    PAYMENTS: 'Payments',
+    CREDIT_NOTES: 'Credit notes',
+  };
   const totalPages = Math.max(1, Math.ceil(activeRows.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pagedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -170,7 +180,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                         </p>
                         <div className="flex gap-2 mt-3 no-print overflow-x-auto no-scrollbar">
                            <button onClick={() => onEdit(supplier)} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black   flex items-center gap-1 hover:bg-slate-200 transition-all shrink-0">
-                              <Edit size={12} /> Edit Supplier
+                              <Edit size={12} /> Edit supplier
                            </button>
                            <button 
                             onClick={handlePrintStatement} 
@@ -184,12 +194,12 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                     </div>
                 </div>
                 <div className="sm:text-right w-full sm:w-auto">
-                    <p className="text-[10px] font-black text-slate-400  tracking-[0.2em] mb-1">Current Balance</p>
+                    <p className="text-xs font-medium text-slate-500 mb-1">Current balance</p>
                     <h3 className={`text-2xl sm:text-4xl font-black tabular-nums break-words ${supplier.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
                         Ksh {supplier.balance.toLocaleString()}
                     </h3>
-                    <button onClick={() => onPay(supplier)} className="mt-3 bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold text-[10px]   shadow-lg shadow-green-600/20 active:scale-95 transition-all no-print w-full sm:w-auto">
-                        Make a Payment
+                    <button onClick={() => onPay(supplier)} className="mt-3 bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-green-600/20 active:scale-95 transition-all no-print w-full sm:w-auto">
+                        Clear balance
                     </button>
                 </div>
             </div>
@@ -200,9 +210,9 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                     <button 
                         key={tab} 
                         onClick={() => setActiveTab(tab)}
-                        className={`py-4 px-6 text-[10px] font-black   transition-all relative ${activeTab === tab ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                        className={`py-4 px-6 text-sm font-bold transition-all relative ${activeTab === tab ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
                     >
-                        {tab.replace('_', ' ')}
+                        {tabLabels[tab]}
                         {tab === 'INVOICES' && invoices && invoices.length > 0 && <span className="ml-2 bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md">{invoices.length}</span>}
                     </button>
                 ))}
@@ -210,8 +220,8 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
 
             <div className="px-6 sm:px-8 py-3 border-b border-slate-100 no-print flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                    <button onClick={() => setDateMode('ALL')} className={`h-9 px-3 rounded-xl border text-[9px] font-black uppercase tracking-widest ${dateMode === 'ALL' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}>All Dates</button>
-                    <button onClick={() => setDateMode('CUSTOM')} className={`h-9 px-3 rounded-xl border text-[9px] font-black uppercase tracking-widest ${dateMode === 'CUSTOM' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-600 border-slate-200'}`}>Custom</button>
+                    <button onClick={() => setDateMode('ALL')} className={`h-9 px-3 rounded-xl border text-xs font-bold ${dateMode === 'ALL' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}>All dates</button>
+                    <button onClick={() => setDateMode('CUSTOM')} className={`h-9 px-3 rounded-xl border text-xs font-bold ${dateMode === 'CUSTOM' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-600 border-slate-200'}`}>Custom</button>
                     {dateMode === 'CUSTOM' && (
                         <>
                             <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)} className="h-9 rounded-xl border border-slate-200 px-2 text-xs font-bold outline-none focus:border-blue-500" />
@@ -219,7 +229,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                         </>
                     )}
                 </div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                <p className="text-xs font-medium text-slate-500">
                   Showing {activeRows.length === 0 ? 0 : ((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, activeRows.length)} of {activeRows.length}
                 </p>
             </div>
@@ -229,7 +239,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                 {activeTab === 'INVOICES' && (
                     <div className="space-y-3">
                         <div className="hidden print:block mb-8">
-                           <h3 className="text-lg font-black   border-b pb-2">Supplier Bills Statement</h3>
+                           <h3 className="text-lg font-black border-b pb-2">Supplier bills statement</h3>
                         </div>
                         {filteredInvoices.length === 0 ? (
                             <div className="py-20 text-center text-slate-400 flex flex-col items-center">
@@ -246,7 +256,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                         <div>
                                             <p className="text-sm font-black text-slate-900">Inv #{inv.invoiceNumber || inv.id.split('-')[0].toUpperCase()}</p>
                                             <p className="text-[10px] font-bold text-slate-400 ">
-                                               {new Date(inv.orderDate).toLocaleDateString()} • {inv.status}
+                                               {new Date(inv.orderDate).toLocaleDateString()} • {sentenceValue(inv.status)}
                                                {inv.preparedBy && <span className="ml-2 text-blue-500 font-black">@{inv.preparedBy}</span>}
                                             </p>
                                         </div>
@@ -255,7 +265,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                         <p className="text-sm font-black text-slate-900">Ksh {inv.totalAmount.toLocaleString()}</p>
                                         <div className="flex items-center gap-2 mt-1">
                                             <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg   border ${inv.paymentStatus === 'PAID' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
-                                                {inv.paymentStatus || 'UNPAID'}
+                                                {sentenceValue(inv.paymentStatus, 'UNPAID')}
                                             </span>
                                             {inv.paymentStatus === 'PARTIAL' && <span className="text-[9px] font-bold text-slate-400 italic">Due: Ksh {(inv.totalAmount - (inv.paidAmount || 0)).toLocaleString()}</span>}
                                         </div>
@@ -281,7 +291,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                             <CheckCircle2 size={20} />
                                         </div>
                                         <div>
-                                            <p className="text-sm font-black text-slate-900">{pay.reference || 'Supplier Payment'}</p>
+                                            <p className="text-sm font-black text-slate-900">{pay.reference || 'Supplier payment'}</p>
                                             <p className="text-[10px] font-bold text-slate-400 ">
                                                {new Date(pay.timestamp).toLocaleDateString()} • paid by {pay.paymentMethod === 'MPESA' ? 'M-Pesa' : pay.paymentMethod}
                                                {pay.preparedBy && <span className="ml-2 text-purple-500 font-black">@{pay.preparedBy}</span>}
@@ -290,7 +300,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                     </div>
                                     <div className="text-right">
                                         <p className="text-sm font-black text-purple-600">Ksh {pay.amount.toLocaleString()}</p>
-                                        <p className="text-[9px] font-bold text-slate-400   mt-0.5">{pay.transactionCode || 'No Ref'}</p>
+                                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">{pay.transactionCode || 'No ref'}</p>
                                     </div>
                                 </div>
                             ))
@@ -301,9 +311,9 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                 {activeTab === 'CREDIT_NOTES' && (
                     <div className="space-y-4">
                         <div className="flex justify-between items-center no-print">
-                            <h3 className="text-[10px] font-black text-slate-400  ">Available Credits</h3>
-                            <button data-testid="supplier-credit-open" onClick={() => setIsAddCreditNoteOpen(true)} className="flex items-center gap-1.5 text-[10px] font-black text-blue-600   bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-all">
-                                <Plus size={14} /> New Credit Note
+                            <h3 className="text-sm font-bold text-slate-600">Available credits</h3>
+                            <button data-testid="supplier-credit-open" onClick={() => setIsAddCreditNoteOpen(true)} className="flex items-center gap-1.5 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-all">
+                                <Plus size={14} /> New credit note
                             </button>
                         </div>
                         {filteredCreditNotes.length === 0 ? (
@@ -319,11 +329,11 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                             <AlertCircle size={20} />
                                         </div>
                                         <div>
-                                            <p className="text-sm font-black text-slate-900">{cn.reference || 'Credit Note'}</p>
+                                            <p className="text-sm font-black text-slate-900">{cn.reference || 'Credit note'}</p>
                                             <p className="text-[10px] font-bold text-slate-400 ">{new Date(cn.timestamp).toLocaleDateString()} • {cn.reason}</p>
                                             <div className="flex items-center gap-2 mt-1">
                                                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md   border ${cn.status === 'ALLOCATED' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-orange-50 text-orange-700 border-orange-100'}`}>
-                                                    {cn.status || 'PENDING'}
+                                                    {sentenceValue(cn.status, 'PENDING')}
                                                 </span>
                                             </div>
                                         </div>
@@ -335,10 +345,10 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                                 onClick={() => onPay(supplier)}
                                                 className="mt-1 text-[9px] font-black text-blue-600 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-600 hover:text-white transition-all"
                                             >
-                                                Apply During Payment
+                                                Apply during payment
                                             </button>
                                         ) : (
-                                            <p className="text-[9px] font-bold text-slate-400   mt-0.5 italic">Balance Updated</p>
+                                            <p className="text-[9px] font-bold text-slate-400 mt-0.5 italic">Balance updated</p>
                                         )}
                                     </div>
                                 </div>
@@ -349,9 +359,9 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
             </div>
             {activeRows.length > pageSize && (
               <div className="px-6 sm:px-8 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3 no-print">
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-40">Previous 50</button>
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Page {currentPage} of {totalPages}</span>
-                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-40">Next 50</button>
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 disabled:opacity-40">Previous 50</button>
+                <span className="text-xs font-medium text-slate-500">Page {currentPage} of {totalPages}</span>
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 disabled:opacity-40">Next 50</button>
               </div>
             )}
          </div>
@@ -370,19 +380,19 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                 <h3 className="text-lg font-black text-slate-900 mb-6 flex items-center gap-2"><div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center"><AlertCircle size={18}/></div> Create Credit</h3>
                 <div className="space-y-4 mb-6">
                     <div>
-                        <label className="block text-[10px] font-black text-slate-400  mb-2 ml-1">Credit Amount</label>
+                        <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">Credit amount</label>
                         <input data-testid="supplier-credit-amount" type="number" value={creditNoteForm.amount} onChange={e => setCreditNoteForm({...creditNoteForm, amount: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-black" placeholder="Ksh 0.00" />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-black text-slate-400  mb-2 ml-1">Reference #</label>
+                        <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">Reference #</label>
                         <input data-testid="supplier-credit-reference" type="text" value={creditNoteForm.reference} onChange={e => setCreditNoteForm({...creditNoteForm, reference: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold" placeholder="CRN-XXX" />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-black text-slate-400  mb-2 ml-1">Reason for Credit</label>
+                        <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">Reason for credit</label>
                         <textarea data-testid="supplier-credit-reason" value={creditNoteForm.reason} onChange={e => setCreditNoteForm({...creditNoteForm, reason: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium h-20" placeholder="e.g. Returned broken stock" />
                     </div>
                     <div className="border-t border-slate-100 pt-4">
-                        <label className="block text-[10px] font-black text-blue-500  mb-2 ml-1 uppercase tracking-wider">Link to Inventory Return (Optional)</label>
+                        <label className="block text-xs font-semibold text-blue-600 mb-2 ml-1">Link to inventory return (optional)</label>
                         <div className="space-y-3">
                            <SearchableSelect
                              value={creditNoteForm.productId}
@@ -400,7 +410,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                            />
                            {creditNoteForm.productId && (
                              <div className="flex items-center gap-2">
-                                <label className="text-[10px] font-black text-slate-400">Qty to Return:</label>
+                                <label className="text-xs font-semibold text-slate-600">Qty to return:</label>
                                 <input data-testid="supplier-credit-quantity" type="number" step="any" value={creditNoteForm.quantity} onChange={e => setCreditNoteForm({...creditNoteForm, quantity: e.target.value})} className="w-20 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-center" />
                              </div>
                            )}
@@ -409,7 +419,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                 </div>
                 <div className="flex gap-2">
                     <button data-testid="supplier-credit-cancel" onClick={() => setIsAddCreditNoteOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs  ">Cancel</button>
-                    <button data-testid="supplier-credit-save" onClick={handleAddCreditNote} disabled={!creditNoteForm.amount} className="flex-[2] py-3 bg-blue-600 text-white font-black rounded-xl text-xs   active:scale-95 transition-all disabled:opacity-50 shadow-blue">Save Credit Note</button>
+                    <button data-testid="supplier-credit-save" onClick={handleAddCreditNote} disabled={!creditNoteForm.amount} className="flex-[2] py-3 bg-blue-600 text-white font-bold rounded-xl text-xs active:scale-95 transition-all disabled:opacity-50 shadow-blue">Save credit note</button>
                 </div>
             </div>
         </div>

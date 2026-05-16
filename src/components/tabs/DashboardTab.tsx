@@ -9,10 +9,48 @@ import { recordAuditEvent } from '../../utils/auditLog';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
 import { getBusinessSettings } from '../../utils/settings';
+import {
+  Banknote,
+  BarChart3,
+  CalendarCheck,
+  ClipboardCheck,
+  CreditCard,
+  Package,
+  ReceiptText,
+  RotateCcw,
+  ShieldCheck,
+  ShoppingCart,
+  Smartphone,
+  TrendingDown,
+  TrendingUp,
+  TriangleAlert,
+  Users,
+} from 'lucide-react';
 
-const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => (
-  <span className={`material-symbols-outlined ${className}`}>{name}</span>
-);
+const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => {
+  const icons: Record<string, React.ElementType> = {
+    analytics: BarChart3,
+    assignment_turned_in: ClipboardCheck,
+    credit_card: CreditCard,
+    event_available: CalendarCheck,
+    group: Users,
+    inventory: Package,
+    inventory_2: Package,
+    keyboard_return: RotateCcw,
+    payments: Banknote,
+    point_of_sale: ShoppingCart,
+    receipt_long: ReceiptText,
+    smartphone: Smartphone,
+    trending_down: TrendingDown,
+    trending_up: TrendingUp,
+    verified_user: ShieldCheck,
+    warning: TriangleAlert,
+  };
+  const Icon = icons[name] || Package;
+  const sizeMatch = className.match(/text-(?:xs|sm|base|lg|xl|\[(\d+)px\])/);
+  const size = sizeMatch?.[1] ? Number(sizeMatch[1]) : className.includes('text-xs') ? 14 : className.includes('text-sm') ? 16 : className.includes('text-base') ? 18 : className.includes('text-lg') ? 20 : 20;
+  return <Icon className={className} size={size} strokeWidth={2.4} />;
+};
 
 interface DashboardTabProps {
   setActiveTab: (tab: any) => void;
@@ -329,14 +367,14 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   };
 
   const quickActions = [
-    { id: 'REGISTER', label: 'New Sale', icon: 'point_of_sale', color: 'bg-primary' },
+    { id: 'REGISTER', label: 'New sale', icon: 'point_of_sale', color: 'bg-primary' },
     { id: 'REPORTS', label: 'Reports', icon: 'analytics', color: 'bg-violet-600' },
-    { fn: openExpenseModal, label: 'Add Expense', icon: 'payments', color: 'bg-rose-600' },
+    { fn: openExpenseModal, label: 'Add expense', icon: 'payments', color: 'bg-rose-600' },
     { id: 'REFUNDS', label: 'Refund', icon: 'keyboard_return', color: 'bg-amber-500' },
     { id: 'CUSTOMERS', label: 'Customers', icon: 'group', color: 'bg-teal-600' },
     { id: 'INVENTORY', label: 'Inventory', icon: 'inventory_2', color: 'bg-indigo-600' },
-    { fn: handleCloseShift, label: 'Close Shift', icon: 'assignment_turned_in', color: 'bg-blue-600', busy: isClosingShift },
-    { fn: handleCloseDay, label: 'Close Day', icon: 'event_available', color: 'bg-slate-900', busy: isClosingDay },
+    { fn: handleCloseShift, label: 'Close shift', icon: 'assignment_turned_in', color: 'bg-blue-600', busy: isClosingShift },
+    { fn: handleCloseDay, label: 'Close day', icon: 'event_available', color: 'bg-slate-900', busy: isClosingDay },
   ];
 
   return (
@@ -348,7 +386,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 17 ? 'Afternoon' : 'Evening'}, {currentUser?.name?.split(' ')[0]} 👋
         </h2>
         <p className="text-sm text-slate-500 mt-1">
-          {activeBranch?.name || 'Main Shop'} • {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+          {activeBranch?.name || 'Main shop'} • {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
         </p>
       </div>
 
@@ -361,7 +399,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                   <MaterialIcon name="verified_user" className="text-lg" />
                 </span>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">Owner Console</h3>
+                  <h3 className="text-sm font-black text-slate-900">Owner console</h3>
                   <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Auto approvals active</p>
                 </div>
               </div>
@@ -386,7 +424,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 }}
                 className="flex-1 px-4 py-3 bg-slate-50 border border-slate-100 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all"
               >
-                Owner Settings
+                Owner settings
               </button>
               <button
                 onClick={handleBankExcessCash}
@@ -394,7 +432,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 data-testid="owner-cash-sweep"
                 className={`flex-[1.4] px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${shouldSweepCash ? 'bg-emerald-600 text-white shadow-emerald press' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}
               >
-                {isBankingExcess ? 'Banking...' : shouldSweepCash ? `Bank Ksh ${sweepAmount.toLocaleString()}` : 'Cash OK'}
+                {isBankingExcess ? 'Banking...' : shouldSweepCash ? `Bank Ksh ${sweepAmount.toLocaleString()}` : 'Cash ok'}
               </button>
             </div>
           </div>
@@ -404,7 +442,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       {/* KPI Grid — 2x2 */}
       <div className="grid grid-cols-2 gap-4">
         <StatCard
-          label="Total Sales"
+          label="Total sales"
           value={`Ksh ${totalRevenue.toLocaleString()}`}
           sub="Today's revenue"
           trend={12.4}
@@ -420,7 +458,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           color="bg-violet-600"
         />
         <StatCard
-          label="Avg. Sale"
+          label="Avg. sale"
           value={`Ksh ${todaysSalesCount ? Math.round(totalRevenue / todaysSalesCount).toLocaleString() : 0}`}
           sub="Per transaction"
           trend={-2.1}
@@ -428,7 +466,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           color="bg-amber-500"
         />
         <StatCard
-          label="Low Stock"
+          label="Low stock"
           value={lowStockItems.length}
           sub="Items need restocking"
           trend={-lowStockItems.length}
@@ -444,7 +482,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         <div className="lg:col-span-8 bg-white border border-slate-100 rounded-2xl p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-base font-black text-slate-900">Sales Performance</h3>
+              <h3 className="text-base font-black text-slate-900">Sales performance</h3>
               <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Revenue over time</p>
             </div>
             <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
@@ -487,7 +525,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           
           {/* Quick Actions */}
           <div className="bg-white border border-slate-100 rounded-2xl p-5">
-            <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-4">Quick Actions</h3>
+            <h3 className="text-sm font-bold text-slate-700 mb-4">Quick actions</h3>
             <div className="grid grid-cols-3 gap-2">
               {quickActions.map((action, i) => (
                 <button
@@ -499,7 +537,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                   <div className={`w-10 h-10 ${action.color} rounded-xl flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform`}>
                     <MaterialIcon name={action.icon} className="text-white text-lg" />
                   </div>
-                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight text-center">{(action as any).busy ? 'Working...' : action.label}</span>
+                  <span className="text-[11px] font-semibold text-slate-600 text-center leading-tight">{(action as any).busy ? 'Working...' : action.label}</span>
                 </button>
               ))}
             </div>
@@ -513,7 +551,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                   <MaterialIcon name="warning" className="text-white text-sm" />
                 </div>
                 <div>
-                  <h4 className="text-[11px] font-black text-rose-900">Low Stock Alert</h4>
+                  <h4 className="text-[11px] font-black text-rose-900">Low stock alert</h4>
                   <p className="text-[9px] font-medium text-rose-600">{lowStockItems.length} items need restocking</p>
                 </div>
               </div>
@@ -528,7 +566,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 ))}
               </div>
               <button onClick={() => setActiveTab('INVENTORY')} className="w-full mt-3 py-2 text-[10px] font-black text-rose-700 uppercase tracking-widest bg-white border border-rose-200 rounded-xl hover:bg-rose-600 hover:text-white hover:border-rose-600 transition-all">
-                Manage Stock
+                Manage stock
               </button>
             </div>
           )}
@@ -538,8 +576,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       {/* Recent Transactions */}
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="text-sm font-black text-slate-900">Recent Transactions</h3>
-          <button onClick={() => setActiveTab('DOCUMENTS')} className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View All</button>
+          <h3 className="text-sm font-black text-slate-900">Recent transactions</h3>
+          <button onClick={() => setActiveTab('DOCUMENTS')} className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View all</button>
         </div>
         <div className="divide-y divide-slate-50">
           {transactions?.map(tx => (
@@ -559,7 +597,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
               <div className="text-right flex-shrink-0">
                 <p className="text-[13px] font-black text-slate-900">Ksh {tx.total.toLocaleString()}</p>
                 <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${tx.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {tx.status}
+                  {tx.status === 'PAID' ? 'Paid' : tx.status === 'PENDING_REFUND' ? 'Pending refund' : tx.status}
                 </span>
               </div>
             </div>

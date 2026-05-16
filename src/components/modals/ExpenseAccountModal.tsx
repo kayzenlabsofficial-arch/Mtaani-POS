@@ -86,7 +86,7 @@ export default function ExpenseAccountModal({ isOpen, onClose }: ExpenseAccountM
               <BookOpen size={24} />
             </div>
             <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Expense Accounts</h2>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">Expense accounts</h2>
               <p className="text-slate-400 text-xs font-bold  ">Define expense categories</p>
             </div>
           </div>
@@ -99,7 +99,7 @@ export default function ExpenseAccountModal({ isOpen, onClose }: ExpenseAccountM
           {isAdding ? (
             <div className="space-y-6 animate-in slide-in-from-top-4">
               <div>
-                <label className="block text-[11px] font-black text-slate-400   mb-3 ml-1">Account Name</label>
+                <label className="block text-[11px] font-black text-slate-400   mb-3 ml-1">Account name</label>
                 <input 
                   type="text" 
                   value={form.name} 
@@ -111,7 +111,7 @@ export default function ExpenseAccountModal({ isOpen, onClose }: ExpenseAccountM
               </div>
 
               <div>
-                <label className="block text-[11px] font-black text-slate-400   mb-3 ml-1">Description (Optional)</label>
+                <label className="block text-[11px] font-black text-slate-400   mb-3 ml-1">Description (optional)</label>
                 <textarea 
                   value={form.description} 
                   onChange={e => setForm({...form, description: e.target.value})}
@@ -125,7 +125,7 @@ export default function ExpenseAccountModal({ isOpen, onClose }: ExpenseAccountM
                   Cancel
                 </button>
                 <button onClick={handleSave} className="flex-[2] bg-orange-600 text-white px-6 py-4 font-black text-xs   rounded-2xl transition-all shadow-lg shadow-orange-600/20 press flex items-center justify-center gap-2">
-                  <Save size={18} /> {editingId ? 'Update' : 'Create'} Account
+                  <Save size={18} /> {editingId ? 'Update' : 'Create'} account
                 </button>
               </div>
             </div>
@@ -133,7 +133,7 @@ export default function ExpenseAccountModal({ isOpen, onClose }: ExpenseAccountM
             <div className="space-y-3">
               <button onClick={() => setIsAdding(true)} className="w-full p-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 hover:border-orange-400 hover:text-orange-500 transition-all flex items-center justify-center gap-2 group">
                 <Plus size={20} className="group-hover:scale-110 transition-transform" />
-                <span className="font-black text-xs  ">Add New Account</span>
+                <span className="font-black text-xs  ">Add new account</span>
               </button>
 
               {accounts?.map(acc => (

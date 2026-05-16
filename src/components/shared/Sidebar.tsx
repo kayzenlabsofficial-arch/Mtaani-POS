@@ -72,7 +72,7 @@ const navGroups: Array<{
     id: 'system',
     label: 'Control',
     items: [
-      { id: 'ADMIN_PANEL', label: 'Admin Panel', icon: Settings, desc: 'Users and policy', accent: 'text-slate-800 bg-slate-100 border-slate-200', adminOnly: true },
+      { id: 'ADMIN_PANEL', label: 'Admin panel', icon: Settings, desc: 'Users and policy', accent: 'text-slate-800 bg-slate-100 border-slate-200', adminOnly: true },
     ],
   },
 ];
@@ -171,7 +171,7 @@ export default function Sidebar({
             <span className="min-w-0">
               <span className="block stable-title text-[12px] font-black text-slate-900">{currentUser?.name || 'Current user'}</span>
               <span className="mt-0.5 block stable-title text-[9px] font-black uppercase tracking-widest text-slate-400">
-                {currentUser?.role || 'Staff'}
+                {currentUser?.role === 'ADMIN' ? 'Admin' : currentUser?.role === 'CASHIER' ? 'Cashier' : currentUser?.role || 'Staff'}
               </span>
             </span>
             <ChevronRight size={15} className="text-slate-300" />

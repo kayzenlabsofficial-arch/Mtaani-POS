@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Settings as SettingsIcon, ShieldCheck, Users, Plus, Minus, Trash2, KeyRound, Tag as TagIcon, Building2, Save, X, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Palette, Check, DollarSign, Activity, Monitor, Globe, ShieldAlert, SlidersHorizontal, ChevronRight, History } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
-import { hashPassword } from '../../security';
 import { useStore } from '../../store';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { getApiKey } from '../../runtimeConfig';
@@ -127,6 +126,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
             'X-Business-ID': activeBusinessId,
             'X-Branch-ID': activeBranchId,
           },
+          credentials: 'same-origin',
           cache: 'no-store',
         });
         if (!res.ok) throw new Error(`status ${res.status}`);
@@ -153,12 +153,10 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     if (isSaving) return;
     setIsSaving(true);
     try {
-      const hashedPassword = await hashPassword(newUser.password);
-      
       await db.users.add({
         id: crypto.randomUUID(),
         name: newUser.name,
-        password: hashedPassword,
+        password: newUser.password,
         role: newUser.role,
         businessId: activeBusinessId!,
         branchId: newUser.branchId || undefined,
@@ -192,8 +190,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
   const handlePasswordUpdate = async (id: string) => {
     if (!editingPassword || editingPassword.length < 4) return;
-    const hashedPassword = await hashPassword(editingPassword);
-    await db.users.update(id, { password: hashedPassword, updated_at: Date.now() });
+    await db.users.update(id, { password: editingPassword, updated_at: Date.now() });
     setEditingUserId(null);
     setEditingPassword('');
     await db.sync();
@@ -335,7 +332,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
         <div>
-          <h2 className="text-xl font-black text-slate-900">Admin Panel</h2>
+          <h2 className="text-xl font-black text-slate-900">Admin panel</h2>
           <div className="flex min-w-0 flex-wrap items-center gap-2 mt-1">
             <span className="text-[10px] font-bold text-slate-500">{deviceSyncRows.length} terminals</span>
             <span className="text-slate-300">·</span>
@@ -370,35 +367,35 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
          {activeAdminTab === 'USERS' && (
            <div className="space-y-6">
               <AdminSectionHeader
-                title="Staff Management"
+                title="Staff management"
                 description="Manage staff accounts"
                 action={(
                   <button
                     onClick={() => setIsAddingUser(true)}
                     className="bg-slate-950 text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 px-4 py-3 rounded-xl transition-all shadow-sm press whitespace-nowrap"
                   >
-                    <Plus size={16} /> Add Staff
+                    <Plus size={16} /> Add staff
                   </button>
                 )}
               />
 
               {isAddingUser && (
                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm animate-in zoom-in-95">
-                    <h3 className="text-base font-bold text-slate-900 mb-6 flex items-center gap-2"> <Users className="text-blue-600" /> Add Staff Member</h3>
+                    <h3 className="text-base font-bold text-slate-900 mb-6 flex items-center gap-2"> <Users className="text-blue-600" /> Add staff member</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                        <div>
-                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Full Name</label>
+                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Full name</label>
                          <input type="text" className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-xl px-5 py-3 text-sm font-bold text-slate-900 outline-none shadow-sm" placeholder="e.g. Samuel Karanja" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
                        </div>
                        <div>
                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Password</label>
-                         <input type="text" className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-xl px-5 py-3 text-sm font-bold text-slate-900 outline-none shadow-sm" placeholder="Minimum 4 characters" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+                         <input type="password" className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-xl px-5 py-3 text-sm font-bold text-slate-900 outline-none shadow-sm" placeholder="Minimum 4 characters" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
                        </div>
                        <div>
-                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Staff Role</label>
+                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Staff role</label>
                          <div className="flex gap-2">
                             <button onClick={() => setNewUser({...newUser, role: 'CASHIER'})} className={`flex-1 py-4.5 rounded-2xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${newUser.role === 'CASHIER' ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-400 border-transparent hover:border-slate-200'}`}>
-                                Standard Cashier
+                                Standard cashier
                             </button>
                             <button onClick={() => setNewUser({...newUser, role: 'ADMIN'})} className={`flex-1 py-4.5 rounded-2xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${newUser.role === 'ADMIN' ? 'bg-blue-600 text-white border-blue-600 shadow-blue' : 'bg-white text-slate-400 border-transparent hover:border-slate-200'}`}>
                                 Administrator
@@ -407,7 +404,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                        </div>
                        {newUser.role === 'CASHIER' && (
                          <div>
-                           <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Station Assignment</label>
+                           <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Station assignment</label>
                            <SearchableSelect
                              value={newUser.branchId || ''}
                              onChange={(v) => setNewUser({ ...newUser, branchId: v })}
@@ -424,7 +421,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                     </div>
                     <div className="flex gap-4">
                        <button onClick={() => {setIsAddingUser(false); setNewUser({ name: '', password: '', role: 'CASHIER', branchId: '' });}} className="flex-1 py-4 bg-white text-slate-400 font-bold text-[10px] uppercase tracking-widest rounded-xl border-2 border-slate-100 press">Cancel</button>
-                       <button onClick={handleAddUser} disabled={!newUser.name || newUser.password.length < 4 || (newUser.role === 'CASHIER' && !newUser.branchId)} className="flex-[2] grad-blue text-white font-bold text-[10px] uppercase tracking-widest rounded-xl shadow-blue press">Save Staff Member</button>
+                       <button onClick={handleAddUser} disabled={!newUser.name || newUser.password.length < 4 || (newUser.role === 'CASHIER' && !newUser.branchId)} className="flex-[2] grad-blue text-white font-bold text-[10px] uppercase tracking-widest rounded-xl shadow-blue press">Save staff member</button>
                     </div>
                  </div>
               )}
@@ -440,7 +437,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                              <h4 className="stable-title text-sm font-black text-slate-900 leading-tight">{user.name}</h4>
                              <div className="flex min-w-0 items-center gap-2 mt-1 overflow-hidden">
                                 <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest flex-shrink-0 ${user.role === 'ADMIN' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}`}>
-                                   {user.role}
+                                   {user.role === 'ADMIN' ? 'Admin' : user.role === 'CASHIER' ? 'Cashier' : user.role}
                                 </span>
                                 {user.branchId && (
                                    <span className="stable-chip text-[9px] font-black text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full uppercase border border-slate-100">
@@ -462,7 +459,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
                        {editingUserId === user.id && (
                           <div className="absolute inset-0 z-20 bg-white/95 backdrop-blur-sm p-4 flex flex-col justify-center animate-in fade-in duration-300">
-                             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Reset Access Key</h4>
+                             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Reset access key</h4>
                              <input 
                                type="password" 
                                autoFocus
@@ -473,7 +470,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                              />
                              <div className="flex gap-2">
                                 <button onClick={() => setEditingUserId(null)} className="flex-1 py-3.5 bg-slate-100 text-slate-400 font-black text-[10px] uppercase rounded-xl">Cancel</button>
-                                <button onClick={() => handlePasswordUpdate(user.id)} disabled={editingPassword.length < 4} className="flex-[2] grad-blue text-white font-black text-[10px] uppercase rounded-xl shadow-blue disabled:opacity-40">Confirm Update</button>
+                                <button onClick={() => handlePasswordUpdate(user.id)} disabled={editingPassword.length < 4} className="flex-[2] grad-blue text-white font-black text-[10px] uppercase rounded-xl shadow-blue disabled:opacity-40">Confirm update</button>
                              </div>
                           </div>
                        )}
@@ -486,14 +483,14 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
          {activeAdminTab === 'CATEGORIES' && (
            <div className="space-y-6">
               <AdminSectionHeader
-                title="Product Categories"
+                title="Product categories"
                 description="Organize products into fast checkout groups"
                 action={!isAddingCategory ? (
                   <button
                     onClick={() => setIsAddingCategory(true)}
                     className="bg-slate-950 text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 px-4 py-3 rounded-xl transition-all shadow-sm press whitespace-nowrap"
                   >
-                    <Plus size={16} /> New Category
+                    <Plus size={16} /> New category
                   </button>
                 ) : undefined}
               />
@@ -503,7 +500,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                     <div className="space-y-8">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 ml-2">Category Name</label>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 ml-2">Category name</label>
                         <input 
                           type="text" 
                           value={categoryForm.name} 
@@ -515,7 +512,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">Visual Iconography</label>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">Visual icon</label>
                         <div className="grid grid-cols-6 gap-3">
                           {ICON_OPTIONS.map(opt => (
                             <button
@@ -532,7 +529,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
                     <div className="space-y-8">
                       <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">Brand Palette</label>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">Brand palette</label>
                         <div className="grid grid-cols-7 gap-3">
                           {COLOR_OPTIONS.map(opt => (
                             <button
@@ -549,7 +546,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                       <div className="flex gap-4 pt-6">
                         <button onClick={resetCategoryForm} className="flex-1 py-4 bg-white text-slate-400 font-bold text-[10px] uppercase tracking-widest rounded-xl border-2 border-slate-100 press">Cancel</button>
                         <button onClick={handleSaveCategory} className="flex-[2] grad-indigo text-white py-4 font-bold text-[10px] uppercase tracking-widest rounded-xl shadow-indigo press flex items-center justify-center gap-3">
-                          <Save size={18} /> {editingCategoryId ? 'Save Changes' : 'Save Category'}
+                          <Save size={18} /> {editingCategoryId ? 'Save changes' : 'Save category'}
                         </button>
                       </div>
                     </div>
@@ -591,14 +588,14 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
           {activeAdminTab === 'FINANCE' && (
             <div className="space-y-6">
                <AdminSectionHeader
-                 title="Financial Accounts"
+                 title="Financial accounts"
                  description="Bank, M-Pesa, and cash accounts"
                  action={(
                    <button
                      onClick={() => setIsAddingFinAccount(true)}
                      className="bg-slate-950 text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 px-4 py-3 rounded-xl transition-all shadow-sm press whitespace-nowrap"
                    >
-                     <Plus size={16} /> New Account
+                     <Plus size={16} /> New account
                    </button>
                  )}
                />
@@ -607,31 +604,31 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm animate-in zoom-in-95">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                        <div className="lg:col-span-2">
-                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Account Name</label>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Account name</label>
                           <input type="text" value={finAccountForm.name} onChange={e => setFinAccountForm({...finAccountForm, name: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-emerald-500 rounded-xl px-5 py-3 text-sm font-bold text-slate-900 outline-none shadow-sm" placeholder="e.g. Absa Business Current" />
                        </div>
                        <div>
-                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Channel Type</label>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Channel type</label>
                           <SearchableSelect
                             value={finAccountForm.type}
                             onChange={(v) => setFinAccountForm({ ...finAccountForm, type: v as any })}
                             placeholder="Select channel..."
                             options={[
-                              { value: 'BANK', label: 'Commercial Bank', keywords: 'bank' },
-                              { value: 'MPESA', label: 'M-Pesa Utility', keywords: 'mpesa till paybill' },
-                              { value: 'CASH', label: 'Cash Drawer', keywords: 'cash' },
+                              { value: 'BANK', label: 'Commercial bank', keywords: 'bank' },
+                              { value: 'MPESA', label: 'M-Pesa utility', keywords: 'mpesa till paybill' },
+                              { value: 'CASH', label: 'Cash drawer', keywords: 'cash' },
                             ]}
                             buttonClassName="rounded-2xl px-6 py-4.5 font-black text-slate-900 bg-white border-transparent"
                           />
                        </div>
                        <div>
-                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Terminal / Ref Number</label>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Terminal / ref number</label>
                           <input type="text" value={finAccountForm.accountNumber} onChange={e => setFinAccountForm({...finAccountForm, accountNumber: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-emerald-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm" placeholder="Optional identifier" />
                        </div>
                     </div>
                     <div className="flex gap-4">
                        <button onClick={() => setIsAddingFinAccount(false)} className="flex-1 py-4 bg-white text-slate-400 font-bold text-[10px] uppercase tracking-widest rounded-xl border-2 border-slate-100 press">Cancel</button>
-                       <button onClick={handleSaveFinAccount} className="flex-[2] grad-emerald text-white py-4 font-bold text-[10px] uppercase tracking-widest rounded-xl shadow-emerald press">Save Account</button>
+                       <button onClick={handleSaveFinAccount} className="flex-[2] grad-emerald text-white py-4 font-bold text-[10px] uppercase tracking-widest rounded-xl shadow-emerald press">Save account</button>
                     </div>
                  </div>
                )}
@@ -647,7 +644,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                              <div className="stable-row-copy">
                                 <h4 className="stable-title text-sm font-black text-slate-900 leading-tight">{acc.name}</h4>
                                 <div className="flex min-w-0 items-center gap-2 mt-1 overflow-hidden">
-                                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex-shrink-0">{acc.type}</span>
+                                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex-shrink-0">{acc.type === 'MPESA' ? 'M-Pesa' : acc.type === 'BANK' ? 'Bank' : 'Cash'}</span>
                                    <span className="w-1 h-1 rounded-full bg-slate-200" />
                                    {acc.branchId ? (
                                       <span className="stable-chip text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase">
@@ -655,14 +652,14 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                                       </span>
                                    ) : (
                                       <span className="stable-chip text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase">
-                                         All Branches
+                                         All branches
                                       </span>
                                    )}
                                 </div>
                              </div>
                           </div>
                           <div className="text-right stable-actions">
-                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Liquid Balance</p>
+                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Liquid balance</p>
                              <h3 className="text-base sm:text-lg font-black text-slate-900 tabular-nums whitespace-nowrap">Ksh {(acc.balance || 0).toLocaleString()}</h3>
                           </div>
                        </div>
@@ -670,7 +667,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                        {depositState.accountId === acc.id ? (
                           <div className="flex items-center gap-3 mt-2 bg-slate-50 p-4 rounded-2xl border-2 border-slate-100 animate-in zoom-in-95">
                              <div className="flex-1 relative">
-                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300">KSH</span>
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300">Ksh</span>
                                 <input 
                                    type="number" 
                                    autoFocus
@@ -708,7 +705,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                   {financialAccounts?.length === 0 && (
                     <div className="py-16 bg-slate-50 border-2 border-dashed border-slate-100 flex flex-col items-center justify-center text-slate-300">
                        <Landmark size={48} className="mb-4 opacity-20" />
-                       <p className="text-xs font-black uppercase tracking-widest opacity-40">No Financial Accounts Defined</p>
+                       <p className="text-xs font-black uppercase tracking-widest opacity-40">No financial accounts defined</p>
                     </div>
                   )}
                </div>

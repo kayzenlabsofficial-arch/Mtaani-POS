@@ -72,6 +72,7 @@ async function requestBilling<T>(path: string, options: RequestInit = {}): Promi
     const apiKey = await getApiKey();
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
+      credentials: 'same-origin',
       cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',

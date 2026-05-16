@@ -365,7 +365,7 @@ export default function CustomersTab() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-white border border-slate-100 rounded-2xl p-5">
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Invoices & Credit Sales</p>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Invoices & credit sales</p>
             <p className="text-2xl font-black text-slate-900 tabular-nums">Ksh {totalCreditSales.toLocaleString()}</p>
           </div>
           <div className="bg-white border border-slate-100 rounded-2xl p-5">
@@ -382,7 +382,7 @@ export default function CustomersTab() {
           <section className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm font-black text-slate-900">Customer Statement</h3>
+                <h3 className="text-sm font-black text-slate-900">Customer statement</h3>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Invoices, credit sales, and payments</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -391,7 +391,7 @@ export default function CustomersTab() {
                   onClick={() => setStatementDateMode('ALL')}
                   className={`h-9 px-3 rounded-xl border text-[9px] font-black uppercase tracking-widest ${statementDateMode === 'ALL' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}
                 >
-                  All Dates
+                  All dates
                 </button>
                 <button
                   type="button"
@@ -444,7 +444,7 @@ export default function CustomersTab() {
           </section>
 
           <aside className="bg-white border border-slate-100 rounded-2xl p-5 h-fit">
-            <h3 className="text-sm font-black text-slate-900 mb-1">Clear Balance</h3>
+            <h3 className="text-sm font-black text-slate-900 mb-1">Clear balance</h3>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Record full or partial customer payment</p>
             <div className="space-y-3">
               <input
@@ -461,7 +461,7 @@ export default function CustomersTab() {
               >
                 <option value="CASH">Cash</option>
                 <option value="MPESA">M-Pesa</option>
-                <option value="PDQ">Card Machine</option>
+                <option value="PDQ">Card machine</option>
                 <option value="BANK">Bank</option>
                 <option value="CHEQUE">Cheque</option>
               </select>
@@ -477,7 +477,7 @@ export default function CustomersTab() {
                 className="w-full h-12 rounded-xl bg-emerald-600 text-white font-black text-[10px] uppercase tracking-widest disabled:opacity-40 flex items-center justify-center gap-2 shadow-green"
               >
                 {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                {Number(paymentForm.amount) >= statementCustomer.balance ? 'Clear Balance' : 'Record Payment'}
+                {Number(paymentForm.amount) >= statementCustomer.balance ? 'Clear balance' : 'Record payment'}
               </button>
             </div>
           </aside>
@@ -509,7 +509,7 @@ export default function CustomersTab() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
-          <h2 className="text-xl font-black text-slate-900">Client Directory</h2>
+          <h2 className="text-xl font-black text-slate-900">Client directory</h2>
           <div className="flex items-center gap-3 mt-1">
             <span className="text-[10px] font-bold text-slate-500">{activeClients} clients</span>
             <span className="text-slate-300">·</span>
@@ -526,7 +526,7 @@ export default function CustomersTab() {
           onClick={openAddCustomer}
           className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
         >
-          <Plus size={18} /> Add New Client
+          <Plus size={18} /> Add new client
         </button>
       </div>
 
@@ -659,8 +659,8 @@ function CustomerProfileModal({
                      <User size={24} />
                    </div>
                    <div>
-                     <h2 className="text-xl font-black text-slate-900 tracking-tight">{editingCustomer ? 'Client Profile' : 'New Client'}</h2>
-                     <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">CRM Record Management</p>
+                     <h2 className="text-xl font-black text-slate-900 tracking-tight">{editingCustomer ? 'Client profile' : 'New client'}</h2>
+                     <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">CRM record management</p>
                    </div>
                  </div>
                  {editingCustomer && isAdmin && (
@@ -672,18 +672,18 @@ function CustomerProfileModal({
 
               <div className="space-y-6 mb-10">
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Legal Full Name</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Legal full name</label>
                     <input type="text" value={customerForm.name} onChange={e => setCustomerForm({...customerForm, name: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="e.g. Samuel Maina" />
                  </div>
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Mobile Contact</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Mobile contact</label>
                     <div className="relative">
                        <input type="text" value={customerForm.phone} onChange={e => setCustomerForm({...customerForm, phone: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl pl-14 pr-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="0700 000 000" />
                        <Phone className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     </div>
                  </div>
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Email Address</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Email address</label>
                     <div className="relative">
                        <input type="email" value={customerForm.email} onChange={e => setCustomerForm({...customerForm, email: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl pl-14 pr-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="client@example.com" />
                        <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -694,7 +694,7 @@ function CustomerProfileModal({
                     <div className="pt-8 mt-4 border-t-2 border-slate-50">
                        <div className="flex items-center justify-between mb-4">
                           <h4 className="text-[11px] font-black text-indigo-600 uppercase tracking-[0.1em] flex items-center gap-2">
-                             <Smartphone size={14} /> Repay Debt via M-Pesa
+                             <Smartphone size={14} /> Repay debt via M-Pesa
                           </h4>
                           <span className="text-[10px] font-black text-rose-500 bg-rose-50 px-3 py-1 rounded-full">Ksh {editingCustomer.balance.toLocaleString()} Owed</span>
                        </div>
@@ -715,7 +715,7 @@ function CustomerProfileModal({
                               onClick={onMpesaRepayment}
                               className="px-6 py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-emerald active:scale-95 transition-all flex items-center gap-2"
                             >
-                              Send Request
+                              Send request
                             </button>
                          </div>
                        ) : (
@@ -727,7 +727,7 @@ function CustomerProfileModal({
                             )}
                             <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
                                {mpesaState === 'PUSHING' ? 'Sending M-Pesa request...' : 
-                                mpesaState === 'POLLING' ? 'Awaiting Customer PIN...' : 
+                                mpesaState === 'POLLING' ? 'Awaiting customer PIN...' : 
                                 mpesaState === 'SUCCESS' ? 'Payment received!' : 'Working...'}
                             </span>
                          </div>
@@ -742,7 +742,7 @@ function CustomerProfileModal({
                  </button>
                  <button onClick={onSave} disabled={!customerForm.name || isSaving} className="flex-[2] grad-blue text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-blue press flex items-center justify-center gap-3">
                    {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                   {isSaving ? 'Saving...' : 'Save Customer'}
+                   {isSaving ? 'Saving...' : 'Save customer'}
                  </button>
               </div>
            </div>

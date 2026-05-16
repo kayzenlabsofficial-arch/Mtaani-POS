@@ -68,6 +68,8 @@ export default function AIAssistant({ activeBusinessId, activeBranchId, currentU
           'X-User-ID': currentUser?.id || 'unknown',
           'X-User-Name': currentUser?.name || 'Unknown user',
         },
+        credentials: 'same-origin',
+        cache: 'no-store',
         body: JSON.stringify({ question: prompt }),
       });
       const data: any = await res.json().catch(() => ({}));

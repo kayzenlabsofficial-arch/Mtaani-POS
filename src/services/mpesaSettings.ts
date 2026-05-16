@@ -30,6 +30,7 @@ export async function saveBranchMpesaSettings(input: SaveMpesaSettingsInput): Pr
         'X-Business-ID': input.businessId,
         'X-Branch-ID': input.branchId,
       },
+      credentials: 'same-origin',
       cache: 'no-store',
       body: JSON.stringify(input),
     });

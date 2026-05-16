@@ -258,7 +258,7 @@ export default function PurchasesTab() {
           onClick={() => { setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); setIsPOModalOpen(true); }}
           className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
         >
-          <Plus size={18} /> New Order
+          <Plus size={18} /> New order
         </button>
       </div>
 
@@ -306,7 +306,7 @@ export default function PurchasesTab() {
                      {isRecv ? <PackagePlus size={18} /> : (isAppr ? <CheckSquare size={18} /> : <ClipboardList size={18} />)}
                    </div>
                    <div className="min-w-0 flex-1">
-                     <h4 className="text-sm font-black text-slate-900 truncate leading-tight">{supplier?.company || 'Unknown Supplier'}</h4>
+                     <h4 className="text-sm font-black text-slate-900 truncate leading-tight">{supplier?.company || 'Unknown supplier'}</h4>
                      <div className="flex items-center gap-2 mt-1 flex-wrap">
                        <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-100 flex items-center gap-1">
                          <FileText size={11} /> {po.poNumber || po.id}
@@ -353,14 +353,14 @@ export default function PurchasesTab() {
                    <ClipboardList size={24} />
                  </div>
                  <div>
-                   <h2 className="text-xl font-black text-slate-900 tracking-tight">{selectedPOToEdit ? 'Edit Purchase Order' : 'New Purchase Order'}</h2>
+                   <h2 className="text-xl font-black text-slate-900 tracking-tight">{selectedPOToEdit ? 'Edit purchase order' : 'New purchase order'}</h2>
                    <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Order stock from a supplier</p>
                  </div>
               </div>
 
               <div className="space-y-6 mb-10">
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Select Supplier</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Select supplier</label>
                     <SearchableSelect
                       value={poForm.supplierId}
                       onChange={(v) => setPoForm({ supplierId: v })}
@@ -376,7 +376,7 @@ export default function PurchasesTab() {
                  </div>
                  
                  <div className="bg-slate-50 rounded-[2rem] p-6 border-2 border-slate-100 space-y-4">
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Choose Products</h4>
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Choose products</h4>
                     <div className="relative group">
                        <input 
                            type="text" 
@@ -407,7 +407,7 @@ export default function PurchasesTab() {
                           </div>
                           <div className="flex-[2] relative">
                              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300">KSH</span>
-                             <input data-testid="purchase-item-cost" type="number" placeholder="Unit Cost" value={poItemInput.cost} onChange={e => setPoItemInput({...poItemInput, cost: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl pl-12 pr-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" />
+                             <input data-testid="purchase-item-cost" type="number" placeholder="Unit cost" value={poItemInput.cost} onChange={e => setPoItemInput({...poItemInput, cost: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl pl-12 pr-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" />
                           </div>
                           <button data-testid="purchase-add-item" onClick={handleAddPoItem} className="w-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-indigo active:scale-95 transition-all">
                              <Plus size={24}/>
@@ -418,7 +418,7 @@ export default function PurchasesTab() {
 
                  {poItems.length > 0 && (
                     <div className="space-y-3">
-                       <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Order Line Items</h3>
+                       <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Order line items</h3>
                        <div className="space-y-2 max-h-[300px] overflow-y-auto no-scrollbar">
                           {poItems.map((item, idx) => (
                              <div key={idx} className="flex items-center justify-between bg-white border-2 border-slate-50 p-4 rounded-2xl shadow-sm group">
@@ -438,7 +438,7 @@ export default function PurchasesTab() {
                           ))}
                        </div>
                        <div className="flex justify-between items-center px-6 py-5 bg-indigo-50 rounded-2xl border-2 border-indigo-100 mt-4">
-                          <span className="text-[11px] font-black text-indigo-900 uppercase tracking-widest">Total Valuation</span>
+                          <span className="text-[11px] font-black text-indigo-900 uppercase tracking-widest">Total valuation</span>
                           <span className="text-xl font-black text-indigo-600">Ksh {poItems.reduce((acc, item) => acc + (item.expectedQuantity * item.unitCost), 0).toLocaleString()}</span>
                        </div>
                     </div>
@@ -451,7 +451,7 @@ export default function PurchasesTab() {
                  </button>
                  <button data-testid="purchase-save-order" onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0 || isSaving} className="flex-[2] grad-indigo text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-indigo press flex items-center justify-center gap-3">
                    {selectedPOToEdit ? <Save size={18}/> : <PackagePlus size={18}/>}
-                   {isSaving ? 'Saving...' : selectedPOToEdit ? 'Save Changes' : 'Create Order'}
+                   {isSaving ? 'Saving...' : selectedPOToEdit ? 'Save changes' : 'Create order'}
                  </button>
               </div>
            </div>
@@ -470,19 +470,19 @@ export default function PurchasesTab() {
                    <PackagePlus size={24} />
                  </div>
                  <div>
-                   <h2 className="text-xl font-black text-slate-900 tracking-tight">Receive Stock Shipment</h2>
-                   <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Inventory Intake Confirmation</p>
+                   <h2 className="text-xl font-black text-slate-900 tracking-tight">Receive stock shipment</h2>
+                   <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Inventory intake confirmation</p>
                  </div>
               </div>
 
               <div className="space-y-6 mb-10">
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Supplier Invoice Number</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Supplier invoice number</label>
                     <input data-testid="purchase-receive-invoice" type="text" value={receiveInvoices[selectedPO.id] || ''} onChange={e => setReceiveInvoices({...receiveInvoices, [selectedPO.id]: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 focus:bg-white rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="e.g. INV/2026/001" />
                  </div>
 
                  <div className="space-y-3">
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Line Item Verification</h3>
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Line item verification</h3>
                     <div className="space-y-4">
                         {selectedPO.items.map((item, idx) => (
                            <div key={idx} className="bg-slate-50 border-2 border-slate-100 p-5 rounded-[2rem] shadow-inner">
@@ -492,7 +492,7 @@ export default function PurchasesTab() {
                                     <div className="text-[9px] font-bold text-slate-400 uppercase mt-1 tracking-tight">Expect: {item.expectedQuantity} @ Ksh {item.unitCost}</div>
                                  </div>
                                  <div className="w-24">
-                                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Actual Recv</label>
+                                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Actual received</label>
                                     <input 
                                         type="number" 
                                         data-testid={`purchase-receive-qty-${item.productId}`}
@@ -504,7 +504,7 @@ export default function PurchasesTab() {
                               </div>
                               <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-200/50">
                                  <div>
-                                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Verified Unit Cost</label>
+                                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Verified unit cost</label>
                                     <input 
                                         type="number" 
                                         data-testid={`purchase-receive-cost-${item.productId}`}
@@ -514,7 +514,7 @@ export default function PurchasesTab() {
                                     />
                                  </div>
                                  <div>
-                                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Update Sell Price</label>
+                                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Update sell price</label>
                                     <input 
                                         type="number" 
                                         data-testid={`purchase-receive-sell-${item.productId}`}
@@ -537,7 +537,7 @@ export default function PurchasesTab() {
                  </button>
                  <button data-testid="purchase-confirm-arrival" onClick={handleReceivePO} disabled={!receiveInvoices[selectedPO.id] || isSaving} className="flex-[2] bg-emerald-600 text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-emerald press flex items-center justify-center gap-3">
                    {isSaving ? <Loader2 size={18} className="animate-spin" /> : <CheckSquare size={18}/>}
-                   {isSaving ? 'Saving...' : 'Confirm Goods Received'}
+                   {isSaving ? 'Saving...' : 'Confirm goods received'}
                  </button>
               </div>
            </div>

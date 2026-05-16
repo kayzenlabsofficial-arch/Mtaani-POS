@@ -9,8 +9,5 @@ export async function getRuntimeConfig(): Promise<RuntimeConfig> {
 
 export async function getApiKey(): Promise<string> {
   const { apiKey } = await getRuntimeConfig();
-  if (!apiKey) {
-    throw new Error('Please sign in again.');
-  }
-  return apiKey;
+  return apiKey || '';
 }

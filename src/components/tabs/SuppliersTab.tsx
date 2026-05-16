@@ -43,7 +43,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
               <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
                   <Truck size={32} className="text-slate-300" />
               </div>
-              <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Loading suppliers...</p>
+              <p className="text-sm font-medium text-slate-500">Loading suppliers...</p>
           </div>
       );
   }
@@ -145,7 +145,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
           onClick={openAddSupplier}
           className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
         >
-          <Plus size={18} /> Add New Supplier
+          <Plus size={18} /> Add new supplier
         </button>
       </div>
 
@@ -192,7 +192,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
                  </div>
                  <div className="stable-actions flex items-center gap-2">
                    <div className="text-right">
-                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Amount Owed</p>
+                     <p className="text-[11px] font-medium text-slate-500">Amount owed</p>
                      <p className={`text-sm font-black tabular-nums whitespace-nowrap ${supplier.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                        Ksh {supplier.balance.toLocaleString()}
                      </p>
@@ -204,9 +204,9 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
                        useStore.getState().setPaymentSupplierId(supplier.id);
                        if (setActiveTab) setActiveTab('SUPPLIER_PAYMENTS');
                      }}
-                     className="px-3 py-2 rounded-xl bg-slate-50 text-slate-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-95 font-black text-[9px] uppercase tracking-widest whitespace-nowrap border border-slate-100 shrink-0"
+                     className="px-3 py-2 rounded-xl bg-slate-50 text-slate-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-95 font-bold text-xs whitespace-nowrap border border-slate-100 shrink-0"
                    >
-                     Pay
+                     Clear
                    </button>
                    <ChevronRight size={18} className="hidden sm:block text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
                  </div>
@@ -219,7 +219,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
                <Truck size={36} />
              </div>
              <p className="text-slate-500 font-black text-base">No suppliers found</p>
-             <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Add your first supplier to track purchases</p>
+             <p className="text-sm text-slate-500 mt-1 font-medium">Add your first supplier to track purchases</p>
            </div>
          )}
       </div>
@@ -237,8 +237,8 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
                      <Briefcase size={22} />
                    </div>
                    <div>
-                     <h2 className="text-xl font-black text-slate-900 tracking-tight">{editingSupplier ? 'Supplier Details' : 'New Supplier'}</h2>
-                     <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Supplier list</p>
+                     <h2 className="text-xl font-black text-slate-900 tracking-tight">{editingSupplier ? 'Supplier details' : 'New supplier'}</h2>
+                     <p className="text-xs font-medium text-slate-500 mt-0.5">Supplier list</p>
                    </div>
                  </div>
                  {editingSupplier && isAdmin && (
@@ -250,11 +250,11 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
 
               <div className="space-y-6 mb-10">
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Company Name</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">Company name</label>
                     <input type="text" value={supplierForm.company} onChange={e => setSupplierForm({...supplierForm, company: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="e.g. Fresh Farms Ltd" />
                  </div>
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Contact Person</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">Contact person</label>
                     <div className="relative">
                        <input type="text" value={supplierForm.name} onChange={e => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl pl-14 pr-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="Person to call" />
                        <User size={18} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -262,33 +262,33 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
                  </div>
                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Mobile</label>
+                        <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">Mobile</label>
                         <input type="text" value={supplierForm.phone} onChange={e => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="07..." />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Email</label>
+                        <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">Email</label>
                         <input type="email" value={supplierForm.email} onChange={e => setSupplierForm({...supplierForm, email: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="@" />
                     </div>
                  </div>
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Office Address</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">Office address</label>
                     <div className="relative">
                        <input type="text" value={supplierForm.address} onChange={e => setSupplierForm({...supplierForm, address: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl pl-14 pr-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="Street, Building, City" />
                        <MapPin size={18} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" />
                     </div>
                  </div>
                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">KRA Tax PIN</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">KRA tax PIN</label>
                     <input type="text" value={supplierForm.kraPin} onChange={e => setSupplierForm({...supplierForm, kraPin: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm font-mono" placeholder="A00..." />
                  </div>
               </div>
 
               <div className="flex gap-4 mt-auto pt-6 border-t border-slate-50">
-                 <button onClick={() => setIsSupplierModalOpen(false)} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
+                 <button onClick={() => setIsSupplierModalOpen(false)} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-bold text-sm rounded-2xl transition-all press">
                    Cancel
                  </button>
-                 <button onClick={handleSaveSupplier} disabled={!supplierForm.company} className="flex-[2] bg-slate-900 text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-xl press">
-                   Save Supplier
+                 <button onClick={handleSaveSupplier} disabled={!supplierForm.company} className="flex-[2] bg-slate-900 text-white px-8 py-5 font-bold text-sm rounded-2xl disabled:opacity-40 transition-all shadow-xl press">
+                   Save supplier
                  </button>
               </div>
            </div>

@@ -53,11 +53,11 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
          <div id="printable-content" className="print-receipt-80mm">
            <div className="p-6 bg-white sm:bg-slate-50 border-b border-slate-100 flex flex-col items-center">
                <ReceiptText size={32} className="text-slate-400 mb-2 no-print" />
-               <h2 className="text-lg font-black text-slate-900  tracking-tighter">Mtaani POS Receipt</h2>
+               <h2 className="text-lg font-black text-slate-900  tracking-tighter">Mtaani POS receipt</h2>
                <p className="text-[10px] font-bold text-slate-500 ">Transaction ID: {selectedReceipt.id.split('-')[0].toUpperCase()}</p>
                <p className="text-[10px] font-bold text-slate-400 mt-0.5">{new Date(selectedReceipt.timestamp).toLocaleString()}</p>
                <div className={`mt-3 text-[10px] font-black px-2 py-0.5 rounded border  no-print ${selectedReceipt.status === 'PAID' ? 'bg-green-100 text-green-700 border-green-200' : selectedReceipt.status === 'QUOTE' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-orange-100 text-orange-700 border-orange-200'}`}>
-                  {selectedReceipt.status}
+                  {selectedReceipt.status === 'PAID' ? 'Paid' : selectedReceipt.status === 'QUOTE' ? 'Quote' : selectedReceipt.status === 'PARTIAL_REFUND' ? 'Part refund' : selectedReceipt.status}
                </div>
            </div>
            
@@ -100,17 +100,17 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
                    {selectedReceipt.amountTendered !== undefined && selectedReceipt.paymentMethod === 'CASH' && (
                      <>
                         <div className="flex justify-between items-center">
-                           <span className="text-xs font-bold text-slate-500  ">Cash Tendered</span>
+                           <span className="text-xs font-bold text-slate-500  ">Cash tendered</span>
                            <span className="text-sm font-black text-slate-900">Ksh {selectedReceipt.amountTendered.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between items-center bg-slate-900 text-white px-3 py-2 rounded-xl mt-2 print:bg-white print:text-black print:border print:border-black">
-                           <span className="text-xs font-black  ">Change Due</span>
+                           <span className="text-xs font-black  ">Change due</span>
                            <span className="text-lg font-black tabular-nums">Ksh {(selectedReceipt.amountTendered - selectedReceipt.total).toLocaleString()}</span>
                         </div>
                      </>
                    )}
                    <div className="flex justify-between items-center pt-2">
-                      <span className="text-[10px] font-black text-slate-400  ">Payment Method</span>
+                      <span className="text-[10px] font-black text-slate-400  ">Payment method</span>
                       <span className="text-[10px] font-black text-slate-900 ">{selectedReceipt.paymentMethod}</span>
                    </div>
                    <div className="text-center pt-6 no-print-only">
@@ -152,7 +152,7 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
                 disabled={Object.values(returnQuantities).every(q => q === 0)}
                 className="col-span-2 py-3 bg-red-600 text-white font-black rounded-xl text-xs   disabled:opacity-50 transition-colors active:scale-95 flex items-center justify-center gap-2"
                >
-                 <RotateCcw size={16} /> Confirm Return
+                 <RotateCcw size={16} /> Confirm return
                </button>
             ) : (
                <button 
@@ -160,7 +160,7 @@ export default function ReceiptDetailsModal({ selectedReceipt, setSelectedReceip
                 disabled={selectedReceipt.status !== 'PAID' && selectedReceipt.status !== 'PARTIAL_REFUND'}
                 className="col-span-2 py-3 bg-orange-600 text-white font-black rounded-xl text-xs   disabled:opacity-50 transition-colors active:scale-95 flex items-center justify-center gap-2"
                >
-                 <RotateCcw size={16} /> Return Items
+                 <RotateCcw size={16} /> Return items
                </button>
             )}
          </div>

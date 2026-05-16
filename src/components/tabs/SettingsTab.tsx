@@ -130,13 +130,13 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
-          <h2 className="text-xl font-black text-slate-900">System Settings</h2>
+          <h2 className="text-xl font-black text-slate-900">System settings</h2>
           <div className="flex items-center gap-3 mt-1">
-            <span className="text-[10px] font-bold text-slate-500">Business Info</span>
+            <span className="text-[10px] font-bold text-slate-500">Business info</span>
             <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-emerald-600">Hardware Profile</span>
+            <span className="text-[10px] font-bold text-emerald-600">Hardware profile</span>
             <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-indigo-600">App Version</span>
+            <span className="text-[10px] font-bold text-indigo-600">App version</span>
           </div>
         </div>
       </div>
@@ -147,16 +147,16 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
          <div className="space-y-6">
             <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
                <h3 className="text-base font-bold text-slate-900 mb-6 flex items-center gap-2">
-                  <Building2 className="text-indigo-600" /> Business Info
+                  <Building2 className="text-indigo-600" /> Business info
                </h3>
                <div className="space-y-6">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Business Name</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Business name</label>
                     <input type="text" value={storeSettings.storeName} onChange={e => setStoreSettings({...storeSettings, storeName: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                      <div>
-                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">KRA PIN / Tax ID</label>
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">KRA PIN / tax ID</label>
                        <input type="text" value={storeSettings.krapin} onChange={e => setStoreSettings({...storeSettings, krapin: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" />
                      </div>
                      <div>
@@ -165,7 +165,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                      </div>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Receipt Footer</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Receipt footer</label>
                     <input type="text" value={storeSettings.receiptFooter} onChange={e => setStoreSettings({...storeSettings, receiptFooter: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" />
                   </div>
                   
@@ -175,7 +175,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                     className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl press flex items-center justify-center gap-3 disabled:opacity-50 mt-4"
                   >
                      {isUpdating ? <RefreshCcw size={18} className="animate-spin" /> : <Save size={18} />}
-                     Save Settings
+                     Save settings
                   </button>
                </div>
             </div>
@@ -184,7 +184,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
             <div className="bg-slate-900 p-8 rounded-[2.5rem] border-2 border-slate-800 text-white relative overflow-hidden group">
                <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-6">
                   <div>
-                      <h4 className="text-base font-bold leading-tight">Software Updates</h4>
+                      <h4 className="text-base font-bold leading-tight">Software updates</h4>
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
                         Status: {needRefresh ? 'Update ready' : 'App is up to date'}
                       </p>
@@ -195,7 +195,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                     className={`flex items-center gap-3 px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all press shadow-lg ${needRefresh ? 'bg-indigo-600 text-white shadow-indigo' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}
                   >
                     {isUpdating ? <RefreshCcw size={16} className="animate-spin" /> : <Download size={16} />}
-                    {needRefresh ? 'Update Now' : 'Check for Updates'}
+                    {needRefresh ? 'Update now' : 'Check for updates'}
                   </button>
                </div>
                <RefreshCcw className="absolute -right-8 -bottom-8 w-40 h-40 text-slate-800 opacity-20 group-hover:rotate-45 transition-transform duration-1000" />
@@ -206,7 +206,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
          <div className="space-y-6">
             <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
                <h3 className="text-base font-bold text-slate-900 mb-6 flex items-center gap-2">
-                  <Terminal className="text-indigo-600" /> Hardware Settings
+                  <Terminal className="text-indigo-600" /> Hardware settings
                </h3>
                
                <div className="flex bg-slate-50 p-2 rounded-2xl border-2 border-slate-100 mb-6">
@@ -228,36 +228,36 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                <div className="space-y-6 min-h-[300px]">
                   {openHardwareSub === 'SCANNER' && (
                     <div className="animate-in slide-in-from-bottom-2">
-                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Scanner Mode</label>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Scanner mode</label>
                        <select value={hardwareProfile.scannerMode} onChange={e => setHardwareProfile({ ...hardwareProfile, scannerMode: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm mb-6">
-                         <option value="KEYBOARD_WEDGE">Standard Scanner (USB)</option>
-                         <option value="CAMERA">Use Camera</option>
+                         <option value="KEYBOARD_WEDGE">Standard scanner (USB)</option>
+                         <option value="CAMERA">Use camera</option>
                        </select>
                        
-                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Scanner Speed (ms)</label>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Scanner speed (ms)</label>
                        <input type="number" value={hardwareProfile.scannerDebounceMs} onChange={e => setHardwareProfile({ ...hardwareProfile, scannerDebounceMs: Number(e.target.value) || 120 })} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm" />
                     </div>
                   )}
 
                   {openHardwareSub === 'PRINTER' && (
                     <div className="animate-in slide-in-from-bottom-2">
-                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Printer Name</label>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Printer name</label>
                        <input type="text" value={hardwareProfile.windowsDriverName} onChange={e => setHardwareProfile({ ...hardwareProfile, windowsDriverName: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm mb-6" placeholder="e.g. EPSON TM-T20X" />
                        
-                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Paper Size</label>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Paper size</label>
                        <select value={hardwareProfile.printerType} onChange={e => setHardwareProfile({ ...hardwareProfile, printerType: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm">
-                         <option value="THERMAL_80">Standard Thermal 80mm</option>
-                         <option value="A4">A4 Office / Laser</option>
+                         <option value="THERMAL_80">Standard thermal 80mm</option>
+                         <option value="A4">A4 office / laser</option>
                        </select>
                     </div>
                   )}
 
                   {openHardwareSub === 'DRAWER' && (
                     <div className="animate-in slide-in-from-bottom-2">
-                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Cash Drawer</label>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Cash drawer</label>
                        <select value={hardwareProfile.cashDrawerTrigger} onChange={e => setHardwareProfile({ ...hardwareProfile, cashDrawerTrigger: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm">
-                         <option value="RECEIPT_PRINT">Open on Sale</option>
-                         <option value="MANUAL_ONLY">Admin Only</option>
+                         <option value="RECEIPT_PRINT">Open on sale</option>
+                         <option value="MANUAL_ONLY">Admin only</option>
                        </select>
                     </div>
                   )}
@@ -267,13 +267,13 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                  onClick={saveHardware}
                  className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-indigo press flex items-center justify-center gap-3 mt-8"
                >
-                 <Usb size={18} /> Save Hardware Settings
+                 <Usb size={18} /> Save hardware settings
                </button>
             </div>
 
             <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
                <h3 className="text-base font-bold text-slate-900 mb-6 flex items-center gap-2">
-                  <ShieldCheck className="text-emerald-600" /> Owner Mode
+                  <ShieldCheck className="text-emerald-600" /> Owner mode
                </h3>
 
                <div className="space-y-4">
@@ -283,7 +283,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                     className={`w-full flex items-center justify-between gap-4 p-4 rounded-2xl border-2 transition-all ${ownerSettings.ownerModeEnabled ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-slate-50 border-slate-100 text-slate-600'}`}
                   >
                     <div className="text-left">
-                      <p className="text-[10px] font-black uppercase tracking-widest">Solo Operator</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest">Solo operator</p>
                       <p className="text-xs font-bold mt-1">{ownerSettings.ownerModeEnabled ? 'Owner flow active' : 'Standard staff flow'}</p>
                     </div>
                     <div className={`w-12 h-7 rounded-full p-1 flex transition-all ${ownerSettings.ownerModeEnabled ? 'bg-emerald-600 justify-end' : 'bg-slate-300 justify-start'}`}>
@@ -300,7 +300,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                     >
                       <div className="flex items-center gap-2 mb-2">
                         {ownerSettings.autoApproveOwnerActions ? <Check size={16} /> : <X size={16} />}
-                        <p className="text-[9px] font-black uppercase tracking-widest">Auto Approve</p>
+                        <p className="text-[9px] font-black uppercase tracking-widest">Auto approve</p>
                       </div>
                       <p className="text-xs font-bold leading-snug">Owner expenses, returns, and orders</p>
                     </button>
@@ -313,7 +313,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                     >
                       <div className="flex items-center gap-2 mb-2">
                         {ownerSettings.cashSweepEnabled ? <Check size={16} /> : <X size={16} />}
-                        <p className="text-[9px] font-black uppercase tracking-widest">Cash Sweep</p>
+                        <p className="text-[9px] font-black uppercase tracking-widest">Cash sweep</p>
                       </div>
                       <p className="text-xs font-bold leading-snug">Dashboard banking shortcut</p>
                     </button>
@@ -321,7 +321,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
 
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Drawer Limit</label>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Drawer limit</label>
                       <input
                         type="number"
                         value={ownerSettings.cashDrawerLimit}
@@ -330,7 +330,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Keep Float</label>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Keep float</label>
                       <input
                         type="number"
                         value={ownerSettings.cashFloatTarget}
@@ -346,7 +346,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                     className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-emerald press flex items-center justify-center gap-3 disabled:opacity-50"
                   >
                     {isUpdating ? <RefreshCcw size={16} className="animate-spin" /> : <Save size={16} />}
-                    Save Owner Mode
+                    Save owner mode
                   </button>
                </div>
             </div>
@@ -363,7 +363,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                     className={`w-full flex items-center justify-between gap-4 p-4 rounded-2xl border-2 transition-all ${aiSettings.aiAssistantEnabled ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-slate-50 border-slate-100 text-slate-600'}`}
                   >
                     <div className="text-left">
-                      <p className="text-[10px] font-black uppercase tracking-widest">POS AI Access</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest">POS AI access</p>
                       <p className="text-xs font-bold mt-1">{aiSettings.aiAssistantEnabled ? 'Floating assistant enabled' : 'Assistant disabled for staff'}</p>
                     </div>
                     <div className={`w-12 h-7 rounded-full p-1 flex transition-all ${aiSettings.aiAssistantEnabled ? 'bg-blue-600 justify-end' : 'bg-slate-300 justify-start'}`}>
@@ -372,7 +372,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                   </button>
 
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Daily Requests Per User</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Daily requests per user</label>
                     <input
                       type="number"
                       min={1}
@@ -389,7 +389,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                     className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-blue press flex items-center justify-center gap-3 disabled:opacity-50"
                   >
                     {isUpdating ? <RefreshCcw size={16} className="animate-spin" /> : <Save size={16} />}
-                    Save AI Limit
+                    Save AI limit
                   </button>
                </div>
             </div>
@@ -399,9 +399,9 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                   <ShieldAlert size={32} />
                </div>
                <div>
-                  <h4 className="text-base font-black text-rose-900 leading-tight">Safety Settings</h4>
+                  <h4 className="text-base font-black text-rose-900 leading-tight">Safety settings</h4>
                   <p className="text-[10px] font-bold text-rose-600/60 uppercase tracking-widest mt-1">
-                    Environment: {isAdmin ? 'Root Administrator' : 'Standard User'} Access
+                    Environment: {isAdmin ? 'Root administrator' : 'Standard user'} access
                   </p>
                </div>
             </div>

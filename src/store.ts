@@ -135,14 +135,20 @@ export const useStore = create<POSState>()(
     }),
     {
       name: 'mtaani-pos-storage',
-      version: 3,
+      version: 5,
       migrate: (persistedState) => {
         const state = persistedState && typeof persistedState === 'object' ? persistedState as Partial<POSState> : {};
-        return { ...state, currentUser: sanitizeUser(state.currentUser || null) } as any;
+        return {
+          ...state,
+          currentUser: null,
+          authToken: null,
+          isAdmin: false,
+          isManager: false,
+          isSystemAdmin: false,
+        } as any;
       },
       partialize: (state) => ({
         currentUser: sanitizeUser(state.currentUser),
-        authToken: state.authToken,
         isAdmin: state.isAdmin,
         isManager: state.isManager,
         isSystemAdmin: state.isSystemAdmin,

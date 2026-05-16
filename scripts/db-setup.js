@@ -12,14 +12,13 @@
  *   node scripts/db-setup.js [--local|--remote] [--api-secret=your-secret]
  *
  * Environment variables:
- *   - VITE_API_SECRET: API secret for authentication (defaults to .env value)
+ *   - API_SECRET or MTAANI_API_SECRET: service API secret for authentication
  *   - API_BASE_URL: Base URL for API calls (defaults to http://localhost:8788)
  */
 
 // No file system operations needed for this script
 
 // Default configuration
-const DEFAULT_API_SECRET = 'mtaani-pos-secure-token-1734955200-42761';
 const DEFAULT_API_BASE_URL = 'http://localhost:8788';
 
 // Parse command line arguments
@@ -33,8 +32,14 @@ const apiUrlArg = args.find(arg => arg.startsWith('--api-url='))?.split('=')[1];
 const API_BASE_URL = apiUrlArg || (isLocal ? 'http://localhost:8788' : 
     (isRemote ? 'https://your-app.pages.dev' : DEFAULT_API_BASE_URL));
 
-// Get API secret from environment or arguments
-const API_SECRET = apiSecretArg || process.env.VITE_API_SECRET || DEFAULT_API_SECRET;
+// Get API secret from environment or arguments. There is deliberately no default.
+const API_SECRET = apiSecretArg || process.env.API_SECRET || process.env.MTAANI_API_SECRET || '';
+
+function requireApiSecret() {
+  if (!API_SECRET) {
+    throw new Error('Missing API secret. Pass --api-secret=... or set API_SECRET / MTAANI_API_SECRET.');
+  }
+}
 
 // Seed data configuration
 const SEED_DATA = {
@@ -149,9 +154,10 @@ async function seedTable(tableName, data) {
 
 // Main setup function
 async function setupDatabase() {
+  requireApiSecret();
   console.log('🚀 Starting MTAANI POS Database Setup');
   console.log(`📊 API Base URL: ${API_BASE_URL}`);
-  console.log(`🔑 Using API Secret: ${API_SECRET.substring(0, 10)}...`);
+  console.log('🔑 Service API secret provided: yes');
   console.log('---');
 
   // Check API health

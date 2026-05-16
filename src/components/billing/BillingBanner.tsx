@@ -132,7 +132,7 @@ export default function BillingBanner({ activeBusinessId, currentUser }: Props) 
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-blue-700/20 transition-all hover:bg-blue-800 sm:flex-none"
               >
                 <Smartphone size={15} />
-                Pay Software
+                Pay software
               </button>
             ) : (
               <span className="rounded-xl bg-white px-4 py-3 text-[10px] font-black uppercase tracking-widest text-blue-700">Ask admin to pay</span>
@@ -153,7 +153,7 @@ export default function BillingBanner({ activeBusinessId, currentUser }: Props) 
           <div className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 bg-blue-700 px-6 py-5 text-white">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-100">Software Billing</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-100">Software billing</p>
                 <h3 className="mt-1 text-xl font-black">Pay {money(balance)}</h3>
               </div>
               <button onClick={() => setIsPayOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20">
@@ -177,7 +177,7 @@ export default function BillingBanner({ activeBusinessId, currentUser }: Props) 
               </div>
 
               <label className="block">
-                <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Customer Phone</span>
+                <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Customer phone</span>
                 <input
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
@@ -216,7 +216,7 @@ export default function BillingBanner({ activeBusinessId, currentUser }: Props) 
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-700 px-5 py-4 text-xs font-black uppercase tracking-widest text-white transition-all hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSending || paymentId ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />}
-                {paymentId ? 'Waiting for Payment' : 'Send M-Pesa Request'}
+                {paymentId ? 'Waiting for payment' : 'Send M-Pesa request'}
               </button>
             </div>
           </div>

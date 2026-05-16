@@ -15,7 +15,6 @@ const MAX_DAILY_LIMIT = 200;
 const MODEL_FALLBACK = '@cf/meta/llama-3.1-8b-instruct';
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID, X-User-ID, X-User-Name',
 };

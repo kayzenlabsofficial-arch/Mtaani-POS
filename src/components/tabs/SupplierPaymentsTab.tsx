@@ -98,7 +98,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
-          <h2 className="text-xl font-black text-slate-900">Supplier Payments</h2>
+          <h2 className="text-xl font-black text-slate-900">Supplier payments</h2>
           <div className="flex items-center gap-3 mt-1">
             <span className="text-[10px] font-bold text-rose-600">To pay: Ksh {totalDebt.toLocaleString()}</span>
             <span className="text-slate-300">·</span>
@@ -114,8 +114,8 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
          {/* Left: Payables List (3 cols) */}
          <div className="lg:col-span-3 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                  <ArrowDownLeft size={14} className="text-rose-500" /> Money Owed
+               <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                  <ArrowDownLeft size={14} className="text-rose-500" /> Money owed
                </h3>
                <div className="relative group sm:w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={14} />
@@ -145,14 +145,14 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                         </div>
                         <div className="stable-actions flex items-center gap-2">
                            <div className="text-right min-w-[84px]">
-                              <p className="text-[9px] font-black text-slate-400 uppercase">Due</p>
+                              <p className="text-[11px] font-medium text-slate-500">Due</p>
                               <h3 className="text-sm font-black text-rose-600 tabular-nums whitespace-nowrap">Ksh {s.balance.toLocaleString()}</h3>
                            </div>
                            <button
                               onClick={() => openPaymentModal(s)}
-                              className="px-3 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-sm press flex items-center justify-center gap-1.5 shrink-0"
+                              className="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition-all shadow-sm press flex items-center justify-center gap-1.5 shrink-0"
                            >
-                              <DollarSign size={13} /> Pay
+                              <DollarSign size={13} /> Clear
                            </button>
                         </div>
                      </div>
@@ -161,7 +161,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                ) : (
                  <div className="py-20 bg-slate-50 border-2 border-dashed border-slate-100 rounded-[2rem] flex flex-col items-center justify-center text-slate-300">
                     <CheckCircle2 size={40} className="mb-3 opacity-20" />
-                    <p className="text-xs font-black uppercase tracking-widest opacity-40">No supplier debt</p>
+                    <p className="text-sm font-medium opacity-70">No supplier debt</p>
                  </div>
                )}
             </div>
@@ -173,13 +173,13 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                <div className="flex bg-slate-50 p-2 border-b-2 border-slate-100">
                   <button 
                     onClick={() => setActiveHistoryTab('PAYMENTS')}
-                    className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeHistoryTab === 'PAYMENTS' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    className={`flex-1 py-3 rounded-2xl text-sm font-bold transition-all ${activeHistoryTab === 'PAYMENTS' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                   >
                     Payments
                   </button>
                   <button 
                     onClick={() => setActiveHistoryTab('CREDITS')}
-                    className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeHistoryTab === 'CREDITS' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    className={`flex-1 py-3 rounded-2xl text-sm font-bold transition-all ${activeHistoryTab === 'CREDITS' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                   >
                     Credits {pendingCredits.length > 0 && <span className="ml-1 bg-rose-500 text-white px-2 py-0.5 rounded-full text-[8px]">{pendingCredits.length}</span>}
                   </button>
@@ -196,17 +196,17 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                                     {getMethodIcon(p.paymentMethod)}
                                  </div>
                                  <div className="stable-row-copy">
-                                    <h4 className="text-[11px] font-black text-slate-900 stable-title leading-tight">{vendor?.company || 'Unknown Supplier'}</h4>
+                                    <h4 className="text-[11px] font-black text-slate-900 stable-title leading-tight">{vendor?.company || 'Unknown supplier'}</h4>
                                     <div className="flex items-center gap-2 mt-1 overflow-hidden">
-                                       <span className="text-[9px] font-bold text-slate-400 uppercase">{new Date(p.timestamp).toLocaleDateString()}</span>
+                                       <span className="text-[10px] font-medium text-slate-500">{new Date(p.timestamp).toLocaleDateString()}</span>
                                        <span className="w-1 h-1 rounded-full bg-slate-200" />
-                                       <span className="text-[9px] font-black text-indigo-500 uppercase stable-meta">{p.paymentMethod}</span>
+                                       <span className="text-[10px] font-semibold text-indigo-600 stable-meta">{p.paymentMethod}</span>
                                     </div>
                                  </div>
                               </div>
                               <div className="text-right stable-actions">
                                  <p className="text-xs font-black text-slate-900 tabular-nums leading-none whitespace-nowrap">Ksh {p.amount.toLocaleString()}</p>
-                                 {p.transactionCode && <p className="text-[8px] font-bold text-emerald-500 mt-1 uppercase truncate max-w-[80px]">{p.transactionCode}</p>}
+                                 {p.transactionCode && <p className="text-[9px] font-semibold text-emerald-600 mt-1 truncate max-w-[80px]">{p.transactionCode}</p>}
                               </div>
                            </div>
                         );
@@ -223,13 +223,13 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                                  </div>
                                  <div className="stable-row-copy">
                                     <h4 className="text-[11px] font-black text-slate-900 stable-title leading-tight">{vendor?.company || 'Unknown Supplier'}</h4>
-                                    <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">{new Date(cn.timestamp).toLocaleDateString()}</p>
+                                    <p className="text-[10px] font-medium text-slate-500 mt-1">{new Date(cn.timestamp).toLocaleDateString()}</p>
                                  </div>
                               </div>
                               <div className="text-right stable-actions">
                                  <p className="text-xs font-black text-slate-900 tabular-nums leading-none whitespace-nowrap">Ksh {cn.amount.toLocaleString()}</p>
                                  <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border mt-1 inline-block ${isPend ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                                    {cn.status}
+                                    {cn.status === 'PENDING' ? 'Pending' : cn.status === 'ALLOCATED' ? 'Allocated' : cn.status}
                                  </span>
                               </div>
                            </div>
@@ -240,7 +240,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                   {(activeHistoryTab === 'PAYMENTS' ? sortedPayments : sortedCredits).length === 0 && (
                      <div className="py-20 text-center flex flex-col items-center opacity-30">
                         <History size={40} className="mb-4" />
-                        <p className="text-[10px] font-black uppercase tracking-widest">No records found</p>
+                        <p className="text-sm font-medium">No records found</p>
                      </div>
                   )}
                </div>

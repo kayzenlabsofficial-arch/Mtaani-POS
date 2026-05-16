@@ -38,8 +38,8 @@ export function LoginScreen({
           </p>
           <div className="mt-12 grid grid-cols-3 gap-6 text-center">
             {[
-              { icon: Cloud, label: 'Online Backup' },
-              { icon: Wifi, label: 'Works Offline' },
+              { icon: Cloud, label: 'Online backup' },
+              { icon: Wifi, label: 'Works offline' },
               { icon: ShieldCheck, label: 'Secure' },
             ].map(f => {
               const FeatureIcon = f.icon;
@@ -73,7 +73,7 @@ export function LoginScreen({
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Business Code</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Business code</label>
               <div className="relative">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
                   <Building2 className="w-5 h-5" strokeWidth={2.2} />
@@ -140,7 +140,7 @@ export function LoginScreen({
               ) : (
                 <>
                   <LogIn className="w-5 h-5" strokeWidth={2.4} />
-                  Sign In
+                  Sign in
                 </>
               )}
             </button>
@@ -149,7 +149,7 @@ export function LoginScreen({
           <div className="mt-8 flex items-center justify-center gap-2">
             <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
             <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
-              {isOnline ? 'Cloud Connected' : 'Offline Mode — Data saved locally'}
+              {isOnline ? 'Cloud connected' : 'Offline mode — data saved locally'}
             </p>
           </div>
         </div>

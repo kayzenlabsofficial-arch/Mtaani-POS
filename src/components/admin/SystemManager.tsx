@@ -3,12 +3,26 @@ import { db, type Business } from '../../db';
 import { useLiveQuery } from '../../clouddb';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
-import { hashPassword, resetAttempts } from '../../security';
+import { resetAttempts } from '../../security';
 import { BillingService, type BillingDiscountType, type BillingSummaryRow } from '../../services/billing';
+import { Building2, CloudOff, KeyRound, Network, ReceiptText, ShieldCheck, Store, UserRound, X } from 'lucide-react';
 
-const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => (
-  <span className={`material-symbols-outlined ${className}`}>{name}</span>
-);
+const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => {
+  const icons: Record<string, React.ElementType> = {
+    add_business: Building2,
+    admin_panel_settings: ShieldCheck,
+    close: X,
+    cloud_off: CloudOff,
+    hub: Network,
+    key_reset: KeyRound,
+    receipt_long: ReceiptText,
+    shield_person: UserRound,
+    storefront: Store,
+  };
+  const Icon = icons[name] || ShieldCheck;
+  const size = className.includes('text-4xl') ? 36 : className.includes('text-3xl') ? 30 : 20;
+  return <Icon className={className} size={size} strokeWidth={2.4} />;
+};
 
 const defaultBannerMessage = 'Your Mtaani POS software subscription is due. Pay by M-Pesa to keep your account current.';
 
@@ -20,6 +34,17 @@ function invoiceStatusClass(status?: string) {
   if (status === 'PAID') return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
   if (status === 'PARTIAL') return 'bg-amber-500/10 text-amber-300 border-amber-500/20';
   return 'bg-rose-500/10 text-rose-300 border-rose-500/20';
+}
+
+function sentenceValue(value: unknown, fallback = '') {
+  const text = String(value || fallback).replace(/_/g, ' ').toLowerCase();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
+}
+
+function temporaryPassword(length = 12) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#';
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return Array.from(bytes, byte => alphabet[byte % alphabet.length]).join('');
 }
 
 type ManageBusinessModalProps = {
@@ -82,12 +107,12 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
   }, [balance, business.id]);
 
   const handleResetPassword = async (userId: string, userName: string) => {
-    if (!confirm(`Reset password for ${userName} to '123'?`)) return;
+    if (!confirm(`Reset password for ${userName}?`)) return;
     setIsProcessing(true);
     try {
-      const newHash = await hashPassword('123');
-      await db.users.update(userId, { password: newHash, updated_at: Date.now() });
-      success(`Password for ${userName} reset to '123'`);
+      const newPassword = temporaryPassword();
+      await db.users.update(userId, { password: newPassword, updated_at: Date.now() });
+      success(`Temporary password for ${userName}: ${newPassword}`);
     } catch (err) {
       error('Reset failed');
     } finally {
@@ -169,7 +194,7 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
             </div>
             <div className="min-w-0">
               <h3 className="truncate text-xl font-black text-white sm:text-2xl">{business.name}</h3>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">Business Settings | {business.code}</p>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">Business settings | {business.code}</p>
             </div>
           </div>
           <button onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-800 text-slate-400 transition-all hover:text-white">
@@ -180,7 +205,7 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
         <div className="overflow-y-auto p-5 sm:p-8">
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             <section className="rounded-3xl border border-slate-800 bg-slate-950 p-5 lg:col-span-1">
-              <h4 className="mb-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Current Bill</h4>
+              <h4 className="mb-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Current bill</h4>
               <div className="space-y-4">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Branches</p>
@@ -198,9 +223,9 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
                 </div>
                 <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{invoice?.period || 'Current Period'}</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{invoice?.period || 'Current period'}</p>
                     <span className={`rounded-full border px-3 py-1 text-[9px] font-black uppercase tracking-widest ${invoiceStatusClass(invoice?.status)}`}>
-                      {invoice?.status || 'Pending'}
+                      {sentenceValue(invoice?.status, 'Pending')}
                     </span>
                   </div>
                   <p className="mt-3 text-2xl font-black text-white">{money(invoice?.totalDue || 0)}</p>
@@ -214,7 +239,7 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
             <section className="rounded-3xl border border-slate-800 bg-slate-950 p-5 lg:col-span-2">
               <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h4 className="text-sm font-black uppercase tracking-tight text-white">Software Billing Rules</h4>
+                  <h4 className="text-sm font-black uppercase tracking-tight text-white">Software billing rules</h4>
                   <p className="mt-1 text-[11px] font-semibold text-slate-500">Bill by monthly fee plus active branch count, then apply discounts.</p>
                 </div>
                 <button
@@ -222,36 +247,36 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
                   disabled={isProcessing}
                   className="rounded-xl border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-blue-200 transition-all hover:bg-blue-600 hover:text-white disabled:opacity-50"
                 >
-                  Recalculate Bill
+                  Recalculate bill
                 </button>
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label className="block">
-                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Monthly Fee</span>
+                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Monthly fee</span>
                   <input type="number" min="0" value={billingForm.monthlyBaseFee} onChange={(e) => setBillingForm({ ...billingForm, monthlyBaseFee: Number(e.target.value) })} className="mt-2 w-full rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm font-bold text-white outline-none focus:border-primary" />
                 </label>
                 <label className="block">
-                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Price Per Branch</span>
+                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Price per branch</span>
                   <input type="number" min="0" value={billingForm.pricePerBranch} onChange={(e) => setBillingForm({ ...billingForm, pricePerBranch: Number(e.target.value) })} className="mt-2 w-full rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm font-bold text-white outline-none focus:border-primary" />
                 </label>
                 <label className="block">
-                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Discount Type</span>
+                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Discount type</span>
                   <select value={billingForm.discountType} onChange={(e) => setBillingForm({ ...billingForm, discountType: e.target.value as BillingDiscountType })} className="mt-2 w-full rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm font-bold text-white outline-none focus:border-primary">
-                    <option value="FIXED">Fixed Amount</option>
+                    <option value="FIXED">Fixed amount</option>
                     <option value="PERCENT">Percent</option>
                   </select>
                 </label>
                 <label className="block">
-                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Discount Value</span>
+                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Discount value</span>
                   <input type="number" min="0" value={billingForm.discountValue} onChange={(e) => setBillingForm({ ...billingForm, discountValue: Number(e.target.value) })} className="mt-2 w-full rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm font-bold text-white outline-none focus:border-primary" />
                 </label>
                 <label className="block">
-                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Due Day</span>
+                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Due day</span>
                   <input type="number" min="1" max="28" value={billingForm.dueDay} onChange={(e) => setBillingForm({ ...billingForm, dueDay: Number(e.target.value) })} className="mt-2 w-full rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm font-bold text-white outline-none focus:border-primary" />
                 </label>
                 <label className="block">
-                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Minimum Partial Payment</span>
+                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Minimum partial payment</span>
                   <input type="number" min="1" value={billingForm.minPaymentAmount} onChange={(e) => setBillingForm({ ...billingForm, minPaymentAmount: Number(e.target.value) })} className="mt-2 w-full rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm font-bold text-white outline-none focus:border-primary" />
                 </label>
               </div>
@@ -268,7 +293,7 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
               </div>
 
               <label className="mt-5 block">
-                <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Banner Message</span>
+                <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Banner message</span>
                 <textarea value={billingForm.bannerMessage} onChange={(e) => setBillingForm({ ...billingForm, bannerMessage: e.target.value })} rows={3} className="mt-2 w-full resize-none rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm font-bold text-white outline-none focus:border-primary" />
               </label>
 
@@ -277,14 +302,14 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
                 disabled={isProcessing}
                 className="mt-5 w-full rounded-2xl bg-primary px-5 py-4 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary-container disabled:opacity-50"
               >
-                Save Billing Settings
+                Save billing settings
               </button>
             </section>
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
             <section className="rounded-3xl border border-slate-800 bg-slate-950 p-5 lg:col-span-1">
-              <h4 className="mb-4 text-sm font-black uppercase tracking-tight text-white">Manual Payment</h4>
+              <h4 className="mb-4 text-sm font-black uppercase tracking-tight text-white">Manual payment</h4>
               <div className="space-y-3">
                 <input type="number" min="1" placeholder="Amount paid" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} className="w-full rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm font-bold text-white outline-none focus:border-primary" />
                 <select value={paymentForm.method} onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value })} className="w-full rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm font-bold text-white outline-none focus:border-primary">
@@ -296,7 +321,7 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
                 <input placeholder="Receipt or reference" value={paymentForm.receiptNumber} onChange={(e) => setPaymentForm({ ...paymentForm, receiptNumber: e.target.value })} className="w-full rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm font-bold text-white outline-none focus:border-primary" />
                 <textarea placeholder="Notes" value={paymentForm.notes} onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })} rows={3} className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm font-bold text-white outline-none focus:border-primary" />
                 <button onClick={handleRecordPayment} disabled={isProcessing} className="w-full rounded-2xl bg-emerald-600 px-5 py-4 text-xs font-black uppercase tracking-widest text-white transition-all hover:bg-emerald-500 disabled:opacity-50">
-                  Record Payment
+                  Record payment
                 </button>
               </div>
             </section>
@@ -304,7 +329,7 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
             <section className="rounded-3xl border border-slate-800 bg-slate-950 p-5 lg:col-span-2">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <h4 className="text-sm font-black uppercase tracking-tight text-white">Users</h4>
-                <span className="rounded-full bg-slate-900 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{users?.length || 0} Users</span>
+                <span className="rounded-full bg-slate-900 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{users?.length || 0} users</span>
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {users?.map(u => (
@@ -315,13 +340,13 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
                       </div>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-white">{u.name}</p>
-                        <p className="text-[10px] font-bold uppercase tracking-tighter text-slate-500">{u.role}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-tighter text-slate-500">{u.role === 'ADMIN' ? 'Admin' : u.role === 'CASHIER' ? 'Cashier' : sentenceValue(u.role)}</p>
                       </div>
                     </div>
                     <button
                       onClick={() => handleResetPassword(u.id, u.name)}
                       className="rounded-xl p-2 text-slate-500 opacity-100 transition-colors hover:text-primary sm:opacity-0 sm:group-hover:opacity-100"
-                      title="Reset Password"
+                      title="Reset password"
                     >
                       <MaterialIcon name="key_reset" />
                     </button>
@@ -330,7 +355,7 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
               </div>
               <div className="mt-5 flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900 p-4">
                 <div>
-                  <h4 className="text-xs font-bold uppercase tracking-tight text-white">Login Safety</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-tight text-white">Login safety</h4>
                   <p className="mt-1 text-[11px] font-medium text-slate-500">
                     {lockout?.lockedUntil && Date.now() < lockout.lockedUntil
                       ? `Locked until ${new Date(lockout.lockedUntil).toLocaleTimeString()}`
@@ -342,7 +367,7 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
                     onClick={handleClearLockout}
                     className="rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-error transition-all hover:bg-error hover:text-white"
                   >
-                    Unlock Login
+                    Unlock login
                   </button>
                 )}
               </div>
@@ -387,14 +412,12 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
     if (!form.name || !form.code) return;
     const trimmedCode = form.code.trim().toUpperCase();
     if (!/^[A-Z0-9]{3,20}$/.test(trimmedCode)) {
-      alert('Business Code must be 3-20 alphanumeric characters (A-Z, 0-9)');
+      alert('Business code must be 3-20 alphanumeric characters (A-Z, 0-9)');
       return;
     }
     const prevBusinessId = useStore.getState().activeBusinessId;
     try {
       const newBusinessId = crypto.randomUUID();
-      const defaultPasswordHash = await hashPassword('123');
-
       await db.businesses.add({
         id: newBusinessId,
         name: form.name,
@@ -406,10 +429,11 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
       setActiveBusinessId(newBusinessId);
       await new Promise(r => setTimeout(r, 50));
 
+      const adminPassword = temporaryPassword();
       await db.users.add({
         id: crypto.randomUUID(),
         name: 'admin',
-        password: defaultPasswordHash,
+        password: adminPassword,
         role: 'ADMIN',
         businessId: newBusinessId,
         updated_at: Date.now()
@@ -427,7 +451,7 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
       setForm({ name: '', code: '' });
       await BillingService.saveAccount({ businessId: newBusinessId });
       await loadBilling();
-      alert("Business created. Default login: username admin, password 123");
+      alert(`Business created. Login: username admin, temporary password ${adminPassword}`);
     } catch (err: any) {
       console.error(err);
       alert(`Failed to create business: ${err.message || 'Unknown error'}`);
@@ -445,8 +469,8 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
               <MaterialIcon name="shield_person" className="text-3xl text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-black tracking-tight">System Admin</h1>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">Businesses and Software Billing</p>
+              <h1 className="text-2xl font-black tracking-tight">System admin</h1>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">Businesses and software billing</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -454,7 +478,7 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
               <div className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Connected</span>
             </div>
-            <button onClick={onLogout} className="rounded-xl border border-error/20 bg-error/10 px-6 py-2 text-xs font-bold text-error transition-all hover:bg-error hover:text-white">Sign Out</button>
+            <button onClick={onLogout} className="rounded-xl border border-error/20 bg-error/10 px-6 py-2 text-xs font-bold text-error transition-all hover:bg-error hover:text-white">Sign out</button>
           </div>
         </div>
 
@@ -464,11 +488,11 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
             <p className="mt-2 text-3xl font-black">{businesses?.length || 0}</p>
           </div>
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Active Branches</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Active branches</p>
             <p className="mt-2 text-3xl font-black">{totalBranches}</p>
           </div>
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Paid This Month</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Paid this month</p>
             <p className="mt-2 text-2xl font-black text-emerald-300">{money(totalPaid)}</p>
           </div>
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
@@ -482,25 +506,25 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
             <div className="rounded-[2rem] border border-slate-800 bg-slate-900 p-6 shadow-xl sm:p-8">
               <h3 className="mb-6 flex items-center gap-3 text-lg font-black">
                 <MaterialIcon name="add_business" className="text-primary" />
-                Add Business
+                Add business
               </h3>
               <form onSubmit={handleCreate} className="space-y-6">
                 <label className="block">
-                  <span className="ml-2 block text-[10px] font-bold uppercase tracking-widest text-slate-500">Business Name</span>
+                  <span className="ml-2 block text-[10px] font-bold uppercase tracking-widest text-slate-500">Business name</span>
                   <input type="text" placeholder="e.g. Mtaani Mart" className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-5 py-3 text-sm font-bold outline-none transition-all focus:border-primary" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
                 </label>
                 <label className="block">
-                  <span className="ml-2 block text-[10px] font-bold uppercase tracking-widest text-slate-500">Login Code</span>
+                  <span className="ml-2 block text-[10px] font-bold uppercase tracking-widest text-slate-500">Login code</span>
                   <input type="text" placeholder="e.g. MTAANI1" className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-5 py-3 text-sm font-bold outline-none transition-all focus:border-primary" value={form.code} onChange={e => setForm({ ...form, code: e.target.value.toUpperCase() })} />
                 </label>
-                <button type="submit" className="w-full rounded-xl bg-primary py-4 text-xs font-black uppercase tracking-widest shadow-lg shadow-primary/20 transition-all hover:bg-primary-container active:scale-[0.98]">Save Business</button>
+                <button type="submit" className="w-full rounded-xl bg-primary py-4 text-xs font-black uppercase tracking-widest shadow-lg shadow-primary/20 transition-all hover:bg-primary-container active:scale-[0.98]">Save business</button>
               </form>
             </div>
 
             <div className="rounded-[2rem] border border-blue-500/20 bg-blue-500/10 p-6 sm:p-8">
               <div className="mb-4 flex items-center gap-4 text-blue-200">
                 <MaterialIcon name="receipt_long" />
-                <h4 className="text-xs font-bold uppercase tracking-wider">Billing Logic</h4>
+                <h4 className="text-xs font-bold uppercase tracking-wider">Billing logic</h4>
               </div>
               <p className="text-[11px] font-medium leading-relaxed text-blue-100/70">
                 Each business gets a monthly bill from the base fee, active branches, branch fee, and any discount you set. Turn on the banner when you want them to pay.
