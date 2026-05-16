@@ -238,11 +238,13 @@ export default function MtaaniPOS() {
           </button>
         )}
 
-        <AIAssistant
-          activeBusinessId={activeBusinessId}
-          activeBranchId={activeBranchId}
-          currentUser={currentUser}
-        />
+        {currentUser.role === 'ADMIN' && (
+          <AIAssistant
+            activeBusinessId={activeBusinessId}
+            activeBranchId={activeBranchId}
+            currentUser={currentUser}
+          />
+        )}
       </div>
 
       {isMoreMenuOpen && (

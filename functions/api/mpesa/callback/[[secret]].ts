@@ -63,12 +63,26 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             }
         }
 
+        for (const sql of [
+          'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedTransactionId TEXT',
+          'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT',
+          'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT',
+          'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedAt INTEGER',
+          'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, branchId, receiptNumber)',
+        ]) {
+          try { await env.DB.prepare(sql).run(); } catch (e) {}
+        }
+
         // 2. IDEMPOTENCY: Only update if the status is currently 'PENDING' (ResultCode 999)
         // This prevents duplicate callbacks from Safaricom from triggering duplicate logic.
         try {
-           const existing = await env.DB.prepare(`SELECT resultCode FROM mpesaCallbacks WHERE checkoutRequestId = ?`)
+           const existing = await env.DB.prepare(`
+             SELECT resultCode, amount, receiptNumber, phoneNumber
+             FROM mpesaCallbacks
+             WHERE checkoutRequestId = ?
+           `)
              .bind(checkoutRequestId)
-             .first() as { resultCode: number } | null;
+             .first() as { resultCode: number; amount?: number; receiptNumber?: string; phoneNumber?: string } | null;
 
            if (existing && existing.resultCode !== 999) {
              console.log(`[M-PESA IDEMPOTENCY]: CheckoutID ${checkoutRequestId} already processed. Skipping.`);
@@ -77,13 +91,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
              });
            }
 
+           const nextAmount = amount || Number(existing?.amount || 0);
+           const nextReceiptNumber = receiptNumber || existing?.receiptNumber || '';
+           const nextPhoneNumber = phoneNumber || existing?.phoneNumber || '';
+
            // Update with actual Safaricom result
            await env.DB.prepare(`
              UPDATE mpesaCallbacks 
              SET resultCode = ?, resultDesc = ?, amount = ?, receiptNumber = ?, phoneNumber = ?, timestamp = ?
              WHERE checkoutRequestId = ?
            `).bind(
-             resultCode, resultDesc, amount, receiptNumber, phoneNumber, Date.now(), checkoutRequestId
+             resultCode, resultDesc, nextAmount, nextReceiptNumber, nextPhoneNumber, Date.now(), checkoutRequestId
            ).run();
 
            console.log(`[M-PESA CALLBACK SUCCESS]: Updated ${checkoutRequestId} with ResultCode ${resultCode}`);

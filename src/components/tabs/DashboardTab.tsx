@@ -38,16 +38,13 @@ const StatCard = ({ label, value, sub, trend, icon, color }: any) => (
   </div>
 );
 
-const chartData = [
-  { time: '08:00', sales: 4200 },
-  { time: '10:00', sales: 8100 },
-  { time: '12:00', sales: 15200 },
-  { time: '14:00', sales: 19800 },
-  { time: '16:00', sales: 12400 },
-  { time: '18:00', sales: 21000 },
-  { time: '20:00', sales: 14500 },
-  { time: '22:00', sales: 7200 },
-];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function localDayStart(timestamp = Date.now()) {
+  const date = new Date(timestamp);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
 
 export default function DashboardTab({ setActiveTab, openExpenseModal }: DashboardTabProps) {
   const [trendView, setTrendView] = useState<'DAY' | 'WEEK'>('DAY');
@@ -118,7 +115,37 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
   const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
   const lowStockItems = displayProducts.filter(p => (p.stockQuantity || 0) <= (p.reorderPoint || 5)).slice(0, 5) || [];
-  const totalRevenue = transactions?.reduce((a, t) => a + t.total, 0) || 0;
+  const todaysTransactions = (branchTransactions || []).filter(t => (t.timestamp || 0) >= getTodayStartMs() && t.status !== 'VOIDED' && t.status !== 'QUOTE');
+  const totalRevenue = todaysTransactions.reduce((a, t) => a + Number(t.total || 0), 0);
+  const salesTrendData = React.useMemo(() => {
+    const txs = (branchTransactions || []).filter(t => t.status !== 'VOIDED' && t.status !== 'QUOTE');
+    if (trendView === 'WEEK') {
+      return Array.from({ length: 7 }, (_, index) => {
+        const start = localDayStart(Date.now() - (6 - index) * DAY_MS);
+        const end = start + DAY_MS;
+        const day = new Date(start).toLocaleDateString('en-KE', { weekday: 'short' });
+        return {
+          time: day,
+          sales: txs
+            .filter(t => (t.timestamp || 0) >= start && (t.timestamp || 0) < end)
+            .reduce((sum, t) => sum + Number(t.total || 0), 0),
+        };
+      });
+    }
+
+    const today = localDayStart();
+    return Array.from({ length: 8 }, (_, index) => {
+      const hour = 6 + index * 2;
+      const start = today + hour * 60 * 60 * 1000;
+      const end = index === 7 ? today + DAY_MS : today + (hour + 2) * 60 * 60 * 1000;
+      return {
+        time: `${String(hour).padStart(2, '0')}:00`,
+        sales: txs
+          .filter(t => (t.timestamp || 0) >= start && (t.timestamp || 0) < end)
+          .reduce((sum, t) => sum + Number(t.total || 0), 0),
+      };
+    });
+  }, [branchTransactions, trendView]);
   const ownerModeActive = canUseOwnerMode(currentUser) && isOwnerModeEnabled(businessSettings);
   const cashSweepActive = ownerModeActive && isOwnerCashSweepEnabled(businessSettings);
   const cashDrawerLimit = getCashDrawerLimit(businessSettings);
@@ -368,7 +395,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         />
         <StatCard
           label="Transactions"
-          value={transactions?.length || 0}
+          value={todaysTransactions.length || 0}
           sub="Sales today"
           trend={5.2}
           icon="receipt_long"
@@ -376,7 +403,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         />
         <StatCard
           label="Avg. Sale"
-          value={`Ksh ${transactions?.length ? Math.round(totalRevenue / transactions.length).toLocaleString() : 0}`}
+          value={`Ksh ${todaysTransactions.length ? Math.round(totalRevenue / todaysTransactions.length).toLocaleString() : 0}`}
           sub="Per transaction"
           trend={-2.1}
           icon="trending_up"
@@ -416,7 +443,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           </div>
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+              <AreaChart data={salesTrendData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#003d9b" stopOpacity={0.15} />

@@ -558,7 +558,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const businessId = request.headers.get('X-Business-ID')?.trim();
     const branchId = request.headers.get('X-Branch-ID')?.trim() || null;
     const userId = truncateText(request.headers.get('X-User-ID') || 'anonymous', 120);
-    const userName = truncateText(request.headers.get('X-User-Name') || 'Unknown user', 120);
+    const headerUserName = truncateText(request.headers.get('X-User-Name') || 'Unknown user', 120);
     if (!businessId) return json({ error: 'X-Business-ID header required' }, 400);
 
     const body = await request.json().catch(() => null) as any;
@@ -566,6 +566,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!question) return json({ error: 'Ask a question first.' }, 400);
 
     await ensureAiSchema(env.DB);
+    const user = await first<any>(
+      env.DB,
+      'SELECT id, name, role FROM users WHERE businessId = ? AND id = ? LIMIT 1',
+      businessId,
+      userId,
+    );
+    if (!user || String(user.role || '').toUpperCase() !== 'ADMIN') {
+      return json({ error: 'AI assistant is only available to admin accounts.' }, 403);
+    }
+    const userName = truncateText(user.name || headerUserName || 'Admin', 120);
+
     const settings = await getAiSettings(env.DB, businessId);
     if (!settings.enabled) return json({ error: 'AI assistant is disabled for this business.' }, 403);
 

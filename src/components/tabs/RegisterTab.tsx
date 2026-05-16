@@ -1,13 +1,14 @@
 import React, { useRef, useState } from 'react';
-import { Ban, Banknote, Calculator, CircleDollarSign, CreditCard, Minus, Package, Percent, Plus, ScanBarcode, Search, ShoppingCart, Smartphone, Split, Store, UserRound, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Ban, Banknote, Calculator, CheckCircle2, CircleDollarSign, CreditCard, Loader2, Minus, Package, Percent, Plus, ScanBarcode, Search, ShieldCheck, ShoppingCart, Smartphone, Split, Store, UserRound, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
-import { db } from '../../db';
+import { db, type Transaction } from '../../db';
 import { useStore } from '../../store';
 import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import { useToast } from '../../context/ToastContext';
 import BarcodeScanner from '../shared/BarcodeScanner';
 import { enrichProductsWithBundleStock, isBundleProduct } from '../../utils/bundleInventory';
 import { MpesaService } from '../../services/mpesa';
+import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -124,6 +125,8 @@ type CheckoutOptions = {
   amountTendered?: number;
   changeGiven?: number;
   mpesaRef?: string;
+  mpesaCustomer?: string;
+  mpesaCheckoutRequestId?: string;
   pdqRef?: string;
   paymentReference?: string;
   customerId?: string;
@@ -151,12 +154,15 @@ function SalePanel({
   const activeBusinessId = useStore((state) => state.activeBusinessId);
   const activeBranchId = useStore((state) => state.activeBranchId);
   const { warning, error, success } = useToast();
+  const [checkoutStep, setCheckoutStep] = useState<'ITEMS' | 'PAYMENT' | 'REVIEW'>('ITEMS');
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT'>('CASH');
   const [discountType, setDiscountType] = useState<'FIXED' | 'PERCENT'>('FIXED');
   const [discountValue, setDiscountValue] = useState('');
   const [cashTendered, setCashTendered] = useState('');
   const [mpesaRef, setMpesaRef] = useState('');
   const [mpesaPhone, setMpesaPhone] = useState('');
+  const [mpesaVerification, setMpesaVerification] = useState<any | null>(null);
+  const [isVerifyingMpesa, setIsVerifyingMpesa] = useState(false);
   const [mpesaState, setMpesaState] = useState<'IDLE' | 'PUSHING' | 'POLLING' | 'SUCCESS' | 'FAILED'>('IDLE');
   const [pdqRef, setPdqRef] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -194,6 +200,12 @@ function SalePanel({
     { id: 'SPLIT' as const, label: 'Split', icon: Split },
     { id: 'CREDIT' as const, label: 'Credit', icon: UserRound },
   ];
+  const checkoutSteps = [
+    { id: 'ITEMS', label: 'Items' },
+    { id: 'PAYMENT', label: 'Payment' },
+    { id: 'REVIEW', label: 'Review' },
+  ] as const;
+  const normaliseMpesaCode = (value: string) => value.replace(/\s+/g, '').trim().toUpperCase();
 
   const baseOptions = (): CheckoutOptions => ({
     subtotal,
@@ -210,11 +222,54 @@ function SalePanel({
     return result;
   };
 
+  React.useEffect(() => {
+    if (cart.length === 0) setCheckoutStep('ITEMS');
+  }, [cart.length]);
+
+  React.useEffect(() => {
+    setMpesaVerification(null);
+  }, [mpesaRef, splitSecondaryRef, total]);
+
+  const verifyMpesaCode = async (rawCode = mpesaRef, expectedAmount = total) => {
+    if (!activeBusinessId || !activeBranchId) {
+      error('Select a branch before verifying M-Pesa.');
+      return null;
+    }
+    const code = normaliseMpesaCode(rawCode);
+    if (!code) {
+      warning('Enter the M-Pesa receipt code first.');
+      return null;
+    }
+
+    setIsVerifyingMpesa(true);
+    try {
+      const res = await MpesaService.verifyPayment(code, expectedAmount, activeBusinessId, activeBranchId);
+      setMpesaVerification(res);
+      if (res.usable) {
+        success(`M-Pesa verified: ${res.receiptNumber || code}`);
+      } else {
+        warning(res.message || res.error || 'M-Pesa payment is not ready to use.');
+      }
+      return res;
+    } finally {
+      setIsVerifyingMpesa(false);
+    }
+  };
+
+  const ensureMpesaUsable = async (rawCode: string, expectedAmount: number) => {
+    const code = normaliseMpesaCode(rawCode);
+    const verifiedCode = normaliseMpesaCode(mpesaVerification?.receiptNumber || mpesaVerification?.checkoutRequestId || '');
+    if (mpesaVerification?.usable && verifiedCode === code && Number(mpesaVerification.expectedAmount || expectedAmount) === expectedAmount) {
+      return mpesaVerification;
+    }
+    return verifyMpesaCode(code, expectedAmount);
+  };
+
   const pollMpesaAndComplete = (requestId: string) => {
     let attempts = 0;
     const interval = window.setInterval(async () => {
       attempts++;
-      if (attempts > 18) {
+      if (attempts > 36) {
         window.clearInterval(interval);
         setMpesaState('FAILED');
         error('M-Pesa prompt timed out. Confirm manually if payment arrived.');
@@ -226,8 +281,27 @@ function SalePanel({
         window.clearInterval(interval);
         const receipt = res.receiptNumber || requestId;
         setMpesaRef(receipt);
+        setMpesaVerification({
+          found: true,
+          paid: true,
+          usable: true,
+          utilizationStatus: 'UNUTILIZED',
+          paymentStatus: 'PAID',
+          receiptNumber: receipt,
+          checkoutRequestId: requestId,
+          amount: Number(res.amount || total),
+          expectedAmount: total,
+          amountOk: true,
+          phoneNumber: res.phoneNumber,
+        });
         setMpesaState('SUCCESS');
-        await runCheckout('PAID', 'MPESA', { ...baseOptions(), mpesaRef: receipt, paymentReference: receipt });
+        await runCheckout('PAID', 'MPESA', {
+          ...baseOptions(),
+          mpesaRef: receipt,
+          paymentReference: receipt,
+          mpesaCheckoutRequestId: requestId,
+          mpesaCustomer: res.phoneNumber,
+        });
         success(`M-Pesa confirmed: ${receipt}`);
       } else if (res.found && res.resultCode !== 0) {
         window.clearInterval(interval);
@@ -246,6 +320,7 @@ function SalePanel({
     const res = await MpesaService.triggerStkPush(mpesaPhone.trim(), total, `SALE-${Date.now()}`, activeBusinessId, activeBranchId);
     if (res.success && res.checkoutRequestId) {
       setMpesaState('POLLING');
+      success('Prompt sent. Waiting up to 3 minutes for confirmation.');
       pollMpesaAndComplete(res.checkoutRequestId);
     } else {
       setMpesaState('FAILED');
@@ -274,7 +349,16 @@ function SalePanel({
       }
 
       if (paymentMode === 'MPESA') {
-        await runCheckout('PAID', 'MPESA', { ...baseOptions(), mpesaRef: mpesaRef.trim(), paymentReference: mpesaRef.trim() });
+        const verified = await ensureMpesaUsable(mpesaRef, total);
+        if (!verified?.usable) return;
+        const receipt = verified.receiptNumber || normaliseMpesaCode(mpesaRef);
+        await runCheckout('PAID', 'MPESA', {
+          ...baseOptions(),
+          mpesaRef: receipt,
+          paymentReference: receipt,
+          mpesaCustomer: verified.phoneNumber,
+          mpesaCheckoutRequestId: verified.checkoutRequestId,
+        });
         return;
       }
 
@@ -288,18 +372,28 @@ function SalePanel({
           warning('Enter the cash part so the balance can go to M-Pesa, PDQ, or credit.');
           return;
         }
+        let verifiedMpesa: any | null = null;
+        if (splitSecondaryMethod === 'MPESA') {
+          verifiedMpesa = await ensureMpesaUsable(splitSecondaryRef, splitSecondaryAmount);
+          if (!verifiedMpesa?.usable) return;
+        }
+        const secondaryReference = splitSecondaryMethod === 'MPESA'
+          ? (verifiedMpesa?.receiptNumber || normaliseMpesaCode(splitSecondaryRef))
+          : splitSecondaryRef.trim();
         await runCheckout(splitSecondaryMethod === 'CREDIT' ? 'UNPAID' : 'PAID', 'SPLIT', {
           ...baseOptions(),
           amountTendered: splitCashAmount,
           changeGiven: 0,
-          mpesaRef: splitSecondaryMethod === 'MPESA' ? splitSecondaryRef.trim() : undefined,
-          pdqRef: splitSecondaryMethod === 'PDQ' ? splitSecondaryRef.trim() : undefined,
-          paymentReference: splitSecondaryRef.trim(),
+          mpesaRef: splitSecondaryMethod === 'MPESA' ? secondaryReference : undefined,
+          pdqRef: splitSecondaryMethod === 'PDQ' ? secondaryReference : undefined,
+          paymentReference: secondaryReference,
+          mpesaCustomer: verifiedMpesa?.phoneNumber,
+          mpesaCheckoutRequestId: verifiedMpesa?.checkoutRequestId,
           splitPayments: {
             cashAmount: splitCashAmount,
             secondaryAmount: splitSecondaryAmount,
             secondaryMethod: splitSecondaryMethod,
-            secondaryReference: splitSecondaryRef.trim(),
+            secondaryReference,
           },
         });
         return;
@@ -309,6 +403,33 @@ function SalePanel({
     } finally {
       checkoutLockRef.current = false;
     }
+  };
+
+  const goToReview = async () => {
+    if (cart.length === 0) return;
+    if ((paymentMode === 'CREDIT' || (paymentMode === 'SPLIT' && splitSecondaryMethod === 'CREDIT')) && !selectedCustomer) {
+      warning('Choose a registered customer before putting any amount on credit.');
+      return;
+    }
+    if (paymentMode === 'CASH' && cashTendered && tendered < total) {
+      warning('Amount received must cover the sale total.');
+      return;
+    }
+    if (paymentMode === 'MPESA') {
+      const verified = await ensureMpesaUsable(mpesaRef, total);
+      if (!verified?.usable) return;
+    }
+    if (paymentMode === 'SPLIT') {
+      if (splitCashAmount <= 0 || splitCashAmount >= total) {
+        warning('Enter the cash part so the balance can go to M-Pesa, PDQ, or credit.');
+        return;
+      }
+      if (splitSecondaryMethod === 'MPESA') {
+        const verified = await ensureMpesaUsable(splitSecondaryRef, splitSecondaryAmount);
+        if (!verified?.usable) return;
+      }
+    }
+    setCheckoutStep('REVIEW');
   };
 
   return (
@@ -369,6 +490,51 @@ function SalePanel({
       </div>
 
       <div className="border-t border-slate-100 p-4 space-y-3 bg-white">
+        <div className="grid grid-cols-3 gap-2">
+          {checkoutSteps.map((step, index) => {
+            const active = checkoutStep === step.id;
+            const done = checkoutSteps.findIndex(item => item.id === checkoutStep) > index;
+            return (
+              <button
+                key={step.id}
+                type="button"
+                onClick={() => {
+                  if (step.id === 'ITEMS') setCheckoutStep('ITEMS');
+                  if (step.id === 'PAYMENT' && cart.length > 0) setCheckoutStep('PAYMENT');
+                }}
+                className={`h-9 rounded-xl border text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${
+                  active ? 'border-primary bg-primary/10 text-primary' : done ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-400'
+                }`}
+              >
+                {done ? <CheckCircle2 size={13} /> : <span>{index + 1}</span>}
+                {step.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {checkoutStep === 'ITEMS' && (
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sale total</p>
+              <div className="mt-1 flex items-end justify-between gap-3">
+                <span className="text-2xl font-black text-slate-950 tabular-nums">Ksh {total.toLocaleString()}</span>
+                <span className="text-[10px] font-black text-slate-500">{itemCount.toLocaleString()} item{itemCount === 1 ? '' : 's'}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCheckoutStep('PAYMENT')}
+              disabled={cart.length === 0}
+              className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              Choose payment <ArrowRight size={16} />
+            </button>
+          </div>
+        )}
+
+        {checkoutStep === 'PAYMENT' && (
+          <>
         <div className="grid grid-cols-3 gap-2">
           <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 min-w-0">
             <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Subtotal</span>
@@ -477,16 +643,32 @@ function SalePanel({
                 {mpesaState === 'PUSHING' || mpesaState === 'POLLING' ? 'Waiting...' : 'Send Prompt'}
               </button>
             </div>
-            <input
-              value={mpesaRef}
-              onChange={(event) => setMpesaRef(event.target.value)}
-              placeholder="Or enter M-Pesa receipt code manually"
-              data-testid="mpesa-reference"
-              className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-            />
+            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <input
+                value={mpesaRef}
+                onChange={(event) => setMpesaRef(event.target.value.toUpperCase())}
+                placeholder="Or enter M-Pesa receipt code manually"
+                data-testid="mpesa-reference"
+                className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold uppercase outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+              <button
+                type="button"
+                onClick={() => verifyMpesaCode(mpesaRef, total)}
+                disabled={isVerifyingMpesa || !mpesaRef.trim()}
+                className="h-11 px-4 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                Verify
+              </button>
+            </div>
             {mpesaState !== 'IDLE' && (
               <p className={`text-[10px] font-black uppercase tracking-widest ${mpesaState === 'SUCCESS' ? 'text-emerald-600' : mpesaState === 'FAILED' ? 'text-rose-600' : 'text-blue-600'}`}>
-                {mpesaState === 'PUSHING' ? 'Sending prompt...' : mpesaState === 'POLLING' ? 'Awaiting customer PIN...' : mpesaState === 'SUCCESS' ? 'Payment confirmed' : 'Prompt failed or timed out'}
+                {mpesaState === 'PUSHING' ? 'Sending prompt...' : mpesaState === 'POLLING' ? 'Awaiting customer PIN for up to 3 minutes...' : mpesaState === 'SUCCESS' ? 'Payment confirmed' : 'Prompt failed or timed out'}
+              </p>
+            )}
+            {mpesaVerification && (
+              <p className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${mpesaVerification.usable ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
+                {mpesaVerification.message || (mpesaVerification.usable ? 'M-Pesa code verified' : 'M-Pesa code not usable')}
               </p>
             )}
           </div>
@@ -538,37 +720,117 @@ function SalePanel({
               <option value="PDQ">PDQ</option>
               <option value="CREDIT">Credit</option>
             </select>
-            <input
-              value={splitSecondaryRef}
-              onChange={(event) => setSplitSecondaryRef(event.target.value)}
-              placeholder={`${splitSecondaryMethod} reference (Ksh ${splitSecondaryAmount.toLocaleString()})`}
-              data-testid="split-reference"
-              className="sm:col-span-2 w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-            />
+            <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <input
+                value={splitSecondaryRef}
+                onChange={(event) => setSplitSecondaryRef(splitSecondaryMethod === 'MPESA' ? event.target.value.toUpperCase() : event.target.value)}
+                placeholder={`${splitSecondaryMethod} reference (Ksh ${splitSecondaryAmount.toLocaleString()})`}
+                data-testid="split-reference"
+                className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+              {splitSecondaryMethod === 'MPESA' && (
+                <button
+                  type="button"
+                  onClick={() => verifyMpesaCode(splitSecondaryRef, splitSecondaryAmount)}
+                  disabled={isVerifyingMpesa || !splitSecondaryRef.trim()}
+                  className="h-11 px-4 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                  Verify
+                </button>
+              )}
+            </div>
           </div>
         )}
 
-        <button
-          onClick={submitCheckout}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            void submitCheckout();
-          }}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            void submitCheckout();
-          }}
-          onTouchStart={(event) => {
-            event.preventDefault();
-            void submitCheckout();
-          }}
-          disabled={cart.length === 0 || isCheckingOut}
-          data-testid="complete-sale"
-          className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          <MaterialIcon name="payments" style={{ fontSize: '18px' }} />
-          {isCheckingOut ? 'Saving Sale...' : `Complete ${paymentMode === 'MPESA' ? 'M-Pesa' : paymentMode} Sale`}
-        </button>
+          </>
+        )}
+
+        {checkoutStep === 'REVIEW' && (
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Payment</span>
+                <span className="text-xs font-black text-slate-900">{paymentMode === 'MPESA' ? 'M-Pesa' : paymentMode}</span>
+              </div>
+              {selectedCustomer && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Customer</span>
+                  <span className="text-xs font-black text-slate-900 truncate">{selectedCustomer.name}</span>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Subtotal</p>
+                  <p className="text-sm font-black text-slate-900 tabular-nums">Ksh {subtotal.toLocaleString()}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Payable</p>
+                  <p className="text-lg font-black text-emerald-700 tabular-nums">Ksh {total.toLocaleString()}</p>
+                </div>
+              </div>
+              {paymentMode === 'CASH' && (
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 border border-slate-100">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Change</span>
+                  <span className="text-sm font-black text-slate-900">Ksh {changeDue.toLocaleString()}</span>
+                </div>
+              )}
+              {(paymentMode === 'MPESA' || (paymentMode === 'SPLIT' && splitSecondaryMethod === 'MPESA')) && (
+                <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 border border-emerald-100 text-emerald-700">
+                  <ShieldCheck size={16} />
+                  <span className="text-[10px] font-black uppercase tracking-widest truncate">
+                    M-Pesa {mpesaVerification?.receiptNumber || mpesaRef || splitSecondaryRef || 'verified'}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {checkoutStep === 'PAYMENT' && (
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
+            <button
+              type="button"
+              onClick={() => setCheckoutStep('ITEMS')}
+              className="h-12 px-4 rounded-xl border border-slate-200 bg-white text-slate-600 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
+            >
+              <ArrowLeft size={15} /> Items
+            </button>
+            <button
+              type="button"
+              onClick={() => void goToReview()}
+              disabled={cart.length === 0 || isVerifyingMpesa}
+              className="h-12 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              Review sale <ArrowRight size={15} />
+            </button>
+          </div>
+        )}
+
+        {checkoutStep === 'REVIEW' && (
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
+            <button
+              type="button"
+              onClick={() => setCheckoutStep('PAYMENT')}
+              className="h-12 px-4 rounded-xl border border-slate-200 bg-white text-slate-600 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
+            >
+              <ArrowLeft size={15} /> Edit
+            </button>
+            <button
+              onClick={submitCheckout}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                void submitCheckout();
+              }}
+              disabled={cart.length === 0 || isCheckingOut}
+              data-testid="complete-sale"
+              className="h-12 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <MaterialIcon name="payments" style={{ fontSize: '18px' }} />
+              {isCheckingOut ? 'Saving Sale...' : 'Complete and Print'}
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -581,6 +843,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isMobileCheckoutOpen, setIsMobileCheckoutOpen] = useState(false);
+  const [lastReceipt, setLastReceipt] = useState<(Transaction & { recordType: 'SALE' }) | null>(null);
   const scrollRef = useHorizontalScroll();
   const { warning, error } = useToast();
 
@@ -644,7 +907,10 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
     setIsCheckingOut(true);
     try {
       const result = await handleCheckout(status, method, options?.mpesaRef || options?.pdqRef || options?.paymentReference, options?.customerName, options);
-      if (result) setIsMobileCheckoutOpen(false);
+      if (result) {
+        setIsMobileCheckoutOpen(false);
+        setLastReceipt({ ...result, recordType: 'SALE' });
+      }
       return result;
     } catch (err: any) {
       error(err?.message || 'Checkout failed.');
@@ -678,6 +944,10 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
       window.history.pushState({ ...(window.history.state || {}), mobileCheckout: true }, '');
     }
     setIsMobileCheckoutOpen(true);
+  };
+
+  const handleReceiptRefund = async () => {
+    warning('Open Documents to refund a completed receipt.');
   };
 
   return (
@@ -850,6 +1120,12 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
           </div>
         </div>
       )}
+
+      <DocumentDetailsModal
+        selectedRecord={lastReceipt}
+        setSelectedRecord={(record) => setLastReceipt(record as any)}
+        handleRefund={handleReceiptRefund}
+      />
     </div>
   );
 }

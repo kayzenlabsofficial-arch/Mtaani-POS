@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     changeGiven REAL,
     mpesaReference TEXT,
     mpesaCode TEXT,
+    mpesaCustomer TEXT,
+    mpesaCheckoutRequestId TEXT,
     cashierId TEXT,
     cashierName TEXT,
     customerId TEXT,
@@ -399,12 +401,20 @@ CREATE TABLE IF NOT EXISTS mpesaCallbacks (
     phoneNumber TEXT,
     businessId TEXT,
     branchId TEXT,
-    timestamp INTEGER
+    timestamp INTEGER,
+    utilizedTransactionId TEXT,
+    utilizedCustomerId TEXT,
+    utilizedCustomerName TEXT,
+    utilizedAt INTEGER
 );
 
 -- MIGRATION: Fix mpesaCallbacks missing columns
 -- ALTER TABLE mpesaCallbacks ADD COLUMN businessId TEXT;
 -- ALTER TABLE mpesaCallbacks ADD COLUMN branchId TEXT;
+-- ALTER TABLE mpesaCallbacks ADD COLUMN utilizedTransactionId TEXT;
+-- ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT;
+-- ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT;
+-- ALTER TABLE mpesaCallbacks ADD COLUMN utilizedAt INTEGER;
 
 CREATE TABLE IF NOT EXISTS expenseAccounts (
     id TEXT PRIMARY KEY,

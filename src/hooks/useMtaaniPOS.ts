@@ -5,6 +5,7 @@ import { db, type Transaction } from '../db';
 import { verifyPassword, isLockedOut, recordFailedAttempt, resetAttempts } from '../security';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { getProductIngredients, isBundleProduct } from '../utils/bundleInventory';
+import { MpesaService } from '../services/mpesa';
 
 export function useMtaaniPOS() {
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'REPORTS' | 'ADMIN_PANEL'>('REGISTER');
@@ -233,6 +234,7 @@ export function useMtaaniPOS() {
       const effectiveCustomerId = checkoutData.customerId || selectedCustomerId || undefined;
       const effectiveCustomerName = checkoutData.customerName || customerName;
       const paymentReference = mpesaRef || checkoutData.mpesaRef || checkoutData.pdqRef || checkoutData.paymentReference;
+      const mpesaPaymentCode = method === 'MPESA' || splitPayments?.secondaryMethod === 'MPESA' ? paymentReference : undefined;
       const creditAmount = method === 'CREDIT'
         ? finalTotal
         : method === 'SPLIT' && splitPayments?.secondaryMethod === 'CREDIT'
@@ -256,7 +258,9 @@ export function useMtaaniPOS() {
         total: finalTotal,
         paymentMethod: method as any,
         mpesaReference: paymentReference,
-        mpesaCode: method === 'MPESA' || splitPayments?.secondaryMethod === 'MPESA' ? paymentReference : undefined,
+        mpesaCode: mpesaPaymentCode,
+        mpesaCustomer: checkoutData.mpesaCustomer,
+        mpesaCheckoutRequestId: checkoutData.mpesaCheckoutRequestId,
         amountTendered,
         changeGiven,
         splitPayments,
@@ -276,6 +280,17 @@ export function useMtaaniPOS() {
       };
 
       await db.transactions.add(newTransaction);
+
+      if (mpesaPaymentCode) {
+        MpesaService.markUtilized({
+          code: mpesaPaymentCode,
+          transactionId,
+          businessId: activeBusinessId!,
+          branchId: activeBranchId!,
+          customerId: effectiveCustomerId,
+          customerName: effectiveCustomerName,
+        }).catch(err => console.warn('[M-Pesa] Could not mark payment utilized:', err));
+      }
 
       if (effectiveCustomerId) {
         const customer = await db.customers.get(effectiveCustomerId);

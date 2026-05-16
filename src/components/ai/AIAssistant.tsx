@@ -42,6 +42,8 @@ export default function AIAssistant({ activeBusinessId, activeBranchId, currentU
     return '';
   }, [activeBusinessId, activeBranchId, currentUser]);
 
+  if (currentUser?.role !== 'ADMIN') return null;
+
   const addMessage = (role: Message['role'], text: string) => {
     setMessages(prev => [...prev, { id: crypto.randomUUID(), role, text }]);
   };

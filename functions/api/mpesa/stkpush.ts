@@ -209,9 +209,23 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         phoneNumber TEXT,
         businessId TEXT,
         branchId TEXT,
-        timestamp INTEGER
+        timestamp INTEGER,
+        utilizedTransactionId TEXT,
+        utilizedCustomerId TEXT,
+        utilizedCustomerName TEXT,
+        utilizedAt INTEGER
       )
     `).run();
+
+    for (const sql of [
+      'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedTransactionId TEXT',
+      'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT',
+      'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT',
+      'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedAt INTEGER',
+      'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, branchId, receiptNumber)',
+    ]) {
+      try { await env.DB.prepare(sql).run(); } catch (e) {}
+    }
 
     await env.DB.prepare(`
       INSERT INTO mpesaCallbacks 
