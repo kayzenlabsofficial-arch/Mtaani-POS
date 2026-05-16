@@ -1,4 +1,4 @@
-import { authorizeRequest, hashPassword, verifyPassword } from '../authUtils';
+import { authorizeRequest, hashPassword, verifyPassword } from '../_authUtils';
 
 interface Env {
   DB: D1Database;

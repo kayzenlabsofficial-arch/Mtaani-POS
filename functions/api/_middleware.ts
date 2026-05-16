@@ -1,4 +1,4 @@
-import { isTrustedBrowserOrigin, rejectUntrustedBrowserOrigin } from './authUtils';
+import { isTrustedBrowserOrigin, rejectUntrustedBrowserOrigin } from './_authUtils';
 
 type Env = Record<string, unknown>;
 

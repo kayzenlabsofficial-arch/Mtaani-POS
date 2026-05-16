@@ -1,4 +1,4 @@
-import { clearSessionCookie, createSessionCookie, createSessionToken, hashPassword, isPasswordHashCurrent, json, rejectUntrustedBrowserOrigin, verifyPassword } from './authUtils';
+import { clearSessionCookie, createSessionCookie, createSessionToken, hashPassword, isPasswordHashCurrent, json, rejectUntrustedBrowserOrigin, verifyPassword } from './_authUtils';
 
 interface Env {
   DB: D1Database;

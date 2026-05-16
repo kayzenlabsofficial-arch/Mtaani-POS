@@ -1,5 +1,5 @@
-import type { Principal } from '../authUtils';
-import { PolicyError } from '../salesSecurity';
+import type { Principal } from '../_authUtils';
+import { PolicyError } from '../_salesSecurity';
 
 type RefundLine = { productId: string; quantity: number };
 

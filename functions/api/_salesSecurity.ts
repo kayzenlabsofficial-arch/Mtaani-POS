@@ -1,4 +1,4 @@
-import type { Principal } from './authUtils';
+import type { Principal } from './_authUtils';
 
 export class PolicyError extends Error {
   status: number;

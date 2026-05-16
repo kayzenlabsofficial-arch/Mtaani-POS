@@ -1,5 +1,5 @@
-import type { Principal } from '../authUtils';
-import { PolicyError } from '../salesSecurity';
+import type { Principal } from '../_authUtils';
+import { PolicyError } from '../_salesSecurity';
 
 const APPROVER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 const STAFF_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER', 'CASHIER']);
