@@ -302,6 +302,8 @@ CREATE TABLE IF NOT EXISTS settings (
     cashSweepEnabled INTEGER DEFAULT 1,
     cashDrawerLimit REAL DEFAULT 5000,
     cashFloatTarget REAL DEFAULT 1000,
+    aiAssistantEnabled INTEGER DEFAULT 1,
+    aiDailyRequestLimit INTEGER DEFAULT 20,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -436,3 +438,15 @@ CREATE TABLE IF NOT EXISTS idempotencyKeys (
     createdAt INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, branchId, idempotencyKey);
+
+CREATE TABLE IF NOT EXISTS aiUsage (
+    id TEXT PRIMARY KEY,
+    businessId TEXT NOT NULL,
+    userId TEXT NOT NULL,
+    userName TEXT,
+    branchId TEXT,
+    day TEXT NOT NULL,
+    count INTEGER DEFAULT 0,
+    updated_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_aiUsage_scope ON aiUsage(businessId, userId, day);

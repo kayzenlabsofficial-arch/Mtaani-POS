@@ -24,6 +24,7 @@ import SupplierPaymentsTab from './components/tabs/SupplierPaymentsTab';
 import DocumentsTab from './components/tabs/DocumentsTab';
 import ReportsTab from './components/tabs/ReportsTab';
 import AdminPanel from './components/tabs/AdminPanel';
+import AIAssistant from './components/ai/AIAssistant';
 
 // Layout & Shell
 import Sidebar from './components/shared/Sidebar';
@@ -236,6 +237,12 @@ export default function MtaaniPOS() {
             <MaterialIcon name="add_shopping_cart" style={{ fontSize: '28px' }} />
           </button>
         )}
+
+        <AIAssistant
+          activeBusinessId={activeBusinessId}
+          activeBranchId={activeBranchId}
+          currentUser={currentUser}
+        />
       </div>
 
       {isMoreMenuOpen && (

@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, amount REAL NOT NULL, 
  CREATE TABLE IF NOT EXISTS dailySummaries (id TEXT PRIMARY KEY, date INTEGER NOT NULL, shiftIds TEXT NOT NULL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, totalExpenses REAL NOT NULL, totalPicks REAL NOT NULL, totalVariance REAL NOT NULL, timestamp INTEGER NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (id TEXT PRIMARY KEY, productId TEXT NOT NULL, productName TEXT, oldQty REAL, newQty REAL, requestedQuantity REAL, reason TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, preparedBy TEXT, approvedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS purchaseOrders (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, items TEXT NOT NULL, totalAmount REAL NOT NULL, status TEXT NOT NULL, approvalStatus TEXT NOT NULL, paymentStatus TEXT, paidAmount REAL, orderDate INTEGER NOT NULL, expectedDate INTEGER, receivedDate INTEGER, invoiceNumber TEXT, poNumber TEXT, preparedBy TEXT, approvedBy TEXT, receivedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
- CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, storeName TEXT NOT NULL, location TEXT, tillNumber TEXT, kraPin TEXT, receiptFooter TEXT, ownerModeEnabled INTEGER DEFAULT 0, autoApproveOwnerActions INTEGER DEFAULT 1, cashSweepEnabled INTEGER DEFAULT 1, cashDrawerLimit REAL DEFAULT 5000, cashFloatTarget REAL DEFAULT 1000, businessId TEXT, updated_at INTEGER);
+ CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, storeName TEXT NOT NULL, location TEXT, tillNumber TEXT, kraPin TEXT, receiptFooter TEXT, ownerModeEnabled INTEGER DEFAULT 0, autoApproveOwnerActions INTEGER DEFAULT 1, cashSweepEnabled INTEGER DEFAULT 1, cashDrawerLimit REAL DEFAULT 5000, cashFloatTarget REAL DEFAULT 1000, aiAssistantEnabled INTEGER DEFAULT 1, aiDailyRequestLimit INTEGER DEFAULT 20, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, iconName TEXT NOT NULL, color TEXT NOT NULL, businessId TEXT, branchId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, name TEXT NOT NULL, location TEXT NOT NULL, phone TEXT, tillNumber TEXT, kraPin TEXT, isActive INTEGER NOT NULL DEFAULT 1, businessId TEXT, mpesaConsumerKey TEXT, mpesaConsumerSecret TEXT, mpesaPasskey TEXT, mpesaEnv TEXT, mpesaType TEXT DEFAULT 'paybill', mpesaStoreNumber TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS expenseAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, businessId TEXT, updated_at INTEGER);
@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS deviceSyncStatus (id TEXT PRIMARY KEY, businessId TEX
 CREATE INDEX IF NOT EXISTS idx_deviceSyncStatus_branch ON deviceSyncStatus(businessId, branchId, lastSyncAt);
 CREATE TABLE IF NOT EXISTS idempotencyKeys (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, branchId TEXT NOT NULL, idempotencyKey TEXT NOT NULL, operation TEXT NOT NULL, deviceId TEXT, cashierName TEXT, createdAt INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, branchId, idempotencyKey);
+CREATE TABLE IF NOT EXISTS aiUsage (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, userId TEXT NOT NULL, userName TEXT, branchId TEXT, day TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at INTEGER);
+CREATE INDEX IF NOT EXISTS idx_aiUsage_scope ON aiUsage(businessId, userId, day);
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp);
 CREATE INDEX IF NOT EXISTS idx_stockmovements_product ON stockMovements(productId);
@@ -204,6 +206,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['settings', 'cashSweepEnabled INTEGER DEFAULT 1'],
           ['settings', 'cashDrawerLimit REAL DEFAULT 5000'],
           ['settings', 'cashFloatTarget REAL DEFAULT 1000'],
+          ['settings', 'aiAssistantEnabled INTEGER DEFAULT 1'],
+          ['settings', 'aiDailyRequestLimit INTEGER DEFAULT 20'],
         ];
         const allTables = ['users', 'products', 'productIngredients', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'customerPayments', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
         for (const t of allTables) {
@@ -259,6 +263,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashSweepEnabled INTEGER DEFAULT 1').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashDrawerLimit REAL DEFAULT 5000').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashFloatTarget REAL DEFAULT 1000').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN aiAssistantEnabled INTEGER DEFAULT 1').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN aiDailyRequestLimit INTEGER DEFAULT 20').run(); } catch (e) {}
     }
 
     if (table === 'creditNotes') {

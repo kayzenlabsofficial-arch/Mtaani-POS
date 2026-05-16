@@ -10,3 +10,6 @@ database_id = "9b66d200-8a63-423b-883f-fefee3259bab"
 [[kv_namespaces]]
 binding = "IMAGES_KV"
 id = "9861e4885e1b4ce4bb79a2534d88f2ab"
+
+[ai]
+binding = "AI"

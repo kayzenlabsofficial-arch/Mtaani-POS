@@ -325,6 +325,8 @@ export interface BusinessSettings {
   cashSweepEnabled?: number;
   cashDrawerLimit?: number;
   cashFloatTarget?: number;
+  aiAssistantEnabled?: number;
+  aiDailyRequestLimit?: number;
   businessId: string;
   updated_at?: number;
 }
