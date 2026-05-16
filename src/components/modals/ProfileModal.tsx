@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { User, KeyRound, Save, X, ShieldCheck, LogOut } from 'lucide-react';
-import { db } from '../../db';
-import { verifyPassword, hashPassword } from '../../security';
+import { User, KeyRound, Save, X, ShieldCheck } from 'lucide-react';
+import { getApiKey } from '../../runtimeConfig';
 import { useToast } from '../../context/ToastContext';
 
 interface ProfileModalProps {
@@ -39,23 +38,18 @@ export default function ProfileModal({ isOpen, onClose, currentUser }: ProfileMo
 
     setIsSaving(true);
     try {
-      // 1. Verify current password
-      const isCorrect = await verifyPassword(currentPassword, currentUser.password);
-      if (!isCorrect) {
-        error("Incorrect current password.");
-        setIsSaving(false);
-        return;
-      }
-
-      // 2. Hash and update
-      const hashed = await hashPassword(newPassword);
-      await db.users.update(currentUser.id, { 
-        password: hashed,
-        updated_at: Date.now() 
+      const apiKey = await getApiKey();
+      const res = await fetch('/api/user/password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey,
+        },
+        cache: 'no-store',
+        body: JSON.stringify({ currentPassword, newPassword }),
       });
-
-      // 3. Sync to cloud
-      await db.sync();
+      const data: any = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Password update failed (${res.status})`);
       
       success("Password updated successfully.");
       setCurrentPassword('');

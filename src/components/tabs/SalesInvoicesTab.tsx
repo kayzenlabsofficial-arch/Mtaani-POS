@@ -73,7 +73,7 @@ export default function SalesInvoicesTab() {
 
   const [isServiceModalOpen, setIsServiceModalOpen] = React.useState(false);
   const [editingService, setEditingService] = React.useState<ServiceItem | null>(null);
-  const [serviceForm, setServiceForm] = React.useState({ name: '', category: 'General', description: '', price: '', taxCategory: 'A' as 'A' | 'E', isActive: true });
+  const [serviceForm, setServiceForm] = React.useState({ name: '', category: 'General', description: '', taxCategory: 'A' as 'A' | 'E', isActive: true });
 
   const [selectedInvoice, setSelectedInvoice] = React.useState<SalesInvoice | null>(null);
   const [paymentInvoice, setPaymentInvoice] = React.useState<SalesInvoice | null>(null);
@@ -120,7 +120,7 @@ export default function SalesInvoicesTab() {
   }));
   const serviceOptions = activeServices.map(service => ({
     value: service.id,
-    label: `${service.name} - ${money(service.price)}`,
+    label: service.name,
     keywords: `${service.name} ${service.category || ''} ${service.description || ''}`,
   }));
 
@@ -183,7 +183,7 @@ export default function SalesInvoicesTab() {
       ...prev,
       itemId: service.id,
       name: service.name,
-      unitPrice: String(service.price || 0),
+      unitPrice: '',
       taxCategory: service.taxCategory === 'A' ? 'A' : 'E',
     }));
   };
@@ -194,7 +194,7 @@ export default function SalesInvoicesTab() {
     const name = lineInput.name.trim();
     if (!name) return error('Enter the item or service name.');
     if (!quantity || quantity <= 0) return error('Quantity must be more than zero.');
-    if (unitPrice < 0 || Number.isNaN(unitPrice)) return error('Enter a valid price.');
+    if (unitPrice < 0 || Number.isNaN(unitPrice)) return error('Enter a valid amount.');
     setLines(prev => [...prev, {
       id: crypto.randomUUID(),
       itemType: lineInput.itemType,
@@ -300,26 +300,23 @@ export default function SalesInvoicesTab() {
       name: service.name,
       category: service.category || 'General',
       description: service.description || '',
-      price: String(service.price || 0),
       taxCategory: service.taxCategory === 'A' ? 'A' : 'E',
       isActive: Number(service.isActive) !== 0,
-    } : { name: '', category: 'General', description: '', price: '', taxCategory: 'A', isActive: true });
+    } : { name: '', category: 'General', description: '', taxCategory: 'A', isActive: true });
     setIsServiceModalOpen(true);
   };
 
   const saveService = async () => {
     if (isSaving) return;
     if (!activeBusinessId) return error('Please log in again.');
-    const price = Number(serviceForm.price);
     if (!serviceForm.name.trim()) return error('Enter the service name.');
-    if (price < 0 || Number.isNaN(price)) return error('Enter a valid price.');
     setIsSaving(true);
     try {
       const payload = {
         name: serviceForm.name.trim(),
         category: serviceForm.category.trim() || 'General',
         description: serviceForm.description.trim() || undefined,
-        price,
+        price: 0,
         taxCategory: serviceForm.taxCategory,
         isActive: serviceForm.isActive ? 1 : 0,
         businessId: activeBusinessId,
@@ -345,7 +342,7 @@ export default function SalesInvoicesTab() {
     if (!paymentInvoice || isSaving) return;
     if (!activeBusinessId || !activeBranchId) return error('Please select a branch first.');
     const amount = Number(paymentForm.amount);
-    if (!amount || amount <= 0) return error('Enter the amount paid.');
+    if (!amount || amount <= 0) return error('Enter the amount to clear.');
     if (amount > Number(paymentInvoice.balance || 0)) return error('Amount is more than the invoice balance.');
     setIsSaving(true);
     try {
@@ -376,9 +373,9 @@ export default function SalesInvoicesTab() {
       setPaymentInvoice(null);
       setPaymentForm({ amount: '', method: 'CASH', reference: '' });
       setSelectedInvoice(updated);
-      success(balance <= 0 ? 'Invoice fully paid.' : 'Payment recorded.');
+      success(balance <= 0 ? 'Invoice cleared.' : 'Balance reduced.');
     } catch (err: any) {
-      error('Could not record payment: ' + err.message);
+      error('Could not clear balance: ' + err.message);
     } finally {
       setIsSaving(false);
     }
@@ -386,7 +383,7 @@ export default function SalesInvoicesTab() {
 
   const cancelInvoice = async (invoice: SalesInvoice) => {
     if (invoice.status === 'PAID' || Number(invoice.paidAmount || 0) > 0) {
-      return error('This invoice already has a payment. Record an adjustment instead.');
+      return error('This invoice already has an amount cleared. Record an adjustment instead.');
     }
     if (!confirm(`Cancel invoice ${invoice.invoiceNumber}?`)) return;
     setIsSaving(true);
@@ -457,7 +454,7 @@ export default function SalesInvoicesTab() {
           <div className="mt-1 flex flex-wrap items-center gap-3 text-[10px] font-bold text-slate-500">
             <span>{invoices.length} invoices</span>
             <span className="text-slate-300">|</span>
-            <span className="text-rose-600">{money(unpaidTotal)} unpaid</span>
+            <span className="text-rose-600">{money(unpaidTotal)} not cleared</span>
             <span className="text-slate-300">|</span>
             <span className="text-emerald-600">{services.length} services</span>
           </div>
@@ -482,11 +479,11 @@ export default function SalesInvoicesTab() {
 
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Unpaid</p>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Not Cleared</p>
           <p className="mt-1 text-2xl font-black tabular-nums text-rose-600">{money(unpaidTotal)}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Paid This Month</p>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Cleared This Month</p>
           <p className="mt-1 text-2xl font-black tabular-nums text-emerald-600">{money(paidThisMonth)}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -518,9 +515,9 @@ export default function SalesInvoicesTab() {
               className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-widest text-slate-600 outline-none"
             >
               <option value="ALL">All Status</option>
-              <option value="SENT">Unpaid</option>
-              <option value="PARTIAL">Part Paid</option>
-              <option value="PAID">Paid</option>
+              <option value="SENT">Not Cleared</option>
+              <option value="PARTIAL">Part Cleared</option>
+              <option value="PAID">Cleared</option>
               <option value="CANCELLED">Cancelled</option>
             </select>
           )}
@@ -599,7 +596,7 @@ export default function SalesInvoicesTab() {
               <h3 className="truncate text-sm font-black text-slate-900">{service.name}</h3>
               <p className="mt-1 truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">{service.category || 'General'}</p>
               {service.description && <p className="mt-3 line-clamp-2 text-xs font-semibold text-slate-500">{service.description}</p>}
-              <p className="mt-4 text-xl font-black tabular-nums text-slate-950">{money(service.price)}</p>
+              <p className="mt-4 text-xs font-black uppercase tracking-widest text-slate-400">Set amount when billing</p>
             </button>
           ))}
         </section>
@@ -671,7 +668,7 @@ export default function SalesInvoicesTab() {
                         />
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-3 md:grid-cols-[1fr_1fr_9rem_auto]">
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_8rem_7rem]">
                       <input
                         type="number"
                         min="0.001"
@@ -686,7 +683,7 @@ export default function SalesInvoicesTab() {
                         min="0"
                         value={lineInput.unitPrice}
                         onChange={e => setLineInput(prev => ({ ...prev, unitPrice: e.target.value }))}
-                        placeholder="Price"
+                        placeholder="Amount"
                         className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-primary"
                       />
                       <select
@@ -697,7 +694,7 @@ export default function SalesInvoicesTab() {
                         <option value="A">VAT</option>
                         <option value="E">No VAT</option>
                       </select>
-                      <button onClick={addLine} type="button" className="col-span-2 h-12 rounded-xl bg-slate-900 px-5 text-xs font-black uppercase tracking-widest text-white md:col-span-1">
+                      <button onClick={addLine} type="button" className="col-span-2 h-12 rounded-xl bg-slate-900 px-5 text-xs font-black uppercase tracking-widest text-white md:col-span-1 md:w-full">
                         Add
                       </button>
                     </div>
@@ -767,9 +764,11 @@ export default function SalesInvoicesTab() {
             </div>
             <div className="space-y-3">
               <input value={serviceForm.name} onChange={e => setServiceForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Service name" className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary" />
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input value={serviceForm.category} onChange={e => setServiceForm(prev => ({ ...prev, category: e.target.value }))} placeholder="Category" className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary" />
-                <input type="number" min="0" value={serviceForm.price} onChange={e => setServiceForm(prev => ({ ...prev, price: e.target.value }))} placeholder="Price" className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary" />
+                <div className="flex h-12 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 text-xs font-black uppercase tracking-widest text-slate-400">
+                  Amount is added on the invoice
+                </div>
               </div>
               <textarea value={serviceForm.description} onChange={e => setServiceForm(prev => ({ ...prev, description: e.target.value }))} placeholder="Short description" className="min-h-24 w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-bold outline-none focus:border-primary" />
               <div className="grid grid-cols-2 gap-3">
@@ -833,7 +832,7 @@ export default function SalesInvoicesTab() {
                   disabled={selectedInvoice.status === 'PAID' || selectedInvoice.status === 'CANCELLED'}
                   className="flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 text-xs font-black uppercase tracking-widest text-white disabled:opacity-40"
                 >
-                  <Banknote size={16} /> Pay
+                  <Banknote size={16} /> Clear
                 </button>
                 <button
                   onClick={() => cancelInvoice(selectedInvoice)}
@@ -853,7 +852,7 @@ export default function SalesInvoicesTab() {
           <div className="w-full max-w-md rounded-t-[2rem] bg-white p-5 shadow-2xl sm:rounded-[2rem]">
             <div className="mb-5 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-black text-slate-900">Record Payment</h3>
+                <h3 className="text-base font-black text-slate-900">Clear Invoice Balance</h3>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{paymentInvoice.invoiceNumber}</p>
               </div>
               <button onClick={() => setPaymentInvoice(null)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
@@ -861,7 +860,7 @@ export default function SalesInvoicesTab() {
               </button>
             </div>
             <div className="space-y-3">
-              <input type="number" min="0" value={paymentForm.amount} onChange={e => setPaymentForm(prev => ({ ...prev, amount: e.target.value }))} placeholder="Amount paid" className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary" />
+              <input type="number" min="0" value={paymentForm.amount} onChange={e => setPaymentForm(prev => ({ ...prev, amount: e.target.value }))} placeholder="Amount to clear" className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary" />
               <select value={paymentForm.method} onChange={e => setPaymentForm(prev => ({ ...prev, method: e.target.value as any }))} className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-black text-slate-700 outline-none">
                 <option value="CASH">Cash</option>
                 <option value="MPESA">M-Pesa</option>
@@ -869,9 +868,9 @@ export default function SalesInvoicesTab() {
                 <option value="PDQ">Card</option>
                 <option value="CHEQUE">Cheque</option>
               </select>
-              <input value={paymentForm.reference} onChange={e => setPaymentForm(prev => ({ ...prev, reference: e.target.value }))} placeholder="Payment code or note" className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary" />
+              <input value={paymentForm.reference} onChange={e => setPaymentForm(prev => ({ ...prev, reference: e.target.value }))} placeholder="Code or note" className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary" />
               <button onClick={applyPayment} disabled={isSaving} className="h-12 w-full rounded-xl bg-emerald-600 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">
-                {isSaving ? 'Saving...' : 'Save Payment'}
+                {isSaving ? 'Saving...' : 'Clear Balance'}
               </button>
             </div>
           </div>
@@ -889,9 +888,9 @@ function StatusPill({ status }: { status: SalesInvoice['status'] }) {
     CANCELLED: 'bg-slate-100 text-slate-500',
   };
   const labels: Record<SalesInvoice['status'], string> = {
-    SENT: 'Unpaid',
-    PARTIAL: 'Part Paid',
-    PAID: 'Paid',
+    SENT: 'Not Cleared',
+    PARTIAL: 'Part Cleared',
+    PAID: 'Cleared',
     CANCELLED: 'Cancelled',
   };
   return (

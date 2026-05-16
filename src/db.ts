@@ -390,6 +390,10 @@ export interface Branch {
   mpesaEnv?: 'sandbox' | 'production';
   mpesaType?: 'paybill' | 'buygoods';
   mpesaStoreNumber?: string;
+  mpesaConsumerKeySet?: boolean;
+  mpesaConsumerSecretSet?: boolean;
+  mpesaPasskeySet?: boolean;
+  mpesaConfigured?: boolean;
   updated_at?: number;
 }
 

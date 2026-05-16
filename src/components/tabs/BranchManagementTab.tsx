@@ -5,10 +5,12 @@ import { db, type Branch } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { SearchableSelect } from '../shared/SearchableSelect';
+import { saveBranchMpesaSettings } from '../../services/mpesaSettings';
 
 
 export default function BranchManagementTab() {
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  const currentUser = useStore(state => state.currentUser);
   const branches = useLiveQuery(
     () => activeBusinessId ? db.branches.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],
@@ -26,10 +28,13 @@ export default function BranchManagementTab() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK);
+  const [mpesaGate, setMpesaGate] = useState({ adminPassword: '', confirmationText: '' });
   const [saving, setSaving] = useState(false);
+  const isMpesaUnlocked = !!mpesaGate.adminPassword && mpesaGate.confirmationText.trim().toUpperCase() === 'UPDATE MPESA';
 
   const openNew = () => {
     setForm(BLANK);
+    setMpesaGate({ adminPassword: '', confirmationText: '' });
     setEditingId(null);
     setIsFormOpen(true);
   };
@@ -42,21 +47,24 @@ export default function BranchManagementTab() {
         tillNumber: b.tillNumber || '', 
         kraPin: b.kraPin || '', 
         isActive: b.isActive,
-        mpesaConsumerKey: b.mpesaConsumerKey || '',
-        mpesaConsumerSecret: b.mpesaConsumerSecret || '',
-        mpesaPasskey: b.mpesaPasskey || '',
+        mpesaConsumerKey: '',
+        mpesaConsumerSecret: '',
+        mpesaPasskey: '',
         mpesaEnv: b.mpesaEnv || 'sandbox',
         mpesaType: b.mpesaType || 'paybill',
-        mpesaStoreNumber: b.mpesaStoreNumber || ''
+        mpesaStoreNumber: b.mpesaStoreNumber && b.mpesaStoreNumber !== 'Saved' ? b.mpesaStoreNumber : ''
     });
+    setMpesaGate({ adminPassword: '', confirmationText: '' });
     setEditingId(b.id);
     setIsFormOpen(true);
   };
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.location.trim() || saving) return;
+    if (!activeBusinessId || !currentUser) return;
     setSaving(true);
     try {
+      let savedBranchId = editingId;
       if (editingId) {
         await db.branches.update(editingId, {
           name: form.name.trim(),
@@ -65,38 +73,48 @@ export default function BranchManagementTab() {
           tillNumber: form.tillNumber.trim() || undefined,
           kraPin: form.kraPin.trim() || undefined,
           isActive: form.isActive,
-          mpesaConsumerKey: form.mpesaConsumerKey?.trim() || undefined,
-          mpesaConsumerSecret: form.mpesaConsumerSecret?.trim() || undefined,
-          mpesaPasskey: form.mpesaPasskey?.trim() || undefined,
-          mpesaEnv: form.mpesaEnv as any,
-          mpesaType: form.mpesaType as any,
-          mpesaStoreNumber: form.mpesaStoreNumber?.trim() || undefined
         });
-        success("Branch updated.");
       } else {
+        savedBranchId = 'branch_' + crypto.randomUUID().split('-')[0];
         await db.branches.add({
-          id: 'branch_' + crypto.randomUUID().split('-')[0],
+          id: savedBranchId,
           name: form.name.trim(),
           location: form.location.trim(),
           phone: form.phone.trim() || undefined,
           tillNumber: form.tillNumber.trim() || undefined,
           kraPin: form.kraPin.trim() || undefined,
           isActive: true,
-          businessId: activeBusinessId!,
-          mpesaConsumerKey: form.mpesaConsumerKey?.trim() || undefined,
-          mpesaConsumerSecret: form.mpesaConsumerSecret?.trim() || undefined,
-          mpesaPasskey: form.mpesaPasskey?.trim() || undefined,
-          mpesaEnv: form.mpesaEnv as any,
-          mpesaType: form.mpesaType as any,
-          mpesaStoreNumber: form.mpesaStoreNumber?.trim() || undefined
+          businessId: activeBusinessId,
         });
-        success("Branch created.");
       }
+
+      if (isMpesaUnlocked && savedBranchId) {
+        const result = await saveBranchMpesaSettings({
+          businessId: activeBusinessId,
+          branchId: savedBranchId,
+          userId: currentUser.id,
+          adminPassword: mpesaGate.adminPassword,
+          confirmationText: mpesaGate.confirmationText,
+          credentials: {
+            consumerKey: form.mpesaConsumerKey.trim() || undefined,
+            consumerSecret: form.mpesaConsumerSecret.trim() || undefined,
+            passkey: form.mpesaPasskey.trim() || undefined,
+            env: form.mpesaEnv as 'sandbox' | 'production',
+            type: form.mpesaType as 'paybill' | 'buygoods',
+            storeNumber: form.mpesaStoreNumber.trim() || undefined,
+          },
+        });
+        if (result.error) throw new Error(result.error);
+        await db.branches.reload();
+      }
+
+      success(isMpesaUnlocked ? "Branch and M-Pesa settings saved." : editingId ? "Branch updated." : "Branch created.");
       setIsFormOpen(false);
       setEditingId(null);
+      setMpesaGate({ adminPassword: '', confirmationText: '' });
       setForm(BLANK);
-    } catch (err) {
-      error("Failed to save branch.");
+    } catch (err: any) {
+      error(err?.message || "Failed to save branch.");
     } finally {
       setSaving(false);
     }
@@ -141,6 +159,8 @@ export default function BranchManagementTab() {
       }
     }
   };
+
+  const branchBeingEdited = editingId ? (branches || []).find(branch => branch.id === editingId) : null;
 
   return (
     <div className="pb-24 animate-in fade-in w-full">
@@ -299,12 +319,44 @@ export default function BranchManagementTab() {
                   <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-6 flex items-center gap-2">
                     <Smartphone size={14} /> M-Pesa Settings
                   </h4>
+                  <div className="mb-6 rounded-2xl border border-indigo-100 bg-white p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Security Check</p>
+                        <p className="mt-1 text-xs font-bold text-slate-400">
+                          {branchBeingEdited?.mpesaConfigured ? 'Credentials are saved and hidden.' : 'No saved credentials shown here.'}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest ${isMpesaUnlocked ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {isMpesaUnlocked ? 'Unlocked' : 'Locked'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <input
+                        type="password"
+                        value={mpesaGate.adminPassword}
+                        onChange={e => setMpesaGate(g => ({ ...g, adminPassword: e.target.value }))}
+                        className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500"
+                        placeholder="Admin password"
+                      />
+                      <input
+                        value={mpesaGate.confirmationText}
+                        onChange={e => setMpesaGate(g => ({ ...g, confirmationText: e.target.value }))}
+                        className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold uppercase tracking-widest text-slate-900 outline-none focus:border-indigo-500"
+                        placeholder="Type UPDATE MPESA"
+                      />
+                    </div>
+                    <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      Saved app keys and passkeys are never displayed. Leave secret fields blank to keep the saved ones.
+                    </p>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                      <div>
                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Mode</label>
                        <SearchableSelect
                          value={form.mpesaEnv}
                          onChange={(v) => setForm(f => ({ ...f, mpesaEnv: v as any }))}
+                         disabled={!isMpesaUnlocked}
                          options={[
                            { value: 'sandbox', label: 'Test Mode', keywords: 'sandbox test testing' },
                            { value: 'production', label: 'Live Mode', keywords: 'production live' },
@@ -317,6 +369,7 @@ export default function BranchManagementTab() {
                        <SearchableSelect
                          value={form.mpesaType}
                          onChange={(v) => setForm(f => ({ ...f, mpesaType: v as any }))}
+                         disabled={!isMpesaUnlocked}
                          options={[
                            { value: 'paybill', label: 'Paybill', keywords: 'paybill' },
                            { value: 'buygoods', label: 'Buy Goods (Till)', keywords: 'buy goods till' },
@@ -332,8 +385,9 @@ export default function BranchManagementTab() {
                          type="text"
                          value={form.mpesaConsumerKey}
                          onChange={e => setForm(f => ({ ...f, mpesaConsumerKey: e.target.value }))}
-                         className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm"
-                         placeholder="Consumer Key"
+                         disabled={!isMpesaUnlocked}
+                         className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                         placeholder={branchBeingEdited?.mpesaConsumerKeySet ? 'Saved. Enter new key to replace' : 'Consumer Key'}
                        />
                      </div>
                      <div>
@@ -342,8 +396,9 @@ export default function BranchManagementTab() {
                          type="password"
                          value={form.mpesaConsumerSecret}
                          onChange={e => setForm(f => ({ ...f, mpesaConsumerSecret: e.target.value }))}
-                         className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm"
-                         placeholder="Consumer Secret"
+                         disabled={!isMpesaUnlocked}
+                         className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                         placeholder={branchBeingEdited?.mpesaConsumerSecretSet ? 'Saved. Enter new secret to replace' : 'Consumer Secret'}
                        />
                      </div>
                   </div>
@@ -354,9 +409,9 @@ export default function BranchManagementTab() {
                          type="text"
                          value={form.mpesaStoreNumber}
                          onChange={e => setForm(f => ({ ...f, mpesaStoreNumber: e.target.value }))}
-                         className={`w-full border-2 rounded-2xl px-6 py-4.5 text-sm font-black transition-all outline-none ${form.mpesaType === 'buygoods' ? 'bg-white border-transparent focus:border-indigo-500 text-slate-900' : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'}`}
+                         className={`w-full border-2 rounded-2xl px-6 py-4.5 text-sm font-black transition-all outline-none ${form.mpesaType === 'buygoods' && isMpesaUnlocked ? 'bg-white border-transparent focus:border-indigo-500 text-slate-900' : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'}`}
                          placeholder="Required for Till"
-                         disabled={form.mpesaType !== 'buygoods'}
+                         disabled={form.mpesaType !== 'buygoods' || !isMpesaUnlocked}
                        />
                      </div>
                      <div>
@@ -365,8 +420,9 @@ export default function BranchManagementTab() {
                          type="password"
                          value={form.mpesaPasskey}
                          onChange={e => setForm(f => ({ ...f, mpesaPasskey: e.target.value }))}
-                         className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm"
-                         placeholder="M-Pesa passkey"
+                         disabled={!isMpesaUnlocked}
+                         className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                         placeholder={branchBeingEdited?.mpesaPasskeySet ? 'Saved. Enter new passkey to replace' : 'M-Pesa passkey'}
                        />
                      </div>
                   </div>
@@ -375,7 +431,7 @@ export default function BranchManagementTab() {
 
             <div className="flex gap-4 mt-12">
                <button
-                 onClick={() => { setIsFormOpen(false); setEditingId(null); setForm(BLANK); }}
+                 onClick={() => { setIsFormOpen(false); setEditingId(null); setMpesaGate({ adminPassword: '', confirmationText: '' }); setForm(BLANK); }}
                  className="flex-1 py-5 bg-white text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-2xl border-2 border-slate-100 press"
                >
                  Cancel

@@ -6,6 +6,14 @@ export interface CartItem extends Product {
   cartQuantity: number;
 }
 
+type SafeUser = Omit<User, 'password'> & { password: string };
+
+const sanitizeUser = (user: SafeUser | null): SafeUser | null => {
+  if (!user) return null;
+  const { password, ...safe } = user as any;
+  return { ...safe, password: '' } as SafeUser;
+};
+
 const clampCartQuantity = (quantity: number, product: Product) => {
   const requested = Number.isFinite(quantity) ? quantity : 1;
   const stock = Number(product.stockQuantity);
@@ -22,19 +30,20 @@ interface POSState {
   cart: CartItem[];
   isAdmin: boolean;
   isManager: boolean;
-  currentUser: User | null;
+  currentUser: SafeUser | null;
   activeShift: any | null;
   activeBranchId: string | null;
   activeBusinessId: string | null;
+  authToken: string | null;
   isSystemAdmin: boolean;
-  login: (user: User) => void;
+  login: (user: SafeUser, authToken?: string | null) => void;
   logout: () => void;
   addToCart: (product: Product) => void;
   removeFromCart: (productId: string) => void;
   updateQuantity: (productId: string, delta: number) => void;
   setQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
-  setCurrentUser: (user: User | null) => void;
+  setCurrentUser: (user: SafeUser | null) => void;
   setActiveShift: (shift: any | null) => void;
   setActiveBranchId: (id: string | null) => void;
   setActiveBusinessId: (id: string | null) => void;
@@ -49,10 +58,11 @@ const initialState = {
   cart: [] as CartItem[],
   isAdmin: false,
   isManager: false,
-  currentUser: null as User | null,
+  currentUser: null as SafeUser | null,
   activeShift: null as any | null,
   activeBranchId: null as string | null,
   activeBusinessId: null as string | null,
+  authToken: null as string | null,
   isSystemAdmin: false,
   paymentSupplierId: null as string | null,
   selectedCustomerId: null as string | null,
@@ -67,13 +77,14 @@ export const useStore = create<POSState>()(
       setActiveBranchId: (activeBranchId) => set({ activeBranchId }),
       setActiveBusinessId: (activeBusinessId) => set({ activeBusinessId }),
       setCurrentUser: (user) => set({ 
-        currentUser: user, 
+        currentUser: sanitizeUser(user), 
         isAdmin: user?.role === 'ADMIN',
         isManager: user?.role === 'MANAGER',
         isSystemAdmin: user?.role === 'ROOT'
       }),
-      login: (user) => set({ 
-        currentUser: user, 
+      login: (user, authToken = null) => set({ 
+        currentUser: sanitizeUser(user), 
+        authToken,
         isAdmin: user?.role === 'ADMIN',
         isManager: user?.role === 'MANAGER',
         isSystemAdmin: user?.role === 'ROOT'
@@ -81,7 +92,8 @@ export const useStore = create<POSState>()(
       logout: () => set({ 
         ...initialState,
         activeBusinessId: null,
-        activeBranchId: null
+        activeBranchId: null,
+        authToken: null
       }),
       setActiveShift: (activeShift) => set({ activeShift }),
       addToCart: (product) => set((state) => {
@@ -123,9 +135,20 @@ export const useStore = create<POSState>()(
     }),
     {
       name: 'mtaani-pos-storage',
-      version: 2,
-      migrate: () => ({}),
-      partialize: () => ({}),
+      version: 3,
+      migrate: (persistedState) => {
+        const state = persistedState && typeof persistedState === 'object' ? persistedState as Partial<POSState> : {};
+        return { ...state, currentUser: sanitizeUser(state.currentUser || null) } as any;
+      },
+      partialize: (state) => ({
+        currentUser: sanitizeUser(state.currentUser),
+        authToken: state.authToken,
+        isAdmin: state.isAdmin,
+        isManager: state.isManager,
+        isSystemAdmin: state.isSystemAdmin,
+        activeBusinessId: state.activeBusinessId,
+        activeBranchId: state.activeBranchId,
+      }),
     }
   )
 );

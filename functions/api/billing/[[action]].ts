@@ -1,3 +1,5 @@
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
+
 interface Env {
   DB: D1Database;
   API_SECRET?: string;
@@ -27,7 +29,7 @@ type BillingAccount = {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -417,26 +419,30 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params }) =>
       return handleCallback(action, request, env);
     }
 
-    if (!env.API_SECRET) return json({ error: 'Server misconfigured' }, 500);
-    if (request.headers.get('X-API-Key') !== env.API_SECRET) return json({ error: 'Unauthorized' }, 401);
+    const auth = await authorizeRequest(request, env);
+    if (!auth.ok) return auth.response;
+    const rootAccess = auth.service || auth.principal.role === 'ROOT';
     await ensureBillingSchema(env.DB);
 
     const url = new URL(request.url);
     const route = action[0] || 'current';
 
     if (request.method === 'GET' && route === 'summary') {
+      if (!rootAccess) return json({ error: 'Root access required.' }, 403);
       return json({ rows: await billingSummary(env.DB) });
     }
 
     if (request.method === 'GET' && route === 'current') {
       const businessId = String(url.searchParams.get('businessId') || request.headers.get('X-Business-ID') || '').trim();
       if (!businessId) return json({ error: 'Business is required.' }, 400);
+      if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
       const account = await getAccount(env.DB, businessId);
       const invoice = await ensureInvoice(env.DB, businessId, String(url.searchParams.get('period') || currentPeriod()));
       return json({ account, invoice, showBanner: !!account.bannerEnabled });
     }
 
     if (request.method === 'POST' && route === 'account') {
+      if (!rootAccess) return json({ error: 'Root access required.' }, 403);
       const body = await request.json().catch(() => null) as any;
       const businessId = String(body?.businessId || '').trim();
       if (!businessId) return json({ error: 'Business is required.' }, 400);
@@ -477,6 +483,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params }) =>
     }
 
     if (request.method === 'POST' && route === 'invoice') {
+      if (!rootAccess) return json({ error: 'Root access required.' }, 403);
       const body = await request.json().catch(() => null) as any;
       const businessId = String(body?.businessId || '').trim();
       if (!businessId) return json({ error: 'Business is required.' }, 400);
@@ -484,6 +491,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params }) =>
     }
 
     if (request.method === 'POST' && route === 'payment') {
+      if (!rootAccess) return json({ error: 'Root access required.' }, 403);
       const body = await request.json().catch(() => null) as any;
       const businessId = String(body?.businessId || '').trim();
       const amount = Math.max(0, asNumber(body?.amount, 0));
@@ -511,6 +519,9 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params }) =>
 
     if (request.method === 'POST' && route === 'stkpush') {
       const body = await request.json().catch(() => null) as any;
+      const businessId = String(body?.businessId || '').trim();
+      if (!businessId) return json({ error: 'Business is required.' }, 400);
+      if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
       return triggerBillingStk(request, env, body);
     }
 
@@ -519,6 +530,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params }) =>
       if (!id) return json({ error: 'Payment id required.' }, 400);
       const payment = await first<any>(env.DB, 'SELECT * FROM billingPayments WHERE id = ? OR checkoutRequestId = ? LIMIT 1', id, id);
       if (!payment) return json({ found: false });
+      if (!canAccessBusiness(auth.principal, payment.businessId)) return json({ error: 'Access denied.' }, 403);
       const invoice = await recomputeInvoice(env.DB, payment.invoiceId);
       return json({ found: true, payment, invoice });
     }

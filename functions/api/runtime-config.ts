@@ -1,6 +1,4 @@
-interface Env {
-  API_SECRET?: string;
-}
+interface Env {}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,11 +16,10 @@ function jsonHeaders() {
 }
 
 export const onRequestGet: PagesFunction<Env> = async (context) => {
-  const { env } = context;
-
   return new Response(
     JSON.stringify({
-      apiKey: env.API_SECRET ? env.API_SECRET : null,
+      apiKey: null,
+      message: 'Runtime secrets are server-side only.',
     }),
     { headers: jsonHeaders() }
   );

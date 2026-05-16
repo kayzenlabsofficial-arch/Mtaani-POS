@@ -69,6 +69,21 @@ function isLikelyOfflineError(e: any): boolean {
   );
 }
 
+function sanitizeRowsForClient(table: string, rows: any[]): any[] {
+  if (table !== 'branches') return rows;
+  return rows.map(row => {
+    const clean = { ...row };
+    clean.mpesaConsumerKeySet = !!row.mpesaConsumerKeySet || !!row.mpesaConsumerKey;
+    clean.mpesaConsumerSecretSet = !!row.mpesaConsumerSecretSet || !!row.mpesaConsumerSecret;
+    clean.mpesaPasskeySet = !!row.mpesaPasskeySet || !!row.mpesaPasskey;
+    clean.mpesaConfigured = !!row.mpesaConfigured || !!(row.mpesaConsumerKey && row.mpesaConsumerSecret && row.mpesaPasskey);
+    delete clean.mpesaConsumerKey;
+    delete clean.mpesaConsumerSecret;
+    delete clean.mpesaPasskey;
+    return clean;
+  });
+}
+
 async function d1Fetch(table: string, method: string, body?: any): Promise<any> {
   // Lazy import to avoid circular dependency with store.ts
   const { useStore } = await import('./store');
@@ -114,7 +129,8 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
       throw new Error(msg);
     }
     
-    const json = await res.json();
+    const rawJson = await res.json();
+    const json = Array.isArray(rawJson) ? sanitizeRowsForClient(table, rawJson) : rawJson;
 
     // Write-through cache for offline reads
     if (method === 'GET' && businessId && OFFLINE_CACHE_TABLES.has(table as OfflineCacheTable)) {
@@ -142,7 +158,14 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
       try {
         const cacheTable = table as OfflineCacheTable;
         const scopedBranchId = headers['X-Branch-ID'] ? (branchId ?? undefined) : undefined;
-        const rows = await readCachedTableRows({ table: cacheTable, businessId, branchId: scopedBranchId });
+        const rows = sanitizeRowsForClient(table, await readCachedTableRows({ table: cacheTable, businessId, branchId: scopedBranchId }));
+        await cacheTableRows({
+          table: cacheTable,
+          businessId,
+          branchId: scopedBranchId,
+          rows,
+          updatedAt: Date.now(),
+        }).catch(() => {});
         console.warn(`[CloudDB] Using offline cache for GET ${table} (${rows.length} rows).`);
         return rows;
       } catch (e2) {
@@ -637,6 +660,10 @@ export function startBackgroundSync(intervalMs = 30000) {
 
     console.log('[CloudDB] Background sync starting...');
     try {
+       if (typeof navigator === 'undefined' || navigator.onLine) {
+         const { flushOutboxNow } = await import('./offline/offlineSync');
+         await flushOutboxNow();
+       }
        // We only need to reload tables that have been loaded/used already
        // Tables are exported from db.ts, but clouddb doesn't know about 'db'
        // Instead, we'll let db.ts call a refresh method.

@@ -1,3 +1,5 @@
+import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+
 interface Env {
   DB: D1Database;
   API_SECRET?: string;
@@ -22,14 +24,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
-  const expectedKey = env.API_SECRET;
-  const apiKey = request.headers.get('X-API-Key');
-  if (!expectedKey || apiKey !== expectedKey) return json({ error: 'Unauthorized' }, 401);
+  const auth = await authorizeRequest(request, env);
+  if (!auth.ok) return auth.response;
   if (!env.DB) return json({ error: 'DB binding missing' }, 500);
 
   const businessId = request.headers.get('X-Business-ID') || '';
   const branchId = request.headers.get('X-Branch-ID') || '';
   if (!businessId || !branchId) return json({ error: 'X-Business-ID and X-Branch-ID required' }, 400);
+  if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) return json({ error: 'Access denied' }, 403);
 
   const body = (await request.json().catch(() => null)) as any;
   const deviceId = String(body?.deviceId || '').trim();

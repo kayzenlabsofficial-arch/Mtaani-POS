@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { ShieldAlert, KeyRound, X } from 'lucide-react';
-import { useLiveQuery } from '../../clouddb';
-import { db } from '../../db';
 import { useStore } from '../../store';
+import { getApiKey } from '../../runtimeConfig';
 
 interface AdminVerificationModalProps {
   actionDescription: string;
@@ -13,21 +12,39 @@ interface AdminVerificationModalProps {
 export default function AdminVerificationModal({ actionDescription, onSuccess, onCancel }: AdminVerificationModalProps) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
+  const [isChecking, setIsChecking] = useState(false);
   const activeBusinessId = useStore(state => state.activeBusinessId);
-  const allUsers = useLiveQuery(
-    () => activeBusinessId ? db.users.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId],
-    []
-  );
+  const activeBranchId = useStore(state => state.activeBranchId);
 
-  const handleVerify = () => {
-    const adminUser = allUsers?.find(u => u.role === 'ADMIN' && u.pin === pin);
-    if (!adminUser) {
-      setError("Invalid Admin PIN");
-      setPin("");
+  const handleVerify = async () => {
+    if (!activeBusinessId) {
+      setError("Please sign in again.");
       return;
     }
-    onSuccess();
+    setIsChecking(true);
+    try {
+      const apiKey = await getApiKey();
+      const res = await fetch('/api/admin/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey,
+          'X-Business-ID': activeBusinessId,
+          ...(activeBranchId ? { 'X-Branch-ID': activeBranchId } : {}),
+        },
+        cache: 'no-store',
+        body: JSON.stringify({ businessId: activeBusinessId, pin }),
+      });
+      const data: any = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Invalid supervisor PIN');
+      onSuccess();
+    } catch (err: any) {
+      setError(err?.message || "Invalid supervisor PIN");
+      setPin("");
+      return;
+    } finally {
+      setIsChecking(false);
+    }
   };
 
   return (
@@ -78,10 +95,10 @@ export default function AdminVerificationModal({ actionDescription, onSuccess, o
             </button>
             <button 
               onClick={handleVerify} 
-              disabled={pin.length < 4}
+              disabled={pin.length < 4 || isChecking}
               className="py-3.5 bg-red-600 text-white font-black text-xs   rounded-xl disabled:opacity-50 transition-colors active:scale-95 shadow-lg shadow-red-600/20"
             >
-               Authorize
+               {isChecking ? 'Checking...' : 'Authorize'}
             </button>
          </div>
       </div>

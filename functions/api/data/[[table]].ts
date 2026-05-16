@@ -1,3 +1,5 @@
+import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+
 interface Env {
   DB: D1Database;
   API_SECRET?: string;
@@ -15,6 +17,7 @@ const ALLOWED_TABLES = new Set([
 const GLOBAL_TABLES = new Set(['users', 'branches', 'settings', 'expenseAccounts', 'financialAccounts', 'customers', 'serviceItems', 'suppliers', 'products', 'productIngredients', 'categories']);
 // Truly unscoped tables: not filtered by businessId/branchId
 const UNSCOPED_TABLES = new Set(['businesses', 'loginAttempts']);
+const ADMIN_WRITE_TABLES = new Set(['users', 'branches', 'settings', 'expenseAccounts', 'financialAccounts', 'categories']);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -96,6 +99,41 @@ function deserializeRow(row: Record<string, any>): Record<string, any> {
   return out;
 }
 
+const BRANCH_MPESA_LOCKED_FIELDS = [
+  'mpesaConsumerKey',
+  'mpesaConsumerSecret',
+  'mpesaPasskey',
+  'mpesaEnv',
+  'mpesaType',
+  'mpesaStoreNumber',
+];
+
+function redactBranch(row: Record<string, any>): Record<string, any> {
+  const out = { ...row };
+  out.mpesaConsumerKeySet = !!row.mpesaConsumerKey;
+  out.mpesaConsumerSecretSet = !!row.mpesaConsumerSecret;
+  out.mpesaPasskeySet = !!row.mpesaPasskey;
+  out.mpesaConfigured = !!(row.mpesaConsumerKey && row.mpesaConsumerSecret && row.mpesaPasskey);
+  out.mpesaEnv = row.mpesaEnv || 'sandbox';
+  out.mpesaType = row.mpesaType || 'paybill';
+  out.mpesaStoreNumber = row.mpesaStoreNumber ? 'Saved' : '';
+  delete out.mpesaConsumerKey;
+  delete out.mpesaConsumerSecret;
+  delete out.mpesaPasskey;
+  return out;
+}
+
+function redactRows(table: string, rows: Record<string, any>[]): Record<string, any>[] {
+  if (table === 'branches') return rows.map(redactBranch);
+  if (table === 'users') return rows.map(row => {
+    const out = { ...row };
+    delete out.password;
+    delete out.pin;
+    return out;
+  });
+  return rows;
+}
+
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env, params } = context;
   try {
@@ -107,15 +145,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
     // ── Auth: ALL endpoints require a valid API key ───────────────────────────
-    const apiKey = request.headers.get('X-API-Key');
-    const expectedKey = env.API_SECRET;
-    if (!expectedKey) {
-      console.error('[Security] API_SECRET env var is not set. Refusing to serve requests.');
-      return new Response(JSON.stringify({ error: 'Server misconfigured' }), { status: 500, headers: secureJsonHeaders() });
-    }
-    if (apiKey !== expectedKey) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: secureJsonHeaders() });
-    }
+    const auth = await authorizeRequest(request, env);
+    if (!auth.ok) return auth.response;
+    const { principal, service } = auth;
 
     if (!env.DB) {
       return new Response(JSON.stringify({ error: 'DB binding missing' }), { status: 500, headers: secureJsonHeaders() });
@@ -127,7 +159,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       return new Response(JSON.stringify({ error: 'Request too large' }), { status: 413, headers: secureJsonHeaders() });
     }
 
-    const businessId = request.headers.get('X-Business-ID');
+    const requestedBusinessId = request.headers.get('X-Business-ID');
+    const businessId = principal.role === 'ROOT' || service ? requestedBusinessId : principal.businessId;
     const branchId = request.headers.get('X-Branch-ID');
 
     // ── System / Schema Setup ────────────────────────────────────────────────
@@ -136,9 +169,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         return new Response(JSON.stringify({ success: true, message: 'pong' }), { headers: jsonHeaders() });
       }
       if (recordId === 'status') {
+        if (principal.role !== 'ROOT' && !service) {
+          return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });
+        }
         return new Response(JSON.stringify({ success: true, hasDB: !!env.DB, hasSecret: !!env.API_SECRET }), { headers: jsonHeaders() });
       }
       if (recordId === 'setup') {
+        if (principal.role !== 'ROOT' && !service) {
+          return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });
+        }
         const statements = SCHEMA_SQL.split(';').map(s => s.trim()).filter(s => s.length > 0);
         for (const s of statements) {
           try { await env.DB.prepare(s).run(); } catch (e) {}
@@ -310,18 +349,25 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     // ── GET ──────────────────────────────────────────────────────────────────
     if (request.method === 'GET') {
       if (table === 'businesses') {
-        // Only allow listing businesses if the API key is the master secret
-        // In a real production system, this would be restricted to a super-admin token
-        const { results } = await env.DB.prepare(`SELECT id, name, code, isActive FROM businesses`).all();
+        const query = principal.role === 'ROOT' || service
+          ? env.DB.prepare(`SELECT id, name, code, isActive FROM businesses`)
+          : env.DB.prepare(`SELECT id, name, code, isActive FROM businesses WHERE id = ?`).bind(principal.businessId);
+        const { results } = await query.all();
         return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
       }
       if (table === 'loginAttempts') {
+        if (principal.role !== 'ROOT' && !service) {
+          return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });
+        }
         const { results } = await env.DB.prepare(`SELECT * FROM loginAttempts`).all();
         return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
       }
 
-      if (!businessId) {
+      if (!businessId || !canAccessBusiness(principal, businessId)) {
         return new Response(JSON.stringify({ error: 'X-Business-ID header required' }), { status: 400, headers: jsonHeaders() });
+      }
+      if (branchId && !canAccessBranch(principal, branchId)) {
+        return new Response(JSON.stringify({ error: 'Branch access denied' }), { status: 403, headers: jsonHeaders() });
       }
 
       // Branch-scoped tables MUST be requested with an explicit branchId.
@@ -332,11 +378,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
       if (GLOBAL_TABLES.has(table)) {
         const { results } = await env.DB.prepare(`SELECT * FROM ${table} WHERE businessId = ?`).bind(businessId).all();
-        return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
+        return new Response(JSON.stringify(redactRows(table, results.map(deserializeRow))), { headers: jsonHeaders() });
       } else {
         // Branch-specific table (and branchId is provided)
         const { results } = await env.DB.prepare(`SELECT * FROM ${table} WHERE businessId = ? AND branchId = ?`).bind(businessId, branchId).all();
-        return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
+        return new Response(JSON.stringify(redactRows(table, results.map(deserializeRow))), { headers: jsonHeaders() });
       }
     }
 
@@ -348,13 +394,30 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
       // Normalize business code to uppercase at write time.
       if (table === 'businesses') {
+        if (principal.role !== 'ROOT' && !service) {
+          return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });
+        }
         items.forEach(item => {
           if (typeof item?.code === 'string') item.code = item.code.trim().toUpperCase();
         });
       }
 
+      if (table === 'loginAttempts' && principal.role !== 'ROOT' && !service) {
+        return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });
+      }
+
+      if (ADMIN_WRITE_TABLES.has(table) && principal.role !== 'ADMIN' && principal.role !== 'ROOT' && !service) {
+        return new Response(JSON.stringify({ error: 'Admin access required' }), { status: 403, headers: jsonHeaders() });
+      }
+
+      if (table === 'branches') {
+        items.forEach(item => {
+          for (const field of BRANCH_MPESA_LOCKED_FIELDS) delete item[field];
+        });
+      }
+
       if (!UNSCOPED_TABLES.has(table)) {
-        if (!businessId) {
+        if (!businessId || !canAccessBusiness(principal, businessId)) {
           return new Response(JSON.stringify({ error: 'X-Business-ID header required for POST' }), { status: 400, headers: jsonHeaders() });
         }
         // Always stamp businessId from the trusted header (not client body)
@@ -362,7 +425,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
         // Stamp branchId for branch-specific tables
         if (!GLOBAL_TABLES.has(table)) {
-          if (!branchId) {
+          if (!branchId || !canAccessBranch(principal, branchId)) {
             return new Response(JSON.stringify({ error: 'X-Branch-ID header required for POST to this table' }), { status: 400, headers: jsonHeaders() });
           }
           items.forEach(item => { item.branchId = branchId; });
@@ -391,18 +454,21 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       if (!id) return new Response(JSON.stringify({ error: 'ID required for DELETE' }), { status: 400, headers: jsonHeaders() });
 
       if (table === 'businesses') {
+        if (principal.role !== 'ROOT' && !service) return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });
         // Cascade delete: remove ALL data for this business
         const cascadeTables = ['users', 'products', 'productIngredients', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
         const batch = cascadeTables.map(t => env.DB.prepare(`DELETE FROM ${t} WHERE businessId = ?`).bind(id));
         batch.push(env.DB.prepare(`DELETE FROM businesses WHERE id = ?`).bind(id));
         await env.DB.batch(batch);
       } else if (table === 'loginAttempts') {
+        if (principal.role !== 'ROOT' && !service) return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });
         await env.DB.prepare(`DELETE FROM loginAttempts WHERE id = ?`).bind(id).run();
       } else if (GLOBAL_TABLES.has(table)) {
-        if (!businessId) return new Response(JSON.stringify({ error: 'X-Business-ID required for DELETE' }), { status: 400, headers: jsonHeaders() });
+        if (!businessId || !canAccessBusiness(principal, businessId)) return new Response(JSON.stringify({ error: 'X-Business-ID required for DELETE' }), { status: 400, headers: jsonHeaders() });
+        if (ADMIN_WRITE_TABLES.has(table) && principal.role !== 'ADMIN' && principal.role !== 'ROOT' && !service) return new Response(JSON.stringify({ error: 'Admin access required' }), { status: 403, headers: jsonHeaders() });
         await env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ?`).bind(id, businessId).run();
       } else {
-        if (!businessId || !branchId) return new Response(JSON.stringify({ error: 'X-Business-ID and X-Branch-ID required for DELETE' }), { status: 400, headers: jsonHeaders() });
+        if (!businessId || !branchId || !canAccessBusiness(principal, businessId) || !canAccessBranch(principal, branchId)) return new Response(JSON.stringify({ error: 'X-Business-ID and X-Branch-ID required for DELETE' }), { status: 400, headers: jsonHeaders() });
         await env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ? AND branchId = ?`).bind(id, businessId, branchId).run();
       }
       return new Response(JSON.stringify({ success: true }), { headers: jsonHeaders() });

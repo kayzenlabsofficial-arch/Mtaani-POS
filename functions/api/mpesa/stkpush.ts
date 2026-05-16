@@ -1,3 +1,6 @@
+import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { decryptSecret } from './secureCredentials';
+
 interface Env {
   DB: D1Database;
   API_SECRET?: string;
@@ -10,12 +13,13 @@ interface Env {
   MPESA_CALLBACK_SECRET?: string;
   MPESA_TYPE?: string;
   MPESA_STORE_NUMBER?: string;
+  MPESA_CREDENTIAL_ENCRYPTION_KEY?: string;
 }
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key'
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID'
 };
 
 function jsonHeaders() {
@@ -44,20 +48,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   try {
     // ── Auth: require API key ────────────────────────────────────────────────
-    const expectedKey = env.API_SECRET;
-    if (!expectedKey) {
-      console.error('[Security] API_SECRET env var is not set. Refusing to serve requests.');
-      return new Response(JSON.stringify({ error: 'Server misconfigured' }), { status: 500, headers: jsonHeaders() });
-    }
-    const apiKey = request.headers.get('X-API-Key');
-    if (apiKey !== expectedKey) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: jsonHeaders() });
-    }
+    const auth = await authorizeRequest(request, env);
+    if (!auth.ok) return auth.response;
 
     const body = await request.json() as { amount: number, phone: string, reference?: string, businessId: string, branchId: string };
     
     if (!body.amount || !body.phone || !body.businessId || !body.branchId) {
       return new Response(JSON.stringify({ error: 'Amount, phone, businessId, and branchId are required' }), { status: 400, headers: jsonHeaders() });
+    }
+    if (!canAccessBusiness(auth.principal, body.businessId) || !canAccessBranch(auth.principal, body.branchId)) {
+      return new Response(JSON.stringify({ error: 'Access denied' }), { status: 403, headers: jsonHeaders() });
     }
 
     const phone = formatPhone(body.phone);
@@ -76,9 +76,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       `).bind(body.branchId, body.businessId).first() as any;
 
       if (branch && branch.mpesaConsumerKey && branch.mpesaConsumerSecret) {
-        consumerKey = branch.mpesaConsumerKey;
-        consumerSecret = branch.mpesaConsumerSecret;
-        passkey = branch.mpesaPasskey;
+        consumerKey = await decryptSecret(branch.mpesaConsumerKey, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
+        consumerSecret = await decryptSecret(branch.mpesaConsumerSecret, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
+        passkey = await decryptSecret(branch.mpesaPasskey, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
         isProd = branch.mpesaEnv === 'production';
         mpesaType = branch.mpesaType || 'paybill';
         

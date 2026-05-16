@@ -2,10 +2,47 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
-import {defineConfig, loadEnv} from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 
-export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
+function productionJsObfuscator(): Plugin {
+  return {
+    name: 'mtaani-production-js-obfuscator',
+    apply: 'build',
+    enforce: 'post',
+    async generateBundle(_, bundle) {
+      if (process.env.DISABLE_JS_OBFUSCATION === 'true') return;
+      const mod = await import('javascript-obfuscator') as any;
+      const obfuscator = mod.default || mod;
+
+      for (const asset of Object.values(bundle)) {
+        if (asset.type !== 'chunk') continue;
+        if (!asset.fileName.endsWith('.js')) continue;
+        if (asset.fileName.includes('workbox') || asset.fileName.includes('sw')) continue;
+
+        asset.code = obfuscator.obfuscate(asset.code, {
+          compact: true,
+          controlFlowFlattening: false,
+          deadCodeInjection: false,
+          disableConsoleOutput: false,
+          identifierNamesGenerator: 'hexadecimal',
+          renameGlobals: false,
+          selfDefending: false,
+          stringArray: true,
+          stringArrayCallsTransform: true,
+          stringArrayCallsTransformThreshold: 0.35,
+          stringArrayEncoding: ['base64'],
+          stringArrayRotate: true,
+          stringArrayShuffle: true,
+          stringArrayThreshold: 0.35,
+          target: 'browser',
+          transformObjectKeys: false,
+        }).getObfuscatedCode();
+      }
+    },
+  };
+}
+
+export default defineConfig(() => {
   return {
     plugins: [
       react(), 
@@ -35,13 +72,11 @@ export default defineConfig(({mode}) => {
             }
           ]
         }
-      })
+      }),
+      productionJsObfuscator()
     ],
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.ROOT_USERNAME': JSON.stringify(env.ROOT_USERNAME),
-      'process.env.ROOT_PASSWORD': JSON.stringify(env.ROOT_PASSWORD),
-      'process.env.DEFAULT_BUSINESS_CODE': JSON.stringify(env.DEFAULT_BUSINESS_CODE || 'MTAANI01'),
+      'process.env.DEFAULT_BUSINESS_CODE': JSON.stringify('MTAANI01'),
       '__BUILD_DATE__': JSON.stringify(new Date().toLocaleString('en-GB', { 
         day: '2-digit', month: 'short', year: 'numeric', 
         hour: '2-digit', minute: '2-digit' 

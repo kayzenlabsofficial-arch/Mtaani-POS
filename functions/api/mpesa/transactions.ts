@@ -1,3 +1,5 @@
+import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+
 interface Env {
   DB: D1Database;
   API_SECRET?: string;
@@ -62,8 +64,8 @@ export const onRequestOptions: PagesFunction<Env> = async () => new Response(nul
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   try {
     if (!env.DB) return json({ error: 'DB binding missing' }, 500);
-    if (!env.API_SECRET) return json({ error: 'Server misconfigured' }, 500);
-    if (request.headers.get('X-API-Key') !== env.API_SECRET) return json({ error: 'Unauthorized' }, 401);
+    const auth = await authorizeRequest(request, env);
+    if (!auth.ok) return auth.response;
 
     const url = new URL(request.url);
     const businessId = String(url.searchParams.get('businessId') || request.headers.get('X-Business-ID') || '').trim();
@@ -75,6 +77,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const offset = Math.max(0, Number(url.searchParams.get('offset') || 0) || 0);
 
     if (!businessId || !branchId) return json({ error: 'Business and branch are required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) return json({ error: 'Access denied' }, 403);
 
     await ensureMpesaLedgerSchema(env.DB);
 

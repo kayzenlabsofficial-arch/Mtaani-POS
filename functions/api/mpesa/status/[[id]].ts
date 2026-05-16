@@ -1,3 +1,5 @@
+import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../../authUtils';
+
 interface Env {
   DB: D1Database;
   API_SECRET?: string;
@@ -6,7 +8,7 @@ interface Env {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key'
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID'
 };
 
 function jsonHeaders() {
@@ -26,15 +28,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   try {
     // ── Auth: require API key ────────────────────────────────────────────────
-    const expectedKey = env.API_SECRET;
-    if (!expectedKey) {
-      console.error('[Security] API_SECRET env var is not set. Refusing to serve requests.');
-      return new Response(JSON.stringify({ error: 'Server misconfigured' }), { status: 500, headers: jsonHeaders() });
-    }
-    const apiKey = request.headers.get('X-API-Key');
-    if (apiKey !== expectedKey) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: jsonHeaders() });
-    }
+    const auth = await authorizeRequest(request, env);
+    if (!auth.ok) return auth.response;
 
     const checkoutRequestId = Array.isArray(params.id) ? params.id[0] : params.id;
 
@@ -44,9 +39,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // Attempt to query the mpesaCallbacks table
     try {
-        const result = await env.DB.prepare(`SELECT * FROM mpesaCallbacks WHERE checkoutRequestId = ?`).bind(checkoutRequestId).first();
+        const result = await env.DB.prepare(`SELECT * FROM mpesaCallbacks WHERE checkoutRequestId = ?`).bind(checkoutRequestId).first() as any;
         
         if (result) {
+            if (!canAccessBusiness(auth.principal, result.businessId) || !canAccessBranch(auth.principal, result.branchId)) {
+                return new Response(JSON.stringify({ error: 'Access denied' }), { status: 403, headers: jsonHeaders() });
+            }
             return new Response(JSON.stringify({
                 found: true,
                 resultCode: result.resultCode,

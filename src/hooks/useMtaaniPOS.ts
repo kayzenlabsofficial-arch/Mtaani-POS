@@ -2,10 +2,10 @@ import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { useStore } from '../store';
 import { useToast } from '../context/ToastContext';
 import { db, type Transaction } from '../db';
-import { verifyPassword, isLockedOut, recordFailedAttempt, resetAttempts } from '../security';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { getProductIngredients, isBundleProduct } from '../utils/bundleInventory';
 import { MpesaService } from '../services/mpesa';
+import { flushOutboxNow } from '../offline/offlineSync';
 
 export function useMtaaniPOS() {
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'REPORTS' | 'ADMIN_PANEL'>('REGISTER');
@@ -70,7 +70,15 @@ export function useMtaaniPOS() {
   }, []);
 
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
+    const handleOnline = () => {
+      setIsOnline(true);
+      flushOutboxNow()
+        .then(result => {
+          if (result.flushed > 0) success(`${result.flushed} offline sale${result.flushed === 1 ? '' : 's'} synced.`);
+          return db.sync();
+        })
+        .catch(() => {});
+    };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -85,84 +93,36 @@ export function useMtaaniPOS() {
     if (isLoggingIn) return;
     setLoginError("");
 
-    const isRoot = username === process.env.ROOT_USERNAME && password === process.env.ROOT_PASSWORD;
-    if (isRoot) {
-      login({ id: 'root', name: 'System Root', role: 'ROOT' } as any);
-      return;
-    }
-
-    try {
-      const rootRes = await fetch('/api/root-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password }),
-      });
-      if (rootRes.ok) {
-        const rootUser = await rootRes.json();
-        login(rootUser as any);
-        return;
-      }
-    } catch {
-      // Local/offline dev can still use the compile-time root credentials above.
-    }
-
-    if (!businessCode) {
-      setLoginError("Please enter your Business Code.");
-      return;
-    }
-
-    const lockoutStatus = await isLockedOut(businessCode);
-    if (lockoutStatus.locked) {
-      const mins = Math.ceil(lockoutStatus.secondsLeft / 60);
-      setLoginError(`Account locked for this business. Try again in ${mins} minute${mins !== 1 ? 's' : ''}.`);
-      return;
-    }
-
     setIsLoggingIn(true);
     try {
-      const biz = await db.businesses.where('code').equals(businessCode.trim().toUpperCase()).first();
-      if (!biz) {
-        setLoginError("Business not found. Please check your code.");
+      const authRes = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ businessCode: businessCode.trim().toUpperCase(), username: username.trim(), password }),
+      });
+      const authData: any = await authRes.json().catch(() => ({}));
+      if (!authRes.ok) {
+        setLoginError(authData?.error || 'Could not sign in.');
         return;
       }
 
-      if (activeBusinessId !== biz.id) {
+      if (activeBusinessId !== authData.businessId) {
         db.resetTenantCaches();
         clearCart();
         setActiveBranchId(null);
       }
-      setActiveBusinessId(biz.id);
+      setActiveBusinessId(authData.businessId || null);
+      setActiveBranchId(authData.branchId || null);
       await new Promise(r => setTimeout(r, 0));
-
-      const normalizedUsername = username.trim().toLowerCase();
-      const user = await db.users
-        .where('businessId')
-        .equals(biz.id)
-        .and(u => String(u.name || '').trim().toLowerCase() === normalizedUsername)
-        .first();
-
-      if (user && await verifyPassword(password, user.password)) {
-        await resetAttempts(businessCode);
-        if (user.branchId) {
-          setActiveBranchId(user.branchId);
-        } else {
-          const firstBranch = await db.branches.where('businessId').equals(biz.id).first();
-          if (firstBranch?.id) setActiveBranchId(firstBranch.id);
-        }
-        login(user);
-        success(`Welcome back, ${user.name}!`);
-      } else {
-        db.resetTenantCaches();
-        setActiveBusinessId(null);
-        setActiveBranchId(null);
-        setLoginError("Invalid username or password.");
-        await recordFailedAttempt(businessCode);
-      }
-    } catch (err) {
+      login(authData.user, authData.token);
+      setPassword('');
+      success(`Welcome back, ${authData.user?.name || 'there'}!`);
+    } catch (err: any) {
       db.resetTenantCaches();
       setActiveBusinessId(null);
       setActiveBranchId(null);
-      setLoginError("Connection failed. Please try again.");
+      setLoginError(err?.message || "Connection failed. Please try again.");
     } finally {
       setIsLoggingIn(false);
     }
@@ -180,6 +140,10 @@ export function useMtaaniPOS() {
 
   const navigateToTab = (tab: any) => {
     const nextTab = tab as typeof activeTab;
+    if (!isOnline && nextTab !== 'REGISTER') {
+      error("Offline mode only opens the register. Other pages will work after internet returns.");
+      return;
+    }
     if (typeof window !== 'undefined' && activeTabRef.current !== nextTab) {
       window.history.pushState({ ...(window.history.state || {}), mtaaniTab: true, tab: nextTab }, '');
     }
@@ -189,9 +153,19 @@ export function useMtaaniPOS() {
     setIsMoreMenuOpen(false);
   };
 
+  useEffect(() => {
+    if (isOnline || activeTabRef.current === 'REGISTER') return;
+    setActiveTab('REGISTER');
+    activeTabRef.current = 'REGISTER';
+    setSidebarOpen(false);
+    setIsMoreMenuOpen(false);
+    error("Internet is off, so the app moved back to the register.");
+  }, [isOnline, error]);
+
   const handleSync = async () => {
     setIsSyncing(true);
     try { 
+      await flushOutboxNow();
       await db.sync(); 
       success("Synced successfully."); 
     } catch (err) { 
@@ -208,6 +182,12 @@ export function useMtaaniPOS() {
     }
     if (!activeBranchId) {
       error("Select or assign a branch before completing the sale.");
+      return null;
+    }
+
+    const isOfflineSale = typeof navigator !== 'undefined' && !navigator.onLine;
+    if (isOfflineSale && !(status === 'PAID' && method === 'CASH')) {
+      error("Offline mode only allows cash sales in the register.");
       return null;
     }
     
@@ -296,6 +276,14 @@ export function useMtaaniPOS() {
 
       await db.transactions.add(newTransaction);
 
+      if (isOfflineSale) {
+        clearCart();
+        setSelectedCustomerId(null);
+        setDiscountValue(0);
+        success("Sale saved offline. It will sync when internet returns.");
+        return newTransaction;
+      }
+
       if (mpesaPaymentCode) {
         const utilization = await MpesaService.markUtilized({
           code: mpesaPaymentCode,
@@ -362,7 +350,7 @@ export function useMtaaniPOS() {
       success("Transaction completed successfully.");
       
       if (isOnline) {
-        db.sync().catch(() => {});
+        flushOutboxNow().then(() => db.sync()).catch(() => {});
       }
       return newTransaction;
     } catch (err: any) {
