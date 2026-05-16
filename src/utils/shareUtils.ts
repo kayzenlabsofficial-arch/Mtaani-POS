@@ -680,3 +680,106 @@ export async function generateAndDownloadStatement(s: any, invoices: any[], paym
     download(blob, `Statement-${s.company}`);
 }
 
+export async function generateAndDownloadCustomerStatement(customer: any, sales: any[], payments: any[]) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  let y = banner(doc, 'Customer Statement', `CUS-${safeStr(customer?.id, '').slice(0, 8).toUpperCase()}`, new Date().toLocaleDateString());
+
+  y = kvRow(doc, 'Customer', safeStr(customer?.name), y);
+  y = kvRow(doc, 'Phone', safeStr(customer?.phone), y);
+  y = kvRow(doc, 'Email', safeStr(customer?.email), y);
+  y = kvRow(doc, 'Current Balance', ksh(customer?.balance), y, safe(customer?.balance) > 0 ? red : green);
+  y = hLine(doc, y + 2);
+
+  const creditAmount = (sale: any) => {
+    if (sale.paymentMethod === 'CREDIT') return safe(sale.total);
+    if (sale.paymentMethod === 'SPLIT' && sale.splitPayments?.secondaryMethod === 'CREDIT') return safe(sale.splitPayments.secondaryAmount);
+    return 0;
+  };
+  const rows = [
+    ...(sales || []).map(sale => [
+      new Date(sale.timestamp).toLocaleDateString(),
+      'SALE',
+      safeStr(sale.id, '').split('-')[0].toUpperCase(),
+      (sale.items || []).map((item: any) => `${item.name} x ${item.quantity}`).join(', ').slice(0, 44),
+      ksh(creditAmount(sale)),
+      '',
+    ]),
+    ...(payments || []).map(payment => [
+      new Date(payment.timestamp).toLocaleDateString(),
+      'PAYMENT',
+      safeStr(payment.transactionCode || payment.id, '').split('-')[0].toUpperCase(),
+      safeStr(payment.reference || payment.paymentMethod).slice(0, 44),
+      '',
+      ksh(payment.amount),
+    ]),
+  ].sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime());
+
+  if (rows.length) {
+    y = table(doc, ['Date', 'Type', 'Ref', 'Details', 'Debit', 'Credit'], [24, 22, 24, 60, 25, 25], rows, y);
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    st(doc, slate400);
+    doc.text('No credit sales or payments recorded for this customer.', M, y + 10);
+    y += 20;
+  }
+
+  const totalSales = (sales || []).reduce((sum, sale) => sum + creditAmount(sale), 0);
+  const totalPayments = (payments || []).reduce((sum, payment) => sum + safe(payment.amount), 0);
+  y = hLine(doc, y + 6);
+  y = kvRow(doc, 'Credit Sales', ksh(totalSales), y);
+  y = kvRow(doc, 'Payments', ksh(totalPayments), y, green);
+  y = kvRow(doc, 'Outstanding', ksh(customer?.balance), y, safe(customer?.balance) > 0 ? red : green);
+  footer(doc);
+  download(doc.output('blob'), `Customer-Statement-${safeStr(customer?.name, 'Customer').replace(/\s+/g, '-')}`);
+}
+
+export async function generateAndDownloadProfitLossReport(report: {
+  title: string;
+  periodLabel: string;
+  totalRevenue: number;
+  grossSales: number;
+  discounts: number;
+  cogs: number;
+  grossProfit: number;
+  expenses: number;
+  netProfit: number;
+  tax: number;
+  creditSales: number;
+  orderCount: number;
+  expenseBreakdown: { name: string; value: number }[];
+}) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  let y = banner(doc, 'Profit and Loss', report.title, new Date().toLocaleDateString());
+  y = kvRow(doc, 'Period', report.periodLabel, y);
+  y = kvRow(doc, 'Orders', String(report.orderCount), y);
+  y = hLine(doc, y + 2);
+
+  y = table(doc, ['Line Item', 'Amount'], [130, 50], [
+    ['Gross Sales', ksh(report.grossSales)],
+    ['Discounts', `-${ksh(report.discounts)}`],
+    ['Net Revenue', ksh(report.totalRevenue)],
+    ['Tax', `-${ksh(report.tax)}`],
+    ['Cost of Goods Sold', `-${ksh(report.cogs)}`],
+    ['Gross Profit', ksh(report.grossProfit)],
+    ['Operating Expenses', `-${ksh(report.expenses)}`],
+    ['Net Profit / Loss', ksh(report.netProfit)],
+    ['Credit Sales Included', ksh(report.creditSales)],
+  ], y);
+
+  if (report.expenseBreakdown.length) {
+    y = hLine(doc, y + 6);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    st(doc, slate900);
+    doc.text('Expense Breakdown', M, y);
+    y += 6;
+    y = table(doc, ['Category', 'Amount'], [130, 50], report.expenseBreakdown.map(row => [row.name, ksh(row.value)]), y);
+  }
+
+  y = hLine(doc, y + 6);
+  bigTotal(doc, report.netProfit >= 0 ? 'Net Profit' : 'Net Loss', ksh(report.netProfit), y, report.netProfit >= 0 ? green : red);
+  footer(doc);
+  download(doc.output('blob'), `Profit-Loss-${report.title.replace(/\s+/g, '-')}`);
+}
+

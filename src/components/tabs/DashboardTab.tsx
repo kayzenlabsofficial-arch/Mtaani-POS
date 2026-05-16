@@ -8,6 +8,7 @@ import { canUseOwnerMode, getCashDrawerLimit, getCashFloatTarget, isOwnerCashSwe
 import { recordAuditEvent } from '../../utils/auditLog';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
+import { getBusinessSettings } from '../../utils/settings';
 
 const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => (
   <span className={`material-symbols-outlined ${className}`}>{name}</span>
@@ -75,7 +76,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId], []
   );
-  const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
+  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   const branchTransactions = useLiveQuery(
     () => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
     [activeBranchId], []

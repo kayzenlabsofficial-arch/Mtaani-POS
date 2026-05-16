@@ -171,6 +171,20 @@ CREATE TABLE IF NOT EXISTS customers (
     updated_at INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS customerPayments (
+    id TEXT PRIMARY KEY,
+    customerId TEXT NOT NULL,
+    amount REAL NOT NULL,
+    paymentMethod TEXT NOT NULL,
+    transactionCode TEXT,
+    reference TEXT,
+    timestamp INTEGER NOT NULL,
+    preparedBy TEXT,
+    branchId TEXT,
+    businessId TEXT,
+    updated_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS suppliers (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

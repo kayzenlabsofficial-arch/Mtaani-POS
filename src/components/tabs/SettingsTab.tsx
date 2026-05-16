@@ -5,13 +5,15 @@ import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { DEFAULT_CASH_DRAWER_LIMIT, DEFAULT_CASH_FLOAT_TARGET } from '../../utils/ownerMode';
+import { getBusinessSettings, settingsIdForBusiness } from '../../utils/settings';
 
 
 export default function SettingsTab({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
   const isAdmin = useStore((state) => state.isAdmin);
+  const activeBusinessId = useStore((state) => state.activeBusinessId);
   const { success } = useToast();
   
-  const savedSettings = useLiveQuery(() => db.settings.get('core'), [], null);
+  const savedSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId], null);
   const [storeSettings, setStoreSettings] = useState({
      storeName: 'Mtaani Shop', krapin: 'P0000000000A', tillNumber: '123456', receiptFooter: 'Thank you for shopping!', location: 'Nairobi, Kenya'
   });
@@ -86,7 +88,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
       try {
         await db.settings.put({
             ...(savedSettings || {}),
-            id: 'core',
+            id: settingsIdForBusiness(activeBusinessId),
             storeName: storeSettings.storeName,
             tillNumber: storeSettings.tillNumber,
             kraPin: storeSettings.krapin,
@@ -97,6 +99,7 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
             cashSweepEnabled: ownerSettings.cashSweepEnabled ? 1 : 0,
             cashDrawerLimit: Number(ownerSettings.cashDrawerLimit) || DEFAULT_CASH_DRAWER_LIMIT,
             cashFloatTarget: Number(ownerSettings.cashFloatTarget) || DEFAULT_CASH_FLOAT_TARGET,
+            businessId: activeBusinessId!,
         });
         success("Business configuration saved successfully!");
       } catch (err) {

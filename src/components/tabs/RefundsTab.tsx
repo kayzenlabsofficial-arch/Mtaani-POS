@@ -9,6 +9,7 @@ import { canPerform } from '../../utils/accessControl';
 import { recordAuditEvent } from '../../utils/auditLog';
 import { approveRefundTransaction, requestRefundApproval } from '../../utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
+import { getBusinessSettings } from '../../utils/settings';
 
 
 interface RefundsTabProps {
@@ -25,7 +26,7 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
   const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
-  const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
+  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   
   if (!allTransactions) {
     return (

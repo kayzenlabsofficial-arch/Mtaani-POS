@@ -139,10 +139,12 @@ function SalePanel({
   onCheckout,
   isCheckingOut,
   className = '',
+  onCheckoutSuccess,
 }: {
-  onCheckout: (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => Promise<void>;
+  onCheckout: (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => Promise<any>;
   isCheckingOut: boolean;
   className?: string;
+  onCheckoutSuccess?: () => void;
 }) {
   const { cart, removeFromCart, updateQuantity, setQuantity, clearCart } = useStore();
   const activeBusinessId = useStore((state) => state.activeBusinessId);
@@ -198,6 +200,12 @@ function SalePanel({
     customerName: selectedCustomer?.name,
   });
 
+  const runCheckout = async (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => {
+    const result = await onCheckout(status, method, options);
+    if (result) onCheckoutSuccess?.();
+    return result;
+  };
+
   const submitCheckout = async () => {
     if (cart.length === 0 || isCheckingOut || checkoutLockRef.current) return;
     checkoutLockRef.current = true;
@@ -214,17 +222,17 @@ function SalePanel({
           warning('Amount received must cover the sale total.');
           return;
         }
-        await onCheckout('PAID', 'CASH', { ...baseOptions(), amountTendered: paid, changeGiven: Math.max(0, paid - total) });
+        await runCheckout('PAID', 'CASH', { ...baseOptions(), amountTendered: paid, changeGiven: Math.max(0, paid - total) });
         return;
       }
 
       if (paymentMode === 'MPESA') {
-        await onCheckout('PAID', 'MPESA', { ...baseOptions(), mpesaRef: mpesaRef.trim(), paymentReference: mpesaRef.trim() });
+        await runCheckout('PAID', 'MPESA', { ...baseOptions(), mpesaRef: mpesaRef.trim(), paymentReference: mpesaRef.trim() });
         return;
       }
 
       if (paymentMode === 'PDQ') {
-        await onCheckout('PAID', 'PDQ', { ...baseOptions(), pdqRef: pdqRef.trim(), paymentReference: pdqRef.trim() });
+        await runCheckout('PAID', 'PDQ', { ...baseOptions(), pdqRef: pdqRef.trim(), paymentReference: pdqRef.trim() });
         return;
       }
 
@@ -233,7 +241,7 @@ function SalePanel({
           warning('Enter the cash part so the balance can go to M-Pesa, PDQ, or credit.');
           return;
         }
-        await onCheckout(splitSecondaryMethod === 'CREDIT' ? 'UNPAID' : 'PAID', 'SPLIT', {
+        await runCheckout(splitSecondaryMethod === 'CREDIT' ? 'UNPAID' : 'PAID', 'SPLIT', {
           ...baseOptions(),
           amountTendered: splitCashAmount,
           changeGiven: 0,
@@ -250,7 +258,7 @@ function SalePanel({
         return;
       }
 
-      await onCheckout('UNPAID', 'CREDIT', baseOptions());
+      await runCheckout('UNPAID', 'CREDIT', baseOptions());
     } finally {
       checkoutLockRef.current = false;
     }
@@ -560,13 +568,15 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
   };
 
   const completeCheckout = async (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => {
-    if (!handleCheckout || cart.length === 0 || isCheckingOut) return;
+    if (!handleCheckout || cart.length === 0 || isCheckingOut) return null;
     setIsCheckingOut(true);
     try {
       const result = await handleCheckout(status, method, options?.mpesaRef || options?.pdqRef || options?.paymentReference, options?.customerName, options);
       if (result) setIsMobileCheckoutOpen(false);
+      return result;
     } catch (err: any) {
       error(err?.message || 'Checkout failed.');
+      return null;
     } finally {
       setIsCheckingOut(false);
     }
@@ -576,8 +586,25 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
   const outOfStock = displayProducts.filter(p => (p.stockQuantity || 0) <= 0).length || 0;
   const saleTotal = cart.reduce((sum, item) => sum + ((Number(item.sellingPrice) || 0) * (Number(item.cartQuantity) || 0)), 0);
   const saleItemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
+  React.useEffect(() => {
+    if (cart.length === 0) setIsMobileCheckoutOpen(false);
+  }, [cart.length]);
+
+  React.useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (isMobileCheckoutOpen && !event.state?.mobileCheckout) {
+        setIsMobileCheckoutOpen(false);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isMobileCheckoutOpen]);
+
   const openMobileCheckout = (event?: React.SyntheticEvent) => {
     event?.preventDefault();
+    if (!isMobileCheckoutOpen) {
+      window.history.pushState({ ...(window.history.state || {}), mobileCheckout: true }, '');
+    }
     setIsMobileCheckoutOpen(true);
   };
 
@@ -721,8 +748,8 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
       )}
 
       {isMobileCheckoutOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-end" data-testid="mobile-checkout-sheet">
-          <div className="w-full max-h-[92dvh] bg-white rounded-t-3xl shadow-2xl overflow-hidden pb-[env(safe-area-inset-bottom)]">
+        <div className="lg:hidden fixed inset-0 z-[90] bg-slate-950/60 backdrop-blur-sm flex items-end" data-testid="mobile-checkout-sheet">
+          <div className="w-full max-h-[calc(100dvh-0.75rem)] bg-white rounded-t-3xl shadow-2xl overflow-hidden pb-safe">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
               <div className="min-w-0">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Checkout</p>
@@ -730,15 +757,23 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
               </div>
               <button
                 type="button"
-                onClick={() => setIsMobileCheckoutOpen(false)}
+                onClick={() => {
+                  if (window.history.state?.mobileCheckout) window.history.back();
+                  else setIsMobileCheckoutOpen(false);
+                }}
                 className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center"
                 aria-label="Close checkout"
               >
                 <X className="w-5 h-5" strokeWidth={2.4} />
               </button>
             </div>
-            <div className="max-h-[calc(92dvh-4rem)] overflow-y-auto p-3">
-              <SalePanel onCheckout={completeCheckout} isCheckingOut={isCheckingOut} className="border-0 shadow-none rounded-2xl min-h-0" />
+            <div className="max-h-[calc(100dvh-5rem)] overflow-y-auto p-3 pb-8">
+              <SalePanel
+                onCheckout={completeCheckout}
+                onCheckoutSuccess={() => setIsMobileCheckoutOpen(false)}
+                isCheckingOut={isCheckingOut}
+                className="border-0 shadow-none rounded-2xl min-h-0"
+              />
             </div>
           </div>
         </div>

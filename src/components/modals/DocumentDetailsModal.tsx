@@ -7,6 +7,7 @@ import { CalendarCheck, AlertTriangle, ArrowRight, TrendingUp, ShieldCheck } fro
 import { useStore } from '../../store';
 import AdminVerificationModal from './AdminVerificationModal';
 import { useToast } from '../../context/ToastContext';
+import { getBusinessSettings } from '../../utils/settings';
 
 interface DocumentDetailsModalProps {
   selectedRecord: any | null; // Can be Transaction, Expense, or SupplierPayment
@@ -26,7 +27,8 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const [isSharing, setIsSharing] = useState(false);
   const [isSavingPDF, setIsSavingPDF] = useState(false);
 
-  const businessSettings = useLiveQuery(() => db.settings.get('core'), []);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
+  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   const storeName = businessSettings?.storeName || 'MTAANI POS';
   const storeLocation = businessSettings?.location || 'Nairobi, Kenya';
 

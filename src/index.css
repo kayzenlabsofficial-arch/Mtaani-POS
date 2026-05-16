@@ -304,6 +304,14 @@ button, a, input, select, textarea {
     scroll-padding-bottom: 7rem;
   }
 
+  .pb-safe {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .bottom-safe-nav {
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  }
+
   /* ── Input focus glow ────────────────────────────────  */
   .input-focus:focus {
     outline: none;

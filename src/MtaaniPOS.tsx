@@ -9,6 +9,7 @@ import { recordAuditEvent } from './utils/auditLog';
 import { applyApprovedExpenseEffects, ensureExpenseCanBeApproved } from './utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from './utils/ownerMode';
 import { calculateCashDrawer, getTodayStartMs } from './utils/cashDrawer';
+import { getBusinessSettings } from './utils/settings';
 
 // Modular Components
 import RegisterTab from './components/tabs/RegisterTab';
@@ -62,7 +63,7 @@ export default function MtaaniPOS() {
   const branches = useLiveQuery(() => activeBusinessId ? db.branches.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
   const activeBranch = branches?.find(b => b.id === activeBranchId);
   const activeBusiness = useLiveQuery(() => activeBusinessId ? db.businesses.get(activeBusinessId) : Promise.resolve(undefined), [activeBusinessId]);
-  const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
+  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
 
   const [expenseForm, setExpenseForm] = useState({
     description: '',
@@ -83,12 +84,14 @@ export default function MtaaniPOS() {
   const expenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
   const cashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
   const supplierPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
+  const customerPayments = useLiveQuery(() => activeBranchId ? db.customerPayments.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
 
   const actualCashDrawer = calculateCashDrawer({
     transactions: transactions || [],
     expenses: expenses || [],
     cashPicks: cashPicks || [],
     supplierPayments: supplierPayments || [],
+    customerPayments: customerPayments || [],
     since: getTodayStartMs(),
   }).actualCashDrawer;
 
@@ -201,7 +204,7 @@ export default function MtaaniPOS() {
           currentUser={currentUser}
         />
 
-        <main className="flex-1 overflow-y-auto main-scroll app-safe-scroll relative p-3 sm:p-4 md:p-6 lg:p-8">
+        <main className="flex-1 overflow-y-auto main-scroll app-safe-scroll relative p-3 pb-28 sm:p-4 sm:pb-28 md:p-6 md:pb-6 lg:p-8">
           <div className="max-w-[1440px] mx-auto min-h-full">
             {activeTab === 'REGISTER' && <RegisterTab toggleCart={toggleCart} handleCheckout={handleCheckout} />}
             {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={navigateToTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}

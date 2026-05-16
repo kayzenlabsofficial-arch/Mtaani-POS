@@ -9,6 +9,7 @@ import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import { approveRefundTransaction, requestRefundApproval } from '../../utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { useToast } from '../../context/ToastContext';
+import { getBusinessSettings } from '../../utils/settings';
 
 
 export default function DocumentsTab() {
@@ -27,7 +28,7 @@ export default function DocumentsTab() {
   const allPurchaseOrders = useLiveQuery(() => activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
   const allReports = useLiveQuery(() => activeBranchId ? db.endOfDayReports.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
   const allDailySummaries = useLiveQuery(() => activeBranchId ? db.dailySummaries.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []);
-  const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
+  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
 
   const unifiedRecords: any[] = [
     ...(allTransactions || []).map(t => ({ ...t, recordType: 'SALE' as const })),

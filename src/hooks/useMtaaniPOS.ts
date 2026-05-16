@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { useStore } from '../store';
 import { useToast } from '../context/ToastContext';
 import { db, type Transaction } from '../db';
@@ -8,6 +8,7 @@ import { getProductIngredients, isBundleProduct } from '../utils/bundleInventory
 
 export function useMtaaniPOS() {
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'REPORTS' | 'ADMIN_PANEL'>('REGISTER');
+  const activeTabRef = useRef(activeTab);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isCartOpen, toggleCart] = useState(false);
@@ -42,6 +43,30 @@ export function useMtaaniPOS() {
   const [loginError, setLoginError] = useState("");
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const currentState = window.history.state || {};
+    if (!currentState.mtaaniTab) {
+      window.history.replaceState({ ...currentState, mtaaniTab: true, tab: activeTabRef.current }, '');
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      const tab = event.state?.tab;
+      if (!tab) return;
+      setActiveTab(tab);
+      activeTabRef.current = tab;
+      setSidebarOpen(false);
+      setIsMoreMenuOpen(false);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -127,7 +152,12 @@ export function useMtaaniPOS() {
   };
 
   const navigateToTab = (tab: any) => {
-    setActiveTab(tab);
+    const nextTab = tab as typeof activeTab;
+    if (typeof window !== 'undefined' && activeTabRef.current !== nextTab) {
+      window.history.pushState({ ...(window.history.state || {}), mtaaniTab: true, tab: nextTab }, '');
+    }
+    activeTabRef.current = nextTab;
+    setActiveTab(nextTab);
     setSidebarOpen(false);
     setIsMoreMenuOpen(false);
   };

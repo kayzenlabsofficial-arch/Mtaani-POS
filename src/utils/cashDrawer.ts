@@ -26,6 +26,12 @@ type SupplierPaymentLike = {
   source?: string;
 };
 
+type CustomerPaymentLike = {
+  amount?: number;
+  timestamp?: number;
+  paymentMethod?: string;
+};
+
 export function getTodayStartMs(now = new Date()): number {
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
@@ -45,15 +51,18 @@ export function calculateCashDrawer({
   expenses = [],
   cashPicks = [],
   supplierPayments = [],
+  customerPayments = [],
   since = getTodayStartMs(),
 }: {
   transactions?: TransactionLike[];
   expenses?: ExpenseLike[];
   cashPicks?: CashPickLike[];
   supplierPayments?: SupplierPaymentLike[];
+  customerPayments?: CustomerPaymentLike[];
   since?: number;
 }): {
   cashSales: number;
+  customerCashPayments: number;
   tillExpenses: number;
   cashPicks: number;
   supplierTillPayments: number;
@@ -75,11 +84,16 @@ export function calculateCashDrawer({
     .filter(p => (p.timestamp || 0) >= since && p.source === 'TILL')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
+  const customerCashPayments = customerPayments
+    .filter(p => (p.timestamp || 0) >= since && p.paymentMethod === 'CASH')
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
   return {
     cashSales,
+    customerCashPayments,
     tillExpenses,
     cashPicks: picked,
     supplierTillPayments,
-    actualCashDrawer: cashSales - tillExpenses - picked - supplierTillPayments,
+    actualCashDrawer: cashSales + customerCashPayments - tillExpenses - picked - supplierTillPayments,
   };
 }

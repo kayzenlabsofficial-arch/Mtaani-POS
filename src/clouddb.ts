@@ -32,6 +32,7 @@ const OFFLINE_CACHE_TABLES = new Set<OfflineCacheTable>([
   'products',
   'categories',
   'customers',
+  'customerPayments',
   'suppliers',
   'settings',
   'branches',

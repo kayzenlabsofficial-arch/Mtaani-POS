@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Search, Plus, Users, Phone, Mail, ChevronRight, X, User, Trash2, Smartphone, Loader2, CheckCircle2, SlidersHorizontal, TrendingUp, CreditCard, UserCheck, ChevronDown, Save } from 'lucide-react';
+import { Search, Plus, Users, Phone, Mail, ChevronRight, X, User, Trash2, Smartphone, Loader2, CheckCircle2, Save, ArrowLeft, ReceiptText, FileDown, WalletCards, Banknote } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
-import { db, type Customer } from '../../db';
+import { db, type Customer, type CustomerPayment, type Transaction } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { MpesaService } from '../../services/mpesa';
@@ -12,18 +12,50 @@ export default function CustomersTab() {
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
+  const [statementCustomerId, setStatementCustomerId] = useState<string | null>(null);
+  const [paymentForm, setPaymentForm] = useState({
+    amount: '',
+    method: 'CASH' as CustomerPayment['paymentMethod'],
+    reference: '',
+  });
   const [isSaving, setIsSaving] = useState(false);
   const isAdmin = useStore(state => state.isAdmin);
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  const activeBranchId = useStore(state => state.activeBranchId);
+  const currentUser = useStore(state => state.currentUser);
   const { success, error, info } = useToast();
 
   const [mpesaState, setMpesaState] = useState<'IDLE' | 'PUSHING' | 'POLLING' | 'SUCCESS' | 'FAILED'>('IDLE');
   const [mpesaRequestId, setMpesaRequestId] = useState('');
   const [repaymentAmount, setRepaymentAmount] = useState('');
 
+  React.useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (statementCustomerId && !event.state?.customerStatementId) {
+        setStatementCustomerId(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [statementCustomerId]);
+
   const allCustomers = useLiveQuery(
     () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],
+    []
+  );
+  const statementSales = useLiveQuery(
+    () => statementCustomerId && activeBranchId
+      ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.customerId === statementCustomerId).toArray()
+      : Promise.resolve([]),
+    [statementCustomerId, activeBranchId],
+    []
+  );
+  const statementPayments = useLiveQuery(
+    () => statementCustomerId && activeBranchId
+      ? db.customerPayments.where('branchId').equals(activeBranchId).and(p => p.customerId === statementCustomerId).toArray()
+      : Promise.resolve([]),
+    [statementCustomerId, activeBranchId],
     []
   );
 
@@ -46,11 +78,54 @@ export default function CustomersTab() {
   const totalCredit = allCustomers.reduce((sum, c) => sum + (c.balance || 0), 0);
   const activeClients = allCustomers.length;
   const highValueClients = allCustomers.filter(c => c.totalSpent > 10000).length;
+  const statementCustomer = statementCustomerId ? allCustomers.find(c => c.id === statementCustomerId) || null : null;
+
+  const getCreditAmount = (sale: Transaction) => {
+    if (sale.paymentMethod === 'CREDIT') return Number(sale.total || 0);
+    if (sale.paymentMethod === 'SPLIT' && sale.splitPayments?.secondaryMethod === 'CREDIT') {
+      return Number(sale.splitPayments.secondaryAmount || 0);
+    }
+    return 0;
+  };
+
+  const creditSales = (statementSales || [])
+    .filter(sale => getCreditAmount(sale) > 0 && sale.status !== 'VOIDED')
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const totalCreditSales = creditSales.reduce((sum, sale) => sum + getCreditAmount(sale), 0);
+  const totalPayments = (statementPayments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const statementRows = [
+    ...creditSales.map(sale => ({
+      id: sale.id,
+      timestamp: sale.timestamp,
+      type: 'SALE' as const,
+      title: `Sale ${sale.id.split('-')[0].toUpperCase()}`,
+      detail: sale.items.map(item => `${item.name} x ${item.quantity}`).join(', '),
+      debit: getCreditAmount(sale),
+      credit: 0,
+      method: sale.paymentMethod || 'CREDIT',
+    })),
+    ...(statementPayments || []).map(payment => ({
+      id: payment.id,
+      timestamp: payment.timestamp,
+      type: 'PAYMENT' as const,
+      title: payment.reference || 'Customer payment',
+      detail: payment.transactionCode || payment.paymentMethod,
+      debit: 0,
+      credit: Number(payment.amount || 0),
+      method: payment.paymentMethod,
+    })),
+  ].sort((a, b) => b.timestamp - a.timestamp);
 
   const openAddCustomer = () => {
       setEditingCustomer(null);
       setCustomerForm({ name: '', phone: '', email: '' });
       setIsCustomerModalOpen(true);
+  }
+
+  const openStatement = (customer: Customer) => {
+      window.history.pushState({ ...(window.history.state || {}), mtaaniTab: true, tab: 'CUSTOMERS', customerStatementId: customer.id }, '');
+      setStatementCustomerId(customer.id);
+      setPaymentForm({ amount: customer.balance > 0 ? String(customer.balance) : '', method: 'CASH', reference: '' });
   }
 
   const openEditCustomer = (c: Customer) => {
@@ -67,7 +142,7 @@ export default function CustomersTab() {
             await db.customers.update(editingCustomer.id, { ...customerForm });
             success("Customer updated.");
         } else {
-            await db.customers.add({ id: crypto.randomUUID(), ...customerForm, totalSpent: 0, balance: 0, businessId: activeBusinessId! } as any);
+            await db.customers.add({ id: crypto.randomUUID(), ...customerForm, totalSpent: 0, balance: 0, branchId: activeBranchId!, businessId: activeBusinessId! } as any);
             success("Customer added.");
         }
         setIsCustomerModalOpen(false);
@@ -136,6 +211,18 @@ export default function CustomersTab() {
         
         if (editingCustomer) {
           const newBalance = Math.max(0, editingCustomer.balance - amount);
+          await db.customerPayments.add({
+            id: crypto.randomUUID(),
+            customerId: editingCustomer.id,
+            amount,
+            paymentMethod: 'MPESA',
+            transactionCode: res.receiptNumber || requestId,
+            reference: `M-Pesa repayment from ${editingCustomer.name}`,
+            timestamp: Date.now(),
+            preparedBy: currentUser?.name,
+            branchId: activeBranchId!,
+            businessId: activeBusinessId!,
+          });
           await db.customers.update(editingCustomer.id, { balance: newBalance });
           success(`Ksh ${amount} received! New balance: Ksh ${newBalance}`);
         }
@@ -150,6 +237,194 @@ export default function CustomersTab() {
         error(res.resultDesc || "Payment failed");
       }
     }, 5000);
+  }
+
+  const handleRecordPayment = async () => {
+    if (!statementCustomer || isSaving) return;
+    const amount = Number(paymentForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return error("Enter a valid payment amount.");
+    if (!activeBusinessId || !activeBranchId) return error("Select a branch before recording payment.");
+    if (amount > (statementCustomer.balance || 0) + 0.01) return error("Payment cannot exceed the customer balance.");
+
+    setIsSaving(true);
+    try {
+      await db.customerPayments.add({
+        id: crypto.randomUUID(),
+        customerId: statementCustomer.id,
+        amount,
+        paymentMethod: paymentForm.method,
+        transactionCode: paymentForm.reference.trim() || undefined,
+        reference: `${paymentForm.method} payment from ${statementCustomer.name}`,
+        timestamp: Date.now(),
+        preparedBy: currentUser?.name,
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+      });
+      await db.customers.update(statementCustomer.id, {
+        balance: Math.max(0, Number(statementCustomer.balance || 0) - amount),
+        updated_at: Date.now(),
+      });
+      setPaymentForm({ amount: '', method: 'CASH', reference: '' });
+      success(amount >= (statementCustomer.balance || 0) ? "Customer balance cleared." : "Payment recorded.");
+    } catch (err: any) {
+      error("Failed to record payment: " + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleExportStatement = async () => {
+    if (!statementCustomer) return;
+    try {
+      const { generateAndDownloadCustomerStatement } = await import('../../utils/shareUtils');
+      await generateAndDownloadCustomerStatement(statementCustomer, creditSales, statementPayments || []);
+      success("Customer statement exported.");
+    } catch (err) {
+      console.error('Customer statement export failed', err);
+      error("Failed to export customer statement.");
+    }
+  };
+
+  if (statementCustomer) {
+    return (
+      <div className="pb-28 md:pb-8 animate-in fade-in w-full">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-6">
+          <div className="min-w-0">
+            <button onClick={() => {
+              if (window.history.state?.customerStatementId) window.history.back();
+              else setStatementCustomerId(null);
+            }} className="mb-4 inline-flex items-center gap-2 text-[11px] font-black text-slate-500 hover:text-primary uppercase tracking-widest">
+              <ArrowLeft size={16} /> Customers
+            </button>
+            <h2 className="text-xl font-black text-slate-900 truncate">{statementCustomer.name}</h2>
+            <div className="flex flex-wrap items-center gap-3 mt-1 text-[10px] font-bold text-slate-500">
+              <span className="flex items-center gap-1"><Phone size={12} /> {statementCustomer.phone || 'No phone'}</span>
+              {statementCustomer.email && <span>{statementCustomer.email}</span>}
+              <span className={statementCustomer.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}>
+                Balance: Ksh {(statementCustomer.balance || 0).toLocaleString()}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => openEditCustomer(statementCustomer)} className="px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 flex items-center gap-2">
+              <User size={15} /> Profile
+            </button>
+            <button onClick={handleExportStatement} className="px-4 py-2.5 bg-primary text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-blue flex items-center gap-2">
+              <FileDown size={15} /> Statement
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-white border border-slate-100 rounded-2xl p-5">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Credit Sales</p>
+            <p className="text-2xl font-black text-slate-900 tabular-nums">Ksh {totalCreditSales.toLocaleString()}</p>
+          </div>
+          <div className="bg-white border border-slate-100 rounded-2xl p-5">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Payments</p>
+            <p className="text-2xl font-black text-emerald-600 tabular-nums">Ksh {totalPayments.toLocaleString()}</p>
+          </div>
+          <div className="bg-white border border-slate-100 rounded-2xl p-5">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Outstanding</p>
+            <p className={`text-2xl font-black tabular-nums ${statementCustomer.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>Ksh {(statementCustomer.balance || 0).toLocaleString()}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6">
+          <section className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black text-slate-900">Credit Statement</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sales on credit and customer payments</p>
+              </div>
+              <ReceiptText className="text-slate-300" size={22} />
+            </div>
+            <div className="divide-y divide-slate-100">
+              {statementRows.length === 0 ? (
+                <div className="py-20 text-center text-slate-400">
+                  <WalletCards size={40} className="mx-auto mb-3 opacity-30" />
+                  <p className="text-sm font-bold">No credit activity for this customer.</p>
+                </div>
+              ) : statementRows.map(row => (
+                <div key={`${row.type}-${row.id}`} className="px-4 sm:px-5 py-4 grid grid-cols-[2.5rem_minmax(0,1fr)_auto] gap-3 items-center">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${row.type === 'PAYMENT' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                    {row.type === 'PAYMENT' ? <Banknote size={18} /> : <ReceiptText size={18} />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-slate-900 truncate">{row.title}</p>
+                    <p className="text-[10px] font-bold text-slate-400 truncate">
+                      {new Date(row.timestamp).toLocaleString()} - {row.detail || row.method}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-sm font-black tabular-nums whitespace-nowrap ${row.type === 'PAYMENT' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {row.type === 'PAYMENT' ? '-' : '+'} Ksh {(row.credit || row.debit).toLocaleString()}
+                    </p>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{row.type}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <aside className="bg-white border border-slate-100 rounded-2xl p-5 h-fit">
+            <h3 className="text-sm font-black text-slate-900 mb-1">Clear Balance</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Record full or partial customer payment</p>
+            <div className="space-y-3">
+              <input
+                type="number"
+                value={paymentForm.amount}
+                onChange={e => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                placeholder="Amount received"
+                className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 text-sm font-black outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+              <select
+                value={paymentForm.method}
+                onChange={e => setPaymentForm({ ...paymentForm, method: e.target.value as CustomerPayment['paymentMethod'] })}
+                className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              >
+                <option value="CASH">Cash</option>
+                <option value="MPESA">M-Pesa</option>
+                <option value="PDQ">PDQ</option>
+                <option value="BANK">Bank</option>
+                <option value="CHEQUE">Cheque</option>
+              </select>
+              <input
+                value={paymentForm.reference}
+                onChange={e => setPaymentForm({ ...paymentForm, reference: e.target.value })}
+                placeholder="Reference or transaction code"
+                className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+              <button
+                onClick={handleRecordPayment}
+                disabled={isSaving || !paymentForm.amount || statementCustomer.balance <= 0}
+                className="w-full h-12 rounded-xl bg-emerald-600 text-white font-black text-[10px] uppercase tracking-widest disabled:opacity-40 flex items-center justify-center gap-2 shadow-green"
+              >
+                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                {Number(paymentForm.amount) >= statementCustomer.balance ? 'Clear Balance' : 'Record Payment'}
+              </button>
+            </div>
+          </aside>
+        </div>
+
+        {isCustomerModalOpen && (
+          <CustomerProfileModal
+            editingCustomer={editingCustomer}
+            isAdmin={isAdmin}
+            isSaving={isSaving}
+            customerForm={customerForm}
+            setCustomerForm={setCustomerForm}
+            onClose={() => setIsCustomerModalOpen(false)}
+            onDelete={handleDeleteCustomer}
+            onSave={handleSaveCustomer}
+            repaymentAmount={repaymentAmount}
+            setRepaymentAmount={setRepaymentAmount}
+            mpesaState={mpesaState}
+            onMpesaRepayment={handleMpesaRepayment}
+          />
+        )}
+      </div>
+    );
   }
 
   return (
@@ -206,7 +481,7 @@ export default function CustomersTab() {
                <button
                  key={customer.id}
                  type="button"
-                 onClick={() => openEditCustomer(customer)}
+                 onClick={() => openStatement(customer)}
                  className="w-full text-left px-3 sm:px-5 py-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 hover:bg-indigo-50/40 transition-colors group"
                >
                  <div className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3">
@@ -250,8 +525,55 @@ export default function CustomersTab() {
 
       {/* Customer Modal */}
       {isCustomerModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pb-safe">
-           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsCustomerModalOpen(false)} />
+        <CustomerProfileModal
+          editingCustomer={editingCustomer}
+          isAdmin={isAdmin}
+          isSaving={isSaving}
+          customerForm={customerForm}
+          setCustomerForm={setCustomerForm}
+          onClose={() => setIsCustomerModalOpen(false)}
+          onDelete={handleDeleteCustomer}
+          onSave={handleSaveCustomer}
+          repaymentAmount={repaymentAmount}
+          setRepaymentAmount={setRepaymentAmount}
+          mpesaState={mpesaState}
+          onMpesaRepayment={handleMpesaRepayment}
+        />
+      )}
+    </div>
+  );
+}
+
+function CustomerProfileModal({
+  editingCustomer,
+  isAdmin,
+  isSaving,
+  customerForm,
+  setCustomerForm,
+  onClose,
+  onDelete,
+  onSave,
+  repaymentAmount,
+  setRepaymentAmount,
+  mpesaState,
+  onMpesaRepayment,
+}: {
+  editingCustomer: Customer | null;
+  isAdmin: boolean;
+  isSaving: boolean;
+  customerForm: { name: string; phone: string; email: string };
+  setCustomerForm: React.Dispatch<React.SetStateAction<{ name: string; phone: string; email: string }>>;
+  onClose: () => void;
+  onDelete: () => void;
+  onSave: () => void;
+  repaymentAmount: string;
+  setRepaymentAmount: React.Dispatch<React.SetStateAction<string>>;
+  mpesaState: 'IDLE' | 'PUSHING' | 'POLLING' | 'SUCCESS' | 'FAILED';
+  onMpesaRepayment: () => void;
+}) {
+  return (
+        <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-0 sm:p-4 pb-safe">
+           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
            <div className="bg-white w-full max-w-md rounded-t-[40px] sm:rounded-[2.5rem] shadow-elevated relative z-10 flex flex-col p-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300 max-h-[95vh] overflow-y-auto no-scrollbar">
               <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8 sm:hidden shrink-0" />
               
@@ -266,7 +588,7 @@ export default function CustomersTab() {
                    </div>
                  </div>
                  {editingCustomer && isAdmin && (
-                    <button onClick={handleDeleteCustomer} className="w-10 h-10 flex items-center justify-center rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white transition-all press">
+                    <button onClick={onDelete} className="w-10 h-10 flex items-center justify-center rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white transition-all press">
                       <Trash2 size={20} />
                     </button>
                   )}
@@ -314,7 +636,7 @@ export default function CustomersTab() {
                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-300">KSH</span>
                             </div>
                             <button 
-                              onClick={handleMpesaRepayment}
+                              onClick={onMpesaRepayment}
                               className="px-6 py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-emerald active:scale-95 transition-all flex items-center gap-2"
                             >
                               Push
@@ -339,17 +661,15 @@ export default function CustomersTab() {
                </div>
 
               <div className="flex gap-4 mt-auto">
-                 <button onClick={() => setIsCustomerModalOpen(false)} disabled={isSaving} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press disabled:opacity-50">
+                 <button onClick={onClose} disabled={isSaving} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press disabled:opacity-50">
                    Dismiss
                  </button>
-                 <button onClick={handleSaveCustomer} disabled={!customerForm.name || isSaving} className="flex-[2] grad-blue text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-blue press flex items-center justify-center gap-3">
+                 <button onClick={onSave} disabled={!customerForm.name || isSaving} className="flex-[2] grad-blue text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-blue press flex items-center justify-center gap-3">
                    {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                    {isSaving ? 'Processing...' : 'Save Record'}
                  </button>
               </div>
            </div>
         </div>
-      )}
-    </div>
   );
 }

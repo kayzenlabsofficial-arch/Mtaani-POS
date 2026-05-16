@@ -209,6 +209,20 @@ export interface Customer {
   updated_at?: number;
 }
 
+export interface CustomerPayment {
+  id: string;
+  customerId: string;
+  amount: number;
+  paymentMethod: 'CASH' | 'MPESA' | 'BANK' | 'PDQ' | 'CHEQUE';
+  transactionCode?: string;
+  reference: string;
+  timestamp: number;
+  preparedBy?: string;
+  branchId: string;
+  businessId: string;
+  updated_at?: number;
+}
+
 export interface Supplier {
   id: string;
   name: string;
@@ -393,6 +407,7 @@ class MtaaniCloudDB {
   endOfDayReports     = new CloudTable<EndOfDayReport>('endOfDayReports');
   stockMovements      = new CloudTable<StockMovement>('stockMovements');
   customers           = new CloudTable<Customer>('customers');
+  customerPayments    = new CloudTable<CustomerPayment>('customerPayments');
   suppliers           = new CloudTable<Supplier>('suppliers');
   supplierPayments    = new CloudTable<SupplierPayment>('supplierPayments');
   expenses            = new CloudTable<Expense>('expenses');
@@ -426,6 +441,7 @@ class MtaaniCloudDB {
     this.endOfDayReports.reset();
     this.stockMovements.reset();
     this.customers.reset();
+    this.customerPayments.reset();
     this.suppliers.reset();
     this.supplierPayments.reset();
     this.expenses.reset();
@@ -479,6 +495,7 @@ class MtaaniCloudDB {
         this.endOfDayReports.reload(),
         this.stockMovements.reload(),
         this.customers.reload(),
+        this.customerPayments.reload(),
         this.suppliers.reload(),
         this.supplierPayments.reload(),
         this.expenses.reload(),

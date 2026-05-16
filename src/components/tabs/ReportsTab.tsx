@@ -21,7 +21,12 @@ import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 
 export default function ReportsTab() {
-  const [dateRange, setDateRange] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'ALL'>('TODAY');
+  const todayInput = new Date().toISOString().split('T')[0];
+  const monthInput = todayInput.slice(0, 7);
+  const [dateRange, setDateRange] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'MONTHLY' | 'CUSTOM' | 'ALL'>('TODAY');
+  const [selectedMonth, setSelectedMonth] = useState(monthInput);
+  const [customStart, setCustomStart] = useState(todayInput);
+  const [customEnd, setCustomEnd] = useState(todayInput);
   const [selectedProductId, setSelectedProductId] = React.useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   
@@ -71,17 +76,51 @@ export default function ReportsTab() {
   }
 
   // 1. Date Filtering Logic
-  const getFilterStartTime = () => {
+  const getPeriodBounds = () => {
     const now = new Date();
-    if (dateRange === 'TODAY') return new Date().setHours(0,0,0,0);
-    if (dateRange === 'WEEK') return now.setDate(now.getDate() - 7);
-    if (dateRange === 'MONTH') return now.setMonth(now.getMonth() - 1);
-    if (dateRange === 'QUARTER') return now.setMonth(now.getMonth() - 3);
-    return 0;
+    if (dateRange === 'TODAY') {
+      const start = new Date();
+      start.setHours(0,0,0,0);
+      const end = new Date();
+      end.setHours(23,59,59,999);
+      return { start: start.getTime(), end: end.getTime(), label: start.toLocaleDateString() };
+    }
+    if (dateRange === 'WEEK') {
+      const start = new Date();
+      start.setDate(start.getDate() - 7);
+      start.setHours(0,0,0,0);
+      return { start: start.getTime(), end: now.getTime(), label: 'Last 7 days' };
+    }
+    if (dateRange === 'MONTH') {
+      const start = new Date();
+      start.setMonth(start.getMonth() - 1);
+      start.setHours(0,0,0,0);
+      return { start: start.getTime(), end: now.getTime(), label: 'Last 30 days' };
+    }
+    if (dateRange === 'QUARTER') {
+      const start = new Date();
+      start.setMonth(start.getMonth() - 3);
+      start.setHours(0,0,0,0);
+      return { start: start.getTime(), end: now.getTime(), label: 'Last quarter' };
+    }
+    if (dateRange === 'MONTHLY') {
+      const [year, month] = selectedMonth.split('-').map(Number);
+      const start = new Date(year, month - 1, 1);
+      const end = new Date(year, month, 0, 23, 59, 59, 999);
+      return { start: start.getTime(), end: end.getTime(), label: start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) };
+    }
+    if (dateRange === 'CUSTOM') {
+      const start = new Date(customStart || todayInput);
+      start.setHours(0,0,0,0);
+      const end = new Date(customEnd || customStart || todayInput);
+      end.setHours(23,59,59,999);
+      return { start: start.getTime(), end: end.getTime(), label: `${start.toLocaleDateString()} to ${end.toLocaleDateString()}` };
+    }
+    return { start: 0, end: now.getTime(), label: 'All time' };
   };
-  const startTime = getFilterStartTime();
-  const filteredTransactions = allTransactions.filter(t => t.timestamp >= startTime && t.status !== 'VOIDED');
-  const filteredExpenses = allExpenses.filter(e => e.timestamp >= startTime && (e.status === 'APPROVED' || e.status === 'PENDING'));
+  const { start: startTime, end: endTime, label: periodLabel } = getPeriodBounds();
+  const filteredTransactions = allTransactions.filter(t => t.timestamp >= startTime && t.timestamp <= endTime && t.status !== 'VOIDED');
+  const filteredExpenses = allExpenses.filter(e => e.timestamp >= startTime && e.timestamp <= endTime && (e.status === 'APPROVED' || e.status === 'PENDING'));
   const displayProducts = enrichProductsWithBundleStock(allProducts || [], productIngredients || []);
 
   // 2. Complex Financial & Operational Analytics
@@ -107,7 +146,7 @@ export default function ReportsTab() {
 
     t.items.forEach(item => {
       const purchase = allPurchases?.find(p => p.items.some(pi => pi.productId === item.productId));
-      const cost = purchase?.items.find(pi => pi.productId === item.productId)?.unitCost || (item.snapshotPrice * 0.7);
+      const cost = Number(item.snapshotCost ?? purchase?.items.find(pi => pi.productId === item.productId)?.unitCost ?? (item.snapshotPrice * 0.7)) || 0;
       const itemProfit = (item.snapshotPrice - cost) * item.quantity;
       estimatedCOGS += (cost * item.quantity);
 
@@ -127,6 +166,8 @@ export default function ReportsTab() {
   });
 
   const totalExpenseAmount = filteredExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+  const grossSales = filteredTransactions.reduce((sum, t) => sum + Number(t.subtotal ?? t.total ?? 0), 0);
+  const totalDiscounts = filteredTransactions.reduce((sum, t) => sum + Number(t.discountAmount || 0), 0);
   const grossProfit = totalRevenue - estimatedCOGS - totalTax;
   const netProfit = grossProfit - totalExpenseAmount;
   const averageBasket = filteredTransactions.length > 0 ? totalRevenue / filteredTransactions.length : 0;
@@ -136,6 +177,11 @@ export default function ReportsTab() {
   const creditTransactions = filteredTransactions.filter(
     t => t.paymentMethod === 'CREDIT' || (t.paymentMethod === 'SPLIT' && t.splitPayments?.secondaryMethod === 'CREDIT')
   ).length;
+  const creditSalesAmount = filteredTransactions.reduce((sum, t) => {
+    if (t.paymentMethod === 'CREDIT') return sum + Number(t.total || 0);
+    if (t.paymentMethod === 'SPLIT' && t.splitPayments?.secondaryMethod === 'CREDIT') return sum + Number(t.splitPayments.secondaryAmount || 0);
+    return sum;
+  }, 0);
 
   // Chart Data Formatting
   const salesTrendData = Array.from({ length: 7 }).map((_, i) => {
@@ -162,14 +208,27 @@ export default function ReportsTab() {
     totalRevenue: selectedProductSales.reduce((acc, t) => acc + t.items.filter(i => i.productId === selectedProductId).reduce((s, i) => s + (i.snapshotPrice * i.quantity), 0), 0)
   };
 
-  const handleShareReport = async () => {
+  const handleExportProfitLoss = async () => {
     setIsSharing(true);
     try {
-      if ((window as any).shareDocument) {
-        await (window as any).shareDocument('report-content', `Intelligence-Report-${dateRange}-${new Date().toISOString().split('T')[0]}`, false);
-      }
+      const { generateAndDownloadProfitLossReport } = await import('../../utils/shareUtils');
+      await generateAndDownloadProfitLossReport({
+        title: `${dateRange}-${new Date().toISOString().split('T')[0]}`,
+        periodLabel,
+        grossSales,
+        discounts: totalDiscounts,
+        totalRevenue,
+        cogs: estimatedCOGS,
+        grossProfit,
+        expenses: totalExpenseAmount,
+        netProfit,
+        tax: totalTax,
+        creditSales: creditSalesAmount,
+        orderCount: filteredTransactions.length,
+        expenseBreakdown: expenseData,
+      });
     } catch (err) {
-      console.error("Report share failed", err);
+      console.error("P&L export failed", err);
     } finally {
       setIsSharing(false);
     }
@@ -186,6 +245,8 @@ export default function ReportsTab() {
             <span className="text-[10px] font-bold text-slate-500">{filteredTransactions.length} orders processed</span>
             <span className="text-slate-300">·</span>
             <span className={`text-[10px] font-bold ${netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>Net: Ksh {netProfit.toLocaleString()}</span>
+            <span className="text-slate-300">Â·</span>
+            <span className="text-[10px] font-bold text-slate-500">{periodLabel}</span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -195,6 +256,8 @@ export default function ReportsTab() {
                { id: 'WEEK', label: 'Week' },
                { id: 'MONTH', label: 'Month' },
                { id: 'QUARTER', label: 'Quarter' },
+               { id: 'MONTHLY', label: 'Monthly' },
+               { id: 'CUSTOM', label: 'Custom' },
                { id: 'ALL', label: 'All' }
              ].map(range => (
                <button 
@@ -206,9 +269,33 @@ export default function ReportsTab() {
                </button>
              ))}
           </div>
-          <button onClick={handleShareReport} disabled={isSharing} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-50 active:scale-[0.98] transition-all">
+          {dateRange === 'MONTHLY' && (
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={event => setSelectedMonth(event.target.value)}
+              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            />
+          )}
+          {dateRange === 'CUSTOM' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={customStart}
+                onChange={event => setCustomStart(event.target.value)}
+                className="h-10 w-36 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+              <input
+                type="date"
+                value={customEnd}
+                onChange={event => setCustomEnd(event.target.value)}
+                className="h-10 w-36 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+            </div>
+          )}
+          <button onClick={handleExportProfitLoss} disabled={isSharing} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-50 active:scale-[0.98] transition-all">
              {isSharing ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-             <span className="hidden sm:inline">{isSharing ? 'Exporting...' : 'Export PDF'}</span>
+             <span className="hidden sm:inline">{isSharing ? 'Exporting...' : 'Export P&L'}</span>
           </button>
         </div>
       </div>

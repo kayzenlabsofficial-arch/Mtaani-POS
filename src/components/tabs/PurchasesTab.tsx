@@ -7,6 +7,7 @@ import { useStore } from '../../store';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
+import { getBusinessSettings } from '../../utils/settings';
 
 
 export default function PurchasesTab() {
@@ -43,7 +44,7 @@ export default function PurchasesTab() {
     [activeBusinessId, activeBranchId],
     []
   );
-  const businessSettings = useLiveQuery(() => activeBusinessId ? db.settings.get('core') : Promise.resolve(undefined), [activeBusinessId]);
+  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
 
   const filteredPurchases = allPurchaseOrders.filter(po => 
       (po.invoiceNumber || '').toLowerCase().includes(purchaseSearch.toLowerCase()) || 
@@ -449,8 +450,8 @@ export default function PurchasesTab() {
                    Dismiss
                  </button>
                  <button data-testid="purchase-save-order" onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0 || isSaving} className="flex-[2] grad-indigo text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-indigo press flex items-center justify-center gap-3">
-                   <Save size={18}/>
-                   {isSaving ? 'Saving...' : selectedPOToEdit ? 'Commit Changes' : 'Publish Order'}
+                   {selectedPOToEdit ? <Save size={18}/> : <PackagePlus size={18}/>}
+                   {isSaving ? 'Saving...' : selectedPOToEdit ? 'Commit Changes' : 'Process PO'}
                  </button>
               </div>
            </div>
