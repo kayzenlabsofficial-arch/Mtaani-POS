@@ -385,8 +385,8 @@ export default function ReportsTab() {
                 <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center"> <BarChart3 size={20} /> </div>
                 Sales trend
               </h3>
-              <div className="h-[320px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-[320px] w-full min-w-0">
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                   <ComposedChart data={salesTrendData}>
                     <defs>
                       <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
@@ -411,8 +411,8 @@ export default function ReportsTab() {
               <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center"> <PieIcon size={20} /> </div>
               Expenses
             </h3>
-            <div className="h-[260px] relative">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[260px] min-w-0 relative">
+              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                 <PieChart>
                   <Pie data={expenseData} innerRadius={75} outerRadius={105} paddingAngle={8} dataKey="value" stroke="none">
                     {expenseData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
@@ -446,8 +446,8 @@ export default function ReportsTab() {
                 <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center"> <ShoppingBag size={20} /> </div>
                 Category sales
              </h3>
-             <div className="h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
+             <div className="h-[300px] w-full min-w-0">
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                    <BarChart data={categoryData} layout="vertical" margin={{ left: 20, right: 20 }}>
                       <XAxis type="number" hide />
                       <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 900}} width={90} />

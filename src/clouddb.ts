@@ -59,6 +59,8 @@ const CLIENT_GLOBAL_TABLES = new Set([
   'loginAttempts',
 ]);
 
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 function isLikelyOfflineError(e: any): boolean {
   if (typeof window !== 'undefined' && navigator && navigator.onLine === false) return true;
   const msg = String(e?.message || e || '');
@@ -108,23 +110,38 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
   const url = `${API}/${table}`;
 
   try {
-    const res = await fetch(url, {
-      method,
-      headers,
-      credentials: 'same-origin',
+    let res: Response | null = null;
+    let networkError: any = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        res = await fetch(url, {
+          method,
+          headers,
+          credentials: 'same-origin',
       // CRITICAL: Bypass service worker & browser cache — always fetch fresh from D1
-      cache: 'no-store',
-      ...(body !== undefined && { body: JSON.stringify(body) }),
-    });
+          cache: 'no-store',
+          ...(body !== undefined && { body: JSON.stringify(body) }),
+        });
+        break;
+      } catch (err) {
+        networkError = err;
+        if (attempt < 2 && isLikelyOfflineError(err)) {
+          await wait(300 * (attempt + 1));
+          continue;
+        }
+        throw err;
+      }
+    }
+    if (!res) throw networkError || new Error('Request failed.');
 
     if (!res.ok) {
       let msg = `${method} /api/data/${table} → ${res.status}`;
-      try { 
-        const j: any = await res.json(); 
+      const text = await res.text().catch(() => '');
+      try {
+        const j: any = text ? JSON.parse(text) : {};
         if (j.error) msg += `: ${j.error}`;
         if (j.message) msg += ` (${j.message})`;
       } catch {
-        const text = await res.text();
         if (text) msg += `: ${text.slice(0, 100)}`;
       }
       throw new Error(msg);
@@ -671,7 +688,8 @@ export function startBackgroundSync(intervalMs = 30000) {
        // Instead, we'll let db.ts call a refresh method.
        dbEventBus?.dispatchEvent(new Event('db:sync-request'));
     } catch (e) {
-      console.warn('[CloudDB] Background sync failed:', e);
+      const message = e instanceof Error ? e.message : String(e);
+      console.warn(`[CloudDB] Background sync failed: ${message}`);
     }
   }, intervalMs);
 }

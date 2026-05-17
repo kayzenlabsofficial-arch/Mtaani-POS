@@ -149,9 +149,9 @@ export async function markOutboxAcked(id: string): Promise<void> {
 export async function getPendingOutbox(args: { businessId: string; branchId: string; limit?: number }): Promise<OutboxItem[]> {
   const limit = args.limit ?? 50;
   return offlineDb.outbox
-    .where(['businessId', 'branchId'])
-    .equals([args.businessId, args.branchId])
-    .filter((x) => !x.ackedAt)
+    .where('businessId')
+    .equals(args.businessId)
+    .filter((x) => x.branchId === args.branchId && !x.ackedAt)
     .sortBy('createdAt')
     .then((arr) => arr.slice(0, limit));
 }

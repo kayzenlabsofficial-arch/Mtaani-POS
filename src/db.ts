@@ -534,42 +534,47 @@ class MtaaniCloudDB {
     // Lazy import to break the circular dependency: db → store → db
     const { useStore } = await import('./store');
     const state = useStore.getState();
-    const promises = [
-      this.businesses.reload(),
-      this.users.reload(),
-      this.branches.reload(),
-      this.settings.reload(),
+    const reloads: Array<() => Promise<void>> = [
+      () => this.businesses.reload(),
+      () => this.users.reload(),
+      () => this.branches.reload(),
+      () => this.settings.reload(),
     ];
 
     if (state.activeBranchId) {
-      promises.push(
-        this.products.reload(),
-        this.productIngredients.reload(),
-        this.transactions.reload(),
-        this.cashPicks.reload(),
-        this.endOfDayReports.reload(),
-        this.stockMovements.reload(),
-        this.customers.reload(),
-        this.customerPayments.reload(),
-        this.serviceItems.reload(),
-        this.salesInvoices.reload(),
-        this.suppliers.reload(),
-        this.supplierPayments.reload(),
-        this.expenses.reload(),
-        this.purchaseOrders.reload(),
-        this.stockAdjustmentRequests.reload(),
-        this.shifts.reload(),
-        this.dailySummaries.reload(),
-        this.creditNotes.reload(),
-        this.categories.reload(),
-        this.expenseAccounts.reload(),
-        this.financialAccounts.reload(),
-        this.loginAttempts.reload()
+      reloads.push(
+        () => this.products.reload(),
+        () => this.productIngredients.reload(),
+        () => this.transactions.reload(),
+        () => this.cashPicks.reload(),
+        () => this.endOfDayReports.reload(),
+        () => this.stockMovements.reload(),
+        () => this.customers.reload(),
+        () => this.customerPayments.reload(),
+        () => this.serviceItems.reload(),
+        () => this.salesInvoices.reload(),
+        () => this.suppliers.reload(),
+        () => this.supplierPayments.reload(),
+        () => this.expenses.reload(),
+        () => this.purchaseOrders.reload(),
+        () => this.stockAdjustmentRequests.reload(),
+        () => this.shifts.reload(),
+        () => this.dailySummaries.reload(),
+        () => this.creditNotes.reload(),
+        () => this.categories.reload(),
+        () => this.expenseAccounts.reload(),
+        () => this.financialAccounts.reload()
 
       );
     }
 
-    await Promise.all(promises);
+    if (state.isSystemAdmin || state.currentUser?.role === 'ROOT') {
+      reloads.push(() => this.loginAttempts.reload());
+    }
+
+    for (const reload of reloads) {
+      await reload();
+    }
   }
 
   /** Alias used by legacy components */

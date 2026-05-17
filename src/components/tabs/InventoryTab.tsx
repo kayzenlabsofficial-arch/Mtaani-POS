@@ -553,8 +553,8 @@ export default function InventoryTab() {
                   </div>
                   <MaterialIcon name="monitoring" className="text-emerald-300" style={{ fontSize: '20px' }} />
                 </div>
-                <div className="h-44">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-44 min-w-0">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                     <AreaChart data={chartData} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
                       <defs>
                         <linearGradient id="salesGlow" x1="0" y1="0" x2="0" y2="1">

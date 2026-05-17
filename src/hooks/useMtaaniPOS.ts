@@ -170,8 +170,9 @@ export function useMtaaniPOS() {
       await flushOutboxNow();
       await db.sync(); 
       success("Synced successfully."); 
-    } catch (err) { 
-      error("Sync failed."); 
+    } catch (err: any) {
+      console.error('[POS Sync]', err);
+      error(err?.message ? `Sync failed: ${err.message}` : "Sync failed.");
     } finally { 
       setIsSyncing(false); 
     }

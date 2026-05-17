@@ -43,6 +43,68 @@ function deserializeRow(row: Record<string, any>): Record<string, any> {
   return out;
 }
 
+async function ensureSyncSchema(db: D1Database) {
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS idempotencyKeys (
+      id TEXT PRIMARY KEY,
+      businessId TEXT NOT NULL,
+      branchId TEXT NOT NULL,
+      idempotencyKey TEXT NOT NULL,
+      operation TEXT NOT NULL,
+      deviceId TEXT,
+      cashierName TEXT,
+      createdAt INTEGER NOT NULL
+    )`
+  ).run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, branchId, idempotencyKey)').run();
+
+  await db.prepare('CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId)').run();
+  await db.prepare('CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER)').run();
+
+  const migrations = [
+    'ALTER TABLE transactions ADD COLUMN branchId TEXT',
+    'ALTER TABLE transactions ADD COLUMN businessId TEXT',
+    'ALTER TABLE transactions ADD COLUMN shiftId TEXT',
+    'ALTER TABLE transactions ADD COLUMN approvedBy TEXT',
+    'ALTER TABLE transactions ADD COLUMN pendingRefundItems TEXT',
+    'ALTER TABLE transactions ADD COLUMN changeGiven REAL',
+    'ALTER TABLE transactions ADD COLUMN mpesaReference TEXT',
+    'ALTER TABLE transactions ADD COLUMN mpesaCode TEXT',
+    'ALTER TABLE transactions ADD COLUMN mpesaCustomer TEXT',
+    'ALTER TABLE transactions ADD COLUMN mpesaCheckoutRequestId TEXT',
+    'ALTER TABLE transactions ADD COLUMN cashierId TEXT',
+    'ALTER TABLE transactions ADD COLUMN customerId TEXT',
+    'ALTER TABLE transactions ADD COLUMN customerName TEXT',
+    'ALTER TABLE transactions ADD COLUMN discount REAL',
+    'ALTER TABLE transactions ADD COLUMN discountType TEXT',
+    'ALTER TABLE transactions ADD COLUMN splitPayments TEXT',
+    'ALTER TABLE transactions ADD COLUMN splitData TEXT',
+    'ALTER TABLE transactions ADD COLUMN isSynced INTEGER',
+    'ALTER TABLE products ADD COLUMN businessId TEXT',
+    'ALTER TABLE products ADD COLUMN branchId TEXT',
+    'ALTER TABLE products ADD COLUMN unit TEXT',
+    'ALTER TABLE products ADD COLUMN costPrice REAL',
+    "ALTER TABLE products ADD COLUMN taxCategory TEXT DEFAULT 'A'",
+    'ALTER TABLE products ADD COLUMN isBundle INTEGER DEFAULT 0',
+    'ALTER TABLE products ADD COLUMN components TEXT',
+    'ALTER TABLE products ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE customers ADD COLUMN totalSpent REAL',
+    'ALTER TABLE customers ADD COLUMN balance REAL',
+    'ALTER TABLE customers ADD COLUMN businessId TEXT',
+    'ALTER TABLE customers ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE productIngredients ADD COLUMN businessId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN reference TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN branchId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN businessId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
+  ];
+  for (const sql of migrations) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
+}
+
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
 
@@ -52,6 +114,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const auth = await authorizeRequest(request, env);
   if (!auth.ok) return auth.response;
   if (!env.DB) return json({ error: 'DB binding missing' }, 500);
+  await ensureSyncSchema(env.DB);
 
   const businessId = request.headers.get('X-Business-ID') || '';
   const branchId = request.headers.get('X-Branch-ID') || '';
@@ -69,19 +132,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     return json({ error: 'Offline sync only accepts valid sale records.' }, 400);
   }
 
-  // 1. Batch Idempotency Check
-  // We use INSERT OR IGNORE to atomically check if this key was already processed.
-  const idempotencyStmts = mutations.map(m => {
+  // Check idempotency before preparing the sale, then write the idempotency row in
+  // the same final batch as the transaction and stock effects. If the sale batch
+  // fails, the key is not burned and the device can retry safely.
+  const idemIds = mutations.map(m => `${businessId}|${branchId}|${String(m.idempotencyKey || '').trim()}`);
+  const placeholders = idemIds.map(() => '?').join(',');
+  const existingIdem = placeholders
+    ? await env.DB.prepare(`SELECT id FROM idempotencyKeys WHERE id IN (${placeholders})`).bind(...idemIds).all()
+    : { results: [] };
+  const existingIdemIds = new Set(((existingIdem.results || []) as any[]).map(row => String(row.id)));
+  const validMutations = mutations.filter((m) => {
     const idempotencyKey = String(m.idempotencyKey || '').trim();
-    const idemId = `${businessId}|${branchId}|${idempotencyKey}`;
-    return env.DB.prepare(
-      `INSERT OR IGNORE INTO idempotencyKeys (id, businessId, branchId, idempotencyKey, operation, deviceId, cashierName, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(idemId, businessId, branchId, idempotencyKey, 'transactions:UPSERT', deviceId, cashierName, Date.now());
+    return !existingIdemIds.has(`${businessId}|${branchId}|${idempotencyKey}`);
   });
-
-  const idemResults = await env.DB.batch(idempotencyStmts);
-  const validMutations = mutations.filter((m, idx) => (idemResults[idx] as any).meta.changes > 0);
   const skippedCount = mutations.length - validMutations.length;
 
   if (validMutations.length === 0) {
@@ -123,13 +186,28 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     }
   }
   finalBatch.push(...sideEffects);
+  for (const m of validMutations) {
+    const idempotencyKey = String(m.idempotencyKey || '').trim();
+    const idemId = `${businessId}|${branchId}|${idempotencyKey}`;
+    finalBatch.push(
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO idempotencyKeys (id, businessId, branchId, idempotencyKey, operation, deviceId, cashierName, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(idemId, businessId, branchId, idempotencyKey, 'transactions:UPSERT', deviceId, cashierName, Date.now())
+    );
+  }
 
   // Execute final batch in chunks (to stay within D1 limits if many items are synced)
-  if (finalBatch.length > 0) {
-    const CHUNK_SIZE = 100;
-    for (let i = 0; i < finalBatch.length; i += CHUNK_SIZE) {
-      await env.DB.batch(finalBatch.slice(i, i + CHUNK_SIZE));
+  try {
+    if (finalBatch.length > 0) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < finalBatch.length; i += CHUNK_SIZE) {
+        await env.DB.batch(finalBatch.slice(i, i + CHUNK_SIZE));
+      }
     }
+  } catch (err: any) {
+    console.error('[Sync Flush Error]', err?.message || err);
+    return json({ error: err?.message || 'Offline sync failed.' }, 500);
   }
 
   return json({ success: true, applied: validMutations.length, skipped: skippedCount });

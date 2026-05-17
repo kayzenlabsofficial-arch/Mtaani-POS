@@ -17,6 +17,21 @@ function json(body: any, status = 200) {
   });
 }
 
+async function ensureDeviceSyncSchema(db: D1Database) {
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS deviceSyncStatus (
+      id TEXT PRIMARY KEY,
+      businessId TEXT NOT NULL,
+      branchId TEXT NOT NULL,
+      deviceId TEXT NOT NULL,
+      cashierName TEXT,
+      lastSyncAt INTEGER,
+      updated_at INTEGER
+    )`
+  ).run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_deviceSyncStatus_branch ON deviceSyncStatus(businessId, branchId, lastSyncAt)').run();
+}
+
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
 
@@ -26,6 +41,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const auth = await authorizeRequest(request, env);
   if (!auth.ok) return auth.response;
   if (!env.DB) return json({ error: 'DB binding missing' }, 500);
+  await ensureDeviceSyncSchema(env.DB);
 
   const businessId = request.headers.get('X-Business-ID') || '';
   const branchId = request.headers.get('X-Branch-ID') || '';
