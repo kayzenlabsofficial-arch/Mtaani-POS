@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS stockMovements (
     reference TEXT,
     branchId TEXT,
     businessId TEXT,
+    shiftId TEXT,
     updated_at INTEGER
 );
 
@@ -252,6 +253,7 @@ CREATE TABLE IF NOT EXISTS supplierPayments (
     source TEXT,
     accountId TEXT,
     shiftId TEXT,
+    preparedBy TEXT,
     branchId TEXT,
     businessId TEXT,
     updated_at INTEGER
@@ -484,9 +486,11 @@ CREATE TABLE IF NOT EXISTS idempotencyKeys (
     operation TEXT NOT NULL,
     deviceId TEXT,
     cashierName TEXT,
+    transactionId TEXT,
     createdAt INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, branchId, idempotencyKey);
+CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_transaction ON idempotencyKeys(businessId, branchId, transactionId);
 
 CREATE TABLE IF NOT EXISTS aiUsage (
     id TEXT PRIMARY KEY,

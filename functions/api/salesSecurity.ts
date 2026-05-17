@@ -12,6 +12,7 @@ export class PolicyError extends Error {
 type ProductRow = {
   id: string;
   name: string;
+  branchId?: string | null;
   category?: string;
   sellingPrice?: number;
   costPrice?: number;
@@ -93,7 +94,7 @@ async function loadProducts(db: D1Database, businessId: string, ids: string[]): 
     const chunk = uniqueIds.slice(i, i + CHUNK_SIZE);
     const placeholders = chunk.map(() => '?').join(',');
     const { results } = await db.prepare(
-      `SELECT id, name, category, sellingPrice, costPrice, taxCategory, unit, isBundle, components, stockQuantity
+      `SELECT id, name, branchId, category, sellingPrice, costPrice, taxCategory, unit, isBundle, components, stockQuantity
        FROM products
        WHERE businessId = ? AND id IN (${placeholders})`
     ).bind(businessId, ...chunk).all();
@@ -182,6 +183,12 @@ function creditAmountFor(tx: Record<string, any>, total: number): number {
 function addDeduction(deductions: Map<string, number>, productId: string, quantity: number) {
   if (!productId || quantity <= 0) return;
   deductions.set(productId, (deductions.get(productId) || 0) + quantity);
+}
+
+function assertProductBranch(product: ProductRow, branchId: string) {
+  if (product.branchId && product.branchId !== branchId) {
+    throw new PolicyError(`Product "${product.name}" belongs to another branch.`, 403);
+  }
 }
 
 export async function hardenTransactionBatch(options: HardenOptions, transactions: any[]): Promise<D1PreparedStatement[]> {
@@ -281,6 +288,7 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
       const productId = String(item?.productId || item?.id || '').trim();
       const product = productId ? products.get(productId) : null;
       if (!product) throw new PolicyError('Sale includes an item that does not exist.', 400);
+      assertProductBranch(product, branchId);
       const quantity = clamp(asNumber(item?.quantity ?? item?.cartQuantity), 0, 1_000_000);
       if (quantity <= 0) throw new PolicyError('Sale item quantity must be more than zero.');
       return {
@@ -357,6 +365,7 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
       for (const [productId, quantity] of txDeductions.entries()) {
         const product = products.get(productId);
         if (!product) throw new PolicyError('Sale refers to a stock item that does not exist.');
+        assertProductBranch(product, branchId);
         const alreadyPlanned = plannedDeductions.get(productId) || 0;
         if (asNumber(product.stockQuantity) < alreadyPlanned + quantity) {
           throw new PolicyError(`Insufficient stock for ${product.name}.`, 409);

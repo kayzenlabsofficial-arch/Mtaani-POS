@@ -25,12 +25,12 @@ export function deserializeRow(row: Record<string, any>): Record<string, any> {
   return out;
 }
 
-async function upsertStatement(db: D1Database, table: string, item: Record<string, any>) {
+async function insertStatement(db: D1Database, table: string, item: Record<string, any>) {
   const { results: pragma } = await db.prepare(`PRAGMA table_info('${table}')`).all();
   const validCols = new Set((pragma as any[]).map((r: any) => r.name));
   const cols = Object.keys(item).filter(k => validCols.has(k));
   if (cols.length === 0) throw new PolicyError(`No valid ${table} columns to save.`, 400);
-  const sql = `INSERT OR REPLACE INTO ${table} (${cols.map(c => '"' + c + '"').join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
+  const sql = `INSERT INTO ${table} (${cols.map(c => '"' + c + '"').join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
   return db.prepare(sql).bind(...cols.map(col => {
     const value = item[col];
     if (value === null || value === undefined) return null;
@@ -39,6 +39,59 @@ async function upsertStatement(db: D1Database, table: string, item: Record<strin
 }
 
 export async function ensureExpenseActionSchema(db: D1Database) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS expenses (
+      id TEXT PRIMARY KEY,
+      amount REAL NOT NULL DEFAULT 0,
+      category TEXT NOT NULL DEFAULT 'General',
+      description TEXT,
+      timestamp INTEGER NOT NULL,
+      userName TEXT,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      source TEXT,
+      accountId TEXT,
+      productId TEXT,
+      quantity REAL,
+      preparedBy TEXT,
+      approvedBy TEXT,
+      shiftId TEXT,
+      branchId TEXT,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS financialAccounts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      balance REAL NOT NULL DEFAULT 0,
+      businessId TEXT,
+      branchId TEXT,
+      accountNumber TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS products (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'General',
+      sellingPrice REAL NOT NULL DEFAULT 0,
+      costPrice REAL,
+      taxCategory TEXT NOT NULL DEFAULT 'A',
+      stockQuantity REAL NOT NULL DEFAULT 0,
+      unit TEXT,
+      barcode TEXT NOT NULL DEFAULT '',
+      imageUrl TEXT,
+      reorderPoint REAL,
+      isBundle INTEGER DEFAULT 0,
+      components TEXT,
+      businessId TEXT,
+      branchId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS auditLogs (
       id TEXT PRIMARY KEY,
@@ -69,6 +122,38 @@ export async function ensureExpenseActionSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+  for (const sql of [
+    'ALTER TABLE expenses ADD COLUMN source TEXT',
+    'ALTER TABLE expenses ADD COLUMN accountId TEXT',
+    'ALTER TABLE expenses ADD COLUMN productId TEXT',
+    'ALTER TABLE expenses ADD COLUMN quantity REAL',
+    'ALTER TABLE expenses ADD COLUMN preparedBy TEXT',
+    'ALTER TABLE expenses ADD COLUMN approvedBy TEXT',
+    'ALTER TABLE expenses ADD COLUMN shiftId TEXT',
+    'ALTER TABLE expenses ADD COLUMN branchId TEXT',
+    'ALTER TABLE expenses ADD COLUMN businessId TEXT',
+    'ALTER TABLE expenses ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE financialAccounts ADD COLUMN branchId TEXT',
+    'ALTER TABLE financialAccounts ADD COLUMN accountNumber TEXT',
+    'ALTER TABLE financialAccounts ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE products ADD COLUMN businessId TEXT',
+    'ALTER TABLE products ADD COLUMN branchId TEXT',
+    'ALTER TABLE products ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE stockMovements ADD COLUMN branchId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN businessId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
+  ]) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
+}
+
+function sameExpenseIdentity(existing: Record<string, any>, next: Record<string, any>) {
+  return asNumber(existing.amount) === asNumber(next.amount)
+    && String(existing.source || 'TILL').toUpperCase() === String(next.source || 'TILL').toUpperCase()
+    && trimText(existing.accountId || '', 120) === trimText(next.accountId || '', 120)
+    && trimText(existing.productId || '', 120) === trimText(next.productId || '', 120)
+    && asNumber(existing.quantity, 0) === asNumber(next.quantity, 0);
 }
 
 function auditStatement(db: D1Database, args: {
@@ -202,7 +287,21 @@ export async function prepareExpenseSubmit(
   expense.status = approved ? 'APPROVED' : 'PENDING';
   expense.approvedBy = approved ? trimText(expense.approvedBy || principal.userName, 120) : null;
 
-  const statements = [await upsertStatement(db, 'expenses', expense)];
+  const existing = await db.prepare(`
+    SELECT *
+    FROM expenses
+    WHERE id = ? AND businessId = ? AND branchId = ?
+    LIMIT 1
+  `).bind(expense.id, businessId, branchId).first<any>();
+  if (existing) {
+    const clean = deserializeRow(existing);
+    if (!sameExpenseIdentity(clean, expense)) {
+      throw new PolicyError('Expense id is already used by a different expense.', 409);
+    }
+    return { expense: clean, statements: [], idempotent: true };
+  }
+
+  const statements = [await insertStatement(db, 'expenses', expense)];
   if (approved) statements.push(...await effectStatementsForApprovedExpense(db, businessId, branchId, expense));
   statements.push(auditStatement(db, {
     principal,
@@ -214,7 +313,7 @@ export async function prepareExpenseSubmit(
     details: `${approved ? 'Approved' : 'Created pending'} expense for Ksh ${expense.amount.toLocaleString()} (${expense.category}).`,
   }));
 
-  return { expense, statements };
+  return { expense, statements, idempotent: false };
 }
 
 export async function prepareExpenseApproval(
@@ -239,6 +338,7 @@ export async function prepareExpenseApproval(
   `).bind(args.expenseId, businessId, branchId).first<any>();
   if (!expense) throw new PolicyError('Expense was not found.', 404);
   const clean = deserializeRow(expense);
+  if (clean.status === 'APPROVED') return { expense: clean, statements: [], idempotent: true };
   if (clean.status !== 'PENDING') throw new PolicyError('This expense has already been processed.', 409);
 
   clean.status = 'APPROVED';
@@ -260,6 +360,5 @@ export async function prepareExpenseApproval(
     }),
   ];
 
-  return { expense: clean, statements };
+  return { expense: clean, statements, idempotent: false };
 }
-

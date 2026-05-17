@@ -98,24 +98,24 @@ export default function CustomersTab() {
     []
   );
   const statementSales = useLiveQuery(
-    () => statementCustomerId && activeBranchId
-      ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.customerId === statementCustomerId).toArray()
+    () => statementCustomerId && activeBusinessId && activeBranchId
+      ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.businessId === activeBusinessId && t.customerId === statementCustomerId).toArray()
       : Promise.resolve([]),
-    [statementCustomerId, activeBranchId],
+    [statementCustomerId, activeBusinessId, activeBranchId],
     []
   );
   const statementPayments = useLiveQuery(
-    () => statementCustomerId && activeBranchId
-      ? db.customerPayments.where('branchId').equals(activeBranchId).and(p => p.customerId === statementCustomerId).toArray()
+    () => statementCustomerId && activeBusinessId && activeBranchId
+      ? db.customerPayments.where('branchId').equals(activeBranchId).and(p => p.businessId === activeBusinessId && p.customerId === statementCustomerId).toArray()
       : Promise.resolve([]),
-    [statementCustomerId, activeBranchId],
+    [statementCustomerId, activeBusinessId, activeBranchId],
     []
   );
   const statementInvoices = useLiveQuery(
-    () => statementCustomerId && activeBranchId
-      ? db.salesInvoices.where('branchId').equals(activeBranchId).and(i => i.customerId === statementCustomerId && i.status !== 'CANCELLED').toArray()
+    () => statementCustomerId && activeBusinessId && activeBranchId
+      ? db.salesInvoices.where('branchId').equals(activeBranchId).and(i => i.businessId === activeBusinessId && i.customerId === statementCustomerId && i.status !== 'CANCELLED').toArray()
       : Promise.resolve([]),
-    [statementCustomerId, activeBranchId],
+    [statementCustomerId, activeBusinessId, activeBranchId],
     []
   );
 
@@ -131,13 +131,13 @@ export default function CustomersTab() {
   }
 
   const filteredCustomers = allCustomers.filter(c => 
-      c.name.toLowerCase().includes(customerSearch.toLowerCase()) || 
-      c.phone.includes(customerSearch)
+      String(c.name || '').toLowerCase().includes(customerSearch.toLowerCase()) || 
+      String(c.phone || '').includes(customerSearch)
   );
 
-  const totalCredit = allCustomers.reduce((sum, c) => sum + (c.balance || 0), 0);
+  const totalCredit = allCustomers.reduce((sum, c) => sum + Number(c.balance || 0), 0);
   const activeClients = allCustomers.length;
-  const highValueClients = allCustomers.filter(c => c.totalSpent > 10000).length;
+  const highValueClients = allCustomers.filter(c => Number(c.totalSpent || 0) > 10000).length;
   const statementCustomer = statementCustomerId ? allCustomers.find(c => c.id === statementCustomerId) || null : null;
 
   const getCreditAmount = (sale: Transaction) => {
@@ -342,12 +342,12 @@ export default function CustomersTab() {
       setStatementCustomerId(customer.id);
       setStatementDateMode('ALL');
       setStatementPage(1);
-      setPaymentForm({ amount: customer.balance > 0 ? String(customer.balance) : '', method: 'CASH', reference: '' });
+      setPaymentForm({ amount: Number(customer.balance || 0) > 0 ? String(customer.balance) : '', method: 'CASH', reference: '' });
   }
 
   const openEditCustomer = (c: Customer) => {
       setEditingCustomer(c);
-      setCustomerForm({ name: c.name, phone: c.phone, email: c.email });
+      setCustomerForm({ name: c.name || '', phone: c.phone || '', email: c.email || '' });
       setIsCustomerModalOpen(true);
   }
 
@@ -824,7 +824,7 @@ export default function CustomersTab() {
                    <div className="stable-row-copy">
                      <h4 className="text-sm font-black text-slate-900 stable-title leading-tight">{customer.name}</h4>
                      <div className="flex items-center gap-2 mt-1 overflow-hidden">
-                       <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 flex-shrink-0"><Phone size={11} /> {customer.phone}</span>
+                       <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 flex-shrink-0"><Phone size={11} /> {customer.phone || 'No phone'}</span>
                        {customer.email && <span className="text-[10px] font-bold text-slate-300 stable-meta">{customer.email}</span>}
                      </div>
                    </div>
@@ -832,12 +832,12 @@ export default function CustomersTab() {
                  <div className="stable-actions flex items-center gap-3">
                    <div className="hidden sm:block text-right">
                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Spent</p>
-                     <p className="text-sm font-black text-indigo-600 tabular-nums whitespace-nowrap">Ksh {customer.totalSpent.toLocaleString()}</p>
+                     <p className="text-sm font-black text-indigo-600 tabular-nums whitespace-nowrap">Ksh {Number(customer.totalSpent || 0).toLocaleString()}</p>
                    </div>
                    <div className="text-right min-w-[80px]">
                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Debt</p>
-                     <p className={`text-sm font-black tabular-nums whitespace-nowrap ${customer.balance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                       {customer.balance > 0 ? `Ksh ${customer.balance.toLocaleString()}` : 'Clean'}
+                     <p className={`text-sm font-black tabular-nums whitespace-nowrap ${Number(customer.balance || 0) > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                       {Number(customer.balance || 0) > 0 ? `Ksh ${Number(customer.balance || 0).toLocaleString()}` : 'Clean'}
                      </p>
                    </div>
                    <ChevronRight size={18} className="hidden sm:block text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
@@ -947,13 +947,13 @@ function CustomerProfileModal({
                     </div>
                  </div>
 
-                  {editingCustomer && editingCustomer.balance > 0 && (
+                  {editingCustomer && Number(editingCustomer.balance || 0) > 0 && (
                     <div className="pt-8 mt-4 border-t-2 border-slate-50">
                        <div className="flex items-center justify-between mb-4">
                           <h4 className="text-[11px] font-black text-indigo-600 uppercase tracking-[0.1em] flex items-center gap-2">
                              <Smartphone size={14} /> Repay debt via M-Pesa
                           </h4>
-                          <span className="text-[10px] font-black text-rose-500 bg-rose-50 px-3 py-1 rounded-full">Ksh {editingCustomer.balance.toLocaleString()} Owed</span>
+                          <span className="text-[10px] font-black text-rose-500 bg-rose-50 px-3 py-1 rounded-full">Ksh {Number(editingCustomer.balance || 0).toLocaleString()} Owed</span>
                        </div>
                        
                        {mpesaState === 'IDLE' || mpesaState === 'FAILED' ? (

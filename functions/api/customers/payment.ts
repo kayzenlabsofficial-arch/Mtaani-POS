@@ -63,7 +63,40 @@ function parseAllocations(value: unknown): Allocation[] {
     .slice(0, 100) as Allocation[];
 }
 
+function parseMaybeJson(value: unknown) {
+  if (!value || typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
+function creditAmountForSale(row: Record<string, any>) {
+  const total = asNumber(row.total);
+  const method = String(row.paymentMethod || '').toUpperCase();
+  if (method === 'CREDIT') return total;
+
+  const splitPayments = parseMaybeJson(row.splitPayments) as any;
+  if (method === 'SPLIT' && String(splitPayments?.secondaryMethod || '').toUpperCase() === 'CREDIT') {
+    return roundMoney(Math.min(Math.max(0, asNumber(splitPayments?.secondaryAmount)), total));
+  }
+  return 0;
+}
+
 async function ensureSchema(db: D1Database) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS customerPayments (
+      id TEXT PRIMARY KEY,
+      customerId TEXT NOT NULL,
+      amount REAL NOT NULL,
+      paymentMethod TEXT NOT NULL,
+      transactionCode TEXT,
+      reference TEXT,
+      allocations TEXT,
+      timestamp INTEGER NOT NULL,
+      preparedBy TEXT,
+      branchId TEXT,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS auditLogs (
       id TEXT PRIMARY KEY,
@@ -80,6 +113,18 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+
+  for (const sql of [
+    'ALTER TABLE customerPayments ADD COLUMN transactionCode TEXT',
+    'ALTER TABLE customerPayments ADD COLUMN reference TEXT',
+    'ALTER TABLE customerPayments ADD COLUMN allocations TEXT',
+    'ALTER TABLE customerPayments ADD COLUMN preparedBy TEXT',
+    'ALTER TABLE customerPayments ADD COLUMN branchId TEXT',
+    'ALTER TABLE customerPayments ADD COLUMN businessId TEXT',
+    'ALTER TABLE customerPayments ADD COLUMN updated_at INTEGER',
+  ]) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -114,6 +159,26 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!customer) throw new PolicyError('Customer was not found.', 404);
     if (customer.branchId && customer.branchId !== branchId) throw new PolicyError('Customer belongs to another branch.', 403);
 
+    const paymentId = trimText(payment.id, 160) || crypto.randomUUID();
+    const existingPayment = await env.DB.prepare(`
+      SELECT id, customerId, amount
+      FROM customerPayments
+      WHERE id = ? AND businessId = ? AND branchId = ?
+      LIMIT 1
+    `).bind(paymentId, businessId, branchId).first<any>();
+    if (existingPayment) {
+      if (existingPayment.customerId !== customerId) throw new PolicyError('Payment ID is already used for another customer.', 409);
+      return json({
+        success: true,
+        paymentId,
+        customerId,
+        amount: roundMoney(asNumber(existingPayment.amount)),
+        customerBalance: roundMoney(asNumber(customer.balance)),
+        allocationCount: 0,
+        idempotent: true,
+      });
+    }
+
     const amount = roundMoney(asNumber(payment.amount));
     if (amount <= 0) throw new PolicyError('Enter a valid payment amount.', 400);
     if (amount > asNumber(customer.balance) + 0.01) throw new PolicyError('Payment cannot exceed the customer balance.', 409);
@@ -124,21 +189,62 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const allocationTotal = roundMoney(allocations.reduce((sum, allocation) => sum + allocation.amount, 0));
     if (allocationTotal > amount + 0.01) throw new PolicyError('Payment allocations exceed the payment amount.', 400);
 
+    const requestedBySource = new Map<string, Allocation>();
     for (const allocation of allocations) {
-      if (allocation.sourceType !== 'INVOICE') continue;
-      const invoice = await env.DB.prepare(`
-        SELECT id, customerId, balance, status
-        FROM salesInvoices
+      const key = `${allocation.sourceType}:${allocation.sourceId}`;
+      const existing = requestedBySource.get(key);
+      requestedBySource.set(key, {
+        ...allocation,
+        amount: roundMoney((existing?.amount || 0) + allocation.amount),
+      });
+    }
+
+    const paidBySource = new Map<string, number>();
+    if (requestedBySource.size > 0) {
+      const { results } = await env.DB.prepare(`
+        SELECT allocations
+        FROM customerPayments
+        WHERE customerId = ? AND businessId = ? AND branchId = ?
+      `).bind(customerId, businessId, branchId).all();
+      for (const row of (results || []) as any[]) {
+        for (const allocation of parseAllocations(row.allocations)) {
+          const key = `${allocation.sourceType}:${allocation.sourceId}`;
+          paidBySource.set(key, roundMoney((paidBySource.get(key) || 0) + allocation.amount));
+        }
+      }
+    }
+
+    for (const allocation of requestedBySource.values()) {
+      if (allocation.sourceType === 'INVOICE') {
+        const invoice = await env.DB.prepare(`
+          SELECT id, customerId, balance, status
+          FROM salesInvoices
+          WHERE id = ? AND businessId = ? AND branchId = ?
+          LIMIT 1
+        `).bind(allocation.sourceId, businessId, branchId).first<any>();
+        if (!invoice || invoice.customerId !== customerId) throw new PolicyError('Payment allocation refers to an invoice that was not found.', 404);
+        if (invoice.status === 'CANCELLED') throw new PolicyError('Cannot allocate payment to a cancelled invoice.', 409);
+        if (allocation.amount > asNumber(invoice.balance) + 0.01) throw new PolicyError('Payment allocation exceeds an invoice balance.', 409);
+        continue;
+      }
+
+      const sale = await env.DB.prepare(`
+        SELECT id, customerId, total, paymentMethod, splitPayments, status
+        FROM transactions
         WHERE id = ? AND businessId = ? AND branchId = ?
         LIMIT 1
       `).bind(allocation.sourceId, businessId, branchId).first<any>();
-      if (!invoice || invoice.customerId !== customerId) throw new PolicyError('Payment allocation refers to an invoice that was not found.', 404);
-      if (invoice.status === 'CANCELLED') throw new PolicyError('Cannot allocate payment to a cancelled invoice.', 409);
-      if (allocation.amount > asNumber(invoice.balance) + 0.01) throw new PolicyError('Payment allocation exceeds an invoice balance.', 409);
+      if (!sale || sale.customerId !== customerId) throw new PolicyError('Payment allocation refers to a sale that was not found.', 404);
+      if (sale.status === 'VOIDED' || sale.status === 'QUOTE') throw new PolicyError('Cannot allocate payment to a non-credit sale.', 409);
+      const creditTotal = creditAmountForSale(sale);
+      if (creditTotal <= 0) throw new PolicyError('Payment allocation refers to a sale without customer credit.', 409);
+      const alreadyPaid = paidBySource.get(`SALE:${allocation.sourceId}`) || 0;
+      if (allocation.amount > Math.max(0, creditTotal - alreadyPaid) + 0.01) {
+        throw new PolicyError('Payment allocation exceeds a sale credit balance.', 409);
+      }
     }
 
     const now = Date.now();
-    const paymentId = trimText(payment.id, 160) || crypto.randomUUID();
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(`
         INSERT INTO customerPayments (id, customerId, amount, paymentMethod, transactionCode, reference, allocations, timestamp, preparedBy, branchId, businessId, updated_at)
@@ -210,4 +316,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not record customer payment.' }, status);
   }
 };
-

@@ -16,6 +16,28 @@ interface RefundsTabProps {
   setActiveTab: (tab: any) => void;
 }
 
+function transactionItems(transaction: Transaction): any[] {
+  const items = (transaction as any).items;
+  if (Array.isArray(items)) return items;
+  if (typeof items === 'string') {
+    try {
+      const parsed = JSON.parse(items);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function refundedAmountFor(transaction: Transaction): number {
+  if (transaction.status === 'REFUNDED') return Number(transaction.total) || 0;
+  const amount = transactionItems(transaction).reduce((sum, item) => {
+    return sum + ((Number(item?.snapshotPrice) || 0) * (Number(item?.returnedQuantity) || 0));
+  }, 0);
+  return Math.min(Number(transaction.total) || 0, amount);
+}
+
 export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   const [refundSearch, setRefundSearch] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
@@ -25,7 +47,13 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
-  const allTransactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  const allTransactions = useLiveQuery(
+    () => activeBusinessId && activeBranchId
+      ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
+    [],
+  );
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   
   if (!allTransactions) {
@@ -42,10 +70,10 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   const sortedTransactions = [...(allTransactions || [])].sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
   const refundedTransactions = sortedTransactions.filter(t => 
     (t.status === 'REFUNDED' || t.status === 'PARTIAL_REFUND') && 
-    (t.id.toLowerCase().includes(refundSearch.toLowerCase()) || (t.cashierName?.toLowerCase().includes(refundSearch.toLowerCase())))
-  ).map(t => ({ ...t, recordType: 'SALE' as const }));
+    (String(t.id || '').toLowerCase().includes(refundSearch.toLowerCase()) || (t.cashierName?.toLowerCase().includes(refundSearch.toLowerCase())))
+  ).map(t => ({ ...t, recordType: 'SALE' as const, refundedAmount: refundedAmountFor(t) }));
 
-  const totalRefundedValue = refundedTransactions.reduce((sum, t) => sum + (t.total || 0), 0);
+  const totalRefundedValue = refundedTransactions.reduce((sum, t) => sum + (t.refundedAmount || 0), 0);
   const pendingRequests = sortedTransactions.filter(t => t.status === 'PENDING_REFUND').length;
 
   const handleRefund = async (t: Transaction, itemsToReturn?: { productId: string, quantity: number }[]) => {
@@ -155,8 +183,8 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
                    {t.status === 'REFUNDED' ? 'Refunded' : t.status === 'PARTIAL_REFUND' ? 'Part refund' : t.status}
                  </span>
                  <div className="text-right shrink-0 min-w-[100px]">
-                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Amount</p>
-                   <p className="text-sm font-black text-orange-600 leading-none tabular-nums">Ksh {t.total.toLocaleString()}</p>
+                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Refunded</p>
+                   <p className="text-sm font-black text-orange-600 leading-none tabular-nums">Ksh {t.refundedAmount.toLocaleString()}</p>
                  </div>
                  <ChevronRight size={18} className="text-slate-300 group-hover:text-orange-500 transition-colors shrink-0" />
                </button>

@@ -64,6 +64,7 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+  try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN shiftId TEXT').run(); } catch {}
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -158,4 +159,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not restock inventory.' }, status);
   }
 };
-

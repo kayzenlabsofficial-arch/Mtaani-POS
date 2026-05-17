@@ -3,7 +3,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { canUseOwnerMode, getCashDrawerLimit, getCashFloatTarget, isOwnerCashSweepEnabled, isOwnerModeEnabled } from '../../utils/ownerMode';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
@@ -64,10 +64,12 @@ const StatCard = ({ label, value, sub, trend, icon, color }: any) => (
       <div className={`w-10 h-10 rounded-xl ${color} flex items-center justify-center flex-shrink-0`}>
         <MaterialIcon name={icon} className="text-white text-lg" />
       </div>
-      <span className={`text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 ${trend >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-        <MaterialIcon name={trend >= 0 ? 'trending_up' : 'trending_down'} className="text-xs" />
-        {Math.abs(trend)}%
-      </span>
+      {Number.isFinite(Number(trend)) && (
+        <span className={`text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 ${trend >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+          <MaterialIcon name={trend >= 0 ? 'trending_up' : 'trending_down'} className="text-xs" />
+          {Math.abs(Number(trend)).toLocaleString(undefined, { maximumFractionDigits: 1 })}%
+        </span>
+      )}
     </div>
     <div>
       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
@@ -85,8 +87,15 @@ function localDayStart(timestamp = Date.now()) {
   return date.getTime();
 }
 
+function percentChange(current: number, previous: number) {
+  if (previous <= 0) return current > 0 ? 100 : 0;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+
 export default function DashboardTab({ setActiveTab, openExpenseModal }: DashboardTabProps) {
   const [trendView, setTrendView] = useState<'DAY' | 'WEEK'>('DAY');
+  const chartRef = React.useRef<HTMLDivElement | null>(null);
+  const [chartWidth, setChartWidth] = useState(0);
   const [isBankingExcess, setIsBankingExcess] = useState(false);
   const [isClosingShift, setIsClosingShift] = useState(false);
   const [isClosingDay, setIsClosingDay] = useState(false);
@@ -96,6 +105,16 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const activeShift = useStore(state => state.activeShift);
   const setActiveShift = useStore(state => state.setActiveShift);
   const { success, error, warning } = useToast();
+
+  React.useEffect(() => {
+    const element = chartRef.current;
+    if (!element) return;
+    const updateWidth = () => setChartWidth(Math.max(0, Math.floor(element.getBoundingClientRect().width)));
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [activeBranchId]);
   const branches = useLiveQuery(
     () => activeBusinessId ? db.branches.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],
@@ -104,8 +123,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const activeBranch = branches?.find(b => b.id === activeBranchId);
 
   const transactions = useLiveQuery(
-    () => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).reverse().limit(8).toArray() : [],
-    [activeBranchId], []
+    () => activeBusinessId && activeBranchId
+      ? db.transactions.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).reverse().limit(8).toArray()
+      : [],
+    [activeBusinessId, activeBranchId], []
   );
 
   const products = useLiveQuery(
@@ -118,51 +139,74 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   );
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   const branchTransactions = useLiveQuery(
-    () => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
-    [activeBranchId], []
+    () => activeBusinessId && activeBranchId
+      ? db.transactions.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
   );
   const branchSalesInvoices = useLiveQuery(
-    () => activeBranchId ? db.salesInvoices.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
-    [activeBranchId], []
+    () => activeBusinessId && activeBranchId
+      ? db.salesInvoices.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
   );
   const branchExpenses = useLiveQuery(
-    () => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
-    [activeBranchId], []
+    () => activeBusinessId && activeBranchId
+      ? db.expenses.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
   );
   const branchCashPicks = useLiveQuery(
-    () => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
-    [activeBranchId], []
+    () => activeBusinessId && activeBranchId
+      ? db.cashPicks.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
   );
   const branchSupplierPayments = useLiveQuery(
-    () => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
-    [activeBranchId], []
+    () => activeBusinessId && activeBranchId
+      ? db.supplierPayments.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
   );
   const branchCustomerPayments = useLiveQuery(
-    () => activeBranchId ? db.customerPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
-    [activeBranchId], []
+    () => activeBusinessId && activeBranchId
+      ? db.customerPayments.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
   );
   const branchReports = useLiveQuery(
-    () => activeBranchId ? db.endOfDayReports.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]),
-    [activeBranchId], []
+    () => activeBusinessId && activeBranchId
+      ? db.endOfDayReports.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
   );
   const pendingApprovalCount = useLiveQuery(async () => {
-    if (!activeBranchId) return 0;
+    if (!activeBusinessId || !activeBranchId) return 0;
     const [expenses, refunds, purchaseOrders, picks] = await Promise.all([
-      db.expenses.where('branchId').equals(activeBranchId).and(row => row.status === 'PENDING').toArray(),
-      db.transactions.where('branchId').equals(activeBranchId).and(row => row.status === 'PENDING_REFUND').toArray(),
-      db.purchaseOrders.where('branchId').equals(activeBranchId).and(row => row.approvalStatus === 'PENDING').toArray(),
-      db.cashPicks.where('branchId').equals(activeBranchId).and(row => row.status === 'PENDING').toArray(),
+      db.expenses.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId && row.status === 'PENDING').toArray(),
+      db.transactions.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId && row.status === 'PENDING_REFUND').toArray(),
+      db.purchaseOrders.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId && row.approvalStatus === 'PENDING').toArray(),
+      db.cashPicks.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId && row.status === 'PENDING').toArray(),
     ]);
     return expenses.length + refunds.length + purchaseOrders.length + picks.length;
-  }, [activeBranchId], 0);
+  }, [activeBusinessId, activeBranchId], 0);
 
   const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
   const lowStockItems = displayProducts.filter(p => (p.stockQuantity || 0) <= (p.reorderPoint || 5)).slice(0, 5) || [];
-  const todaysTransactions = (branchTransactions || []).filter(t => (t.timestamp || 0) >= getTodayStartMs() && t.status !== 'VOIDED' && t.status !== 'QUOTE');
-  const todaysInvoices = (branchSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= getTodayStartMs() && invoice.status !== 'CANCELLED');
+  const todayStart = getTodayStartMs();
+  const yesterdayStart = todayStart - DAY_MS;
+  const todaysTransactions = (branchTransactions || []).filter(t => (t.timestamp || 0) >= todayStart && t.status !== 'VOIDED' && t.status !== 'QUOTE');
+  const todaysInvoices = (branchSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= todayStart && invoice.status !== 'CANCELLED');
+  const yesterdaysTransactions = (branchTransactions || []).filter(t => (t.timestamp || 0) >= yesterdayStart && (t.timestamp || 0) < todayStart && t.status !== 'VOIDED' && t.status !== 'QUOTE');
+  const yesterdaysInvoices = (branchSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= yesterdayStart && (invoice.issueDate || 0) < todayStart && invoice.status !== 'CANCELLED');
   const todaysSalesCount = todaysTransactions.length + todaysInvoices.length;
   const totalRevenue = todaysTransactions.reduce((a, t) => a + Number(t.total || 0), 0)
     + todaysInvoices.reduce((a, invoice) => a + Number(invoice.total || 0), 0);
+  const yesterdaysSalesCount = yesterdaysTransactions.length + yesterdaysInvoices.length;
+  const yesterdaysRevenue = yesterdaysTransactions.reduce((a, t) => a + Number(t.total || 0), 0)
+    + yesterdaysInvoices.reduce((a, invoice) => a + Number(invoice.total || 0), 0);
+  const todaysAverageSale = todaysSalesCount ? Math.round(totalRevenue / todaysSalesCount) : 0;
+  const yesterdaysAverageSale = yesterdaysSalesCount ? Math.round(yesterdaysRevenue / yesterdaysSalesCount) : 0;
   const salesTrendData = React.useMemo(() => {
     const txs = (branchTransactions || []).filter(t => t.status !== 'VOIDED' && t.status !== 'QUOTE');
     const invoices = (branchSalesInvoices || []).filter(invoice => invoice.status !== 'CANCELLED');
@@ -427,7 +471,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           label="Total sales"
           value={`Ksh ${totalRevenue.toLocaleString()}`}
           sub="Today's revenue"
-          trend={12.4}
+          trend={percentChange(totalRevenue, yesterdaysRevenue)}
           icon="payments"
           color="bg-primary"
         />
@@ -435,15 +479,15 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           label="Sales"
           value={todaysSalesCount || 0}
           sub="Sales and invoices today"
-          trend={5.2}
+          trend={percentChange(todaysSalesCount, yesterdaysSalesCount)}
           icon="receipt_long"
           color="bg-violet-600"
         />
         <StatCard
           label="Avg. sale"
-          value={`Ksh ${todaysSalesCount ? Math.round(totalRevenue / todaysSalesCount).toLocaleString() : 0}`}
+          value={`Ksh ${todaysAverageSale.toLocaleString()}`}
           sub="Per transaction"
-          trend={-2.1}
+          trend={percentChange(todaysAverageSale, yesterdaysAverageSale)}
           icon="trending_up"
           color="bg-amber-500"
         />
@@ -451,7 +495,6 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           label="Low stock"
           value={lowStockItems.length}
           sub="Items need restocking"
-          trend={-lowStockItems.length}
           icon="inventory"
           color="bg-rose-600"
         />
@@ -479,9 +522,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
               ))}
             </div>
           </div>
-          <div className="h-56 min-w-0">
-            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-              <AreaChart data={salesTrendData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+          <div ref={chartRef} className="h-56 min-w-0">
+            {chartWidth > 0 ? (
+              <AreaChart width={chartWidth} height={224} data={salesTrendData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#003d9b" stopOpacity={0.15} />
@@ -498,7 +541,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 />
                 <Area type="monotone" dataKey="sales" stroke="#003d9b" strokeWidth={2.5} fill="url(#salesGrad)" dot={false} activeDot={{ r: 5, fill: '#003d9b', stroke: 'white', strokeWidth: 2 }} />
               </AreaChart>
-            </ResponsiveContainer>
+            ) : (
+              <div className="h-full w-full rounded-xl bg-slate-50" />
+            )}
           </div>
         </div>
 

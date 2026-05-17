@@ -27,6 +27,19 @@ function trimText(value: unknown, max = 160) {
 
 async function ensureSchema(db: D1Database) {
   await db.prepare(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT,
+      email TEXT,
+      totalSpent REAL,
+      balance REAL,
+      branchId TEXT,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
     CREATE TABLE IF NOT EXISTS auditLogs (
       id TEXT PRIMARY KEY,
       ts INTEGER NOT NULL,
@@ -42,6 +55,18 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+
+  for (const sql of [
+    'ALTER TABLE customers ADD COLUMN phone TEXT',
+    'ALTER TABLE customers ADD COLUMN email TEXT',
+    'ALTER TABLE customers ADD COLUMN totalSpent REAL',
+    'ALTER TABLE customers ADD COLUMN balance REAL',
+    'ALTER TABLE customers ADD COLUMN branchId TEXT',
+    'ALTER TABLE customers ADD COLUMN businessId TEXT',
+    'ALTER TABLE customers ADD COLUMN updated_at INTEGER',
+  ]) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -143,4 +168,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not save customer.' }, status);
   }
 };
-

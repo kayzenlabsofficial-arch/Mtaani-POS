@@ -40,6 +40,7 @@ export const SalesService = {
     branchId: string;
     itemsToReturn?: { productId: string; quantity: number }[];
     approvedBy?: string;
+    idempotencyKey?: string;
   }) {
     return apiRequest<CheckoutResponse>('/api/sales/refund-approve', {
       method: 'POST',

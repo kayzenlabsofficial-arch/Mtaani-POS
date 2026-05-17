@@ -67,7 +67,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       LIMIT 1
     `).bind(expenseId, businessId, branchId).first<any>();
     if (!expense) throw new PolicyError('Expense was not found.', 404);
-    if (expense.status !== 'PENDING' && expense.status !== 'REJECTED') throw new PolicyError('This expense has already been processed.', 409);
+    if (expense.status === 'REJECTED') return json({ success: true, expenseId, idempotent: true });
+    if (expense.status !== 'PENDING') throw new PolicyError('This expense has already been processed.', 409);
 
     const now = Date.now();
     await env.DB.batch([
@@ -92,10 +93,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       ),
     ]);
 
-    return json({ success: true, expenseId });
+    return json({ success: true, expenseId, idempotent: false });
   } catch (err: any) {
     const status = err instanceof PolicyError ? err.status : 500;
     return json({ error: err?.message || 'Could not reject expense.' }, status);
   }
 };
-

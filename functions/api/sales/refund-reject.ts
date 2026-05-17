@@ -1,5 +1,6 @@
 import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
+import { deserializeRow, ensureRefundSchema } from './refundOps';
 
 interface Env {
   DB: D1Database;
@@ -20,23 +21,17 @@ function json(data: unknown, status = 200) {
   });
 }
 
-async function ensureSchema(db: D1Database) {
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS auditLogs (
-      id TEXT PRIMARY KEY,
-      ts INTEGER NOT NULL,
-      userId TEXT,
-      userName TEXT,
-      action TEXT NOT NULL,
-      entity TEXT,
-      entityId TEXT,
-      severity TEXT NOT NULL,
-      details TEXT,
-      businessId TEXT,
-      branchId TEXT,
-      updated_at INTEGER
-    )
-  `).run();
+function asArray(value: unknown): any[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -59,20 +54,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return json({ error: 'Access denied.' }, 403);
     }
 
-    await ensureSchema(env.DB);
+    await ensureRefundSchema(env.DB);
     const tx = await env.DB.prepare(`
-      SELECT id, status, total
+      SELECT id, status, total, items, pendingRefundItems
       FROM transactions
       WHERE id = ? AND businessId = ? AND branchId = ?
       LIMIT 1
     `).bind(transactionId, businessId, branchId).first<any>();
     if (!tx) throw new PolicyError('Sale was not found.', 404);
-    if (tx.status !== 'PENDING_REFUND' && tx.status !== 'PAID') throw new PolicyError('This refund has already been processed.', 409);
+    if (tx.status !== 'PENDING_REFUND') throw new PolicyError('This receipt is not waiting for refund approval.', 409);
+    const clean = deserializeRow(tx);
+    const restoredStatus = asArray(clean.items).some(item => Number(item?.returnedQuantity || 0) > 0)
+      ? 'PARTIAL_REFUND'
+      : 'PAID';
 
     const now = Date.now();
     await env.DB.batch([
-      env.DB.prepare(`UPDATE transactions SET status = 'PAID', pendingRefundItems = NULL, updated_at = ? WHERE id = ? AND businessId = ? AND branchId = ?`)
-        .bind(now, transactionId, businessId, branchId),
+      env.DB.prepare(`UPDATE transactions SET status = ?, pendingRefundItems = NULL, updated_at = ? WHERE id = ? AND businessId = ? AND branchId = ?`)
+        .bind(restoredStatus, now, transactionId, businessId, branchId),
       env.DB.prepare(`
         INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -98,4 +97,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not reject refund.' }, status);
   }
 };
-

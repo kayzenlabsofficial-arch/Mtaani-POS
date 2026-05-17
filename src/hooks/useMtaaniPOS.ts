@@ -293,17 +293,17 @@ export function useMtaaniPOS() {
       const checkout = await SalesService.checkout(newTransaction, { idempotencyKey: transactionId });
       const completedTransaction = checkout.transaction || newTransaction;
 
-      await Promise.allSettled([
+      clearCart();
+      setSelectedCustomerId(null);
+      setDiscountValue(0);
+      success("Transaction completed successfully.");
+
+      void Promise.allSettled([
         db.transactions.reload(),
         db.products.reload(),
         db.stockMovements.reload(),
         db.customers.reload(),
       ]);
-
-      clearCart();
-      setSelectedCustomerId(null);
-      setDiscountValue(0);
-      success("Transaction completed successfully.");
       
       if (isOnline) {
         flushOutboxNow().then(() => db.sync()).catch(() => {});

@@ -35,7 +35,7 @@ export const ClosingService = {
     businessId: string;
     branchId: string;
   }) {
-    return apiRequest<{ success: boolean; reportId: string; shiftId: string }>('/api/close/shift', {
+    return apiRequest<{ success: boolean; reportId: string; shiftId: string; idempotent?: boolean }>('/api/close/shift', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
@@ -48,7 +48,7 @@ export const ClosingService = {
     businessId: string;
     branchId: string;
   }) {
-    return apiRequest<{ success: boolean; summaryId: string }>('/api/close/day', {
+    return apiRequest<{ success: boolean; summaryId: string; idempotent?: boolean }>('/api/close/day', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
@@ -56,4 +56,3 @@ export const ClosingService = {
     });
   },
 };
-

@@ -86,6 +86,7 @@ async function ensureCheckoutSchema(db: D1Database) {
       operation TEXT NOT NULL,
       deviceId TEXT,
       cashierName TEXT,
+      transactionId TEXT,
       createdAt INTEGER NOT NULL
     )
   `).run();
@@ -126,6 +127,10 @@ async function ensureCheckoutSchema(db: D1Database) {
   `).run();
 
   for (const sql of [
+    'ALTER TABLE idempotencyKeys ADD COLUMN transactionId TEXT',
+    'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_transaction ON idempotencyKeys(businessId, branchId, transactionId)',
+    'CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER)',
+    'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedTransactionId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT',
@@ -135,6 +140,34 @@ async function ensureCheckoutSchema(db: D1Database) {
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
+}
+
+async function getIdempotentTransaction(
+  db: D1Database,
+  businessId: string,
+  branchId: string,
+  idempotencyId: string,
+  idempotencyKey: string,
+) {
+  const keyRow = await db.prepare(`
+    SELECT transactionId
+    FROM idempotencyKeys
+    WHERE id = ? AND businessId = ? AND branchId = ?
+    LIMIT 1
+  `).bind(idempotencyId, businessId, branchId).first<{ transactionId?: string | null }>();
+  if (!keyRow) return null;
+
+  const candidateIds = Array.from(new Set([
+    String(keyRow.transactionId || '').trim(),
+    String(idempotencyKey || '').trim(),
+  ].filter(Boolean)));
+
+  for (const candidateId of candidateIds) {
+    const existing = await getExistingTransaction(db, businessId, branchId, candidateId);
+    if (existing) return existing;
+  }
+
+  throw new PolicyError('Checkout retry key is already used.', 409);
 }
 
 async function getExistingTransaction(db: D1Database, businessId: string, branchId: string, transactionId: string) {
@@ -260,6 +293,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return json({ success: true, transaction: existing, idempotent: true });
     }
 
+    const idempotencyKey = String(body?.idempotencyKey || tx.id).trim() || transactionId;
+    const idempotencyId = `${businessId}|${branchId}|${idempotencyKey}`;
+    try {
+      const existingByKey = await getIdempotentTransaction(env.DB, businessId, branchId, idempotencyId, idempotencyKey);
+      if (existingByKey) return json({ success: true, transaction: existingByKey, idempotent: true });
+    } catch (err: any) {
+      const status = err instanceof PolicyError ? err.status : 409;
+      return json({ error: err?.message || 'Checkout retry key is already used.' }, status);
+    }
+
     let sideEffects: D1PreparedStatement[] = [];
     try {
       sideEffects = await hardenTransactionBatch({
@@ -278,17 +321,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     tx.businessId = businessId;
     tx.branchId = branchId;
 
-    const idempotencyKey = String(body?.idempotencyKey || tx.id).trim();
-    const idempotencyId = `${businessId}|${branchId}|${idempotencyKey}`;
-    const mpesaStatements = await verifyMpesaPayment(env.DB, businessId, branchId, tx);
+    let mpesaStatements: D1PreparedStatement[] = [];
+    try {
+      mpesaStatements = await verifyMpesaPayment(env.DB, businessId, branchId, tx);
+    } catch (err: any) {
+      const status = err instanceof PolicyError ? err.status : 400;
+      return json({ error: err?.message || 'M-Pesa payment could not be verified.' }, status);
+    }
+
     const batch = [
       await transactionInsert(env.DB, tx),
       ...sideEffects,
       ...mpesaStatements,
       auditInsert(env.DB, tx, businessId, branchId, auth.principal),
       env.DB.prepare(`
-        INSERT OR IGNORE INTO idempotencyKeys (id, businessId, branchId, idempotencyKey, operation, deviceId, cashierName, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO idempotencyKeys (id, businessId, branchId, idempotencyKey, operation, deviceId, cashierName, transactionId, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         idempotencyId,
         businessId,
@@ -297,6 +345,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         'sales.checkout',
         null,
         auth.principal.userName || null,
+        tx.id,
         Date.now(),
       ),
     ];
@@ -309,4 +358,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Checkout failed.' }, 500);
   }
 };
-

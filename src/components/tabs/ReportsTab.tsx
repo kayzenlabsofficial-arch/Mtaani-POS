@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend,
+  PieChart, Pie, Cell, BarChart, Bar, Legend,
   ComposedChart, Line
 } from 'recharts';
 import { useLiveQuery } from '../../clouddb';
@@ -20,6 +20,109 @@ import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 import { belongsToActiveBranch } from '../../utils/branchScope';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
+const REPORTABLE_TRANSACTION_STATUSES = new Set(['PAID', 'UNPAID', 'PARTIAL_REFUND', 'PENDING_REFUND', 'REFUNDED']);
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function txItems(transaction: any): any[] {
+  const items = transaction?.items;
+  if (Array.isArray(items)) return items;
+  if (typeof items === 'string') {
+    try {
+      const parsed = JSON.parse(items);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function invoiceItems(invoice: any): any[] {
+  const items = invoice?.items;
+  if (Array.isArray(items)) return items;
+  if (typeof items === 'string') {
+    try {
+      const parsed = JSON.parse(items);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function purchaseItems(purchaseOrder: any): any[] {
+  const items = purchaseOrder?.items;
+  if (Array.isArray(items)) return items;
+  if (typeof items === 'string') {
+    try {
+      const parsed = JSON.parse(items);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function reportableTransaction(transaction: any) {
+  return REPORTABLE_TRANSACTION_STATUSES.has(String(transaction?.status || '').toUpperCase());
+}
+
+function netItemQuantity(transaction: any, item: any) {
+  if (String(transaction?.status || '').toUpperCase() === 'REFUNDED') return 0;
+  return Math.max(0, Number(item?.quantity || 0) - Number(item?.returnedQuantity || 0));
+}
+
+function transactionNetMetrics(transaction: any) {
+  const items = txItems(transaction);
+  const originalLineSubtotal = items.reduce((sum, item) => {
+    return sum + (Number(item?.snapshotPrice || 0) * Number(item?.quantity || 0));
+  }, 0);
+  const remainingLineSubtotal = items.reduce((sum, item) => {
+    return sum + (Number(item?.snapshotPrice || 0) * netItemQuantity(transaction, item));
+  }, 0);
+  const fallbackSubtotal = Number(transaction?.subtotal ?? transaction?.total ?? 0);
+  const originalSubtotal = originalLineSubtotal > 0 ? originalLineSubtotal : fallbackSubtotal;
+  const ratio = originalSubtotal > 0 ? Math.min(1, Math.max(0, remainingLineSubtotal / originalSubtotal)) : (String(transaction?.status || '').toUpperCase() === 'REFUNDED' ? 0 : 1);
+  const netSubtotal = roundMoney(Number(transaction?.subtotal ?? originalSubtotal) * ratio);
+  const netTotal = roundMoney(Number(transaction?.total || 0) * ratio);
+  const netTax = roundMoney(Number(transaction?.tax || 0) * ratio);
+  const netDiscount = roundMoney(Number(transaction?.discountAmount ?? transaction?.discount ?? 0) * ratio);
+  const discountFactor = remainingLineSubtotal > 0 ? netTotal / remainingLineSubtotal : 0;
+  return { ratio, netSubtotal, netTotal, netTax, netDiscount, discountFactor };
+}
+
+function useChartSize() {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = React.useState({ width: 0, height: 0 });
+
+  React.useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+
+    const update = () => {
+      const rect = node.getBoundingClientRect();
+      const width = Math.floor(rect.width);
+      const height = Math.floor(rect.height);
+      setSize(current => (
+        current.width === width && current.height === height
+          ? current
+          : { width, height }
+      ));
+    };
+
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  return [ref, size] as const;
+}
 
 export default function ReportsTab() {
   const todayInput = new Date().toISOString().split('T')[0];
@@ -31,6 +134,9 @@ export default function ReportsTab() {
   const [deductTaxInPL, setDeductTaxInPL] = useState(true);
   const [selectedProductId, setSelectedProductId] = React.useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
+  const [salesChartRef, salesChartSize] = useChartSize();
+  const [expenseChartRef, expenseChartSize] = useChartSize();
+  const [categoryChartRef, categoryChartSize] = useChartSize();
   
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
@@ -122,11 +228,15 @@ export default function ReportsTab() {
     return { start: 0, end: now.getTime(), label: 'All time' };
   };
   const { start: startTime, end: endTime, label: periodLabel } = getPeriodBounds();
-  const filteredTransactions = allTransactions.filter(t => t.timestamp >= startTime && t.timestamp <= endTime && t.status !== 'VOIDED');
+  const filteredTransactions = allTransactions.filter(t => t.timestamp >= startTime && t.timestamp <= endTime && reportableTransaction(t));
   const filteredSalesInvoices = allSalesInvoices.filter(invoice => invoice.issueDate >= startTime && invoice.issueDate <= endTime && invoice.status !== 'CANCELLED');
-  const filteredExpenses = allExpenses.filter(e => e.timestamp >= startTime && e.timestamp <= endTime && (e.status === 'APPROVED' || e.status === 'PENDING'));
+  const filteredExpenses = allExpenses.filter(e => e.timestamp >= startTime && e.timestamp <= endTime && e.status === 'APPROVED');
   const displayProducts = enrichProductsWithBundleStock(allProducts || [], productIngredients || []);
-  const salesDocumentCount = filteredTransactions.length + filteredSalesInvoices.length;
+  const filteredTransactionMetrics = filteredTransactions.map(transaction => ({
+    transaction,
+    metrics: transactionNetMetrics(transaction),
+  }));
+  const salesDocumentCount = filteredTransactionMetrics.filter(row => row.metrics.netTotal > 0).length + filteredSalesInvoices.length;
 
   // 2. Complex Financial & Operational Analytics
   let totalRevenue = 0;
@@ -137,35 +247,38 @@ export default function ReportsTab() {
   const cashierPerf: Record<string, { revenue: number, orders: number }> = {};
   const hourlySales = Array.from({ length: 24 }).map((_, i) => ({ hour: i, revenue: 0 }));
   
-  filteredTransactions.forEach(t => {
-    totalRevenue += (t.total || 0);
-    totalTax += (t.tax || 0);
+  filteredTransactionMetrics.forEach(({ transaction: t, metrics }) => {
+    totalRevenue += metrics.netTotal;
+    totalTax += metrics.netTax;
     
     const cashier = t.cashierName || 'Unknown';
     if (!cashierPerf[cashier]) cashierPerf[cashier] = { revenue: 0, orders: 0 };
-    cashierPerf[cashier].revenue += (t.total || 0);
-    cashierPerf[cashier].orders += 1;
+    cashierPerf[cashier].revenue += metrics.netTotal;
+    if (metrics.netTotal > 0) cashierPerf[cashier].orders += 1;
 
     const hour = new Date(t.timestamp).getHours();
-    hourlySales[hour].revenue += (t.total || 0);
+    hourlySales[hour].revenue += metrics.netTotal;
 
-    t.items.forEach(item => {
-      const purchase = allPurchases?.find(p => p.items.some(pi => pi.productId === item.productId));
-      const cost = Number(item.snapshotCost ?? purchase?.items.find(pi => pi.productId === item.productId)?.unitCost ?? (item.snapshotPrice * 0.7)) || 0;
-      const itemProfit = (item.snapshotPrice - cost) * item.quantity;
-      estimatedCOGS += (cost * item.quantity);
+    txItems(t).forEach(item => {
+      const netQty = netItemQuantity(t, item);
+      if (netQty <= 0) return;
+      const purchase = allPurchases?.find(p => purchaseItems(p).some(pi => pi.productId === item.productId));
+      const cost = Number(item.snapshotCost ?? purchaseItems(purchase).find(pi => pi.productId === item.productId)?.unitCost ?? (item.snapshotPrice * 0.7)) || 0;
+      const lineRevenue = Number(item.snapshotPrice || 0) * netQty * metrics.discountFactor;
+      const itemProfit = lineRevenue - (cost * netQty);
+      estimatedCOGS += (cost * netQty);
 
       if (!productPerf[item.productId]) {
         productPerf[item.productId] = { name: item.name, qty: 0, revenue: 0, profit: 0 };
       }
-      productPerf[item.productId].qty += item.quantity;
-      productPerf[item.productId].revenue += (item.snapshotPrice * item.quantity);
+      productPerf[item.productId].qty += netQty;
+      productPerf[item.productId].revenue += lineRevenue;
       productPerf[item.productId].profit += itemProfit;
 
       const productObj = displayProducts.find(p => p.id === item.productId);
       const category = productObj?.category || 'Uncategorized';
       if (!categoryPerf[category]) categoryPerf[category] = { revenue: 0, profit: 0 };
-      categoryPerf[category].revenue += (item.snapshotPrice * item.quantity);
+      categoryPerf[category].revenue += lineRevenue;
       categoryPerf[category].profit += itemProfit;
     });
   });
@@ -182,7 +295,7 @@ export default function ReportsTab() {
     const hour = new Date(invoice.issueDate).getHours();
     hourlySales[hour].revenue += Number(invoice.total || 0);
 
-    invoice.items.forEach(item => {
+    invoiceItems(invoice).forEach(item => {
       const qty = Number(item.quantity || 0);
       const unitPrice = Number(item.unitPrice || 0);
       const lineRevenue = qty * unitPrice + (item.taxCategory === 'A' ? qty * unitPrice * 0.16 : 0);
@@ -207,9 +320,9 @@ export default function ReportsTab() {
   });
 
   const totalExpenseAmount = filteredExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
-  const grossSales = filteredTransactions.reduce((sum, t) => sum + Number(t.subtotal ?? t.total ?? 0), 0)
+  const grossSales = filteredTransactionMetrics.reduce((sum, row) => sum + row.metrics.netSubtotal, 0)
     + filteredSalesInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || invoice.total || 0), 0);
-  const totalDiscounts = filteredTransactions.reduce((sum, t) => sum + Number(t.discountAmount || 0), 0);
+  const totalDiscounts = filteredTransactionMetrics.reduce((sum, row) => sum + row.metrics.netDiscount, 0);
   const taxImpact = deductTaxInPL ? totalTax : 0;
   const grossProfit = totalRevenue - estimatedCOGS - taxImpact;
   const netProfit = grossProfit - totalExpenseAmount;
@@ -220,9 +333,9 @@ export default function ReportsTab() {
   const creditTransactions = filteredTransactions.filter(
     t => t.paymentMethod === 'CREDIT' || (t.paymentMethod === 'SPLIT' && t.splitPayments?.secondaryMethod === 'CREDIT')
   ).length + filteredSalesInvoices.filter(invoice => invoice.status === 'SENT' || invoice.status === 'PARTIAL').length;
-  const creditSalesAmount = filteredTransactions.reduce((sum, t) => {
-    if (t.paymentMethod === 'CREDIT') return sum + Number(t.total || 0);
-    if (t.paymentMethod === 'SPLIT' && t.splitPayments?.secondaryMethod === 'CREDIT') return sum + Number(t.splitPayments.secondaryAmount || 0);
+  const creditSalesAmount = filteredTransactionMetrics.reduce((sum, { transaction: t, metrics }) => {
+    if (t.paymentMethod === 'CREDIT') return sum + metrics.netTotal;
+    if (t.paymentMethod === 'SPLIT' && t.splitPayments?.secondaryMethod === 'CREDIT') return sum + (Number(t.splitPayments.secondaryAmount || 0) * metrics.ratio);
     return sum;
   }, 0) + filteredSalesInvoices.reduce((sum, invoice) => sum + Number(invoice.balance || 0), 0);
 
@@ -232,7 +345,7 @@ export default function ReportsTab() {
     d.setDate(d.getDate() - (6 - i));
     const dayStart = new Date(d).setHours(0,0,0,0);
     const dayEnd = new Date(d).setHours(23,59,59,999);
-    const daySales = allTransactions.filter(t => t.timestamp >= dayStart && t.timestamp <= dayEnd && t.status !== 'VOIDED').reduce((s, t) => s + (t.total || 0), 0)
+    const daySales = allTransactions.filter(t => t.timestamp >= dayStart && t.timestamp <= dayEnd && reportableTransaction(t)).reduce((s, t) => s + transactionNetMetrics(t).netTotal, 0)
       + allSalesInvoices.filter(invoice => invoice.issueDate >= dayStart && invoice.issueDate <= dayEnd && invoice.status !== 'CANCELLED').reduce((s, invoice) => s + Number(invoice.total || 0), 0);
     return { name: d.toLocaleDateString('en-US', { weekday: 'short' }), revenue: daySales };
   });
@@ -246,12 +359,15 @@ export default function ReportsTab() {
   const topCashiers = Object.entries(cashierPerf).map(([name, data]) => ({ name, ...data })).sort((a,b) => b.revenue - a.revenue);
 
   const selectedProduct = displayProducts.find(p => p.id === selectedProductId);
-  const selectedProductSales = filteredTransactions.filter(t => t.items.some(i => i.productId === selectedProductId));
-  const selectedInvoiceProductLines = filteredSalesInvoices.flatMap(invoice => invoice.items.filter(item => item.itemId === selectedProductId));
+  const selectedProductSales = filteredTransactions.filter(t => txItems(t).some(i => i.productId === selectedProductId));
+  const selectedInvoiceProductLines = filteredSalesInvoices.flatMap(invoice => invoiceItems(invoice).filter(item => item.itemId === selectedProductId));
   const productStats = {
-    totalQty: selectedProductSales.reduce((acc, t) => acc + t.items.filter(i => i.productId === selectedProductId).reduce((s, i) => s + i.quantity, 0), 0)
+    totalQty: selectedProductSales.reduce((acc, t) => acc + txItems(t).filter(i => i.productId === selectedProductId).reduce((s, i) => s + netItemQuantity(t, i), 0), 0)
       + selectedInvoiceProductLines.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
-    totalRevenue: selectedProductSales.reduce((acc, t) => acc + t.items.filter(i => i.productId === selectedProductId).reduce((s, i) => s + (i.snapshotPrice * i.quantity), 0), 0)
+    totalRevenue: selectedProductSales.reduce((acc, t) => {
+      const metrics = transactionNetMetrics(t);
+      return acc + txItems(t).filter(i => i.productId === selectedProductId).reduce((s, i) => s + (Number(i.snapshotPrice || 0) * netItemQuantity(t, i) * metrics.discountFactor), 0);
+    }, 0)
       + selectedInvoiceProductLines.reduce((sum, item) => {
         const amount = Number(item.quantity || 0) * Number(item.unitPrice || 0);
         return sum + amount + (item.taxCategory === 'A' ? amount * 0.16 : 0);
@@ -386,9 +502,9 @@ export default function ReportsTab() {
                 <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center"> <BarChart3 size={20} /> </div>
                 Sales trend
               </h3>
-              <div className="h-[320px] w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                  <ComposedChart data={salesTrendData}>
+              <div ref={salesChartRef} className="h-[320px] w-full min-w-0">
+                {salesChartSize.width > 0 && salesChartSize.height > 0 && (
+                  <ComposedChart width={salesChartSize.width} height={salesChartSize.height} data={salesTrendData}>
                     <defs>
                       <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2}/>
@@ -402,7 +518,7 @@ export default function ReportsTab() {
                     <Bar dataKey="revenue" barSize={32} fill="#6366f1" radius={[8, 8, 0, 0]} opacity={0.6} />
                     <Area type="monotone" dataKey="revenue" stroke="#6366f1" strokeWidth={4} fillOpacity={1} fill="url(#colorRev)" />
                   </ComposedChart>
-                </ResponsiveContainer>
+                )}
               </div>
             </div>
           </div>
@@ -412,15 +528,15 @@ export default function ReportsTab() {
               <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center"> <PieIcon size={20} /> </div>
               Expenses
             </h3>
-            <div className="h-[260px] min-w-0 relative">
-              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                <PieChart>
+            <div ref={expenseChartRef} className="h-[260px] min-w-0 relative">
+              {expenseChartSize.width > 0 && expenseChartSize.height > 0 && (
+                <PieChart width={expenseChartSize.width} height={expenseChartSize.height}>
                   <Pie data={expenseData} innerRadius={75} outerRadius={105} paddingAngle={8} dataKey="value" stroke="none">
                     {expenseData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                   </Pie>
                   <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: 900 }} />
                 </PieChart>
-              </ResponsiveContainer>
+              )}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                  <p className="text-[10px] font-black text-slate-400 uppercase">Total spent</p>
                  <p className="text-lg font-black text-slate-900 leading-none">Ksh {totalExpenseAmount.toLocaleString()}</p>
@@ -447,16 +563,16 @@ export default function ReportsTab() {
                 <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center"> <ShoppingBag size={20} /> </div>
                 Category sales
              </h3>
-             <div className="h-[300px] w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                   <BarChart data={categoryData} layout="vertical" margin={{ left: 20, right: 20 }}>
+             <div ref={categoryChartRef} className="h-[300px] w-full min-w-0">
+                {categoryChartSize.width > 0 && categoryChartSize.height > 0 && (
+                   <BarChart width={categoryChartSize.width} height={categoryChartSize.height} data={categoryData} layout="vertical" margin={{ left: 20, right: 20 }}>
                       <XAxis type="number" hide />
                       <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 900}} width={90} />
                       <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: 900 }} />
                       <Bar dataKey="revenue" fill="#10b981" radius={[0, 8, 8, 0]} barSize={20} />
                       <Bar dataKey="profit" fill="#6366f1" radius={[0, 8, 8, 0]} barSize={20} />
                    </BarChart>
-                </ResponsiveContainer>
+                )}
              </div>
              <div className="mt-6 flex justify-center gap-6">
                 <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500 rounded-sm"/> <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Revenue</span></div>
@@ -476,7 +592,7 @@ export default function ReportsTab() {
                   <SummaryRow metric="Profit margin" value={`${((grossProfit / (totalRevenue || 1)) * 100).toFixed(1)}%`} target="Above 25%" ok={((grossProfit / (totalRevenue || 1)) * 100) >= 25} />
                   <SummaryRow metric="Average sale" value={`Ksh ${Math.floor(averageBasket).toLocaleString()}`} target="Ksh 500+" ok={averageBasket >= 500} />
                   <SummaryRow metric="Low stock items" value={`${lowStockCount} items`} target="Less than 10" ok={lowStockCount < 10} />
-                  <SummaryRow metric="Credit sales" value={`${creditTransactions} sales`} target="Under 15%" ok={creditTransactions <= (filteredTransactions.length * 0.15)} />
+                  <SummaryRow metric="Credit sales" value={`${creditTransactions} sales`} target="Under 15%" ok={salesDocumentCount === 0 || creditTransactions <= (salesDocumentCount * 0.15)} />
                 </tbody>
               </table>
             </div>

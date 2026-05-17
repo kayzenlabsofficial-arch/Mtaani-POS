@@ -41,6 +41,27 @@ function trimText(value: unknown, max = 160) {
 
 async function ensureSchema(db: D1Database) {
   await db.prepare(`
+    CREATE TABLE IF NOT EXISTS supplierPayments (
+      id TEXT PRIMARY KEY,
+      supplierId TEXT NOT NULL,
+      purchaseOrderId TEXT,
+      purchaseOrderIds TEXT,
+      creditNoteIds TEXT,
+      amount REAL NOT NULL,
+      paymentMethod TEXT NOT NULL,
+      transactionCode TEXT,
+      timestamp INTEGER NOT NULL,
+      reference TEXT,
+      source TEXT,
+      accountId TEXT,
+      shiftId TEXT,
+      preparedBy TEXT,
+      branchId TEXT,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
     CREATE TABLE IF NOT EXISTS auditLogs (
       id TEXT PRIMARY KEY,
       ts INTEGER NOT NULL,
@@ -56,6 +77,23 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+
+  const paymentColumns = [
+    'purchaseOrderId TEXT',
+    'purchaseOrderIds TEXT',
+    'creditNoteIds TEXT',
+    'reference TEXT',
+    'source TEXT',
+    'accountId TEXT',
+    'shiftId TEXT',
+    'preparedBy TEXT',
+    'branchId TEXT',
+    'businessId TEXT',
+    'updated_at INTEGER',
+  ];
+  for (const column of paymentColumns) {
+    try { await db.prepare(`ALTER TABLE supplierPayments ADD COLUMN ${column}`).run(); } catch {}
+  }
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -252,4 +290,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not settle supplier payment.' }, status);
   }
 };
-

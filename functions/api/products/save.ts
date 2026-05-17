@@ -39,6 +39,50 @@ function isTruthy(value: unknown) {
 
 async function ensureSchema(db: D1Database) {
   await db.prepare(`
+    CREATE TABLE IF NOT EXISTS products (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      sellingPrice REAL NOT NULL,
+      costPrice REAL,
+      taxCategory TEXT NOT NULL,
+      stockQuantity REAL NOT NULL,
+      unit TEXT,
+      barcode TEXT NOT NULL,
+      imageUrl TEXT,
+      reorderPoint REAL,
+      isBundle INTEGER DEFAULT 0,
+      components TEXT,
+      businessId TEXT,
+      branchId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS productIngredients (
+      id TEXT PRIMARY KEY,
+      productId TEXT NOT NULL,
+      ingredientProductId TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS stockMovements (
+      id TEXT PRIMARY KEY,
+      productId TEXT NOT NULL,
+      type TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      timestamp INTEGER NOT NULL,
+      reference TEXT,
+      branchId TEXT,
+      businessId TEXT,
+      shiftId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
     CREATE TABLE IF NOT EXISTS auditLogs (
       id TEXT PRIMARY KEY,
       ts INTEGER NOT NULL,
@@ -54,6 +98,24 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+
+  const productColumns = [
+    'costPrice REAL',
+    "taxCategory TEXT DEFAULT 'A'",
+    'unit TEXT',
+    'imageUrl TEXT',
+    'reorderPoint REAL',
+    'isBundle INTEGER DEFAULT 0',
+    'components TEXT',
+    'businessId TEXT',
+    'branchId TEXT',
+    'updated_at INTEGER',
+  ];
+  for (const column of productColumns) {
+    try { await db.prepare(`ALTER TABLE products ADD COLUMN ${column}`).run(); } catch {}
+  }
+  try { await db.prepare('CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId)').run(); } catch {}
+  try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN shiftId TEXT').run(); } catch {}
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -174,6 +236,26 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
     }
 
+    if (!existing && !isBundle && product.stockQuantity > 0) {
+      statements.push(
+        env.DB.prepare(`
+          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          product.id,
+          'IN',
+          product.stockQuantity,
+          now,
+          'Opening stock',
+          product.branchId,
+          businessId,
+          null,
+          now,
+        )
+      );
+    }
+
     statements.push(
       env.DB.prepare(`
         INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
@@ -201,4 +283,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not save product.' }, status);
   }
 };
-

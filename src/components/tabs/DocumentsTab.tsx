@@ -11,11 +11,17 @@ import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { useToast } from '../../context/ToastContext';
 import { getBusinessSettings } from '../../utils/settings';
 import { MpesaService, type MpesaLedgerRow } from '../../services/mpesa';
+import { canPerform } from '../../utils/accessControl';
 
 const sentenceValue = (value: unknown, fallback = '') => {
   const text = String(value || fallback).replace(/_/g, ' ').toLowerCase();
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
 };
+
+const safeText = (value: unknown) => String(value ?? '');
+const safeMoney = (value: unknown) => Number(value) || 0;
+const shortId = (value: unknown) => safeText(value).split('-')[0].toUpperCase();
+const recordTimestamp = (record: any) => Number(record?.timestamp) || Number(record?.issueDate) || Number(record?.orderDate) || Date.now();
 
 export default function DocumentsTab() {
   const [docSearch, setDocSearch] = useState("");
@@ -69,6 +75,14 @@ export default function DocumentsTab() {
 
   const handleRefund = async (t: Transaction, itemsToReturn?: { productId: string, quantity: number }[]) => {
     if (t.status !== 'PAID' && t.status !== 'PARTIAL_REFUND') return;
+    if (!canPerform(currentUser, 'sale.refund.request')) {
+      error('You do not have permission to request refunds.');
+      return;
+    }
+    if (!activeBusinessId || !activeBranchId) {
+      error('Select a branch before processing a refund.');
+      return;
+    }
     const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
     try {
       if (autoApprove && activeBranchId && activeBusinessId) {
@@ -88,12 +102,16 @@ export default function DocumentsTab() {
   };
 
   const filteredDocs = unifiedRecords.filter(r => {
-    const id = r.id?.toString() || "";
-    const matchesSearch = id.toLowerCase().includes(docSearch.toLowerCase()) || 
-                          (r.description?.toLowerCase().includes(docSearch.toLowerCase())) ||
-                          (r.reference?.toLowerCase().includes(docSearch.toLowerCase())) ||
-                          (r.invoiceNumber?.toLowerCase().includes(docSearch.toLowerCase())) ||
-                          (r.customerName?.toLowerCase().includes(docSearch.toLowerCase()));
+    const query = docSearch.toLowerCase();
+    const matchesSearch = [
+      r.id,
+      r.description,
+      r.reference,
+      r.invoiceNumber,
+      r.customerName,
+      r.category,
+      r.cashierName,
+    ].some(value => safeText(value).toLowerCase().includes(query));
     
     if (!matchesSearch) return false;
     if (dateMode === 'CUSTOM') {
@@ -101,7 +119,7 @@ export default function DocumentsTab() {
       start.setHours(0, 0, 0, 0);
       const end = new Date(dateEnd || dateStart || todayInput);
       end.setHours(23, 59, 59, 999);
-      const ts = Number(r.timestamp) || 0;
+      const ts = recordTimestamp(r);
       if (ts < start.getTime() || ts > end.getTime()) return false;
     }
     if (filterType === 'ALL') return true;
@@ -340,10 +358,10 @@ export default function DocumentsTab() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="text-sm font-black text-slate-900 truncate">
-                    {row.receiptNumber || row.checkoutRequestId}
+                     {safeText(row.receiptNumber || row.checkoutRequestId)}
                   </h4>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(row.timestamp || Date.now()).toLocaleString()}</span>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(Number(row.timestamp) || Date.now()).toLocaleString()}</span>
                     <span className="w-1 h-1 rounded-full bg-slate-200" />
                     <span className="text-[10px] font-bold text-slate-400">{row.phoneNumber || 'No phone'}</span>
                     {row.linkedCustomerName && (
@@ -369,7 +387,7 @@ export default function DocumentsTab() {
                 </div>
                 <div className="text-right shrink-0 min-w-[90px]">
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Amount</p>
-                  <h3 className="text-sm font-black text-slate-900 leading-none tabular-nums">Ksh {(row.amount || 0).toLocaleString()}</h3>
+                  <h3 className="text-sm font-black text-slate-900 leading-none tabular-nums">Ksh {safeMoney(row.amount).toLocaleString()}</h3>
                 </div>
                 <ChevronRight size={18} className={`transition-colors shrink-0 ${linkedTx ? 'text-slate-300 group-hover:text-blue-500' : 'text-transparent'}`} />
               </button>
@@ -441,18 +459,18 @@ export default function DocumentsTab() {
                 </div>
                 <div className="flex-1 min-w-0">
                    <h4 className="text-sm font-black text-slate-900 truncate">
-                     {isSale ? `Receipt #${r.id.split('-')[0].toUpperCase()}` : 
-                      isExp ? `Expense: ${r.category}` : 
+                     {isSale ? `Receipt #${shortId(r.id)}` :
+                      isExp ? `Expense: ${safeText(r.category || 'General')}` :
                       isPay ? 'Supplier payment' :
-                      isSalesInvoice ? `Customer invoice #${r.invoiceNumber}` :
+                      isSalesInvoice ? `Customer invoice #${safeText(r.invoiceNumber || shortId(r.id))}` :
                       isShift ? `Shift report` :
                       isDaily ? `Daily summary` :
-                      `Invoice #${r.invoiceNumber || r.id.split('-')[0].toUpperCase()}`}
+                      `Invoice #${safeText(r.invoiceNumber || shortId(r.id))}`}
                    </h4>
                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(r.timestamp).toLocaleDateString()}</span>
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(recordTimestamp(r)).toLocaleDateString()}</span>
                       <span className="w-1 h-1 rounded-full bg-slate-200" />
-                      <span className="text-[10px] font-bold text-slate-400 truncate max-w-[120px]">{r.customerName || r.description || r.reference || 'Saved record'}</span>
+                      <span className="text-[10px] font-bold text-slate-400 truncate max-w-[120px]">{safeText(r.customerName || r.description || r.reference || 'Saved record')}</span>
                    </div>
                 </div>
                 <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter shrink-0 ${
@@ -471,7 +489,7 @@ export default function DocumentsTab() {
                 </span>
                 <div className="text-right shrink-0 min-w-[100px]">
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Value</p>
-                  <h3 className="text-sm font-black text-slate-900 leading-none tabular-nums">Ksh {(r.total || 0).toLocaleString()}</h3>
+                  <h3 className="text-sm font-black text-slate-900 leading-none tabular-nums">Ksh {safeMoney(r.total).toLocaleString()}</h3>
                 </div>
                 <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
               </button>

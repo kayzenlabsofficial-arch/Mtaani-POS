@@ -18,6 +18,8 @@ interface ExpenseModalProps {
 
 export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseForm, handleSaveExpense, isSaving, actualCashDrawer, accounts, financialAccounts, products }: ExpenseModalProps) {
   if (!isOpen) return null;
+  const amountValue = Number(expenseForm.amount) || 0;
+  const tillOverdrawn = expenseForm.source === 'TILL' && amountValue > 0 && amountValue > actualCashDrawer;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
@@ -43,7 +45,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                       autoFocus 
                    />
                 </div>
-                {expenseForm.source === 'TILL' && Number(expenseForm.amount) > actualCashDrawer && (
+                {tillOverdrawn && (
                    <p className="text-[10px] text-red-500 font-bold mt-1">Exceeds cash in drawer!</p>
                 )}
              </div>
@@ -161,7 +163,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
 
         <div className="flex gap-3">
            <button data-testid="expense-cancel" onClick={onClose} disabled={isSaving} className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors disabled:opacity-50">Cancel</button>
-           <button data-testid="expense-save" onClick={handleSaveExpense} disabled={!expenseForm.amount || Number(expenseForm.amount) <= 0 || (expenseForm.source === 'TILL' && Number(expenseForm.amount) > actualCashDrawer) || (expenseForm.source === 'ACCOUNT' && !expenseForm.accountId) || (expenseForm.source === 'SHOP' && !expenseForm.productId) || isSaving} className="flex-[2] bg-orange-600 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50 flex justify-center items-center gap-2">
+           <button data-testid="expense-save" onClick={handleSaveExpense} disabled={!expenseForm.amount || amountValue <= 0 || tillOverdrawn || (expenseForm.source === 'ACCOUNT' && !expenseForm.accountId) || (expenseForm.source === 'SHOP' && !expenseForm.productId) || isSaving} className="flex-[2] bg-orange-600 text-white px-4 py-3 font-bold rounded-xl disabled:opacity-50 flex justify-center items-center gap-2">
              {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
              {isSaving ? 'Logging...' : 'Log expense'}
            </button>

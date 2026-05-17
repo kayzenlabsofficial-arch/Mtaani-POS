@@ -31,7 +31,17 @@ export default function ExpensesTab() {
 
   const allExpenses = useLiveQuery(() => activeBusinessId && activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
   const expenseAccounts = useLiveQuery(() => activeBusinessId ? db.expenseAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []) ;
-  const financialAccounts = useLiveQuery(() => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []) ;
+  const financialAccounts = useLiveQuery(
+    () => activeBusinessId
+      ? db.financialAccounts
+          .where('businessId')
+          .equals(activeBusinessId)
+          .filter(account => !account.branchId || account.branchId === activeBranchId)
+          .toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
+    [],
+  );
   const products = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveBranch(p, activeBranchId)).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   const allTransactions = useLiveQuery(() => activeBusinessId && activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
@@ -47,7 +57,7 @@ export default function ExpensesTab() {
     since: todayStartMs,
   });
   const todayTillExpenses = drawer.tillExpenses;
-  const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'ACCOUNT' && e.status !== 'REJECTED').reduce((sum, e) => sum + (e.amount || 0), 0);
+  const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'ACCOUNT' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const actualCashDrawer = drawer.actualCashDrawer;
 
   const handleSaveExpense = async () => {
@@ -146,8 +156,18 @@ export default function ExpensesTab() {
       }
   };
 
+  const sourceBadge = (source?: string) => {
+    if (source === 'TILL') return { label: 'Till', className: 'bg-emerald-50 text-emerald-600 border-emerald-100' };
+    if (source === 'SHOP') return { label: 'Shop', className: 'bg-orange-50 text-orange-600 border-orange-100' };
+    return { label: 'Account', className: 'bg-indigo-50 text-indigo-600 border-indigo-100' };
+  };
+
   const filteredExpenses = (allExpenses || [])
-    .filter(e => e.description.toLowerCase().includes(expenseSearch.toLowerCase()) || e.category.toLowerCase().includes(expenseSearch.toLowerCase()))
+    .filter(e => {
+      const query = expenseSearch.toLowerCase();
+      return String(e.description || '').toLowerCase().includes(query)
+        || String(e.category || '').toLowerCase().includes(query);
+    })
     .sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   if (!allExpenses || !allTransactions || !allCashPicks || !allSupplierPayments) {
@@ -215,18 +235,22 @@ export default function ExpensesTab() {
 
       {/* Expense List */}
       <div className="space-y-3">
-         {filteredExpenses.map(expense => (
+         {filteredExpenses.map(expense => {
+           const source = sourceBadge(expense.source);
+           const amount = Number(expense.amount) || 0;
+           const timestamp = Number(expense.timestamp) || Date.now();
+           return (
              <div key={expense.id} className="group bg-white p-5 rounded-[2rem] border-2 border-slate-100 shadow-sm flex items-center justify-between hover:border-orange-300 hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-default">
                 <div className="flex items-center gap-5 min-w-0">
                    <div className="w-14 h-14 rounded-[1.25rem] bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 shadow-sm shrink-0 group-hover:scale-110 transition-transform">
                       <FileMinus size={28} />
                    </div>
                    <div className="min-w-0">
-                      <h4 className="text-base font-black text-slate-900 truncate leading-tight">{expense.category}</h4>
+                      <h4 className="text-base font-black text-slate-900 truncate leading-tight">{expense.category || 'General'}</h4>
                       <div className="flex items-center gap-2.5 mt-1">
                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate max-w-[120px] sm:max-w-none">{expense.description || 'General operational cost'}</span>
                          <span className="w-1 h-1 rounded-full bg-slate-200 shrink-0" />
-                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Calendar size={10}/> {new Date(expense.timestamp).toLocaleDateString()}</span>
+                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Calendar size={10}/> {new Date(timestamp).toLocaleDateString()}</span>
                       </div>
                    </div>
                 </div>
@@ -234,11 +258,11 @@ export default function ExpensesTab() {
                    <div className="text-right">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Amount paid</p>
                       <h3 className="text-lg font-black text-orange-600 tabular-nums leading-none">
-                         Ksh {expense.amount.toLocaleString()}
+                         Ksh {amount.toLocaleString()}
                       </h3>
                       <div className="flex items-center justify-end gap-1.5 mt-2">
-                         <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border ${expense.source === 'TILL' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`}>
-                            {expense.source === 'TILL' ? 'Till' : 'Account'}
+                         <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border ${source.className}`}>
+                            {source.label}
                          </span>
                          {expense.userName && (
                            <span className="text-[8px] font-black text-slate-400 uppercase flex items-center gap-1">
@@ -257,7 +281,8 @@ export default function ExpensesTab() {
                    )}
                 </div>
              </div>
-         ))}
+           );
+         })}
          {filteredExpenses.length === 0 && (
             <div className="py-32 text-center flex flex-col items-center">
                <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-inner text-slate-200">

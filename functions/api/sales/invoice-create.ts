@@ -68,6 +68,19 @@ async function ensureSchema(db: D1Database) {
     )
   `).run();
   await db.prepare(`
+    CREATE TABLE IF NOT EXISTS serviceItems (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT,
+      description TEXT,
+      price REAL NOT NULL,
+      taxCategory TEXT DEFAULT 'A',
+      isActive INTEGER DEFAULT 1,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
     CREATE TABLE IF NOT EXISTS auditLogs (
       id TEXT PRIMARY KEY,
       ts INTEGER NOT NULL,
@@ -83,6 +96,15 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+
+  for (const sql of [
+    'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
+    'ALTER TABLE serviceItems ADD COLUMN isActive INTEGER DEFAULT 1',
+    "ALTER TABLE serviceItems ADD COLUMN taxCategory TEXT DEFAULT 'A'",
+    'ALTER TABLE serviceItems ADD COLUMN updated_at INTEGER',
+  ]) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
 }
 
 async function nextInvoiceNumber(db: D1Database, businessId: string, branchId: string) {
@@ -174,12 +196,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         const itemId = String(raw?.itemId || '').trim();
         const service = itemId
           ? await env.DB.prepare(`
-              SELECT id, name, taxCategory
+              SELECT id, name, taxCategory, isActive
               FROM serviceItems
               WHERE id = ? AND businessId = ?
               LIMIT 1
             `).bind(itemId, businessId).first<any>()
           : null;
+        if (itemId && !service) throw new PolicyError('Invoice includes a service that was not found.', 404);
+        if (service && Number(service.isActive ?? 1) === 0) throw new PolicyError(`Service "${service.name}" is inactive.`, 409);
         normalizedItems.push({
           itemType: 'SERVICE',
           itemId: service?.id || itemId || undefined,
@@ -216,6 +240,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (existing) {
       return json({ success: true, invoice: { ...existing, items: parseMaybeJson(existing.items) }, idempotent: true });
     }
+
+    const duplicateNumber = await env.DB.prepare(`
+      SELECT id
+      FROM salesInvoices
+      WHERE invoiceNumber = ? AND businessId = ? AND branchId = ?
+      LIMIT 1
+    `).bind(invoiceNumber, businessId, branchId).first<any>();
+    if (duplicateNumber) throw new PolicyError('Invoice number already exists for this branch.', 409);
 
     const invoice = {
       id: invoiceId,
@@ -324,4 +356,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not create sales invoice.' }, status);
   }
 };
-

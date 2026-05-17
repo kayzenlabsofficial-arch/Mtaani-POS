@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ReceiptText, RotateCcw, Minus, Plus, Wallet, Landmark, DollarSign, Calendar, User, Hash, FileText, CheckCircle2, CreditCard, Banknote, ClipboardList, PackagePlus, Printer, Link, Loader2, Share2, CheckSquare } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
-import { db, type Transaction, type Expense, type SupplierPayment, type CashPick } from '../../db';
+import { db, type Transaction } from '../../db';
 import { generateAndShareDocument } from '../../utils/shareUtils';
 import { getAssignedHardware, printReceiptViaAssignedPrinter } from '../../utils/hardware';
 import { CalendarCheck, AlertTriangle, ArrowRight, TrendingUp, ShieldCheck } from 'lucide-react';
@@ -52,22 +52,6 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     [selectedRecord]
   );
 
-  const reportPicks = useLiveQuery(
-    async () => {
-      if (selectedRecord?.recordType !== 'CLOSE_DAY_REPORT') return [];
-      const reportDate = new Date(selectedRecord.timestamp);
-      reportDate.setHours(0,0,0,0);
-      const nextDay = new Date(reportDate);
-      nextDay.setDate(nextDay.getDate() + 1);
-      
-      return db.cashPicks
-        .where('timestamp')
-        .between(reportDate.getTime(), nextDay.getTime())
-        .toArray();
-    },
-    [selectedRecord]
-  );
-  
   const paymentAllocations = useLiveQuery(
     async () => {
         if (selectedRecord?.recordType !== 'SUPPLIER_PAYMENT') return [];

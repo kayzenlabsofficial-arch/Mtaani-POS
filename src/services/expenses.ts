@@ -4,6 +4,7 @@ import { apiRequest } from './apiClient';
 type ExpenseResponse = {
   success: boolean;
   expense: Expense;
+  idempotent?: boolean;
 };
 
 export const ExpenseService = {

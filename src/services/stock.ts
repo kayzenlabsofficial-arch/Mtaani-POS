@@ -1,6 +1,22 @@
 import { apiRequest } from './apiClient';
 
 export const StockService = {
+  requestAdjustment(input: {
+    productId: string;
+    newQty: number;
+    reason: string;
+    businessId: string;
+    branchId: string;
+    preparedBy?: string;
+  }) {
+    return apiRequest<{ success: boolean; adjustment: any }>('/api/stock/adjustment-request', {
+      method: 'POST',
+      body: input,
+      businessId: input.businessId,
+      branchId: input.branchId,
+    });
+  },
+
   restock(input: {
     productId: string;
     quantity: number;

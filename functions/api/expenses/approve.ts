@@ -45,11 +45,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       expenseId,
       approvedBy: body?.approvedBy,
     });
-    await env.DB.batch(prepared.statements);
-    return json({ success: true, expense: prepared.expense });
+    if (prepared.statements.length) await env.DB.batch(prepared.statements);
+    return json({ success: true, expense: prepared.expense, idempotent: prepared.idempotent });
   } catch (err: any) {
     const status = err instanceof PolicyError ? err.status : 500;
     return json({ error: err?.message || 'Could not approve expense.' }, status);
   }
 };
-

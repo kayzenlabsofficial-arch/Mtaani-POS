@@ -42,11 +42,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       transactionId,
       itemsToReturn: body?.itemsToReturn,
     });
-    await env.DB.batch(prepared.statements);
-    return json({ success: true, transaction: prepared.transaction });
+    if (prepared.statements.length) await env.DB.batch(prepared.statements);
+    return json({ success: true, transaction: prepared.transaction, idempotent: prepared.idempotent });
   } catch (err: any) {
     const status = err instanceof PolicyError ? err.status : 500;
     return json({ error: err?.message || 'Could not request refund.' }, status);
   }
 };
-

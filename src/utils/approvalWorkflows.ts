@@ -85,13 +85,20 @@ function refundLinesFor(transaction: Transaction, itemsToReturn?: RefundLine[]):
     .filter(line => line.quantity > 0);
 }
 
-function refundAmountFor(transaction: Transaction, lines: RefundLine[]): number {
-  const amount = lines.reduce((sum, line) => {
-    const item = transaction.items.find(row => row.productId === line.productId);
-    return sum + ((item?.snapshotPrice || 0) * line.quantity);
-  }, 0);
-
-  return Math.min(transaction.total || 0, amount || transaction.total || 0);
+function stableRefundApprovalKey(transaction: Transaction, lines: RefundLine[]): string {
+  const normalizedLines = [...lines]
+    .map(line => ({ productId: line.productId, quantity: Number(line.quantity) || 0 }))
+    .sort((a, b) => a.productId.localeCompare(b.productId));
+  const returnedBaseline = [...transaction.items]
+    .map(item => ({ productId: item.productId, returnedQuantity: Number(item.returnedQuantity) || 0 }))
+    .sort((a, b) => a.productId.localeCompare(b.productId));
+  const seed = JSON.stringify({ id: transaction.id, normalizedLines, returnedBaseline });
+  let hash = 2166136261;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `refund-approve:${transaction.id}:${(hash >>> 0).toString(36)}`;
 }
 
 export async function requestRefundApproval(
@@ -112,12 +119,14 @@ export async function approveRefundTransaction(
   itemsToReturn: RefundLine[] | undefined,
   context: ApprovalContext
 ): Promise<void> {
+  const lines = refundLinesFor(transaction, itemsToReturn);
   await SalesService.approveRefund({
     transactionId: transaction.id,
     businessId: context.activeBusinessId,
     branchId: context.activeBranchId,
     itemsToReturn,
     approvedBy: context.approvedBy,
+    idempotencyKey: stableRefundApprovalKey(transaction, lines),
   });
   await Promise.allSettled([
     db.transactions.reload(),
