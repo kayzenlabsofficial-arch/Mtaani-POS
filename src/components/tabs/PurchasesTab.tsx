@@ -406,7 +406,7 @@ export default function PurchasesTab() {
                              <input data-testid="purchase-item-qty" type="number" placeholder="Qty" value={poItemInput.qty} onChange={e => setPoItemInput({...poItemInput, qty: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm text-center" />
                           </div>
                           <div className="flex-[2] relative">
-                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300">KSH</span>
+                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300">Ksh</span>
                              <input data-testid="purchase-item-cost" type="number" placeholder="Unit cost" value={poItemInput.cost} onChange={e => setPoItemInput({...poItemInput, cost: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl pl-12 pr-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" />
                           </div>
                           <button data-testid="purchase-add-item" onClick={handleAddPoItem} className="w-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-indigo active:scale-95 transition-all">

@@ -709,7 +709,7 @@ function CustomerProfileModal({
                                 placeholder="Amount to pay..."
                                 className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 focus:bg-white rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm"
                                />
-                               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-300">KSH</span>
+                               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-300">Ksh</span>
                             </div>
                             <button 
                               onClick={onMpesaRepayment}
