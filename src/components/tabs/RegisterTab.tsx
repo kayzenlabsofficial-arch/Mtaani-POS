@@ -79,7 +79,7 @@ function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
           <div className="stable-row-copy">
             <div className="flex items-center gap-2 min-w-0">
               <p className="stable-title-2 text-[13px] sm:text-sm font-black leading-tight text-slate-900 group-hover:text-primary transition-colors">{product.name}</p>
-              {product.isTaxable && (
+              {(product.taxCategory === 'A' || product.taxCategory === 'C') && (
                 <span className="hidden sm:inline-flex text-[8px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full flex-shrink-0">VAT</span>
               )}
             </div>
@@ -175,6 +175,8 @@ function SalePanel({
   const [splitSecondaryMethod, setSplitSecondaryMethod] = useState<'MPESA' | 'PDQ' | 'CREDIT'>('MPESA');
   const [splitSecondaryRef, setSplitSecondaryRef] = useState('');
   const checkoutLockRef = useRef(false);
+  // Tracks the active M-Pesa polling interval so it can be cleared on unmount
+  const mpesaIntervalRef = useRef<ReturnType<typeof window.setInterval> | null>(null);
 
   const customers = useLiveQuery(
     () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveBranch(c, activeBranchId)).sortBy('name') : Promise.resolve([]),
@@ -241,6 +243,16 @@ function SalePanel({
     setMpesaVerification(null);
   }, [mpesaRef, splitSecondaryRef, total]);
 
+  // M-2: Clear M-Pesa polling interval when user navigates away from Register tab
+  React.useEffect(() => {
+    return () => {
+      if (mpesaIntervalRef.current !== null) {
+        window.clearInterval(mpesaIntervalRef.current);
+        mpesaIntervalRef.current = null;
+      }
+    };
+  }, []);
+
   const verifyMpesaCode = async (rawCode = mpesaRef, expectedAmount = total) => {
     if (!activeBusinessId || !activeBranchId) {
       error('Select a branch before verifying M-Pesa.');
@@ -277,11 +289,16 @@ function SalePanel({
   };
 
   const pollMpesaAndComplete = (requestId: string) => {
+    // M-2: Store interval in a ref so it can be cleared on component unmount
+    if (mpesaIntervalRef.current !== null) {
+      window.clearInterval(mpesaIntervalRef.current);
+    }
     let attempts = 0;
-    const interval = window.setInterval(async () => {
+    mpesaIntervalRef.current = window.setInterval(async () => {
       attempts++;
       if (attempts > 36) {
-        window.clearInterval(interval);
+        window.clearInterval(mpesaIntervalRef.current!);
+        mpesaIntervalRef.current = null;
         setMpesaState('FAILED');
         error('M-Pesa request timed out. Check if the customer paid.');
         return;
@@ -289,7 +306,8 @@ function SalePanel({
 
       const res = await MpesaService.checkStatus(requestId);
       if (res.found && res.resultCode === 0) {
-        window.clearInterval(interval);
+        window.clearInterval(mpesaIntervalRef.current!);
+        mpesaIntervalRef.current = null;
         const receipt = res.receiptNumber || requestId;
         setMpesaRef(receipt);
         setMpesaVerification({
@@ -315,7 +333,8 @@ function SalePanel({
         });
         success(`M-Pesa confirmed: ${receipt}`);
       } else if (res.found && res.resultCode !== 0) {
-        window.clearInterval(interval);
+        window.clearInterval(mpesaIntervalRef.current!);
+        mpesaIntervalRef.current = null;
         setMpesaState('FAILED');
         error(res.resultDesc || 'M-Pesa payment was not completed.');
       }
@@ -603,18 +622,6 @@ function SalePanel({
                 setPaymentMode(id);
                 setPaymentWindow(id);
               }}
-              onPointerUp={(event) => {
-                if (event.pointerType === 'touch') {
-                  event.preventDefault();
-                  setPaymentMode(id);
-                  setPaymentWindow(id);
-                }
-              }}
-              onTouchEnd={(event) => {
-                event.preventDefault();
-                setPaymentMode(id);
-                setPaymentWindow(id);
-              }}
               data-testid={`payment-${id.toLowerCase()}`}
               className={`min-h-16 rounded-2xl border px-3 py-3 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 text-left transition-colors ${
                 paymentMode === id
@@ -724,10 +731,6 @@ function SalePanel({
             </button>
             <button
               onClick={submitCheckout}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                void submitCheckout();
-              }}
               disabled={cart.length === 0 || isCheckingOut}
               data-testid="complete-sale"
               className="h-12 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"

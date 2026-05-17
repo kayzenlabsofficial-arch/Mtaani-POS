@@ -295,10 +295,19 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
       };
     });
 
-    const subtotal = roundMoney(normalizedItems.reduce((sum, item) => sum + (item.snapshotPrice * item.quantity), 0));
+    let calculatedTax = 0;
+    const subtotal = roundMoney(normalizedItems.reduce((sum, item) => {
+      const lineTotal = item.snapshotPrice * item.quantity;
+      if (item.taxCategory === 'A') {
+        calculatedTax += lineTotal * (16 / 116);
+      }
+      return sum + lineTotal;
+    }, 0));
+    
     const discountAmount = roundMoney(clamp(asNumber(tx.discountAmount ?? tx.discount), 0, subtotal));
-    const tax = 0;
-    const total = roundMoney(Math.max(0, subtotal + tax - discountAmount));
+    const discountRatio = subtotal > 0 ? (discountAmount / subtotal) : 0;
+    const tax = roundMoney(calculatedTax * (1 - discountRatio));
+    const total = roundMoney(Math.max(0, subtotal - discountAmount));
     const paymentMethod = String(tx.paymentMethod || '').toUpperCase();
 
     tx.items = normalizedItems;
@@ -367,7 +376,7 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
             crypto.randomUUID(),
             productId,
             'OUT',
-            -quantity,
+            quantity,  // Positive value — type='OUT' already conveys the direction
             tx.timestamp,
             `${sourceLabel} #${txRef}`,
             branchId,

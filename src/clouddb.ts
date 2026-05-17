@@ -135,9 +135,6 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
     if (!res) throw networkError || new Error('Request failed.');
 
     if (!res.ok) {
-      if (res.status === 401) {
-        useStore.getState().logout();
-      }
       let msg = `${method} /api/data/${table} → ${res.status}`;
       const text = await res.text().catch(() => '');
       try {
@@ -146,6 +143,12 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
         if (j.message) msg += ` (${j.message})`;
       } catch {
         if (text) msg += `: ${text.slice(0, 100)}`;
+      }
+      // Only force-logout on genuine session expiry — not on missing-header 401s
+      // (which can occur during startup before businessId is available)
+      if (res.status === 401 && (text.includes('Sign in') || text.includes('Session expired') || text.includes('expired'))) {
+        console.warn('[CloudDB] Session expired — logging out.');
+        useStore.getState().logout();
       }
       throw new Error(msg);
     }
@@ -686,10 +689,10 @@ export function startBackgroundSync(intervalMs = 30000) {
          const { flushOutboxNow } = await import('./offline/offlineSync');
          await flushOutboxNow();
        }
-       // We only need to reload tables that have been loaded/used already
-       // Tables are exported from db.ts, but clouddb doesn't know about 'db'
-       // Instead, we'll let db.ts call a refresh method.
-       dbEventBus?.dispatchEvent(new Event('db:sync-request'));
+       // Dispatch on window so db.ts wire-up can receive and reload tables
+       if (typeof window !== 'undefined') {
+         window.dispatchEvent(new Event('db:sync-request'));
+       }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.warn(`[CloudDB] Background sync failed: ${message}`);

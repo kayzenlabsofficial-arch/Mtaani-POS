@@ -572,9 +572,13 @@ class MtaaniCloudDB {
       reloads.push(() => this.loginAttempts.reload());
     }
 
-    for (const reload of reloads) {
-      await reload();
-    }
+    // Run all reloads in parallel for speed — failures are logged but don't block others
+    const results = await Promise.allSettled(reloads.map(fn => fn()));
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        console.warn(`[DB] sync: reload #${i} failed:`, result.reason);
+      }
+    });
   }
 
   /** Alias used by legacy components */
@@ -586,7 +590,7 @@ export const db = new MtaaniCloudDB();
 // ── Background Sync Wire-up ────────────────────────────────────────────────
 if (typeof window !== 'undefined') {
   import('./clouddb').then(({ startBackgroundSync }) => {
-    // Listen for sync requests from the polling logic
+    // clouddb dispatches 'db:sync-request' on window so this listener fires.
     window.addEventListener('db:sync-request', () => {
       db.sync().catch(console.error);
     });
@@ -594,52 +598,3 @@ if (typeof window !== 'undefined') {
     startBackgroundSync(30000);
   });
 }
-
-// ── seedInitialData ────────────────────────────────────────────────────────
-// Seeds D1 with default data if the database is empty.
-
-export const seedInitialData = async () => {
-  // Lazy import to break the circular dependency: db → store → db
-  const { useStore } = await import('./store');
-  try {
-    // Determine active business ID or fallback to default
-    let businessId = useStore.getState().activeBusinessId;
-    if (!businessId) {
-       // If no business ID is set, check if a default business exists, else create it
-       const defaultBiz = await db.businesses.get('biz_001');
-        if (!defaultBiz) {
-          await db.businesses.add({ id: 'biz_001', name: 'Default Business', code: process.env.DEFAULT_BUSINESS_CODE! });
-        }
-
-       businessId = 'biz_001';
-       useStore.getState().setActiveBusinessId(businessId);
-    }
-
-    // ── Users ────────────────────────────────────────────────────────────────
-    const userCount = await db.users.count();
-    if (userCount === 0) {
-      await db.users.bulkAdd([
-        { id: 'u1', name: 'Admin',           password: 'admin123', role: 'ADMIN',   businessId },
-        { id: 'u2', name: 'Default Cashier', password: '0000',     role: 'CASHIER', businessId },
-        { id: 'u3', name: 'Store Manager',   password: '5555',     role: 'MANAGER', businessId },
-      ]);
-    } else {
-      // Ensure admin always exists with correct credentials
-      const admin = (await db.users.toArray()).find(u => u.role === 'ADMIN');
-      if (!admin) {
-        await db.users.add({ id: `u1_${businessId}`, name: 'Admin', password: 'admin123', role: 'ADMIN', businessId });
-      }
-    }
-
-    // ── Branches ──────────────────────────────────────────────────────────────
-    const branchCount = await db.branches.count();
-    if (branchCount === 0) {
-      await db.branches.bulkAdd([
-        { id: 'branch_main', name: 'Main Branch', location: 'Nairobi', isActive: true, businessId },
-      ]);
-    }
-
-  } catch (err) {
-    console.error('[DB] Seed error:', err);
-  }
-};

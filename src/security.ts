@@ -23,40 +23,26 @@ interface AttemptRecord {
   lockedUntil: number | null;
 }
 
-import { db, type LoginAttempt } from './db';
+// NOTE: Client-side lockout checking was removed.
+// The server enforces brute-force lockout in /api/auth (auth.ts).
+// Attempting to read loginAttempts before authentication creates a
+// chicken-and-egg problem and the check was never reachable.
+// The functions below are kept as no-ops for backward compatibility.
 
-export async function getAttemptRecord(businessCode: string): Promise<LoginAttempt> {
-  try {
-    const rec = await db.loginAttempts.get(businessCode.toUpperCase());
-    if (rec) return rec;
-  } catch {}
-  return { id: businessCode.toUpperCase(), count: 0, lockedUntil: null };
+export async function getAttemptRecord(_businessCode: string) {
+  return { id: '', count: 0, lockedUntil: null };
 }
 
-export async function isLockedOut(businessCode: string): Promise<{ locked: boolean; secondsLeft: number }> {
-  const rec = await getAttemptRecord(businessCode);
-  if (rec.lockedUntil && Date.now() < rec.lockedUntil) {
-    return { locked: true, secondsLeft: Math.ceil((rec.lockedUntil - Date.now()) / 1000) };
-  }
+export async function isLockedOut(_businessCode: string): Promise<{ locked: boolean; secondsLeft: number }> {
   return { locked: false, secondsLeft: 0 };
 }
 
-export async function recordFailedAttempt(businessCode: string): Promise<void> {
-  const rec = await getAttemptRecord(businessCode);
-  // Reset if previous lockout has expired
-  if (rec.lockedUntil && Date.now() >= rec.lockedUntil) {
-    rec.count = 0;
-    rec.lockedUntil = null;
-  }
-  rec.count += 1;
-  if (rec.count >= MAX_ATTEMPTS) {
-    rec.lockedUntil = Date.now() + LOCKOUT_MS;
-  }
-  await db.loginAttempts.put({ ...rec, id: businessCode.toUpperCase(), updated_at: Date.now() });
+export async function recordFailedAttempt(_businessCode: string): Promise<void> {
+  // no-op: server handles lockout
 }
 
-export async function resetAttempts(businessCode: string): Promise<void> {
-  await db.loginAttempts.delete(businessCode.toUpperCase());
+export async function resetAttempts(_businessCode: string): Promise<void> {
+  // no-op: server handles lockout
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
