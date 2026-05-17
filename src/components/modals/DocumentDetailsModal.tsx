@@ -353,9 +353,21 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                                      <span>Ksh {selectedRecord.tax.toLocaleString()}</span>
                                   </div>
                                   <div className="flex justify-between items-end pt-2">
-                                     <span className="text-sm font-black text-slate-400  ">Total paid</span>
+                                     <span className="text-sm font-black text-slate-400  ">{selectedRecord.debtBalance !== undefined ? 'Sale total' : 'Total paid'}</span>
                                      <span className="text-2xl font-black text-slate-900">Ksh {(selectedRecord.total || 0).toLocaleString()}</span>
                                   </div>
+                                  {selectedRecord.debtBalance !== undefined && (
+                                    <div className="grid grid-cols-2 gap-2 pt-2">
+                                      <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                                        <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Credit paid</p>
+                                        <p className="text-sm font-black text-emerald-700">Ksh {(selectedRecord.debtPaidAmount || 0).toLocaleString()}</p>
+                                      </div>
+                                      <div className="rounded-xl bg-rose-50 border border-rose-100 p-3 text-right">
+                                        <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Outstanding</p>
+                                        <p className="text-sm font-black text-rose-700">Ksh {(selectedRecord.debtBalance || 0).toLocaleString()}</p>
+                                      </div>
+                                    </div>
+                                  )}
                                   {selectedRecord.amountTendered && selectedRecord.amountTendered > selectedRecord.total && (
                                      <div className="flex justify-between items-center text-green-700 bg-green-50 p-2 rounded-xl border border-green-100 mt-2">
                                          <span className="text-[10px] font-black  ">Change given</span>

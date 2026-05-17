@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS customerPayments (
     paymentMethod TEXT NOT NULL,
     transactionCode TEXT,
     reference TEXT,
+    allocations TEXT,
     timestamp INTEGER NOT NULL,
     preparedBy TEXT,
     branchId TEXT,

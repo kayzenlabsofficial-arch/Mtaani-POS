@@ -358,6 +358,7 @@ export default function SalesInvoicesTab() {
         paymentMethod: paymentForm.method,
         transactionCode: paymentForm.reference.trim() || undefined,
         reference: `Invoice ${paymentInvoice.invoiceNumber}`,
+        allocations: [{ sourceType: 'INVOICE', sourceId: paymentInvoice.id, amount }],
         timestamp: Date.now(),
         preparedBy: currentUser?.name,
         branchId: activeBranchId,

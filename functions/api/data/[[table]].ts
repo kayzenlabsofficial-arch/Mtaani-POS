@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS cashPicks (id TEXT PRIMARY KEY, amount REAL NOT NULL,
 CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, amount REAL NOT NULL, category TEXT NOT NULL, description TEXT, timestamp INTEGER NOT NULL, userName TEXT, status TEXT NOT NULL, source TEXT, accountId TEXT, productId TEXT, quantity REAL, preparedBy TEXT, approvedBy TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, totalSpent REAL, balance REAL, branchId TEXT, businessId TEXT, updated_at INTEGER);
- CREATE TABLE IF NOT EXISTS customerPayments (id TEXT PRIMARY KEY, customerId TEXT NOT NULL, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, reference TEXT, timestamp INTEGER NOT NULL, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
+ CREATE TABLE IF NOT EXISTS customerPayments (id TEXT PRIMARY KEY, customerId TEXT NOT NULL, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, reference TEXT, allocations TEXT, timestamp INTEGER NOT NULL, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS serviceItems (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT, description TEXT, price REAL NOT NULL, taxCategory TEXT DEFAULT 'A', isActive INTEGER DEFAULT 1, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS salesInvoices (id TEXT PRIMARY KEY, invoiceNumber TEXT NOT NULL, customerId TEXT NOT NULL, customerName TEXT, customerPhone TEXT, customerEmail TEXT, items TEXT NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, total REAL NOT NULL, paidAmount REAL DEFAULT 0, balance REAL DEFAULT 0, status TEXT NOT NULL, issueDate INTEGER NOT NULL, dueDate INTEGER, notes TEXT, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT, phone TEXT, email TEXT, balance REAL, branchId TEXT, businessId TEXT, updated_at INTEGER);
@@ -146,6 +146,19 @@ function trimText(value: unknown, max = 160): string | undefined {
   return text.slice(0, max);
 }
 
+function asArray(value: unknown): any[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 async function existingRowsById(db: D1Database, table: string, businessId: string, ids: string[]) {
   const rows = new Map<string, Record<string, any>>();
   const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
@@ -180,6 +193,7 @@ async function hardenCustomerPaymentWrites(db: D1Database, businessId: string, b
   const sideEffects: D1PreparedStatement[] = [];
   const existing = await existingRowsById(db, 'customerPayments', businessId, items.map(item => String(item?.id || '').trim()));
   const methods = new Set(['CASH', 'MPESA', 'BANK', 'PDQ', 'CHEQUE']);
+  const allocationTypes = new Set(['SALE', 'INVOICE']);
   const now = Date.now();
 
   for (const item of items) {
@@ -201,10 +215,40 @@ async function hardenCustomerPaymentWrites(db: D1Database, businessId: string, b
     item.timestamp = Math.min(asNumber(item.timestamp, now), now + 5 * 60 * 1000);
     item.updated_at = now;
 
+    let allocationTotal = 0;
+    item.allocations = asArray(item.allocations)
+      .slice(0, 50)
+      .map((allocation) => {
+        const sourceType = String(allocation?.sourceType || '').toUpperCase();
+        const sourceId = trimText(allocation?.sourceId, 120);
+        const allocationAmount = roundMoney(asNumber(allocation?.amount));
+        return sourceType && sourceId && allocationTypes.has(sourceType) && allocationAmount > 0
+          ? { sourceType, sourceId, amount: allocationAmount }
+          : null;
+      })
+      .filter(Boolean);
+    for (const allocation of item.allocations) allocationTotal += allocation.amount;
+    if (allocationTotal > amount + 0.01) {
+      throw new PolicyError('Payment allocations exceed the payment amount.', 400);
+    }
+
     sideEffects.push(
       db.prepare(`UPDATE customers SET balance = MAX(0, COALESCE(balance, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ?`)
         .bind(amount, now, customerId, businessId)
     );
+    for (const allocation of item.allocations) {
+      if (allocation.sourceType !== 'INVOICE') continue;
+      sideEffects.push(
+        db.prepare(
+          `UPDATE salesInvoices
+           SET paidAmount = MIN(COALESCE(total, 0), COALESCE(paidAmount, 0) + ?),
+               balance = MAX(0, COALESCE(balance, total, 0) - ?),
+               status = CASE WHEN MAX(0, COALESCE(balance, total, 0) - ?) <= 0 THEN 'PAID' ELSE 'PARTIAL' END,
+               updated_at = ?
+           WHERE id = ? AND customerId = ? AND businessId = ?`
+        ).bind(allocation.amount, allocation.amount, allocation.amount, now, allocation.sourceId, customerId, businessId)
+      );
+    }
   }
   return sideEffects;
 }
@@ -378,6 +422,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['transactions', 'splitPayments TEXT'],
           ['transactions', 'splitData TEXT'],
           ['transactions', 'isSynced INTEGER'],
+          ['customerPayments', 'allocations TEXT'],
           ['categories', 'branchId TEXT'],
           ['shifts',     'lastSyncAt INTEGER'],
           ['shifts',     'openingFloat REAL'],
@@ -457,7 +502,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     }
 
     if (table === 'customerPayments') {
-      await env.DB.prepare('CREATE TABLE IF NOT EXISTS customerPayments (id TEXT PRIMARY KEY, customerId TEXT NOT NULL, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, reference TEXT, timestamp INTEGER NOT NULL, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER)').run();
+      await env.DB.prepare('CREATE TABLE IF NOT EXISTS customerPayments (id TEXT PRIMARY KEY, customerId TEXT NOT NULL, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, reference TEXT, allocations TEXT, timestamp INTEGER NOT NULL, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER)').run();
+      try { await env.DB.prepare('ALTER TABLE customerPayments ADD COLUMN allocations TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE salesInvoices ADD COLUMN paidAmount REAL DEFAULT 0').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE salesInvoices ADD COLUMN balance REAL DEFAULT 0').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE salesInvoices ADD COLUMN status TEXT DEFAULT \'SENT\'').run(); } catch (e) {}
     }
 
     if (table === 'serviceItems') {

@@ -1,11 +1,55 @@
 import React, { useState } from 'react';
-import { Search, Plus, Users, Phone, Mail, ChevronRight, X, User, Trash2, Smartphone, Loader2, CheckCircle2, Save, ArrowLeft, ReceiptText, FileDown, WalletCards, Banknote } from 'lucide-react';
+import { Search, Plus, Users, Phone, Mail, ChevronRight, X, User, Trash2, Smartphone, Loader2, CheckCircle2, Save, ArrowLeft, ReceiptText, FileDown, WalletCards, Banknote, FileText, ExternalLink } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Customer, type CustomerPayment, type SalesInvoice, type Transaction } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { MpesaService } from '../../services/mpesa';
+import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 
+type DebtSourceType = 'SALE' | 'INVOICE';
+type DebtAllocation = { sourceType: DebtSourceType; sourceId: string; amount: number };
+type CustomerDebtSource = {
+  id: string;
+  sourceType: DebtSourceType;
+  recordType: 'SALE' | 'SALES_INVOICE';
+  timestamp: number;
+  title: string;
+  detail: string;
+  total: number;
+  paid: number;
+  remaining: number;
+  record: Transaction | SalesInvoice;
+};
+
+const money = (value: number) => `Ksh ${Math.max(0, Number(value) || 0).toLocaleString()}`;
+
+function sourceKey(sourceType: DebtSourceType, sourceId: string) {
+  return `${sourceType}:${sourceId}`;
+}
+
+function getPaymentAllocations(payment: CustomerPayment): DebtAllocation[] {
+  const raw = (payment as any).allocations;
+  const rows = Array.isArray(raw)
+    ? raw
+    : typeof raw === 'string'
+      ? (() => {
+          try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+  return rows
+    .map((row: any) => ({
+      sourceType: String(row?.sourceType || '').toUpperCase() as DebtSourceType,
+      sourceId: String(row?.sourceId || '').trim(),
+      amount: Number(row?.amount) || 0,
+    }))
+    .filter(row => (row.sourceType === 'SALE' || row.sourceType === 'INVOICE') && row.sourceId && row.amount > 0);
+}
 
 export default function CustomersTab() {
   const [customerSearch, setCustomerSearch] = useState("");
@@ -18,6 +62,7 @@ export default function CustomersTab() {
   const [statementStart, setStatementStart] = useState(todayInput);
   const [statementEnd, setStatementEnd] = useState(todayInput);
   const [statementPage, setStatementPage] = useState(1);
+  const [selectedDebtRecord, setSelectedDebtRecord] = useState<any | null>(null);
   const statementPageSize = 50;
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
@@ -104,6 +149,129 @@ export default function CustomersTab() {
   const creditSales = (statementSales || [])
     .filter(sale => getCreditAmount(sale) > 0 && sale.status !== 'VOIDED')
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const debtBaseSources: Omit<CustomerDebtSource, 'paid' | 'remaining'>[] = [
+    ...(statementInvoices || [])
+      .filter(invoice => invoice.status !== 'CANCELLED' && Number(invoice.total || 0) > 0)
+      .map((invoice: SalesInvoice) => ({
+        id: invoice.id,
+        sourceType: 'INVOICE' as const,
+        recordType: 'SALES_INVOICE' as const,
+        timestamp: invoice.issueDate,
+        title: invoice.invoiceNumber,
+        detail: invoice.items.map(item => `${item.name} x ${item.quantity}`).join(', '),
+        total: Number(invoice.total || 0),
+        record: invoice,
+      })),
+    ...creditSales.map((sale: Transaction) => ({
+      id: sale.id,
+      sourceType: 'SALE' as const,
+      recordType: 'SALE' as const,
+      timestamp: sale.timestamp,
+      title: `Sale ${sale.id.split('-')[0].toUpperCase()}`,
+      detail: sale.items.map(item => `${item.name} x ${item.quantity}`).join(', '),
+      total: getCreditAmount(sale),
+      record: sale,
+    })),
+  ];
+  const sourceMap = new Map(debtBaseSources.map(source => [sourceKey(source.sourceType, source.id), source]));
+  const paidBySource = new Map<string, number>();
+  const addPaidToSource = (key: string, amount: number) => {
+    if (!sourceMap.has(key) || amount <= 0) return 0;
+    const source = sourceMap.get(key)!;
+    const current = paidBySource.get(key) || 0;
+    const applied = Math.min(amount, Math.max(0, source.total - current));
+    if (applied > 0) paidBySource.set(key, current + applied);
+    return applied;
+  };
+  const unallocatedPaymentAmounts: number[] = [];
+  const paymentsOldestFirst = [...(statementPayments || [])].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  for (const payment of paymentsOldestFirst) {
+    let remainingPayment = Number(payment.amount || 0);
+    if (remainingPayment <= 0) continue;
+
+    const allocations = getPaymentAllocations(payment);
+    for (const allocation of allocations) {
+      const applied = addPaidToSource(sourceKey(allocation.sourceType, allocation.sourceId), allocation.amount);
+      remainingPayment = Math.max(0, remainingPayment - applied);
+    }
+
+    if (allocations.length === 0) {
+      const reference = `${payment.reference || ''} ${payment.transactionCode || ''}`.toLowerCase();
+      const matchedInvoice = debtBaseSources.find(source =>
+        source.sourceType === 'INVOICE'
+        && reference
+        && (
+          reference.includes(String((source.record as SalesInvoice).invoiceNumber || '').toLowerCase())
+          || reference.includes(source.id.toLowerCase())
+        )
+      );
+      if (matchedInvoice) {
+        const applied = addPaidToSource(sourceKey('INVOICE', matchedInvoice.id), remainingPayment);
+        remainingPayment = Math.max(0, remainingPayment - applied);
+      }
+    }
+
+    if (remainingPayment > 0) unallocatedPaymentAmounts.push(remainingPayment);
+  }
+
+  for (const source of debtBaseSources) {
+    if (source.sourceType !== 'INVOICE') continue;
+    const key = sourceKey(source.sourceType, source.id);
+    const invoicePaid = Number((source.record as SalesInvoice).paidAmount || 0);
+    const recordedPaid = paidBySource.get(key) || 0;
+    if (invoicePaid > recordedPaid) addPaidToSource(key, invoicePaid - recordedPaid);
+  }
+
+  const debtOldestFirst = [...debtBaseSources].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  for (let paymentAmount of unallocatedPaymentAmounts) {
+    for (const source of debtOldestFirst) {
+      if (paymentAmount <= 0) break;
+      paymentAmount = Math.max(0, paymentAmount - addPaidToSource(sourceKey(source.sourceType, source.id), paymentAmount));
+    }
+  }
+
+  const debtSources: CustomerDebtSource[] = debtBaseSources.map(source => {
+    const paid = Math.min(source.total, paidBySource.get(sourceKey(source.sourceType, source.id)) || 0);
+    return {
+      ...source,
+      paid,
+      remaining: Math.max(0, source.total - paid),
+    };
+  }).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const openDebtSources = debtSources.filter(source => source.remaining > 0.01);
+  const openDebtTotal = openDebtSources.reduce((sum, source) => sum + source.remaining, 0);
+
+  const buildPaymentAllocations = (amount: number): DebtAllocation[] => {
+    const allocations: DebtAllocation[] = [];
+    let remainingPayment = amount;
+    for (const source of [...debtSources].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))) {
+      if (remainingPayment <= 0) break;
+      if (source.remaining <= 0) continue;
+      const applied = Math.min(remainingPayment, source.remaining);
+      allocations.push({ sourceType: source.sourceType, sourceId: source.id, amount: applied });
+      remainingPayment -= applied;
+    }
+    return allocations;
+  };
+
+  const openDebtRecord = (source: CustomerDebtSource) => {
+    if (source.sourceType === 'INVOICE') {
+      setSelectedDebtRecord({
+        ...source.record,
+        recordType: 'SALES_INVOICE',
+        paidAmount: source.paid,
+        balance: source.remaining,
+        status: source.remaining <= 0 ? 'PAID' : source.paid > 0 ? 'PARTIAL' : (source.record as SalesInvoice).status,
+      });
+      return;
+    }
+    setSelectedDebtRecord({
+      ...source.record,
+      recordType: 'SALE',
+      debtPaidAmount: source.paid,
+      debtBalance: source.remaining,
+    });
+  };
   const inStatementDateRange = (timestamp: number) => {
     if (statementDateMode === 'ALL') return true;
     const start = new Date(statementStart || todayInput);
@@ -128,6 +296,7 @@ export default function CustomersTab() {
       debit: Number(invoice.total || 0),
       credit: 0,
       method: invoice.status,
+      record: { ...invoice, recordType: 'SALES_INVOICE' as const },
     })),
     ...filteredCreditSales.map(sale => ({
       id: sale.id,
@@ -138,6 +307,7 @@ export default function CustomersTab() {
       debit: getCreditAmount(sale),
       credit: 0,
       method: sale.paymentMethod || 'CREDIT',
+      record: { ...sale, recordType: 'SALE' as const },
     })),
     ...filteredStatementPayments.map(payment => ({
       id: payment.id,
@@ -148,6 +318,7 @@ export default function CustomersTab() {
       debit: 0,
       credit: Number(payment.amount || 0),
       method: payment.paymentMethod,
+      record: null,
     })),
   ].sort((a, b) => b.timestamp - a.timestamp);
   const statementTotalPages = Math.max(1, Math.ceil(statementRows.length / statementPageSize));
@@ -262,6 +433,7 @@ export default function CustomersTab() {
             paymentMethod: 'MPESA',
             transactionCode: res.receiptNumber || requestId,
             reference: `M-Pesa repayment from ${editingCustomer.name}`,
+            allocations: statementCustomerId === editingCustomer.id ? buildPaymentAllocations(amount) : [],
             timestamp: Date.now(),
             preparedBy: currentUser?.name,
             branchId: activeBranchId!,
@@ -292,6 +464,7 @@ export default function CustomersTab() {
 
     setIsSaving(true);
     try {
+      const allocations = buildPaymentAllocations(amount);
       await db.customerPayments.add({
         id: crypto.randomUUID(),
         customerId: statementCustomer.id,
@@ -299,6 +472,7 @@ export default function CustomersTab() {
         paymentMethod: paymentForm.method,
         transactionCode: paymentForm.reference.trim() || undefined,
         reference: `${paymentForm.method} payment from ${statementCustomer.name}`,
+        allocations,
         timestamp: Date.now(),
         preparedBy: currentUser?.name,
         branchId: activeBranchId,
@@ -378,6 +552,52 @@ export default function CustomersTab() {
           </div>
         </div>
 
+        <section className="bg-white border border-slate-100 rounded-2xl overflow-hidden mb-6">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black text-slate-900">Outstanding documents</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Open the exact sale or invoice behind each debt</p>
+            </div>
+            <span className="text-xs font-black text-rose-600 tabular-nums whitespace-nowrap">{money(openDebtTotal)}</span>
+          </div>
+          {openDebtSources.length === 0 ? (
+            <div className="py-10 text-center text-slate-400">
+              <CheckCircle2 size={34} className="mx-auto mb-3 text-emerald-500" />
+              <p className="text-sm font-bold">No open debt documents.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {openDebtSources.map(source => (
+                <button
+                  key={`${source.sourceType}-${source.id}`}
+                  type="button"
+                  onClick={() => openDebtRecord(source)}
+                  className="w-full px-4 sm:px-5 py-4 grid grid-cols-[2.5rem_minmax(0,1fr)_auto] gap-3 items-center text-left hover:bg-slate-50 transition-colors group"
+                >
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${source.sourceType === 'INVOICE' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
+                    {source.sourceType === 'INVOICE' ? <FileText size={18} /> : <ReceiptText size={18} />}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <p className="text-sm font-black text-slate-900 truncate">{source.title}</p>
+                      <ExternalLink size={13} className="text-slate-300 group-hover:text-primary shrink-0" />
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-400 truncate">{new Date(source.timestamp).toLocaleString()} - {source.detail}</p>
+                    <div className="mt-2 h-1.5 w-full max-w-xs rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, (source.paid / Math.max(1, source.total)) * 100)}%` }} />
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Remaining</p>
+                    <p className="text-sm font-black text-rose-600 tabular-nums whitespace-nowrap">{money(source.remaining)}</p>
+                    {source.paid > 0 && <p className="text-[9px] font-bold text-emerald-600 whitespace-nowrap">Paid {money(source.paid)}</p>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6">
           <section className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -414,13 +634,27 @@ export default function CustomersTab() {
                   <WalletCards size={40} className="mx-auto mb-3 opacity-30" />
                   <p className="text-sm font-bold">No credit activity for this customer.</p>
                 </div>
-              ) : pagedStatementRows.map(row => (
-                <div key={`${row.type}-${row.id}`} className="px-4 sm:px-5 py-4 grid grid-cols-[2.5rem_minmax(0,1fr)_auto] gap-3 items-center">
+              ) : pagedStatementRows.map(row => {
+                const linkedDebt = row.type === 'SALE' || row.type === 'INVOICE'
+                  ? debtSources.find(source => source.id === row.id && (row.type === 'SALE' ? source.sourceType === 'SALE' : source.sourceType === 'INVOICE'))
+                  : undefined;
+                const canOpen = !!row.record || !!linkedDebt;
+                return (
+                <button
+                  key={`${row.type}-${row.id}`}
+                  type="button"
+                  onClick={() => linkedDebt ? openDebtRecord(linkedDebt) : row.record ? setSelectedDebtRecord(row.record) : undefined}
+                  disabled={!canOpen}
+                  className={`w-full text-left px-4 sm:px-5 py-4 grid grid-cols-[2.5rem_minmax(0,1fr)_auto] gap-3 items-center ${canOpen ? 'hover:bg-slate-50 transition-colors group' : ''}`}
+                >
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${row.type === 'PAYMENT' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
                     {row.type === 'PAYMENT' ? <Banknote size={18} /> : <ReceiptText size={18} />}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-black text-slate-900 truncate">{row.title}</p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <p className="text-sm font-black text-slate-900 truncate">{row.title}</p>
+                      {canOpen && <ExternalLink size={13} className="text-slate-300 group-hover:text-primary shrink-0" />}
+                    </div>
                     <p className="text-[10px] font-bold text-slate-400 truncate">
                       {new Date(row.timestamp).toLocaleString()} - {row.detail || row.method}
                     </p>
@@ -431,8 +665,9 @@ export default function CustomersTab() {
                     </p>
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{row.type}</p>
                   </div>
-                </div>
-              ))}
+                </button>
+              );
+              })}
             </div>
             {statementRows.length > statementPageSize && (
               <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
@@ -497,6 +732,13 @@ export default function CustomersTab() {
             setRepaymentAmount={setRepaymentAmount}
             mpesaState={mpesaState}
             onMpesaRepayment={handleMpesaRepayment}
+          />
+        )}
+        {selectedDebtRecord && (
+          <DocumentDetailsModal
+            selectedRecord={selectedDebtRecord}
+            setSelectedRecord={setSelectedDebtRecord}
+            handleRefund={async () => info('Open Documents to process a refund.')}
           />
         )}
       </div>

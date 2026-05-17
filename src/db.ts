@@ -216,6 +216,7 @@ export interface CustomerPayment {
   paymentMethod: 'CASH' | 'MPESA' | 'BANK' | 'PDQ' | 'CHEQUE';
   transactionCode?: string;
   reference: string;
+  allocations?: { sourceType: 'SALE' | 'INVOICE'; sourceId: string; amount: number }[];
   timestamp: number;
   preparedBy?: string;
   branchId: string;
