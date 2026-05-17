@@ -26,6 +26,21 @@ function trimText(value: unknown, max = 160) {
 
 async function ensureSchema(db: D1Database) {
   await db.prepare(`
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      company TEXT,
+      phone TEXT,
+      email TEXT,
+      address TEXT,
+      kraPin TEXT,
+      balance REAL DEFAULT 0,
+      branchId TEXT,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
     CREATE TABLE IF NOT EXISTS auditLogs (
       id TEXT PRIMARY KEY,
       ts INTEGER NOT NULL,
@@ -41,6 +56,18 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+
+  const supplierColumns = [
+    'address TEXT',
+    'kraPin TEXT',
+    'balance REAL DEFAULT 0',
+    'branchId TEXT',
+    'businessId TEXT',
+    'updated_at INTEGER',
+  ];
+  for (const column of supplierColumns) {
+    try { await db.prepare(`ALTER TABLE suppliers ADD COLUMN ${column}`).run(); } catch {}
+  }
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -139,4 +166,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not save supplier.' }, status);
   }
 };
-

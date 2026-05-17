@@ -229,6 +229,8 @@ CREATE TABLE IF NOT EXISTS suppliers (
     company TEXT,
     phone TEXT,
     email TEXT,
+    address TEXT,
+    kraPin TEXT,
     balance REAL,
     branchId TEXT,
     businessId TEXT,

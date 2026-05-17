@@ -43,6 +43,29 @@ function settingFlag(value: unknown, fallback = false) {
 
 async function ensureSchema(db: D1Database) {
   await db.prepare(`
+    CREATE TABLE IF NOT EXISTS purchaseOrders (
+      id TEXT PRIMARY KEY,
+      supplierId TEXT NOT NULL,
+      items TEXT NOT NULL,
+      totalAmount REAL NOT NULL,
+      status TEXT NOT NULL,
+      approvalStatus TEXT NOT NULL,
+      paymentStatus TEXT,
+      paidAmount REAL,
+      orderDate INTEGER NOT NULL,
+      expectedDate INTEGER,
+      receivedDate INTEGER,
+      invoiceNumber TEXT,
+      poNumber TEXT,
+      preparedBy TEXT,
+      approvedBy TEXT,
+      receivedBy TEXT,
+      branchId TEXT,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
     CREATE TABLE IF NOT EXISTS auditLogs (
       id TEXT PRIMARY KEY,
       ts INTEGER NOT NULL,
@@ -58,6 +81,24 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+
+  const purchaseColumns = [
+    'paymentStatus TEXT',
+    'paidAmount REAL',
+    'expectedDate INTEGER',
+    'receivedDate INTEGER',
+    'invoiceNumber TEXT',
+    'poNumber TEXT',
+    'preparedBy TEXT',
+    'approvedBy TEXT',
+    'receivedBy TEXT',
+    'branchId TEXT',
+    'businessId TEXT',
+    'updated_at INTEGER',
+  ];
+  for (const column of purchaseColumns) {
+    try { await db.prepare(`ALTER TABLE purchaseOrders ADD COLUMN ${column}`).run(); } catch {}
+  }
 }
 
 async function nextPoNumber(db: D1Database, businessId: string, branchId: string) {
@@ -227,4 +268,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not save purchase order.' }, status);
   }
 };
-
