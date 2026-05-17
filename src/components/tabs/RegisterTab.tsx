@@ -6,9 +6,12 @@ import { useStore } from '../../store';
 import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import { useToast } from '../../context/ToastContext';
 import BarcodeScanner from '../shared/BarcodeScanner';
+import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
 import { enrichProductsWithBundleStock, isBundleProduct } from '../../utils/bundleInventory';
 import { MpesaService } from '../../services/mpesa';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
+import { getAssignedHardware, getHardwareProfile, printReceiptViaAssignedPrinter } from '../../utils/hardware';
+import { getBusinessSettings } from '../../utils/settings';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -1037,9 +1040,19 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
     () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId], []
   );
+  const scannerProductsRaw = useLiveQuery(
+    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    [activeBusinessId], []
+  );
+  const businessSettings = useLiveQuery(
+    () => getBusinessSettings(activeBusinessId),
+    [activeBusinessId],
+    null
+  );
 
   const categories = ['All', ...(dbCategories?.map(c => c.name) || [])];
   const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
+  const scannerProducts = enrichProductsWithBundleStock(scannerProductsRaw || [], productIngredients || []);
 
   // Sort: in-stock → low-stock → out-of-stock
   const sorted = [...displayProducts].sort((a, b) => {
@@ -1063,6 +1076,44 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
     setTimeout(() => setRecentlyAdded(prev => { const n = new Set(prev); n.delete(product.id); return n; }), 600);
   };
 
+  const handleBarcodeScan = React.useCallback((barcode: string) => {
+    const code = barcode.trim();
+    if (!code) return;
+    const product = scannerProducts.find(prod => String(prod.barcode || '').trim() === code);
+    if (!product) {
+      setSearchQuery(code);
+      warning(`No product found for barcode ${code}.`);
+      return;
+    }
+    handleAddToCart(product);
+    setSearchQuery('');
+    setIsScannerOpen(false);
+  }, [scannerProducts, warning]);
+
+  useHardwareBarcodeScanner(handleBarcodeScan, {
+    enabled: !!activeBusinessId,
+    onError: warning,
+  });
+
+  const maybeAutoPrintReceipt = React.useCallback(async (receipt: Transaction & { recordType?: 'SALE' }) => {
+    const profile = getHardwareProfile();
+    const assignedPrinter = getAssignedHardware('RECEIPT_PRINTER');
+    if (!profile.autoPrintReceipt) return;
+
+    if (!assignedPrinter || assignedPrinter.transport === 'BROWSER_PRINT') {
+      window.setTimeout(() => window.print(), 350);
+      return;
+    }
+
+    const hasCashDrawerEvent = receipt.paymentMethod === 'CASH' || Number(receipt.splitPayments?.cashAmount || 0) > 0;
+    const result = await printReceiptViaAssignedPrinter(receipt, {
+      storeName: businessSettings?.storeName || 'Mtaani POS',
+      location: businessSettings?.location || 'Nairobi, Kenya',
+      openDrawer: profile.cashDrawerTrigger === 'RECEIPT_PRINT' && hasCashDrawerEvent,
+    });
+    if (!result.ok) warning(result.message);
+  }, [businessSettings?.location, businessSettings?.storeName, warning]);
+
   const completeCheckout = async (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => {
     if (!handleCheckout || cart.length === 0 || isCheckingOut) return null;
     setIsCheckingOut(true);
@@ -1070,7 +1121,9 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
       const result = await handleCheckout(status, method, options?.mpesaRef || options?.pdqRef || options?.paymentReference, options?.customerName, options);
       if (result) {
         setIsMobileCheckoutOpen(false);
-        setLastReceipt({ ...result, recordType: 'SALE' });
+        const receipt = { ...result, recordType: 'SALE' as const };
+        setLastReceipt(receipt);
+        void maybeAutoPrintReceipt(receipt);
       }
       return result;
     } catch (err: any) {
@@ -1134,6 +1187,15 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
               className="w-full pl-10 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/15 focus:border-primary outline-none shadow-sm"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key !== 'Enter') return;
+                const code = searchQuery.trim();
+                const product = scannerProducts.find(prod => String(prod.barcode || '').trim() === code);
+                if (product) {
+                  e.preventDefault();
+                  handleBarcodeScan(code);
+                }
+              }}
             />
             {searchQuery && (
               <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -1173,8 +1235,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
         <div className="bg-slate-950 rounded-2xl overflow-hidden flex-shrink-0">
           <div className="relative aspect-video max-h-44">
             <BarcodeScanner onScan={barcode => {
-              const p = displayProducts.find(prod => prod.barcode === barcode);
-              if (p) { handleAddToCart(p); setIsScannerOpen(false); }
+              handleBarcodeScan(barcode);
             }} />
             <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-primary/60 shadow-[0_0_10px_rgba(37,99,235,0.8)] animate-pulse pointer-events-none" />
           </div>

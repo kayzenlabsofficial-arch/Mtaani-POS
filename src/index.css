@@ -357,10 +357,21 @@ button, a, input, select, textarea {
 
   .no-print { display: none !important; }
 
+  body * {
+    visibility: hidden !important;
+  }
+
+  #printable-content,
+  #printable-content * {
+    visibility: visible !important;
+  }
+
   #printable-content {
     background: white !important;
     width: 100% !important;
-    position: static !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
     margin: 0 !important;
   }
 

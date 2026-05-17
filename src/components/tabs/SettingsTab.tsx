@@ -6,12 +6,31 @@ import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { DEFAULT_CASH_DRAWER_LIMIT, DEFAULT_CASH_FLOAT_TARGET } from '../../utils/ownerMode';
 import { getBusinessSettings, settingsIdForBusiness } from '../../utils/settings';
+import {
+  assignBrowserPrinter,
+  assignKeyboardScanner,
+  clearHardwareAssignment,
+  getHardwareSupport,
+  listGrantedHardwareDevices,
+  loadHardwareAssignments,
+  openAssignedCashDrawer,
+  requestBluetoothHardwareDevice,
+  requestCameraScanner,
+  requestHidHardwareDevice,
+  requestSerialHardwareDevice,
+  requestUsbHardwareDevice,
+  saveHardwareAssignment,
+  testAssignedReceiptPrinter,
+  type HardwareDeviceRole,
+  type HardwareDeviceSummary,
+  type HardwareSupport,
+} from '../../utils/hardware';
 
 
 export default function SettingsTab({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
   const isAdmin = useStore((state) => state.isAdmin);
   const activeBusinessId = useStore((state) => state.activeBusinessId);
-  const { success } = useToast();
+  const { success, warning, error } = useToast();
   
   const savedSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId], null);
   const [storeSettings, setStoreSettings] = useState({
@@ -32,6 +51,11 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
   const [isUpdating, setIsUpdating] = useState(false);
   const [openSection, setOpenSection] = useState<'IDENTITY' | 'HARDWARE' | 'SYSTEM' | 'SECURITY'>('IDENTITY');
   const [openHardwareSub, setOpenHardwareSub] = useState<'SCANNER' | 'PRINTER' | 'DRAWER'>('SCANNER');
+  const [hardwareDevices, setHardwareDevices] = useState<HardwareDeviceSummary[]>([]);
+  const [hardwareAssignments, setHardwareAssignments] = useState(loadHardwareAssignments());
+  const [hardwareSupport, setHardwareSupport] = useState<HardwareSupport>(() => getHardwareSupport());
+  const [isHardwareBusy, setIsHardwareBusy] = useState(false);
+  const [hardwareMessage, setHardwareMessage] = useState('');
   const [hardwareProfile, setHardwareProfile] = useState({
     scannerMode: 'KEYBOARD_WEDGE',
     scannerDebounceMs: 120,
@@ -77,6 +101,112 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
     }
   }, []);
 
+  const activeHardwareRole: HardwareDeviceRole = openHardwareSub === 'PRINTER'
+    ? 'RECEIPT_PRINTER'
+    : openHardwareSub === 'DRAWER'
+      ? 'CASH_DRAWER'
+      : 'BARCODE_SCANNER';
+
+  const refreshHardwareDevices = async (quiet = false) => {
+    setIsHardwareBusy(true);
+    try {
+      setHardwareSupport(getHardwareSupport());
+      const devices = await listGrantedHardwareDevices();
+      setHardwareDevices(devices);
+      setHardwareAssignments(loadHardwareAssignments());
+      if (!quiet) success(`Found ${devices.length} browser-accessible hardware item${devices.length === 1 ? '' : 's'}.`);
+    } catch (err: any) {
+      error(err?.message || 'Could not scan hardware devices.');
+    } finally {
+      setIsHardwareBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshHardwareDevices(true);
+  }, []);
+
+  const connectHardware = async (
+    transport: 'BROWSER_PRINT' | 'USB' | 'SERIAL' | 'HID' | 'BLUETOOTH' | 'CAMERA' | 'KEYBOARD',
+    role: HardwareDeviceRole = activeHardwareRole,
+  ) => {
+    setIsHardwareBusy(true);
+    setHardwareMessage('');
+    try {
+      let device: HardwareDeviceSummary | null = null;
+      if (transport === 'BROWSER_PRINT') {
+        assignBrowserPrinter();
+        device = {
+          key: 'browser-print:chrome-destinations',
+          transport: 'BROWSER_PRINT',
+          name: 'Chrome printer',
+          granted: true,
+          assignedRole: 'RECEIPT_PRINTER',
+        };
+        setHardwareProfile(prev => ({ ...prev, printerConnection: 'BROWSER_PRINT', printerType: 'THERMAL_80' }));
+        setHardwareMessage('Receipts will open Chrome printer destinations like your HP, Kyocera, PDF, and network printers.');
+      }
+      if (transport === 'USB') device = await requestUsbHardwareDevice(role);
+      if (transport === 'SERIAL') device = await requestSerialHardwareDevice(role);
+      if (transport === 'HID') device = await requestHidHardwareDevice(role);
+      if (transport === 'BLUETOOTH') device = await requestBluetoothHardwareDevice(role);
+      if (transport === 'CAMERA') device = await requestCameraScanner();
+      if (transport === 'KEYBOARD') {
+        assignKeyboardScanner();
+        device = {
+          key: 'keyboard:focused-input',
+          transport: 'KEYBOARD',
+          name: 'USB keyboard scanner',
+          granted: true,
+          assignedRole: 'BARCODE_SCANNER',
+        };
+      }
+
+      setHardwareAssignments(loadHardwareAssignments());
+      await refreshHardwareDevices(true);
+      success(`${device?.name || 'Device'} assigned to ${role.replace('_', ' ').toLowerCase()}.`);
+      if (transport === 'BLUETOOTH') {
+        setHardwareMessage('Bluetooth discovery uses the browser BLE API. Classic Bluetooth printers/scanners still need their vendor driver or keyboard mode.');
+      }
+    } catch (err: any) {
+      error(err?.message || 'Hardware connection was cancelled or blocked.');
+    } finally {
+      setIsHardwareBusy(false);
+    }
+  };
+
+  const assignDeviceRole = (device: HardwareDeviceSummary, role: HardwareDeviceRole) => {
+    setHardwareAssignments(saveHardwareAssignment(device, role));
+    setHardwareDevices(prev => prev.map(item => item.key === device.key && item.transport === device.transport ? { ...item, assignedRole: role } : item));
+    success(`${device.name} assigned.`);
+  };
+
+  const clearDeviceRole = (role: HardwareDeviceRole) => {
+    setHardwareAssignments(clearHardwareAssignment(role));
+    setHardwareDevices(prev => prev.map(item => item.assignedRole === role ? { ...item, assignedRole: undefined } : item));
+    success('Hardware assignment cleared.');
+  };
+
+  const handleTestPrint = async () => {
+    setIsHardwareBusy(true);
+    try {
+      const result = await testAssignedReceiptPrinter(storeSettings.storeName, storeSettings.location);
+      result.ok ? success(result.message) : warning(result.message);
+    } finally {
+      setIsHardwareBusy(false);
+    }
+  };
+
+  const handleOpenDrawer = async () => {
+    setIsHardwareBusy(true);
+    try {
+      const result = await openAssignedCashDrawer();
+      result.ok ? success(result.message) : warning(result.message);
+    } finally {
+      setIsHardwareBusy(false);
+    }
+  };
+
   const handleUpdate = async () => {
     setIsUpdating(true);
     try {
@@ -121,8 +251,28 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
 
   const saveHardware = () => {
     localStorage.setItem('mtaani_hardware_profile_v1', JSON.stringify(hardwareProfile));
-    success('Hardware profile saved for this Windows terminal.');
+    success('Hardware profile saved for this browser terminal.');
   };
+
+  const assignedScanner = hardwareAssignments.find(item => item.role === 'BARCODE_SCANNER');
+  const assignedPrinter = hardwareAssignments.find(item => item.role === 'RECEIPT_PRINTER');
+  const assignedDrawer = hardwareAssignments.find(item => item.role === 'CASH_DRAWER');
+  const isChromePrinter = assignedPrinter?.transport === 'BROWSER_PRINT';
+  const directPrinterReady = !!assignedPrinter && !isChromePrinter;
+  const activeAssignment = hardwareAssignments.find(item => item.role === activeHardwareRole);
+  const roleCopy: Record<HardwareDeviceRole, string> = {
+    BARCODE_SCANNER: 'barcode scanner',
+    RECEIPT_PRINTER: 'receipt printer',
+    CASH_DRAWER: 'cash drawer',
+  };
+  const supportItems = [
+    { label: 'Secure', ok: hardwareSupport.secureContext },
+    { label: 'USB', ok: hardwareSupport.webUsb },
+    { label: 'Serial', ok: hardwareSupport.webSerial },
+    { label: 'HID', ok: hardwareSupport.webHid },
+    { label: 'Bluetooth', ok: hardwareSupport.webBluetooth },
+    { label: 'Camera', ok: hardwareSupport.camera },
+  ];
 
   return (
     <div className="pb-24 animate-in fade-in w-full">
@@ -208,67 +358,134 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                <h3 className="text-base font-bold text-slate-900 mb-6 flex items-center gap-2">
                   <Terminal className="text-indigo-600" /> Hardware settings
                </h3>
-               
-               <div className="flex bg-slate-50 p-2 rounded-2xl border-2 border-slate-100 mb-6">
-                  {[
-                    { id: 'SCANNER', label: 'Scanner', icon: ScanLine },
-                    { id: 'PRINTER', label: 'Printer', icon: Printer },
-                    { id: 'DRAWER', label: 'Drawer', icon: Usb }
-                  ].map(tab => (
-                    <button 
-                      key={tab.id}
-                      onClick={() => setOpenHardwareSub(tab.id as any)}
-                      className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${openHardwareSub === tab.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                      <tab.icon size={14} /> {tab.label}
-                    </button>
-                  ))}
+               <div className="space-y-4">
+                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                     <div className="flex min-w-0 items-center gap-3">
+                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm">
+                         <Printer size={20} />
+                       </div>
+                       <div className="min-w-0">
+                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Printer</p>
+                         <p className="truncate text-sm font-black text-slate-900">{assignedPrinter?.deviceName || 'Not connected'}</p>
+                       </div>
+                     </div>
+                     {assignedPrinter && (
+                       <button type="button" onClick={() => clearDeviceRole('RECEIPT_PRINTER')} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-500">
+                         Clear
+                       </button>
+                     )}
+                   </div>
+                   <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                     <button type="button" disabled={isHardwareBusy} onClick={() => connectHardware('BROWSER_PRINT', 'RECEIPT_PRINTER')} className="rounded-xl bg-slate-900 px-3 py-3 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-50">
+                       Chrome printer
+                     </button>
+                     <button type="button" disabled={isHardwareBusy || !hardwareSupport.webUsb} onClick={() => connectHardware('USB', 'RECEIPT_PRINTER')} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-[9px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-40">
+                       USB thermal
+                     </button>
+                     <button type="button" disabled={isHardwareBusy || !hardwareSupport.webSerial} onClick={() => connectHardware('SERIAL', 'RECEIPT_PRINTER')} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-[9px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-40">
+                       Serial
+                     </button>
+                     <button type="button" disabled={isHardwareBusy || !hardwareSupport.webBluetooth} onClick={() => connectHardware('BLUETOOTH', 'RECEIPT_PRINTER')} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-[9px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-40">
+                       Bluetooth
+                     </button>
+                     <button type="button" disabled={isHardwareBusy || !directPrinterReady} onClick={handleTestPrint} className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-3 text-[9px] font-black uppercase tracking-widest text-indigo-700 disabled:opacity-40">
+                       Test
+                     </button>
+                   </div>
+                 </div>
+
+                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                     <div className="flex min-w-0 items-center gap-3">
+                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">
+                         <ScanLine size={20} />
+                       </div>
+                       <div className="min-w-0">
+                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Scanner</p>
+                         <p className="truncate text-sm font-black text-slate-900">{assignedScanner?.deviceName || 'Not connected'}</p>
+                       </div>
+                     </div>
+                     {assignedScanner && (
+                       <button type="button" onClick={() => clearDeviceRole('BARCODE_SCANNER')} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-500">
+                         Clear
+                       </button>
+                     )}
+                   </div>
+                   <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                     <button type="button" disabled={isHardwareBusy} onClick={() => connectHardware('KEYBOARD', 'BARCODE_SCANNER')} className="rounded-xl bg-slate-900 px-3 py-3 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-50">
+                       USB scanner
+                     </button>
+                     <button type="button" disabled={isHardwareBusy || !hardwareSupport.camera} onClick={() => connectHardware('CAMERA', 'BARCODE_SCANNER')} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-[9px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-40">
+                       Camera
+                     </button>
+                     <button type="button" disabled={isHardwareBusy || !hardwareSupport.webSerial} onClick={() => connectHardware('SERIAL', 'BARCODE_SCANNER')} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-[9px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-40">
+                       Serial
+                     </button>
+                     <button type="button" disabled={isHardwareBusy || !hardwareSupport.webHid} onClick={() => connectHardware('HID', 'BARCODE_SCANNER')} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-[9px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-40">
+                       HID
+                     </button>
+                     <button type="button" disabled={isHardwareBusy || !hardwareSupport.webBluetooth} onClick={() => connectHardware('BLUETOOTH', 'BARCODE_SCANNER')} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-[9px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-40">
+                       Bluetooth
+                     </button>
+                   </div>
+                 </div>
+
+                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                     <div className="flex min-w-0 items-center gap-3">
+                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm">
+                         <Usb size={20} />
+                       </div>
+                       <div className="min-w-0">
+                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Drawer</p>
+                         <p className="truncate text-sm font-black text-slate-900">{assignedDrawer?.deviceName || (directPrinterReady ? 'Through receipt printer' : 'Not connected')}</p>
+                       </div>
+                     </div>
+                     {assignedDrawer && (
+                       <button type="button" onClick={() => clearDeviceRole('CASH_DRAWER')} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-500">
+                         Clear
+                       </button>
+                     )}
+                   </div>
+                   <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                     <button
+                       type="button"
+                       disabled={isHardwareBusy || !directPrinterReady}
+                       onClick={() => {
+                         if (!assignedPrinter || isChromePrinter) return;
+                         setHardwareAssignments(saveHardwareAssignment({
+                           key: assignedPrinter.deviceKey,
+                           transport: assignedPrinter.transport,
+                           name: assignedPrinter.deviceName,
+                           vendorId: assignedPrinter.vendorId,
+                           productId: assignedPrinter.productId,
+                           granted: true,
+                         }, 'CASH_DRAWER'));
+                         success('Cash drawer linked to receipt printer.');
+                       }}
+                       className="rounded-xl bg-slate-900 px-3 py-3 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-40"
+                     >
+                       Printer pulse
+                     </button>
+                     <button type="button" disabled={isHardwareBusy || !hardwareSupport.webUsb} onClick={() => connectHardware('USB', 'CASH_DRAWER')} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-[9px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-40">
+                       USB
+                     </button>
+                     <button type="button" disabled={isHardwareBusy || !hardwareSupport.webSerial} onClick={() => connectHardware('SERIAL', 'CASH_DRAWER')} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-[9px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-40">
+                       Serial
+                     </button>
+                     <button type="button" disabled={isHardwareBusy || (!assignedDrawer && !directPrinterReady)} onClick={handleOpenDrawer} className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-[9px] font-black uppercase tracking-widest text-emerald-700 disabled:opacity-40">
+                       Open
+                     </button>
+                   </div>
+                 </div>
+
+                 {hardwareMessage && (
+                   <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3 text-[11px] font-bold leading-relaxed text-amber-800">
+                     {hardwareMessage}
+                   </div>
+                 )}
                </div>
-
-               <div className="space-y-6 min-h-[300px]">
-                  {openHardwareSub === 'SCANNER' && (
-                    <div className="animate-in slide-in-from-bottom-2">
-                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Scanner mode</label>
-                       <select value={hardwareProfile.scannerMode} onChange={e => setHardwareProfile({ ...hardwareProfile, scannerMode: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm mb-6">
-                         <option value="KEYBOARD_WEDGE">Standard scanner (USB)</option>
-                         <option value="CAMERA">Use camera</option>
-                       </select>
-                       
-                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Scanner speed (ms)</label>
-                       <input type="number" value={hardwareProfile.scannerDebounceMs} onChange={e => setHardwareProfile({ ...hardwareProfile, scannerDebounceMs: Number(e.target.value) || 120 })} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm" />
-                    </div>
-                  )}
-
-                  {openHardwareSub === 'PRINTER' && (
-                    <div className="animate-in slide-in-from-bottom-2">
-                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Printer name</label>
-                       <input type="text" value={hardwareProfile.windowsDriverName} onChange={e => setHardwareProfile({ ...hardwareProfile, windowsDriverName: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm mb-6" placeholder="e.g. EPSON TM-T20X" />
-                       
-                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Paper size</label>
-                       <select value={hardwareProfile.printerType} onChange={e => setHardwareProfile({ ...hardwareProfile, printerType: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm">
-                         <option value="THERMAL_80">Standard thermal 80mm</option>
-                         <option value="A4">A4 office / laser</option>
-                       </select>
-                    </div>
-                  )}
-
-                  {openHardwareSub === 'DRAWER' && (
-                    <div className="animate-in slide-in-from-bottom-2">
-                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Cash drawer</label>
-                       <select value={hardwareProfile.cashDrawerTrigger} onChange={e => setHardwareProfile({ ...hardwareProfile, cashDrawerTrigger: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none shadow-sm">
-                         <option value="RECEIPT_PRINT">Open on sale</option>
-                         <option value="MANUAL_ONLY">Admin only</option>
-                       </select>
-                    </div>
-                  )}
-               </div>
-
-               <button
-                 onClick={saveHardware}
-                 className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-indigo press flex items-center justify-center gap-3 mt-8"
-               >
-                 <Usb size={18} /> Save hardware settings
-               </button>
             </div>
 
             <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">

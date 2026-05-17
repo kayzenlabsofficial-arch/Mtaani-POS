@@ -3,6 +3,7 @@ import { ReceiptText, RotateCcw, Minus, Plus, Wallet, Landmark, DollarSign, Cale
 import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction, type Expense, type SupplierPayment, type CashPick } from '../../db';
 import { generateAndShareDocument } from '../../utils/shareUtils';
+import { getAssignedHardware, printReceiptViaAssignedPrinter } from '../../utils/hardware';
 import { CalendarCheck, AlertTriangle, ArrowRight, TrendingUp, ShieldCheck } from 'lucide-react';
 import { useStore } from '../../store';
 import AdminVerificationModal from './AdminVerificationModal';
@@ -26,6 +27,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const isAdmin = useStore(state => state.isAdmin);
   const [isSharing, setIsSharing] = useState(false);
   const [isSavingPDF, setIsSavingPDF] = useState(false);
+  const [isHardwarePrinting, setIsHardwarePrinting] = useState(false);
 
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
@@ -191,6 +193,30 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
       toastError('PDF generation failed. Please try again.');
     } finally {
       setIsSavingPDF(false);
+    }
+  };
+
+  const handleHardwarePrint = async () => {
+    if (!selectedRecord || !isSale) return;
+    setIsHardwarePrinting(true);
+    try {
+      const assignedPrinter = getAssignedHardware('RECEIPT_PRINTER');
+      if (!assignedPrinter || assignedPrinter.transport === 'BROWSER_PRINT') {
+        window.print();
+        success('Choose a printer in Chrome.');
+        return;
+      }
+
+      const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
+      const result = await printReceiptViaAssignedPrinter(recordWithDetails, {
+        storeName,
+        location: storeLocation,
+      });
+      result.ok ? success(result.message) : toastError(result.message);
+    } catch (err: any) {
+      toastError(err?.message || 'Could not print receipt.');
+    } finally {
+      setIsHardwarePrinting(false);
     }
   };
 
@@ -720,6 +746,16 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
             </button>
 
             <div className="flex gap-2">
+              {isSale && (
+                <button
+                  onClick={handleHardwarePrint}
+                  disabled={isSharing || isSavingPDF || isHardwarePrinting}
+                  className="flex-1 py-3 bg-indigo-600 text-white font-bold text-[10px]   rounded-xl flex items-center justify-center gap-2 transition-colors active:bg-indigo-700 disabled:opacity-50"
+                >
+                  {isHardwarePrinting ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
+                  {isHardwarePrinting ? 'Printing...' : 'Print receipt'}
+                </button>
+              )}
               {/* Save PDF — direct download */}
               <button
                 onClick={handleSavePDF}
