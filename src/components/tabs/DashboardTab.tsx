@@ -9,6 +9,7 @@ import { recordAuditEvent } from '../../utils/auditLog';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
 import { getBusinessSettings } from '../../utils/settings';
+import { belongsToActiveBranch } from '../../utils/branchScope';
 import {
   Banknote,
   BarChart3,
@@ -108,8 +109,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   );
 
   const products = useLiveQuery(
-    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : [],
-    [activeBusinessId], []
+    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveBranch(p, activeBranchId)).toArray() : [],
+    [activeBusinessId, activeBranchId], []
   );
   const productIngredients = useLiveQuery(
     () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),

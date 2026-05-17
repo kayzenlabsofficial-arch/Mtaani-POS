@@ -8,6 +8,7 @@ import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { getBusinessSettings } from '../../utils/settings';
+import { belongsToActiveBranch } from '../../utils/branchScope';
 
 
 export default function PurchasesTab() {
@@ -35,12 +36,12 @@ export default function PurchasesTab() {
   
   const allPurchaseOrders = useLiveQuery(() => activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
   const allSuppliers = useLiveQuery(
-    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId],
+    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
     []
   );
   const allProducts = useLiveQuery(
-    () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveBranch(p, activeBranchId)).toArray() : Promise.resolve([]),
     [activeBusinessId, activeBranchId],
     []
   );

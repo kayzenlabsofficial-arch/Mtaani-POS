@@ -10,6 +10,7 @@ import { applyApprovedExpenseEffects, ensureExpenseCanBeApproved } from './utils
 import { shouldAutoApproveOwnerAction } from './utils/ownerMode';
 import { calculateCashDrawer, getTodayStartMs } from './utils/cashDrawer';
 import { getBusinessSettings } from './utils/settings';
+import { belongsToActiveBranch } from './utils/branchScope';
 
 // Modular Components
 import RegisterTab from './components/tabs/RegisterTab';
@@ -57,7 +58,7 @@ export default function MtaaniPOS() {
     isLoggingIn, handleLogin,
     handleLogout, loginError,
     currentUser, isSystemAdmin,
-    activeBusinessId, activeBranchId, setActiveBranchId,
+    activeBusinessId, activeBranchId, handleBranchChange,
     handleCheckout,
     updateServiceWorker, needRefresh
   } = useMtaaniPOS();
@@ -82,7 +83,10 @@ export default function MtaaniPOS() {
 
   const expenseAccounts = useLiveQuery(() => activeBusinessId ? db.expenseAccounts.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
   const financialAccounts = useLiveQuery(() => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
-  const products = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
+  const products = useLiveQuery(
+    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveBranch(p, activeBranchId)).toArray() : [],
+    [activeBusinessId, activeBranchId]
+  );
   const transactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
   const expenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
   const cashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
@@ -199,7 +203,7 @@ export default function MtaaniPOS() {
           activeBusiness={activeBusiness}
           activeBranch={activeBranch}
           branches={branches}
-          onBranchChange={setActiveBranchId}
+          onBranchChange={handleBranchChange}
           isSyncing={isSyncing}
           onSync={handleSync}
           isOnline={isOnline}

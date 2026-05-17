@@ -12,6 +12,7 @@ import { MpesaService } from '../../services/mpesa';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { getAssignedHardware, getHardwareProfile, printReceiptViaAssignedPrinter } from '../../utils/hardware';
 import { getBusinessSettings } from '../../utils/settings';
+import { belongsToActiveBranch } from '../../utils/branchScope';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -176,8 +177,8 @@ function SalePanel({
   const checkoutLockRef = useRef(false);
 
   const customers = useLiveQuery(
-    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).sortBy('name') : Promise.resolve([]),
-    [activeBusinessId],
+    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveBranch(c, activeBranchId)).sortBy('name') : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
     []
   );
 
@@ -1012,7 +1013,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
   const { warning, error } = useToast();
 
   // ✅ Only require activeBusinessId — branch does not filter products
-  const { addToCart, activeBusinessId, cart } = useStore();
+  const { addToCart, activeBusinessId, activeBranchId, cart } = useStore();
 
   const products = useLiveQuery(
     () => {
@@ -1020,29 +1021,31 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
       const query = db.products.where('businessId').equals(activeBusinessId);
       if (selectedCategory !== 'All') {
         return query.filter(p =>
+          belongsToActiveBranch(p, activeBranchId) &&
           p.category === selectedCategory &&
           (!searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.barcode && p.barcode.includes(searchQuery)))
         ).toArray();
       }
       return query.filter(p =>
-        !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.barcode && p.barcode.includes(searchQuery))
+        belongsToActiveBranch(p, activeBranchId) &&
+        (!searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.barcode && p.barcode.includes(searchQuery)))
       ).toArray();
     },
-    [searchQuery, selectedCategory, activeBusinessId],
+    [searchQuery, selectedCategory, activeBusinessId, activeBranchId],
     []
   );
 
   const dbCategories = useLiveQuery(
-    () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId], []
+    () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveBranch(c, activeBranchId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
   );
   const productIngredients = useLiveQuery(
     () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId], []
   );
   const scannerProductsRaw = useLiveQuery(
-    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId], []
+    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveBranch(p, activeBranchId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
   );
   const businessSettings = useLiveQuery(
     () => getBusinessSettings(activeBusinessId),

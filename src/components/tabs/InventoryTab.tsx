@@ -8,6 +8,7 @@ import { useToast } from '../../context/ToastContext';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { enrichProductsWithBundleStock, getProductIngredients, isBundleProduct } from '../../utils/bundleInventory';
+import { belongsToActiveBranch } from '../../utils/branchScope';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -84,15 +85,17 @@ export default function InventoryTab() {
       const query = db.products.where('businessId').equals(activeBusinessId);
       if (selectedCategory) {
         return query.filter(p =>
+          belongsToActiveBranch(p, activeBranchId) &&
           p.category === selectedCategory &&
           (p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode && p.barcode.includes(search)))
         ).toArray();
       }
       return query.filter(p =>
-        p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode && p.barcode.includes(search))
+        belongsToActiveBranch(p, activeBranchId) &&
+        (p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode && p.barcode.includes(search)))
       ).toArray();
     },
-    [search, selectedCategory, activeBusinessId], []
+    [search, selectedCategory, activeBusinessId, activeBranchId], []
   );
   const productIngredients = useLiveQuery(
     () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
@@ -100,8 +103,8 @@ export default function InventoryTab() {
   );
 
   const categories = useLiveQuery(
-    () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId], []
+    () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveBranch(c, activeBranchId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
   );
 
   const selectedMovements = useLiveQuery(

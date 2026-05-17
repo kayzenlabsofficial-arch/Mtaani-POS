@@ -23,6 +23,7 @@ import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { getBusinessSettings } from '../../utils/settings';
+import { belongsToActiveBranch } from '../../utils/branchScope';
 
 type DraftLine = SalesInvoiceItem & { id: string };
 type ViewMode = 'INVOICES' | 'SERVICES';
@@ -82,13 +83,13 @@ export default function SalesInvoicesTab() {
   const [isSaving, setIsSaving] = React.useState(false);
 
   const customers = useLiveQuery(
-    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId],
+    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveBranch(c, activeBranchId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
     []
   );
   const products = useLiveQuery(
-    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId],
+    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(product => belongsToActiveBranch(product, activeBranchId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
     []
   );
   const services = useLiveQuery(
@@ -105,7 +106,7 @@ export default function SalesInvoicesTab() {
   );
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
 
-  const visibleProducts = (products || []).filter(product => !product.branchId || product.branchId === activeBranchId);
+  const visibleProducts = products || [];
   const activeServices = (services || []).filter(service => Number(service.isActive) !== 0);
 
   const customerOptions = (customers || []).map(customer => ({

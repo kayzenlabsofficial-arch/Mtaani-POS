@@ -6,6 +6,7 @@ import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 import { settleSupplierPayment, type SupplierPaymentInput } from '../../utils/supplierLedger';
+import { belongsToActiveBranch } from '../../utils/branchScope';
 
 
 export default function SupplierPaymentsTab({ financialAccounts }: { financialAccounts: any[] }) {
@@ -23,8 +24,8 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
   const activeBusinessId = useStore(state => state.activeBusinessId);
   
   const allSuppliers = useLiveQuery(
-    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId],
+    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
     []
   );
   const allPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;

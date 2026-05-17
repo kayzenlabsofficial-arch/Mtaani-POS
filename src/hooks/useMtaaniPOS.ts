@@ -22,7 +22,8 @@ export function useMtaaniPOS() {
     cart, clearCart,
     currentUser, login, logout, isSystemAdmin,
     activeBusinessId, setActiveBusinessId,
-    activeBranchId, setActiveBranchId
+    activeBranchId, setActiveBranchId,
+    setActiveShift
   } = useStore();
 
   const { success, error } = useToast();
@@ -178,6 +179,14 @@ export function useMtaaniPOS() {
     }
   };
 
+  const handleBranchChange = (branchId: string | null) => {
+    if (branchId === activeBranchId) return;
+    clearCart();
+    setSelectedCustomerId(null);
+    setActiveShift(null);
+    setActiveBranchId(branchId);
+  };
+
   const handleCheckout = async (status: 'PAID' | 'UNPAID', method: string, mpesaRef?: string, customerName?: string, splitData?: any) => {
     if (cart.length === 0) {
       error("Add at least one item before completing the sale.");
@@ -327,7 +336,7 @@ export function useMtaaniPOS() {
     isLoggingIn, handleLogin,
     handleLogout, loginError,
     currentUser, isSystemAdmin,
-    activeBusinessId, activeBranchId, setActiveBranchId,
+    activeBusinessId, activeBranchId, setActiveBranchId, handleBranchChange,
     handleCheckout,
     selectedCustomerId, setSelectedCustomerId,
     updateServiceWorker, needRefresh

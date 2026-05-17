@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 import SupplierLedgerModal from '../modals/SupplierLedgerModal';
 import { settleSupplierPayment, type SupplierPaymentInput } from '../../utils/supplierLedger';
+import { belongsToActiveBranch } from '../../utils/branchScope';
 
 
 export default function SuppliersTab({ setActiveTab, financialAccounts }: { setActiveTab?: (tab: string) => void, financialAccounts: any[] }) {
@@ -26,13 +27,13 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
   const [isSaving, setIsSaving] = useState(false);
 
   const allSuppliers = useLiveQuery(
-    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId],
+    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
     []
   );
   
   const allProducts = useLiveQuery(
-    () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
+    () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveBranch(p, activeBranchId)).toArray() : Promise.resolve([]),
     [activeBusinessId, activeBranchId],
     []
   );

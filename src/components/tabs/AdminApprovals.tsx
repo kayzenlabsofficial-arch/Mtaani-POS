@@ -6,6 +6,7 @@ import { useStore } from '../../store';
 import { Check, X, Package, Banknote, Clock, AlertCircle, FileMinus, RotateCcw, ClipboardList, PackagePlus, Eye, ChevronRight } from 'lucide-react';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { approveExpenseRequest, approveRefundTransaction } from '../../utils/approvalWorkflows';
+import { belongsToActiveBranch } from '../../utils/branchScope';
 
 export default function AdminApprovals() {
   const currentUser = useStore(state => state.currentUser);
@@ -18,8 +19,8 @@ export default function AdminApprovals() {
   const pendingRefunds = useLiveQuery(() => activeBusinessId && activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING_REFUND').toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
   const pendingPOs = useLiveQuery(() => activeBusinessId && activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).and(x => x.businessId === activeBusinessId && x.approvalStatus === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
   const allSuppliers = useLiveQuery(
-    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId],
+    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
     []
   );
   

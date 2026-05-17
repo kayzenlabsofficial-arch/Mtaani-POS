@@ -6,6 +6,7 @@ import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { MpesaService } from '../../services/mpesa';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
+import { belongsToActiveBranch } from '../../utils/branchScope';
 
 type DebtSourceType = 'SALE' | 'INVOICE';
 type DebtAllocation = { sourceType: DebtSourceType; sourceId: string; amount: number };
@@ -91,8 +92,8 @@ export default function CustomersTab() {
   }, [statementCustomerId]);
 
   const allCustomers = useLiveQuery(
-    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId],
+    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveBranch(c, activeBranchId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
     []
   );
   const statementSales = useLiveQuery(
