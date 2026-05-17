@@ -51,13 +51,6 @@ async function ensureMpesaLedgerSchema(db: D1Database) {
   }
 }
 
-function paymentStatus(resultCode: unknown) {
-  const code = Number(resultCode);
-  if (code === 0) return 'PAID';
-  if (code === 999) return 'PENDING';
-  return 'FAILED';
-}
-
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -80,7 +73,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
     await ensureMpesaLedgerSchema(env.DB);
 
-    const clauses = ['m.businessId = ?', 'm.branchId = ?'];
+    const clauses = ['m.businessId = ?', 'm.branchId = ?', 'COALESCE(m.resultCode, -1) = 0'];
     const bindings: unknown[] = [businessId, branchId];
     if (from) {
       clauses.push('m.timestamp >= ?');
@@ -94,10 +87,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       clauses.push(`(
         UPPER(COALESCE(m.receiptNumber, '')) LIKE ?
         OR UPPER(COALESCE(m.checkoutRequestId, '')) LIKE ?
+        OR UPPER(COALESCE(m.merchantRequestId, '')) LIKE ?
         OR UPPER(COALESCE(m.phoneNumber, '')) LIKE ?
         OR UPPER(COALESCE(m.resultDesc, '')) LIKE ?
+        OR CAST(COALESCE(m.amount, 0) AS TEXT) LIKE ?
       )`);
-      bindings.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+      bindings.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
     const where = clauses.join(' AND ');
@@ -162,7 +157,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           phoneNumber: row.phoneNumber,
           resultCode: Number(row.resultCode),
           resultDesc: row.resultDesc,
-          paymentStatus: paymentStatus(row.resultCode),
+          paymentStatus: 'PAID',
           utilizationStatus: linkedTransactionId ? 'UTILIZED' : 'UNUTILIZED',
           linkedTransactionId,
           linkedReceiptNumber: linkedTransactionId ? String(linkedTransactionId).split('-')[0].toUpperCase() : null,

@@ -27,6 +27,7 @@ export default function DocumentsTab() {
   const [dateEnd, setDateEnd] = useState(todayInput);
   const [page, setPage] = useState(1);
   const [mpesaRows, setMpesaRows] = useState<MpesaLedgerRow[]>([]);
+  const [mpesaView, setMpesaView] = useState<'ALL' | 'UNUTILIZED' | 'UTILIZED'>('ALL');
   const [isMpesaLoading, setIsMpesaLoading] = useState(false);
   const [mpesaError, setMpesaError] = useState('');
   const pageSize = 50;
@@ -115,16 +116,24 @@ export default function DocumentsTab() {
   const totalPages = Math.max(1, Math.ceil(filteredDocs.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pagedDocs = filteredDocs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const mpesaTotalPages = Math.max(1, Math.ceil(mpesaRows.length / pageSize));
+  const successfulMpesaRows = mpesaRows.filter(row => row.paymentStatus === 'PAID' || Number(row.resultCode) === 0);
+  const paidNotUtilizedRows = successfulMpesaRows.filter(row => row.utilizationStatus !== 'UTILIZED');
+  const utilizedMpesaRows = successfulMpesaRows.filter(row => row.utilizationStatus === 'UTILIZED');
+  const visibleMpesaRows = mpesaView === 'UNUTILIZED'
+    ? paidNotUtilizedRows
+    : mpesaView === 'UTILIZED'
+      ? utilizedMpesaRows
+      : successfulMpesaRows;
+  const mpesaTotalPages = Math.max(1, Math.ceil(visibleMpesaRows.length / pageSize));
   const mpesaCurrentPage = Math.min(page, mpesaTotalPages);
-  const pagedMpesaRows = mpesaRows.slice((mpesaCurrentPage - 1) * pageSize, mpesaCurrentPage * pageSize);
-  const visibleCount = filterType === 'MPESA' ? mpesaRows.length : filteredDocs.length;
+  const pagedMpesaRows = visibleMpesaRows.slice((mpesaCurrentPage - 1) * pageSize, mpesaCurrentPage * pageSize);
+  const visibleCount = filterType === 'MPESA' ? visibleMpesaRows.length : filteredDocs.length;
   const visibleCurrentPage = filterType === 'MPESA' ? mpesaCurrentPage : currentPage;
   const visibleTotalPages = filterType === 'MPESA' ? mpesaTotalPages : totalPages;
 
   useEffect(() => {
     setPage(1);
-  }, [docSearch, filterType, dateMode, dateStart, dateEnd]);
+  }, [docSearch, filterType, dateMode, dateStart, dateEnd, mpesaView]);
 
   useEffect(() => {
     if (filterType !== 'MPESA' || !activeBusinessId || !activeBranchId) return;
@@ -143,17 +152,33 @@ export default function DocumentsTab() {
           from = start.getTime();
           to = end.getTime();
         }
-        const res = await MpesaService.listTransactions({
-          businessId: activeBusinessId,
-          branchId: activeBranchId,
-          from,
-          to,
-          search: docSearch,
-          limit: 500,
-        });
+        const rows: MpesaLedgerRow[] = [];
+        let offset = 0;
+        let total = 0;
+        let loadError = '';
+        do {
+          const res = await MpesaService.listTransactions({
+            businessId: activeBusinessId,
+            branchId: activeBranchId,
+            from,
+            to,
+            search: docSearch,
+            limit: 500,
+            offset,
+          });
+          if (res.error) {
+            loadError = res.error;
+            break;
+          }
+          const batch = res.rows || [];
+          rows.push(...batch);
+          total = Number(res.total || rows.length);
+          offset += batch.length;
+          if (batch.length === 0) break;
+        } while (rows.length < total);
         if (cancelled) return;
-        setMpesaRows(res.rows || []);
-        setMpesaError(res.error || '');
+        setMpesaRows(rows);
+        setMpesaError(loadError);
       } finally {
         if (!cancelled) setIsMpesaLoading(false);
       }
@@ -267,6 +292,27 @@ export default function DocumentsTab() {
          </div>
       ) : filterType === 'MPESA' ? (
         <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+          <div className="px-4 sm:px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="grid grid-cols-3 gap-2 sm:flex">
+              {[
+                { id: 'ALL', label: 'Successful', count: successfulMpesaRows.length },
+                { id: 'UNUTILIZED', label: 'Paid not used', count: paidNotUtilizedRows.length },
+                { id: 'UTILIZED', label: 'Used', count: utilizedMpesaRows.length },
+              ].map(view => (
+                <button
+                  key={view.id}
+                  type="button"
+                  onClick={() => setMpesaView(view.id as typeof mpesaView)}
+                  className={`h-10 rounded-xl border px-3 text-[10px] font-black uppercase tracking-widest transition-colors ${mpesaView === view.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
+                >
+                  {view.label} <span className={mpesaView === view.id ? 'text-white/60' : 'text-slate-400'}>{view.count}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+              <ShieldCheck size={14} /> Paid callbacks only
+            </div>
+          </div>
           {isMpesaLoading && (
             <div className="px-5 py-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-blue-600 border-b border-slate-100">
               <Loader2 size={14} className="animate-spin" /> Loading M-Pesa transactions
@@ -279,7 +325,6 @@ export default function DocumentsTab() {
           )}
           {pagedMpesaRows.map(row => {
             const utilized = row.utilizationStatus === 'UTILIZED';
-            const paid = row.paymentStatus === 'PAID';
             const linkedTx = row.linkedTransactionId ? allTransactions?.find(tx => tx.id === row.linkedTransactionId) : null;
             return (
               <button
@@ -290,8 +335,8 @@ export default function DocumentsTab() {
                 }}
                 className="w-full text-left px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-blue-50/40 transition-colors group border-b border-slate-100 last:border-b-0"
               >
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${paid ? 'bg-emerald-50 text-emerald-600' : row.paymentStatus === 'PENDING' ? 'bg-amber-50 text-amber-600' : 'bg-rose-50 text-rose-600'}`}>
-                  <Smartphone size={18} />
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${utilized ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                  {utilized ? <Receipt size={18} /> : <Smartphone size={18} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="text-sm font-black text-slate-900 truncate">
@@ -316,10 +361,10 @@ export default function DocumentsTab() {
                 </div>
                 <div className="hidden sm:flex flex-col items-end gap-1 shrink-0">
                   <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest ${utilized ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
-                    {utilized ? 'Used' : 'Unused'}
+                    {utilized ? 'Used' : 'Paid not used'}
                   </span>
-                  <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest ${paid ? 'bg-emerald-50 text-emerald-700' : row.paymentStatus === 'PENDING' ? 'bg-slate-100 text-slate-600' : 'bg-rose-50 text-rose-700'}`}>
-                    {row.paymentStatus === 'PAID' ? 'Paid' : row.paymentStatus === 'PENDING' ? 'Waiting' : 'Failed'}
+                  <span className="text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest bg-emerald-50 text-emerald-700">
+                    Received
                   </span>
                 </div>
                 <div className="text-right shrink-0 min-w-[90px]">
@@ -330,16 +375,16 @@ export default function DocumentsTab() {
               </button>
             );
           })}
-          {!isMpesaLoading && mpesaRows.length === 0 && (
+          {!isMpesaLoading && visibleMpesaRows.length === 0 && (
             <div className="py-20 text-center flex flex-col items-center">
               <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-4 shadow-inner text-slate-200">
                 <Smartphone size={36} />
               </div>
-              <p className="text-slate-500 font-black text-base">No M-Pesa transactions found</p>
-              <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Adjust search or date filters</p>
+              <p className="text-slate-500 font-black text-base">No successful M-Pesa payments found</p>
+              <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Adjust search, date, or usage filter</p>
             </div>
           )}
-          {mpesaRows.length > pageSize && (
+          {visibleMpesaRows.length > pageSize && (
             <div className="px-4 sm:px-5 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
               <button
                 type="button"
