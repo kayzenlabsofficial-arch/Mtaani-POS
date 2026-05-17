@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
     password TEXT NOT NULL,
     role TEXT NOT NULL,
     businessId TEXT,
+    branchId TEXT,
     updated_at INTEGER
 );
 
@@ -405,6 +406,7 @@ CREATE INDEX IF NOT EXISTS idx_shifts_branch ON shifts(branchId);
 
 -- MIGRATION: Add businessId to existing tables
 -- ALTER TABLE users ADD COLUMN businessId TEXT;
+-- ALTER TABLE users ADD COLUMN branchId TEXT;
 -- ALTER TABLE products ADD COLUMN businessId TEXT;
 -- ALTER TABLE products ADD COLUMN isBundle INTEGER DEFAULT 0;
 -- ALTER TABLE products ADD COLUMN components TEXT;

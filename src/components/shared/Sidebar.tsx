@@ -87,6 +87,7 @@ export default function Sidebar({
   onOpenProfile,
 }: SidebarProps) {
   const isAdminOrManager = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+  const isAdmin = currentUser?.role === 'ADMIN';
   const userInitial = currentUser?.name?.charAt(0)?.toUpperCase() || 'U';
 
   return (
@@ -110,7 +111,10 @@ export default function Sidebar({
 
         <nav className="mt-4 flex-1 overflow-y-auto pr-1 custom-scrollbar">
           {navGroups.map(group => {
-            const visibleItems = group.items.filter(item => !item.adminOnly || isAdminOrManager);
+            const visibleItems = group.items.filter(item => {
+              if (item.id === 'ADMIN_PANEL') return isAdmin;
+              return !item.adminOnly || isAdminOrManager;
+            });
             if (visibleItems.length === 0) return null;
 
             return (

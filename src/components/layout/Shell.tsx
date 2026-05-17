@@ -203,7 +203,10 @@ export function MobileNav({ activeTab, onTabChange, onToggleMore, isMoreMenuOpen
   );
 }
 
-export function MoreOptionsMenu({ onTabChange, onLogout, onClose }: any) {
+export function MoreOptionsMenu({ onTabChange, onLogout, onClose, currentUser }: any) {
+  const role = currentUser?.role;
+  const isAdmin = role === 'ADMIN';
+  const isAdminOrManager = role === 'ADMIN' || role === 'MANAGER';
   const quickAccess = [
     { id: 'CUSTOMERS', label: 'Customers', icon: 'group', color: 'bg-blue-500' },
     { id: 'INVOICES', label: 'Invoices', icon: 'receipt_long', color: 'bg-cyan-600' },
@@ -216,7 +219,11 @@ export function MoreOptionsMenu({ onTabChange, onLogout, onClose }: any) {
     { id: 'PURCHASES', label: 'Purchases', icon: 'shopping_bag', color: 'bg-indigo-500' },
     { id: 'REPORTS', label: 'Reports', icon: 'analytics', color: 'bg-emerald-500' },
     { id: 'ADMIN_PANEL', label: 'Admin', icon: 'settings', color: 'bg-slate-600' },
-  ];
+  ].filter(item => {
+    if (item.id === 'ADMIN_PANEL') return isAdmin;
+    if (item.id === 'SUPPLIERS' || item.id === 'REPORTS') return isAdminOrManager;
+    return true;
+  });
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end">

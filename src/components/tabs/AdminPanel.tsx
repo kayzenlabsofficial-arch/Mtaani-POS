@@ -98,7 +98,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     []
   );
   const [isAddingUser, setIsAddingUser] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', password: '', role: 'CASHIER' as 'CASHIER' | 'ADMIN', branchId: '' });
+  const [newUser, setNewUser] = useState({ name: '', password: '', role: 'CASHIER' as 'CASHIER' | 'MANAGER' | 'ADMIN', branchId: '' });
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editingPassword, setEditingPassword] = useState('');
 
@@ -441,22 +441,25 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                        </div>
                        <div>
                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Staff role</label>
-                         <div className="flex gap-2">
-                            <button onClick={() => setNewUser({...newUser, role: 'CASHIER'})} className={`flex-1 py-4.5 rounded-2xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${newUser.role === 'CASHIER' ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-400 border-transparent hover:border-slate-200'}`}>
-                                Standard cashier
+                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <button onClick={() => setNewUser({...newUser, role: 'CASHIER'})} className={`py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${newUser.role === 'CASHIER' ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo' : 'bg-white text-slate-400 border-transparent hover:border-slate-200'}`}>
+                                Cashier
                             </button>
-                            <button onClick={() => setNewUser({...newUser, role: 'ADMIN'})} className={`flex-1 py-4.5 rounded-2xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${newUser.role === 'ADMIN' ? 'bg-blue-600 text-white border-blue-600 shadow-blue' : 'bg-white text-slate-400 border-transparent hover:border-slate-200'}`}>
-                                Administrator
+                            <button onClick={() => setNewUser({...newUser, role: 'MANAGER'})} className={`py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${newUser.role === 'MANAGER' ? 'bg-emerald-600 text-white border-emerald-600 shadow-emerald' : 'bg-white text-slate-400 border-transparent hover:border-slate-200'}`}>
+                                Manager
+                            </button>
+                            <button onClick={() => setNewUser({...newUser, role: 'ADMIN', branchId: ''})} className={`py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${newUser.role === 'ADMIN' ? 'bg-blue-600 text-white border-blue-600 shadow-blue' : 'bg-white text-slate-400 border-transparent hover:border-slate-200'}`}>
+                                Admin
                             </button>
                          </div>
                        </div>
-                       {newUser.role === 'CASHIER' && (
+                       {newUser.role !== 'ADMIN' && (
                          <div>
                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Station assignment</label>
                            <SearchableSelect
                              value={newUser.branchId || ''}
                              onChange={(v) => setNewUser({ ...newUser, branchId: v })}
-                             placeholder="Select branch for this cashier..."
+                             placeholder={`Select branch for this ${newUser.role.toLowerCase()}...`}
                              options={(branches || []).map(b => ({
                                value: b.id,
                                label: b.name,
@@ -469,7 +472,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                     </div>
                     <div className="flex gap-4">
                        <button onClick={() => {setIsAddingUser(false); setNewUser({ name: '', password: '', role: 'CASHIER', branchId: '' });}} className="flex-1 py-4 bg-white text-slate-400 font-bold text-[10px] uppercase tracking-widest rounded-xl border-2 border-slate-100 press">Cancel</button>
-                       <button onClick={handleAddUser} disabled={!newUser.name || newUser.password.length < 4 || (newUser.role === 'CASHIER' && !newUser.branchId)} className="flex-[2] grad-blue text-white font-bold text-[10px] uppercase tracking-widest rounded-xl shadow-blue press">Save staff member</button>
+                       <button onClick={handleAddUser} disabled={!newUser.name || newUser.password.length < 4 || (newUser.role !== 'ADMIN' && !newUser.branchId)} className="flex-[2] grad-blue text-white font-bold text-[10px] uppercase tracking-widest rounded-xl shadow-blue press">Save staff member</button>
                     </div>
                  </div>
               )}
@@ -478,14 +481,14 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
                  {users?.map(user => (
                     <div key={user.id} className="group relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 sm:px-5 hover:bg-blue-50/30 transition-all overflow-hidden">
                        <div className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shadow-sm ${user.role === 'ADMIN' ? 'bg-indigo-50 text-indigo-600' : 'bg-blue-50 text-blue-600'}`}>
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shadow-sm ${user.role === 'ADMIN' ? 'bg-indigo-50 text-indigo-600' : user.role === 'MANAGER' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>
                              {user.name.charAt(0).toUpperCase()}
                           </div>
                           <div className="stable-row-copy">
                              <h4 className="stable-title text-sm font-black text-slate-900 leading-tight">{user.name}</h4>
                              <div className="flex min-w-0 items-center gap-2 mt-1 overflow-hidden">
-                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest flex-shrink-0 ${user.role === 'ADMIN' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}`}>
-                                   {user.role === 'ADMIN' ? 'Admin' : user.role === 'CASHIER' ? 'Cashier' : user.role}
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest flex-shrink-0 ${user.role === 'ADMIN' ? 'bg-indigo-100 text-indigo-700' : user.role === 'MANAGER' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                                   {user.role === 'ADMIN' ? 'Admin' : user.role === 'MANAGER' ? 'Manager' : user.role === 'CASHIER' ? 'Cashier' : user.role}
                                 </span>
                                 {user.branchId && (
                                    <span className="stable-chip text-[9px] font-black text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full uppercase border border-slate-100">

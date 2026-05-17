@@ -16,6 +16,18 @@ async function ensureAttemptTable(db: D1Database) {
   await db.prepare('CREATE TABLE IF NOT EXISTS loginAttempts (id TEXT PRIMARY KEY, count INTEGER DEFAULT 0, lockedUntil INTEGER, updated_at INTEGER)').run();
 }
 
+async function ensureAuthSchema(db: D1Database) {
+  await ensureAttemptTable(db);
+  const userColumns = [
+    'branchId TEXT',
+    'pin TEXT',
+    'updated_at INTEGER',
+  ];
+  for (const column of userColumns) {
+    try { await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run(); } catch {}
+  }
+}
+
 async function getLockout(db: D1Database, id: string) {
   await ensureAttemptTable(db);
   const row = await db.prepare('SELECT count, lockedUntil FROM loginAttempts WHERE id = ?').bind(id).first<any>();
@@ -70,6 +82,7 @@ async function handleAuthPost(request: Request, env: Env) {
   if (blocked) return blocked;
   if (!env.API_SECRET) return json({ error: 'Server is not configured.' }, 500, corsHeaders);
   if (!env.DB) return json({ error: 'Database is not configured.' }, 500, corsHeaders);
+  await ensureAuthSchema(env.DB);
 
   const body = await request.json().catch(() => null) as any;
   const username = String(body?.username || '').trim();

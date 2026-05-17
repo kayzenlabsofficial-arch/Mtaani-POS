@@ -30,6 +30,15 @@ function temporaryPassword() {
 }
 
 async function ensureSchema(db: D1Database) {
+  const userColumns = [
+    'branchId TEXT',
+    'pin TEXT',
+    'updated_at INTEGER',
+  ];
+  for (const column of userColumns) {
+    try { await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run(); } catch {}
+  }
+
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS auditLogs (
       id TEXT PRIMARY KEY,
@@ -53,6 +62,16 @@ async function adminCount(db: D1Database, businessId: string) {
     .bind(businessId)
     .first<any>();
   return Number(row?.count || 0);
+}
+
+async function branchExists(db: D1Database, businessId: string, branchId: string) {
+  const row = await db.prepare(`
+    SELECT id
+    FROM branches
+    WHERE id = ? AND businessId = ? AND COALESCE(isActive, 1) != 0
+    LIMIT 1
+  `).bind(branchId, businessId).first<any>();
+  return !!row;
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -84,6 +103,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const existing = await env.DB.prepare(`SELECT * FROM users WHERE id = ? AND businessId = ? LIMIT 1`)
         .bind(id, businessId)
         .first<any>();
+      const duplicate = await env.DB.prepare(`
+        SELECT id
+        FROM users
+        WHERE businessId = ? AND lower(trim(name)) = lower(trim(?)) AND id != ?
+        LIMIT 1
+      `).bind(businessId, name, id).first<any>();
+      if (duplicate) throw new PolicyError('A staff member with this login name already exists.', 409);
       if (existing?.role === 'ADMIN' && role !== 'ADMIN' && await adminCount(env.DB, businessId) <= 1) {
         throw new PolicyError('The last administrator cannot be changed.', 403);
       }
@@ -92,6 +118,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         ? await hashPassword(password)
         : existing?.password;
       if (!passwordHash) throw new PolicyError('Password is required for new staff accounts.', 400);
+      const requestedBranchId = trimText(staff.branchId, 160) || existing?.branchId || null;
+      if (role !== 'ADMIN' && !requestedBranchId) {
+        throw new PolicyError('Assign this staff member to a branch.', 400);
+      }
+      if (requestedBranchId && !(await branchExists(env.DB, businessId, requestedBranchId))) {
+        throw new PolicyError('Select an active branch for this staff member.', 400);
+      }
 
       const savedUser = {
         id,
@@ -99,7 +132,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         password: passwordHash,
         role,
         businessId,
-        branchId: role === 'ADMIN' ? (trimText(staff.branchId, 160) || null) : (trimText(staff.branchId, 160) || existing?.branchId || null),
+        branchId: role === 'ADMIN' ? (requestedBranchId || null) : requestedBranchId,
         updated_at: now,
       };
       await env.DB.batch([
@@ -156,4 +189,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not update staff.' }, status);
   }
 };
-

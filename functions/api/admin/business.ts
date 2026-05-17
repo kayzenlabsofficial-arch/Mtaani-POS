@@ -21,6 +21,17 @@ function temporaryPassword() {
   return `MT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
+async function ensureSchema(db: D1Database) {
+  const userColumns = [
+    'branchId TEXT',
+    'pin TEXT',
+    'updated_at INTEGER',
+  ];
+  for (const column of userColumns) {
+    try { await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run(); } catch {}
+  }
+}
+
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -38,6 +49,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const exists = await env.DB.prepare(`SELECT id FROM businesses WHERE code = ? LIMIT 1`).bind(code).first<any>();
     if (exists) return json({ error: 'Business code is already in use.' }, 409);
 
+    await ensureSchema(env.DB);
     const now = Date.now();
     const businessId = crypto.randomUUID();
     const branchId = crypto.randomUUID();
@@ -57,4 +69,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not create business.' }, 500);
   }
 };
-

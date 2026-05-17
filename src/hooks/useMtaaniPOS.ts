@@ -147,6 +147,15 @@ export function useMtaaniPOS() {
       error("Offline mode only opens the register. Other pages will work after internet returns.");
       return;
     }
+    const role = currentUser?.role;
+    if (nextTab === 'ADMIN_PANEL' && role !== 'ADMIN') {
+      error("Only administrators can open admin controls.");
+      return;
+    }
+    if ((nextTab === 'REPORTS' || nextTab === 'SUPPLIERS') && role !== 'ADMIN' && role !== 'MANAGER') {
+      error("You do not have permission to open that section.");
+      return;
+    }
     if (typeof window !== 'undefined' && activeTabRef.current !== nextTab) {
       window.history.pushState({ ...(window.history.state || {}), mtaaniTab: true, tab: nextTab }, '');
     }

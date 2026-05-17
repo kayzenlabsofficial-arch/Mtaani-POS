@@ -244,6 +244,7 @@ export default function MtaaniPOS() {
           onTabChange={navigateToTab}
           onLogout={handleLogout}
           onClose={() => setIsMoreMenuOpen(false)}
+          currentUser={currentUser}
         />
       )}
 
