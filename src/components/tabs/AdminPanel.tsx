@@ -12,6 +12,7 @@ import BranchManagementTab from './BranchManagementTab';
 import { useToast } from '../../context/ToastContext';
 import { type Category } from '../../db';
 import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
+import { recordAuditEvent } from '../../utils/auditLog';
 
 
 const ICON_OPTIONS = [
@@ -164,6 +165,12 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
       });
       setNewUser({ name: '', password: '', role: 'CASHIER', branchId: '' });
       setIsAddingUser(false);
+      recordAuditEvent({
+        action: 'admin.user_create',
+        entity: 'user',
+        severity: 'INFO',
+        details: `Created new ${newUser.role} account for ${newUser.name}.`
+      });
       success("Staff member created successfully.");
       await db.sync();
     } catch (err: any) {

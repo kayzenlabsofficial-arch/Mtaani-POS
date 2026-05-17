@@ -11,7 +11,7 @@ const ALLOWED_TABLES = new Set([
   'endOfDayReports', 'stockMovements', 'expenses', 'customers',
   'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries',
   'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories',
-  'branches', 'businesses', 'system', 'expenseAccounts', 'financialAccounts', 'productIngredients', 'loginAttempts'
+  'branches', 'businesses', 'system', 'expenseAccounts', 'financialAccounts', 'productIngredients', 'loginAttempts', 'auditLogs'
 ]);
 
 // Global tables: shared across branches, isolated by businessId
@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, amount REAL NOT NULL, 
  CREATE TABLE IF NOT EXISTS mpesaCallbacks (checkoutRequestId TEXT PRIMARY KEY, merchantRequestId TEXT, resultCode INTEGER, resultDesc TEXT, amount REAL, receiptNumber TEXT, phoneNumber TEXT, businessId TEXT, branchId TEXT, timestamp INTEGER, utilizedTransactionId TEXT, utilizedCustomerId TEXT, utilizedCustomerName TEXT, utilizedAt INTEGER);
 CREATE TABLE IF NOT EXISTS deviceSyncStatus (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, branchId TEXT NOT NULL, deviceId TEXT NOT NULL, cashierName TEXT, lastSyncAt INTEGER, updated_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_deviceSyncStatus_branch ON deviceSyncStatus(businessId, branchId, lastSyncAt);
+CREATE TABLE IF NOT EXISTS deviceSyncStatus (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, branchId TEXT NOT NULL, deviceId TEXT NOT NULL, cashierName TEXT, lastSyncAt INTEGER, updated_at INTEGER);
+CREATE INDEX IF NOT EXISTS idx_deviceSyncStatus_branch ON deviceSyncStatus(businessId, branchId, lastSyncAt);
 CREATE TABLE IF NOT EXISTS idempotencyKeys (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, branchId TEXT NOT NULL, idempotencyKey TEXT NOT NULL, operation TEXT NOT NULL, deviceId TEXT, cashierName TEXT, createdAt INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, branchId, idempotencyKey);
 CREATE TABLE IF NOT EXISTS aiUsage (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, userId TEXT NOT NULL, userName TEXT, branchId TEXT, day TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at INTEGER);
@@ -94,6 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp);
 CREATE INDEX IF NOT EXISTS idx_stockmovements_product ON stockMovements(productId);
 CREATE TABLE IF NOT EXISTS loginAttempts (id TEXT PRIMARY KEY, count INTEGER DEFAULT 0, lockedUntil INTEGER, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS auditLogs (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, userId TEXT, userName TEXT, action TEXT NOT NULL, entity TEXT, entityId TEXT, severity TEXT NOT NULL, details TEXT, businessId TEXT, branchId TEXT, updated_at INTEGER);
 `;
 
 function serializeValue(v: any): any {
@@ -474,7 +477,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['mpesaCallbacks', 'utilizedCustomerName TEXT'],
           ['mpesaCallbacks', 'utilizedAt INTEGER'],
         ];
-        const allTables = ['users', 'products', 'productIngredients', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
+        const allTables = ['users', 'products', 'productIngredients', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts', 'auditLogs'];
         for (const t of allTables) {
           try { await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN businessId TEXT`).run(); } catch (e) {}
         }

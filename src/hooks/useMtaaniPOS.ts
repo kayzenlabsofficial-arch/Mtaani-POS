@@ -6,6 +6,7 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 import { getProductIngredients, isBundleProduct } from '../utils/bundleInventory';
 import { MpesaService } from '../services/mpesa';
 import { flushOutboxNow } from '../offline/offlineSync';
+import { recordAuditEvent } from '../utils/auditLog';
 
 export function useMtaaniPOS() {
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'REPORTS' | 'ADMIN_PANEL'>('REGISTER');
@@ -281,6 +282,18 @@ export function useMtaaniPOS() {
       };
 
       await db.transactions.add(newTransaction);
+
+      if (discountAmount > 0) {
+        recordAuditEvent({
+          userId: currentUser?.id,
+          userName: currentUser?.name,
+          action: 'sale.discount',
+          entity: 'transaction',
+          entityId: transactionId,
+          severity: discountAmount > (subtotal * 0.1) ? 'WARN' : 'INFO',
+          details: `Applied Ksh ${discountAmount.toLocaleString()} discount on Ksh ${subtotal.toLocaleString()} sale.`
+        });
+      }
 
       if (isOfflineSale) {
         clearCart();

@@ -9,6 +9,21 @@ import { CloudTable, setupRemoteDB } from './clouddb';
 
 // ── Interfaces (unchanged) ─────────────────────────────────────────────────
 
+export interface AuditLog {
+  id: string;
+  ts: number;
+  userId?: string;
+  userName?: string;
+  action: string;
+  entity?: string;
+  entityId?: string;
+  severity: 'INFO' | 'WARN' | 'CRITICAL';
+  details?: string;
+  businessId: string;
+  branchId?: string;
+  updated_at?: number;
+}
+
 export interface Business {
   id: string;
   name: string;
@@ -475,6 +490,7 @@ class MtaaniCloudDB {
   branches            = new CloudTable<Branch>('branches');
   expenseAccounts     = new CloudTable<ExpenseAccount>('expenseAccounts');
   financialAccounts   = new CloudTable<FinancialAccount>('financialAccounts');
+  auditLogs           = new CloudTable<AuditLog>('auditLogs');
 
   /**
    * Clear all tenant-scoped caches (everything except businesses).
@@ -509,6 +525,7 @@ class MtaaniCloudDB {
     this.expenseAccounts.reset();
     this.financialAccounts.reset();
     this.loginAttempts.reset();
+    this.auditLogs.reset();
 
   }
 

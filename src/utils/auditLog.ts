@@ -1,4 +1,7 @@
-type AuditSeverity = 'INFO' | 'WARN' | 'CRITICAL';
+import { db, type AuditLog } from '../db';
+import { useStore } from '../store';
+
+export type AuditSeverity = 'INFO' | 'WARN' | 'CRITICAL';
 
 export interface AuditEvent {
   id: string;
@@ -12,34 +15,29 @@ export interface AuditEvent {
   details?: string;
 }
 
-const STORAGE_KEY = 'mtaani_audit_log_v1';
-const MAX_EVENTS = 2000;
-
 export function recordAuditEvent(event: Omit<AuditEvent, 'id' | 'ts'>): void {
   if (typeof window === 'undefined') return;
-  const row: AuditEvent = {
+  
+  const state = useStore.getState();
+  if (!state.activeBusinessId) return;
+
+  const row: AuditLog = {
     id: crypto.randomUUID(),
     ts: Date.now(),
     ...event,
+    businessId: state.activeBusinessId,
+    branchId: state.activeBranchId || undefined,
+    updated_at: Date.now(),
   };
-  try {
-    const current = getAuditEvents();
-    const next = [row, ...current].slice(0, MAX_EVENTS);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  } catch (err) {
-    console.warn('[Audit] failed to persist event', err);
-  }
+
+  db.auditLogs.add(row).catch(err => {
+    console.warn('[Audit] failed to persist event to CloudDB', err);
+  });
 }
 
+// Keep a stub for components that might synchronously read it,
+// though they should now use useLiveQuery(db.auditLogs.toArray)
 export function getAuditEvents(): AuditEvent[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  return [];
 }
 
