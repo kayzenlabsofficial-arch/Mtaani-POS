@@ -65,7 +65,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request }) => {
   });
 };
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+async function handleAuthPost(request: Request, env: Env) {
   const blocked = rejectUntrustedBrowserOrigin(request);
   if (blocked) return blocked;
   if (!env.API_SECRET) return json({ error: 'Server is not configured.' }, 500, corsHeaders);
@@ -158,4 +158,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     ...corsHeaders,
     'Set-Cookie': createSessionCookie(request, token),
   });
+}
+
+export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  try {
+    return await handleAuthPost(request, env);
+  } catch (err: any) {
+    console.error('Auth request failed:', err?.message || err);
+    return json({ error: 'Could not sign in.' }, 500, corsHeaders);
+  }
 };

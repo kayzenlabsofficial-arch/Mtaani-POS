@@ -18,7 +18,7 @@ const LEGACY_SALT = 'mtaani-pos-v2-secure-2026';
 const SESSION_COOKIE = 'mtaani_session';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const PASSWORD_VERSION = 'pbkdf2';
-const PASSWORD_ITERATIONS = 120_000;
+const PASSWORD_ITERATIONS = 100_000;
 
 export function json(data: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
@@ -219,7 +219,7 @@ export async function verifyPassword(plain: string, stored: string): Promise<boo
     const [version, algorithm, iterationsRaw, saltRaw, hash] = stored.split('$');
     if (version !== PASSWORD_VERSION || algorithm !== 'sha256' || !saltRaw || !hash) return false;
     const iterations = Number(iterationsRaw);
-    if (!Number.isFinite(iterations) || iterations < 100_000 || iterations > 1_000_000) return false;
+    if (!Number.isFinite(iterations) || iterations < 100_000 || iterations > PASSWORD_ITERATIONS) return false;
     const derived = await pbkdf2Hash(plain, base64UrlDecode(saltRaw), iterations);
     return timingSafeEqual(derived, hash);
   }
