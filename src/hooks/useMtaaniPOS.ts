@@ -4,9 +4,8 @@ import { useToast } from '../context/ToastContext';
 import { db, type Transaction } from '../db';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { getProductIngredients, isBundleProduct } from '../utils/bundleInventory';
-import { MpesaService } from '../services/mpesa';
+import { SalesService } from '../services/sales';
 import { flushOutboxNow } from '../offline/offlineSync';
-import { recordAuditEvent } from '../utils/auditLog';
 
 export function useMtaaniPOS() {
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'REPORTS' | 'ADMIN_PANEL'>('REGISTER');
@@ -281,21 +280,9 @@ export function useMtaaniPOS() {
         splitData: Object.keys(checkoutData).length ? checkoutData : undefined
       };
 
-      await db.transactions.add(newTransaction);
-
-      if (discountAmount > 0) {
-        recordAuditEvent({
-          userId: currentUser?.id,
-          userName: currentUser?.name,
-          action: 'sale.discount',
-          entity: 'transaction',
-          entityId: transactionId,
-          severity: discountAmount > (subtotal * 0.1) ? 'WARN' : 'INFO',
-          details: `Applied Ksh ${discountAmount.toLocaleString()} discount on Ksh ${subtotal.toLocaleString()} sale.`
-        });
-      }
-
       if (isOfflineSale) {
+        // Intentional Dexie write: CloudTable queues offline cash sales into the sync outbox.
+        await db.transactions.add(newTransaction);
         clearCart();
         setSelectedCustomerId(null);
         setDiscountValue(0);
@@ -303,20 +290,15 @@ export function useMtaaniPOS() {
         return newTransaction;
       }
 
-      if (mpesaPaymentCode) {
-        const utilization = await MpesaService.markUtilized({
-          code: mpesaPaymentCode,
-          transactionId,
-          businessId: activeBusinessId!,
-          branchId: activeBranchId!,
-          customerId: effectiveCustomerId,
-          customerName: effectiveCustomerName,
-        });
-        if (utilization.error) {
-          await db.transactions.delete(transactionId).catch(() => {});
-          throw new Error(utilization.error);
-        }
-      }
+      const checkout = await SalesService.checkout(newTransaction, { idempotencyKey: transactionId });
+      const completedTransaction = checkout.transaction || newTransaction;
+
+      await Promise.allSettled([
+        db.transactions.reload(),
+        db.products.reload(),
+        db.stockMovements.reload(),
+        db.customers.reload(),
+      ]);
 
       clearCart();
       setSelectedCustomerId(null);
@@ -326,7 +308,7 @@ export function useMtaaniPOS() {
       if (isOnline) {
         flushOutboxNow().then(() => db.sync()).catch(() => {});
       }
-      return newTransaction;
+      return completedTransaction;
     } catch (err: any) {
       console.error("Checkout failed:", err);
       error(err?.message || "Transaction failed. Please try again.");

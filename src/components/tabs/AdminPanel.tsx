@@ -13,6 +13,9 @@ import { useToast } from '../../context/ToastContext';
 import { type Category } from '../../db';
 import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import { recordAuditEvent } from '../../utils/auditLog';
+import { FinanceService } from '../../services/finance';
+import { StaffService } from '../../services/admin';
+import { CategoryService } from '../../services/catalog';
 
 
 const ICON_OPTIONS = [
@@ -151,18 +154,21 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
   const handleAddUser = async () => {
     if (!newUser.name || !newUser.password) return;
+    if (!activeBusinessId) return error("Please log in again.");
     if (isSaving) return;
     setIsSaving(true);
     try {
-      await db.users.add({
-        id: crypto.randomUUID(),
-        name: newUser.name,
-        password: newUser.password,
-        role: newUser.role,
-        businessId: activeBusinessId!,
-        branchId: newUser.branchId || undefined,
-        updated_at: Date.now()
+      await StaffService.save({
+        user: {
+          name: newUser.name,
+          password: newUser.password,
+          role: newUser.role,
+          branchId: newUser.branchId || undefined,
+        },
+        businessId: activeBusinessId,
+        branchId: activeBranchId,
       });
+      await db.users.reload();
       setNewUser({ name: '', password: '', role: 'CASHIER', branchId: '' });
       setIsAddingUser(false);
       recordAuditEvent({
@@ -172,7 +178,6 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
         details: `Created new ${newUser.role} account for ${newUser.name}.`
       });
       success("Staff member created successfully.");
-      await db.sync();
     } catch (err: any) {
       error("Failed to add user: " + err.message);
     } finally {
@@ -190,7 +195,9 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     }
 
     if (confirm(`Are you sure you want to delete staff member "${userToDelete?.name}"? This action is permanent.`)) {
-      await db.users.delete(id);
+      if (!activeBusinessId) return error("Please log in again.");
+      await StaffService.delete({ userId: id, businessId: activeBusinessId, branchId: activeBranchId });
+      await db.users.reload();
       recordAuditEvent({
         action: 'admin.user_delete',
         entity: 'user',
@@ -198,13 +205,14 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
         severity: 'WARN',
         details: `Deleted user ${userToDelete?.name} (${userToDelete?.role}).`
       });
-      await db.sync();
     }
   };
 
   const handlePasswordUpdate = async (id: string) => {
     if (!editingPassword || editingPassword.length < 4) return;
-    await db.users.update(id, { password: editingPassword, updated_at: Date.now() });
+    if (!activeBusinessId) return error("Please log in again.");
+    await StaffService.resetPassword({ userId: id, newPassword: editingPassword, businessId: activeBusinessId, branchId: activeBranchId });
+    await db.users.reload();
     setEditingUserId(null);
     setEditingPassword('');
     recordAuditEvent({
@@ -214,7 +222,6 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
       severity: 'WARN',
       details: `Reset password for user ID ${id}.`
     });
-    await db.sync();
     success("Password updated successfully.");
   };
 
@@ -227,20 +234,15 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     setIsSaving(true);
 
     try {
-      if (editingCategoryId) {
-        await db.categories.update(editingCategoryId, { ...categoryForm, updated_at: Date.now() });
-        success("Category updated successfully.");
-      } else {
-        await db.categories.add({
-          id: crypto.randomUUID(),
-          ...categoryForm,
-          updated_at: Date.now(),
-          businessId: activeBusinessId!
-        });
-        success("New category created.");
-      }
+      if (!activeBusinessId) return error("Please log in again.");
+      await CategoryService.save({
+        category: { id: editingCategoryId || undefined, ...categoryForm },
+        businessId: activeBusinessId,
+        branchId: activeBranchId,
+      });
+      await db.categories.reload();
+      success(editingCategoryId ? "Category updated successfully." : "New category created.");
       resetCategoryForm();
-      db.syncAll();
     } catch (err) {
       error("Failed to save category.");
     } finally {
@@ -249,8 +251,10 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   };
 
   const handleDeleteCategory = async (id: string, name: string) => {
+    if (!activeBusinessId) return error("Please log in again.");
     if (confirm(`Are you sure you want to delete "${name}"? Products in this category will need to be reassigned.`)) {
-      await db.categories.delete(id);
+      await CategoryService.delete({ categoryId: id, businessId: activeBusinessId, branchId: activeBranchId });
+      await db.categories.reload();
       success("Category removed.");
     }
   };
@@ -269,16 +273,19 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
   const handleSaveFinAccount = async () => {
     if (!finAccountForm.name.trim()) return;
+    if (!activeBusinessId) return error("Please log in again.");
     if (isSaving) return;
     setIsSaving(true);
     try {
-      await db.financialAccounts.add({
-        id: crypto.randomUUID(),
-        ...finAccountForm,
-        branchId: finAccountForm.branchId || undefined,
-        businessId: activeBusinessId!,
-        updated_at: Date.now()
+      await FinanceService.saveAccount({
+        account: {
+          ...finAccountForm,
+          branchId: finAccountForm.branchId || undefined,
+        },
+        businessId: activeBusinessId,
+        branchId: activeBranchId,
       });
+      await db.financialAccounts.reload();
       setFinAccountForm({ name: '', type: 'BANK', accountNumber: '', balance: 0, branchId: '' });
       setIsAddingFinAccount(false);
       success("Financial account added.");
@@ -290,23 +297,38 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
   };
 
   const handleDeleteFinAccount = async (id: string) => {
+    if (!activeBusinessId) return error("Please log in again.");
     if (confirm("Remove this financial account?")) {
-      await db.financialAccounts.delete(id);
-      success("Account removed.");
+      try {
+        await FinanceService.deleteAccount({
+          accountId: id,
+          businessId: activeBusinessId,
+          branchId: activeBranchId,
+        });
+        await db.financialAccounts.reload();
+        success("Account removed.");
+      } catch (err: any) {
+        error("Failed to remove account: " + err.message);
+      }
     }
   };
 
   const handleDeposit = async () => {
     if (!depositState.accountId || !depositState.amount || Number(depositState.amount) <= 0) return;
+    if (!activeBusinessId) return error("Please log in again.");
     if (isSaving) return;
     setIsSaving(true);
     try {
       const account = await db.financialAccounts.get(depositState.accountId);
       if (account) {
-         await db.financialAccounts.update(account.id, { 
-             balance: (account.balance || 0) + Number(depositState.amount),
-             updated_at: Date.now() 
+         await FinanceService.adjustAccount({
+           accountId: account.id,
+           action: 'DEPOSIT',
+           amount: Number(depositState.amount),
+           businessId: activeBusinessId,
+           branchId: activeBranchId,
          });
+         await db.financialAccounts.reload();
          success(`Deposited Ksh ${Number(depositState.amount).toLocaleString()} successfully.`);
          setDepositState({ accountId: null, amount: '', mode: 'DEPOSIT' });
       }
@@ -319,6 +341,7 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
   const handleWithdraw = async () => {
     if (!depositState.accountId || !depositState.amount || Number(depositState.amount) <= 0) return;
+    if (!activeBusinessId) return error("Please log in again.");
     if (isSaving) return;
     setIsSaving(true);
     try {
@@ -334,10 +357,14 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
         return;
       }
 
-      await db.financialAccounts.update(account.id, {
-        balance: (account.balance || 0) - withdrawal,
-        updated_at: Date.now()
+      await FinanceService.adjustAccount({
+        accountId: account.id,
+        action: 'WITHDRAW',
+        amount: withdrawal,
+        businessId: activeBusinessId,
+        branchId: activeBranchId,
       });
+      await db.financialAccounts.reload();
       success(`Withdrew Ksh ${withdrawal.toLocaleString()} successfully.`);
       setDepositState({ accountId: null, amount: '', mode: 'DEPOSIT' });
     } catch (err: any) {

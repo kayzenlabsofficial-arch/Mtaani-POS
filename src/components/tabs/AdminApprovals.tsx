@@ -7,6 +7,11 @@ import { Check, X, Package, Banknote, Clock, AlertCircle, FileMinus, RotateCcw, 
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { approveExpenseRequest, approveRefundTransaction } from '../../utils/approvalWorkflows';
 import { belongsToActiveBranch } from '../../utils/branchScope';
+import { StockService } from '../../services/stock';
+import { PurchaseService } from '../../services/purchases';
+import { ExpenseService } from '../../services/expenses';
+import { SalesService } from '../../services/sales';
+import { CashService } from '../../services/operations';
 
 export default function AdminApprovals() {
   const currentUser = useStore(state => state.currentUser);
@@ -31,28 +36,23 @@ export default function AdminApprovals() {
   const handleApproveAdjustment = async (req: any) => {
     // ── FIX C7: Use DELTA (newQty - oldQty) applied to CURRENT stock, not absolute newQty.
     // This protects against stale snapshots when sales happened after the request was created.
-    const product = await db.products.get(req.productId);
-    if (product) {
-        const delta = req.newQty - req.oldQty;
-        const adjustedQty = Math.max(0, product.stockQuantity + delta);
-        await db.products.update(req.productId, { stockQuantity: adjustedQty });
-        await db.stockMovements.add({
-            id: crypto.randomUUID(),
-            productId: req.productId,
-            type: 'ADJUST',
-            quantity: delta,
-            timestamp: Date.now(),
-            reference: `Approved Adj: ${req.reason}`,
-            branchId: activeBranchId!,
-            businessId: activeBusinessId!,
-            shiftId: req.shiftId // Preserve the shift ID from the request
-        });
+    if (!activeBranchId || !activeBusinessId) return;
+    try {
+      await StockService.approveAdjustment({
+        requestId: req.id,
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+        approvedBy: currentUser?.name || 'Administrator',
+      });
+      await Promise.allSettled([
+        db.products.reload(),
+        db.stockMovements.reload(),
+        db.stockAdjustmentRequests.reload(),
+      ]);
+      success("Stock adjustment approved.");
+    } catch (err: any) {
+      error(err.message || 'Stock adjustment approval failed.');
     }
-    await db.stockAdjustmentRequests.update(req.id, { 
-        status: 'APPROVED',
-        approvedBy: currentUser?.name
-    });
-    success("Stock adjustment approved.");
   };
 
   const handleApproveExpense = async (e: any) => {
@@ -70,21 +70,51 @@ export default function AdminApprovals() {
   };
 
   const handleApprovePO = async (id: string) => {
-    await db.purchaseOrders.update(id, { 
-        approvalStatus: 'APPROVED',
-        approvedBy: currentUser?.name || 'Administrator'
-    });
-    success("Purchase Order approved for receiving.");
+    if (!activeBranchId || !activeBusinessId) return;
+    try {
+      await PurchaseService.setApproval({
+        purchaseOrderId: id,
+        action: 'APPROVE',
+        approvedBy: currentUser?.name || 'Administrator',
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+      });
+      await db.purchaseOrders.reload();
+      success("Purchase Order approved for receiving.");
+    } catch (err: any) {
+      error(err.message || 'Purchase order approval failed.');
+    }
   };
 
   const handleRejectExpense = async (id: string) => {
-    await db.expenses.update(id, { status: 'REJECTED' });
-    success("Expense request rejected.");
+    if (!activeBranchId || !activeBusinessId) return;
+    try {
+      await ExpenseService.reject({
+        expenseId: id,
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+      });
+      await db.expenses.reload();
+      success("Expense request rejected.");
+    } catch (err: any) {
+      error(err.message || 'Expense rejection failed.');
+    }
   };
 
   const handleRejectPO = async (id: string) => {
-    await db.purchaseOrders.update(id, { approvalStatus: 'REJECTED' });
-    success("Purchase Order rejected.");
+    if (!activeBranchId || !activeBusinessId) return;
+    try {
+      await PurchaseService.setApproval({
+        purchaseOrderId: id,
+        action: 'REJECT',
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+      });
+      await db.purchaseOrders.reload();
+      success("Purchase Order rejected.");
+    } catch (err: any) {
+      error(err.message || 'Purchase order rejection failed.');
+    }
   };
 
   const handleApproveRefund = async (t: Transaction) => {
@@ -102,13 +132,44 @@ export default function AdminApprovals() {
   };
 
   const handleRejectAdjustment = async (id: string) => {
-    await db.stockAdjustmentRequests.update(id, { status: 'REJECTED' });
-    success("Adjustment request rejected.");
+    if (!activeBranchId || !activeBusinessId) return;
+    try {
+      await StockService.rejectAdjustment({
+        requestId: id,
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+      });
+      await db.stockAdjustmentRequests.reload();
+      success("Adjustment request rejected.");
+    } catch (err: any) {
+      error(err.message || 'Adjustment rejection failed.');
+    }
+  };
+
+  const handleRejectRefund = async (id: string) => {
+    if (!activeBranchId || !activeBusinessId) return;
+    try {
+      await SalesService.rejectRefund({
+        transactionId: id,
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+      });
+      await db.transactions.reload();
+      success("Refund request rejected.");
+    } catch (err: any) {
+      error(err.message || 'Refund rejection failed.');
+    }
   };
 
   const handleConfirmBanking = async (id: string) => {
-    await db.cashPicks.update(id, { status: 'APPROVED' });
-    success("Cash deposit confirmed.");
+    if (!activeBranchId || !activeBusinessId) return;
+    try {
+      await CashService.approvePick({ cashPickId: id, businessId: activeBusinessId, branchId: activeBranchId });
+      await db.cashPicks.reload();
+      success("Cash deposit confirmed.");
+    } catch (err: any) {
+      error(err.message || "Cash deposit confirmation failed.");
+    }
   };
 
   if (!pendingAdjustments || !pendingPicks || !pendingExpenses || !pendingRefunds || !pendingPOs) {
@@ -300,10 +361,7 @@ export default function AdminApprovals() {
         onReject={async (record) => {
            if (record.recordType === 'EXPENSE') await handleRejectExpense(record.id);
            if (record.recordType === 'PURCHASE_ORDER') await handleRejectPO(record.id);
-           if (record.recordType === 'SALE') {
-              await db.transactions.update(record.id, { status: 'PAID' }); // Revert back to PAID
-              success("Refund request rejected.");
-           }
+           if (record.recordType === 'SALE') await handleRejectRefund(record.id);
         }}
       />
     </div>

@@ -4,6 +4,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db, type ExpenseAccount } from '../../db';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
+import { ExpenseAccountService } from '../../services/catalog';
 
 interface ExpenseAccountModalProps {
   isOpen: boolean;
@@ -31,34 +32,33 @@ export default function ExpenseAccountModal({ isOpen, onClose }: ExpenseAccountM
     }
 
     try {
-      if (editingId) {
-        await db.expenseAccounts.update(editingId, {
+      if (!activeBusinessId) return error("Please log in again.");
+      await ExpenseAccountService.save({
+        account: {
+          id: editingId || undefined,
           name: form.name.trim(),
           description: form.description.trim(),
-          businessId: activeBusinessId!,
-          updated_at: Date.now()
-        });
-        success("Expense account updated.");
-      } else {
-        await db.expenseAccounts.add({
-          id: crypto.randomUUID(),
-          name: form.name.trim(),
-          description: form.description.trim(),
-          updated_at: Date.now(),
-          businessId: activeBusinessId!
-        });
-        success("New expense account created.");
-      }
+        },
+        businessId: activeBusinessId,
+      });
+      await db.expenseAccounts.reload();
+      success(editingId ? "Expense account updated." : "New expense account created.");
       resetForm();
-    } catch (err) {
-      error("Failed to save expense account.");
+    } catch (err: any) {
+      error(err?.message || "Failed to save expense account.");
     }
   };
 
   const handleDelete = async (id: string, name: string) => {
     if (confirm(`Are you sure you want to delete "${name}"?`)) {
-      await db.expenseAccounts.delete(id);
-      success("Expense account removed.");
+      try {
+        if (!activeBusinessId) return error("Please log in again.");
+        await ExpenseAccountService.delete({ accountId: id, businessId: activeBusinessId });
+        await db.expenseAccounts.reload();
+        success("Expense account removed.");
+      } catch (err: any) {
+        error(err?.message || "Failed to remove expense account.");
+      }
     }
   };
 

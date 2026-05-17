@@ -1,4 +1,4 @@
-import { getApiKey } from '../runtimeConfig';
+import { apiRequest } from './apiClient';
 
 const API_BASE = '/api/mpesa';
 
@@ -64,21 +64,12 @@ export const MpesaService = {
    */
   async triggerStkPush(phone: string, amount: number, reference: string = 'POS', businessId: string, branchId: string): Promise<StkPushResponse> {
     try {
-      if (typeof window !== 'undefined' && navigator.onLine === false) {
-        return { error: 'Offline: M-Pesa requires internet connection.' };
-      }
-      const apiKey = await getApiKey();
-      const res = await fetch(`${API_BASE}/stkpush`, {
+      return await apiRequest<StkPushResponse>(`${API_BASE}/stkpush`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey,
-        },
-        credentials: 'same-origin',
-        cache: 'no-store',
-        body: JSON.stringify({ phone, amount, reference, businessId, branchId })
+        body: { phone, amount, reference, businessId, branchId },
+        businessId,
+        branchId,
       });
-      return await res.json();
     } catch (err: any) {
       console.error('M-Pesa Request Failed:', err);
       return { error: err.message || 'Network error' };
@@ -90,16 +81,7 @@ export const MpesaService = {
    */
   async checkStatus(checkoutRequestId: string): Promise<MpesaStatusResponse> {
     try {
-      if (typeof window !== 'undefined' && navigator.onLine === false) {
-        return { found: false, error: 'Offline: status check requires internet.' };
-      }
-      const apiKey = await getApiKey();
-      const res = await fetch(`${API_BASE}/status/${checkoutRequestId}`, {
-        headers: { 'X-API-Key': apiKey },
-        credentials: 'same-origin',
-        cache: 'no-store',
-      });
-      return await res.json();
+      return await apiRequest<MpesaStatusResponse>(`${API_BASE}/status/${checkoutRequestId}`);
     } catch (err: any) {
       console.error('Status Check Failed:', err);
       return { found: false, error: err.message || 'Network error' };
@@ -108,24 +90,12 @@ export const MpesaService = {
 
   async verifyPayment(code: string, amount: number, businessId: string, branchId: string): Promise<MpesaVerificationResponse> {
     try {
-      if (typeof window !== 'undefined' && navigator.onLine === false) {
-        return { found: false, paid: false, usable: false, utilizationStatus: 'UNUTILIZED', error: 'Offline: M-Pesa verification requires internet.' };
-      }
-      const apiKey = await getApiKey();
-      const res = await fetch(`${API_BASE}/verify`, {
+      return await apiRequest<MpesaVerificationResponse>(`${API_BASE}/verify`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey,
-          'X-Business-ID': businessId,
-          'X-Branch-ID': branchId,
-        },
-        credentials: 'same-origin',
-        cache: 'no-store',
-        body: JSON.stringify({ code, amount, businessId, branchId }),
+        body: { code, amount, businessId, branchId },
+        businessId,
+        branchId,
       });
-      const data: any = await res.json().catch(() => ({}));
-      return data as MpesaVerificationResponse;
     } catch (err: any) {
       console.error('M-Pesa Verify Failed:', err);
       return { found: false, paid: false, usable: false, utilizationStatus: 'UNUTILIZED', error: err.message || 'Network error' };
@@ -141,25 +111,12 @@ export const MpesaService = {
     customerName?: string;
   }): Promise<{ success?: boolean; error?: string }> {
     try {
-      if (typeof window !== 'undefined' && navigator.onLine === false) {
-        return { error: 'Offline: M-Pesa utilization requires internet.' };
-      }
-      const apiKey = await getApiKey();
-      const res = await fetch(`${API_BASE}/utilize`, {
+      return await apiRequest<{ success?: boolean; error?: string }>(`${API_BASE}/utilize`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey,
-          'X-Business-ID': input.businessId,
-          'X-Branch-ID': input.branchId,
-        },
-        credentials: 'same-origin',
-        cache: 'no-store',
-        body: JSON.stringify(input),
+        body: input,
+        businessId: input.businessId,
+        branchId: input.branchId,
       });
-      const data: any = await res.json().catch(() => ({}));
-      if (!res.ok) return { error: data?.error || `M-Pesa utilization failed (${res.status})` };
-      return data;
     } catch (err: any) {
       console.error('M-Pesa Utilization Failed:', err);
       return { error: err.message || 'Network error' };
@@ -176,10 +133,6 @@ export const MpesaService = {
     offset?: number;
   }): Promise<{ rows: MpesaLedgerRow[]; total: number; error?: string }> {
     try {
-      if (typeof window !== 'undefined' && navigator.onLine === false) {
-        return { rows: [], total: 0, error: 'Offline: M-Pesa payments need internet.' };
-      }
-      const apiKey = await getApiKey();
       const params = new URLSearchParams({
         businessId: input.businessId,
         branchId: input.branchId,
@@ -190,17 +143,10 @@ export const MpesaService = {
       if (input.to) params.set('to', String(input.to));
       if (input.search) params.set('search', input.search);
 
-      const res = await fetch(`${API_BASE}/transactions?${params.toString()}`, {
-        headers: {
-          'X-API-Key': apiKey,
-          'X-Business-ID': input.businessId,
-          'X-Branch-ID': input.branchId,
-        },
-        credentials: 'same-origin',
-        cache: 'no-store',
+      const data = await apiRequest<{ rows?: MpesaLedgerRow[]; total?: number }>(`${API_BASE}/transactions?${params.toString()}`, {
+        businessId: input.businessId,
+        branchId: input.branchId,
       });
-      const data: any = await res.json().catch(() => ({}));
-      if (!res.ok) return { rows: [], total: 0, error: data?.error || `M-Pesa payments failed (${res.status})` };
       return { rows: data.rows || [], total: Number(data.total || 0) };
     } catch (err: any) {
       console.error('M-Pesa Payments Failed:', err);

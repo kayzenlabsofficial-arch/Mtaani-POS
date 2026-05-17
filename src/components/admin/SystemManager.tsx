@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { db, type Business, type BusinessSettings } from '../../db';
 import { useLiveQuery } from '../../clouddb';
-import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { resetAttempts } from '../../security';
 import { BillingService, type BillingDiscountType, type BillingSummaryRow } from '../../services/billing';
+import { BusinessAdminService, StaffService } from '../../services/admin';
+import { BusinessSettingsService } from '../../services/businessSettings';
 import { getApiKey } from '../../runtimeConfig';
 import { Building2, Bot, CloudOff, KeyRound, Network, ReceiptText, ShieldCheck, Store, UserRound, X } from 'lucide-react';
 
@@ -67,22 +68,7 @@ async function fetchBusinessSettingsForRoot(business: Business): Promise<Busines
 }
 
 async function saveBusinessSettingsForRoot(settings: BusinessSettings) {
-  const apiKey = await getApiKey();
-  const res = await fetch('/api/data/settings', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': apiKey,
-      'X-Business-ID': settings.businessId,
-    },
-    credentials: 'same-origin',
-    cache: 'no-store',
-    body: JSON.stringify([{ ...settings, updated_at: Date.now() }]),
-  });
-  if (!res.ok) {
-    const body: any = await res.json().catch(() => ({}));
-    throw new Error(body?.error || `Could not save AI settings (${res.status}).`);
-  }
+  await BusinessSettingsService.save({ settings, businessId: settings.businessId });
 }
 
 function money(value: unknown) {
@@ -98,12 +84,6 @@ function invoiceStatusClass(status?: string) {
 function sentenceValue(value: unknown, fallback = '') {
   const text = String(value || fallback).replace(/_/g, ' ').toLowerCase();
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
-}
-
-function temporaryPassword(length = 12) {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#';
-  const bytes = crypto.getRandomValues(new Uint8Array(length));
-  return Array.from(bytes, byte => alphabet[byte % alphabet.length]).join('');
 }
 
 type ManageBusinessModalProps = {
@@ -198,8 +178,9 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
     if (!confirm(`Reset password for ${userName}?`)) return;
     setIsProcessing(true);
     try {
-      const newPassword = temporaryPassword();
-      await db.users.update(userId, { password: newPassword, updated_at: Date.now() });
+      const result = await StaffService.resetPassword({ userId, businessId: business.id });
+      await db.users.reload();
+      const newPassword = result.temporaryPassword || 'generated on server';
       success(`Temporary password for ${userName}: ${newPassword}`);
     } catch (err) {
       error('Reset failed');
@@ -548,7 +529,6 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
 export default function SystemManagerDashboard({ onLogout }: { onLogout: () => void }) {
   const businesses = useLiveQuery(() => db.businesses.toArray(), [], []);
   const [form, setForm] = useState({ name: '', code: '' });
-  const { setActiveBusinessId } = useStore();
   const [selectedBiz, setSelectedBiz] = useState<Business | null>(null);
   const [billingRows, setBillingRows] = useState<BillingSummaryRow[]>([]);
   const [isBillingLoading, setIsBillingLoading] = useState(false);
@@ -581,48 +561,21 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
       alert('Business code must be 3-20 alphanumeric characters (A-Z, 0-9)');
       return;
     }
-    const prevBusinessId = useStore.getState().activeBusinessId;
     try {
-      const newBusinessId = crypto.randomUUID();
-      await db.businesses.add({
-        id: newBusinessId,
-        name: form.name,
-        code: trimmedCode,
-        isActive: 1,
-        updated_at: Date.now()
-      } as any);
-
-      setActiveBusinessId(newBusinessId);
-      await new Promise(r => setTimeout(r, 50));
-
-      const adminPassword = temporaryPassword();
-      await db.users.add({
-        id: crypto.randomUUID(),
-        name: 'admin',
-        password: adminPassword,
-        role: 'ADMIN',
-        businessId: newBusinessId,
-        updated_at: Date.now()
-      });
-
-      await db.branches.add({
-        id: crypto.randomUUID(),
-        name: 'Main Branch',
-        location: 'Default',
-        isActive: true,
-        businessId: newBusinessId,
-        updated_at: Date.now()
-      });
+      const result = await BusinessAdminService.create({ name: form.name.trim(), code: trimmedCode });
 
       setForm({ name: '', code: '' });
-      await BillingService.saveAccount({ businessId: newBusinessId });
+      await Promise.allSettled([
+        db.businesses.reload(),
+        db.users.reload(),
+        db.branches.reload(),
+      ]);
+      await BillingService.saveAccount({ businessId: result.businessId });
       await loadBilling();
-      alert(`Business created. Login: username admin, temporary password ${adminPassword}`);
+      alert(`Business created. Login: username admin, temporary password ${result.adminPassword}`);
     } catch (err: any) {
       console.error(err);
       alert(`Failed to create business: ${err.message || 'Unknown error'}`);
-    } finally {
-      setActiveBusinessId(prevBusinessId);
     }
   };
 

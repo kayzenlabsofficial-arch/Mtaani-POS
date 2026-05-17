@@ -1,5 +1,6 @@
 import { db, type Expense, type Transaction } from '../db';
-import { getProductIngredients, isBundleProduct } from './bundleInventory';
+import { ExpenseService } from '../services/expenses';
+import { SalesService } from '../services/sales';
 
 interface ApprovalContext {
   approvedBy: string;
@@ -27,58 +28,43 @@ export async function ensureExpenseCanBeApproved(expense: Expense): Promise<void
 }
 
 export async function applyApprovedExpenseEffects(expense: Expense, context: ApprovalContext): Promise<void> {
-  if (expense.source === 'ACCOUNT' && expense.accountId) {
-    const account = await db.financialAccounts.get(expense.accountId);
-    if (!account) throw new Error('Selected payment account was not found.');
-    if ((account.balance || 0) < (Number(expense.amount) || 0)) {
-      throw new Error(`Insufficient funds in ${account.name}.`);
-    }
-    await db.financialAccounts.update(account.id, {
-      balance: (account.balance || 0) - (Number(expense.amount) || 0),
-      updated_at: Date.now()
-    });
-  }
+  await ExpenseService.approve({
+    expenseId: expense.id,
+    businessId: context.activeBusinessId,
+    branchId: context.activeBranchId,
+    approvedBy: context.approvedBy,
+  });
+  await Promise.allSettled([
+    db.expenses.reload(),
+    db.financialAccounts.reload(),
+    db.products.reload(),
+    db.stockMovements.reload(),
+  ]);
+}
 
-  if (expense.source === 'SHOP' && (expense as any).productId) {
-    const product = await db.products.get((expense as any).productId);
-    if (!product) throw new Error('Selected shop item was not found.');
-
-    const qty = Number((expense as any).quantity) || 1;
-    await db.products.update(product.id, {
-      stockQuantity: Math.max(0, (product.stockQuantity || 0) - qty)
-    });
-    await db.stockMovements.add({
-      id: crypto.randomUUID(),
-      productId: product.id,
-      type: 'OUT',
-      quantity: -qty,
-      timestamp: Date.now(),
-      reference: `Expense: ${expense.description || 'Shop Use'}`,
-      branchId: context.activeBranchId,
-      businessId: context.activeBusinessId,
-      shiftId: expense.shiftId
-    });
-  }
+export async function submitExpenseRecord(expense: Expense | any): Promise<void> {
+  await ExpenseService.submit(expense);
+  await Promise.allSettled([
+    db.expenses.reload(),
+    db.financialAccounts.reload(),
+    db.products.reload(),
+    db.stockMovements.reload(),
+  ]);
 }
 
 export async function approveExpenseRequest(expense: Expense, context: ApprovalContext): Promise<void> {
-  const freshExpense = await db.expenses.get(expense.id);
-  if (!freshExpense || freshExpense.status !== 'PENDING') {
-    throw new Error('This expense has already been processed.');
-  }
-
-  await ensureExpenseCanBeApproved(freshExpense);
-  await db.expenses.update(freshExpense.id, {
-    status: 'APPROVED',
-    approvedBy: context.approvedBy
+  await ExpenseService.approve({
+    expenseId: expense.id,
+    businessId: context.activeBusinessId,
+    branchId: context.activeBranchId,
+    approvedBy: context.approvedBy,
   });
-
-  try {
-    await applyApprovedExpenseEffects(freshExpense, context);
-  } catch (err) {
-    await db.expenses.update(freshExpense.id, { status: 'PENDING', approvedBy: undefined });
-    throw err;
-  }
+  await Promise.allSettled([
+    db.expenses.reload(),
+    db.financialAccounts.reload(),
+    db.products.reload(),
+    db.stockMovements.reload(),
+  ]);
 }
 
 function refundLinesFor(transaction: Transaction, itemsToReturn?: RefundLine[]): RefundLine[] {
@@ -112,11 +98,13 @@ export async function requestRefundApproval(
   transaction: Transaction,
   itemsToReturn?: RefundLine[]
 ): Promise<void> {
-  const lines = refundLinesFor(transaction, itemsToReturn);
-  await db.transactions.update(transaction.id, {
-    status: 'PENDING_REFUND',
-    pendingRefundItems: lines.length ? lines : undefined
+  await SalesService.requestRefund({
+    transactionId: transaction.id,
+    businessId: transaction.businessId,
+    branchId: transaction.branchId,
+    itemsToReturn,
   });
+  await db.transactions.reload();
 }
 
 export async function approveRefundTransaction(
@@ -124,74 +112,17 @@ export async function approveRefundTransaction(
   itemsToReturn: RefundLine[] | undefined,
   context: ApprovalContext
 ): Promise<void> {
-  const lines = refundLinesFor(transaction, itemsToReturn);
-  if (lines.length === 0) throw new Error('No refundable items selected.');
-
-  const refundAmount = refundAmountFor(transaction, lines);
-
-  if (transaction.paymentMethod === 'CASH' && transaction.branchId) {
-    const cashAccount = await db.financialAccounts.where('branchId').equals(transaction.branchId)
-      .and(acc => acc.type === 'CASH')
-      .first();
-    if (cashAccount) {
-      await db.financialAccounts.update(cashAccount.id, {
-        balance: (cashAccount.balance || 0) - refundAmount,
-        updated_at: Date.now()
-      });
-    }
-  }
-
-  const updatedItems = transaction.items.map(item => ({ ...item }));
-  const productIngredients = await db.productIngredients.where('businessId').equals(context.activeBusinessId).toArray();
-  for (const line of lines) {
-    const product = await db.products.get(line.productId);
-    if (product && isBundleProduct(product)) {
-      const ingredients = getProductIngredients(product, productIngredients);
-      for (const row of ingredients) {
-        const ingredient = await db.products.get(row.ingredientProductId);
-        if (!ingredient) continue;
-        const returnQty = row.quantity * line.quantity;
-        await db.products.update(ingredient.id, {
-          stockQuantity: (ingredient.stockQuantity || 0) + returnQty
-        });
-        await db.stockMovements.add({
-          id: crypto.randomUUID(),
-          productId: ingredient.id,
-          type: 'RETURN',
-          quantity: returnQty,
-          timestamp: Date.now(),
-          reference: `Bundle Return #${transaction.id.split('-')[0].toUpperCase()} (${product.name})`,
-          branchId: context.activeBranchId,
-          businessId: context.activeBusinessId,
-          shiftId: transaction.shiftId
-        });
-      }
-    } else if (product) {
-      await db.products.update(line.productId, {
-        stockQuantity: (product.stockQuantity || 0) + line.quantity
-      });
-      await db.stockMovements.add({
-        id: crypto.randomUUID(),
-        productId: line.productId,
-        type: 'RETURN',
-        quantity: line.quantity,
-        timestamp: Date.now(),
-        reference: `Return #${transaction.id.split('-')[0].toUpperCase()}`,
-        branchId: context.activeBranchId,
-        businessId: context.activeBusinessId,
-        shiftId: transaction.shiftId
-      });
-    }
-
-    const txItem = updatedItems.find(item => item.productId === line.productId);
-    if (txItem) txItem.returnedQuantity = (txItem.returnedQuantity || 0) + line.quantity;
-  }
-
-  const allReturned = updatedItems.every(item => (item.returnedQuantity || 0) >= item.quantity);
-  await db.transactions.update(transaction.id, {
-    status: allReturned ? 'REFUNDED' : 'PARTIAL_REFUND',
-    items: updatedItems,
-    pendingRefundItems: undefined,
-    approvedBy: context.approvedBy
+  await SalesService.approveRefund({
+    transactionId: transaction.id,
+    businessId: context.activeBusinessId,
+    branchId: context.activeBranchId,
+    itemsToReturn,
+    approvedBy: context.approvedBy,
   });
+  await Promise.allSettled([
+    db.transactions.reload(),
+    db.financialAccounts.reload(),
+    db.products.reload(),
+    db.stockMovements.reload(),
+  ]);
 }

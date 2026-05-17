@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import { Search, Plus, ClipboardList, PackagePlus, CheckSquare, Save, Trash2, Barcode, SlidersHorizontal, TrendingUp, ShoppingBag, Clock, ChevronRight, X, User, ArrowDownLeft, FileText } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
-import { db, type Product, type PurchaseOrder, type Supplier, type Transaction } from '../../db';
+import { db, type Product, type PurchaseOrder } from '../../db';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { SearchableSelect } from '../shared/SearchableSelect';
-import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
-import { getBusinessSettings } from '../../utils/settings';
 import { belongsToActiveBranch } from '../../utils/branchScope';
+import { PurchaseService } from '../../services/purchases';
 
 
 export default function PurchasesTab() {
@@ -45,8 +44,6 @@ export default function PurchasesTab() {
     [activeBusinessId, activeBranchId],
     []
   );
-  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
-
   const filteredPurchases = allPurchaseOrders.filter(po => 
       (po.invoiceNumber || '').toLowerCase().includes(purchaseSearch.toLowerCase()) || 
       (allSuppliers.find(s => s.id === po.supplierId)?.company || '').toLowerCase().includes(purchaseSearch.toLowerCase()) ||
@@ -75,52 +72,28 @@ export default function PurchasesTab() {
 
   const handleSavePO = async () => {
       if (!poForm.supplierId || poItems.length === 0) return;
+      if (!activeBusinessId || !activeBranchId) return error("Select a branch before saving a purchase order.");
       if (isSaving) return;
       setIsSaving(true);
       try {
-        const totalAmount = poItems.reduce((acc, item) => acc + (item.expectedQuantity * item.unitCost), 0);
-        const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
-        
-        if (selectedPOToEdit) {
-           await db.purchaseOrders.update(selectedPOToEdit.id, {
-              supplierId: poForm.supplierId,
-              items: poItems.map(item => ({ ...item, receivedQuantity: 0 })),
-              totalAmount,
-              preparedBy: selectedPOToEdit.preparedBy || currentUser?.name || 'Staff',
-              ...(autoApprove ? { approvalStatus: 'APPROVED', approvedBy: currentUser?.name || 'Owner' } : {}),
-              branchId: activeBranchId!
-           });
-           setSelectedPOToEdit(null);
-        } else {
-           const allPOs = activeBranchId ? await db.purchaseOrders.where('branchId').equals(activeBranchId).toArray() : [];
-           const maxNumber = allPOs.reduce((max, po) => {
-              const ref = po.poNumber || po.id;
-              if (!ref.startsWith('PO-')) return max;
-              const num = parseInt(ref.replace('PO-', ''));
-              return !isNaN(num) && num > max ? num : max;
-           }, 0);
-           const nextRef = `PO-${String(maxNumber + 1).padStart(4, '0')}`;
-           const nextId = `po_${activeBusinessId}_${activeBranchId}_${crypto.randomUUID()}`;
-
-           await db.purchaseOrders.add({
-              id: nextId,
-              poNumber: nextRef,
-              supplierId: poForm.supplierId,
-              items: poItems.map(item => ({ ...item, receivedQuantity: 0 })),
-              totalAmount,
-              status: 'PENDING',
-              approvalStatus: autoApprove ? 'APPROVED' : 'PENDING',
-              orderDate: Date.now(),
-              preparedBy: currentUser?.name || 'Staff',
-              approvedBy: autoApprove ? currentUser?.name || 'Owner' : undefined,
-              branchId: activeBranchId!,
-              businessId: activeBusinessId!
-           } as any);
-        }
+        const result = await PurchaseService.saveOrder({
+          purchaseOrderId: selectedPOToEdit?.id,
+          supplierId: poForm.supplierId,
+          items: poItems.map(item => ({
+            productId: item.productId,
+            expectedQuantity: item.expectedQuantity,
+            unitCost: item.unitCost,
+          })),
+          preparedBy: selectedPOToEdit?.preparedBy || currentUser?.name || 'Staff',
+          branchId: activeBranchId,
+          businessId: activeBusinessId,
+        });
+        await db.purchaseOrders.reload();
+        setSelectedPOToEdit(null);
         setIsPOModalOpen(false);
         setPoForm({ supplierId: '' });
         setPoItems([]);
-        success(autoApprove ? "Purchase order approved and ready to receive." : "Purchase order saved successfully.");
+        success(result.autoApproved ? "Purchase order approved and ready to receive." : "Purchase order saved successfully.");
       } catch (err: any) {
         error("Failed to save PO: " + err.message);
       } finally {
@@ -167,6 +140,7 @@ export default function PurchasesTab() {
       if (isSaving) return;
       const invoiceNumber = receiveInvoices[selectedPO.id];
       if (!invoiceNumber) return error("Invoice number is required");
+      if (!activeBusinessId || !activeBranchId) return error("Business and branch are required.");
 
       setIsSaving(true);
       try {
@@ -181,55 +155,32 @@ export default function PurchasesTab() {
         const totalReceivedCost = updatedItems.reduce((sum, item) => sum + (item.receivedQuantity * item.unitCost), 0);
         if (totalReceivedCost <= 0) return error("Receive at least one item before confirming arrival.");
         
-        await db.purchaseOrders.update(selectedPO.id, { 
-            status: 'RECEIVED', 
-            paymentStatus: 'UNPAID',
-            paidAmount: 0,
-            items: updatedItems,
-            totalAmount: totalReceivedCost,
-            receivedDate: Date.now(),
+        await PurchaseService.receiveOrder({
+            purchaseOrderId: selectedPO.id,
             invoiceNumber,
             receivedBy: currentUser?.name || 'Staff',
-            updated_at: Date.now(),
+            businessId: activeBusinessId!,
+            branchId: activeBranchId!,
+            items: updatedItems.map(item => ({
+                productId: item.productId,
+                receivedQuantity: item.receivedQuantity,
+                unitCost: item.unitCost,
+                sellingPrice: receiveSellingPrices[item.productId],
+            })),
         });
 
-        for (const item of updatedItems) {
-           if (item.receivedQuantity > 0) {
-               const product = await db.products.get(item.productId);
-               if (product) {
-                   const newSell = receiveSellingPrices[item.productId];
-                   await db.products.update(item.productId, {
-                       stockQuantity: (product.stockQuantity || 0) + item.receivedQuantity,
-                       costPrice: item.unitCost,
-                       ...(newSell && newSell !== product.sellingPrice ? { sellingPrice: newSell } : {})
-                   });
-                   await db.stockMovements.add({
-                       id: crypto.randomUUID(),
-                       productId: item.productId,
-                       type: 'IN',
-                       quantity: item.receivedQuantity,
-                       timestamp: Date.now(),
-                       reference: `${selectedPO.poNumber || selectedPO.id.split('-')[0].toUpperCase()} Inv:${invoiceNumber}`,
-                       branchId: activeBranchId!,
-                       businessId: activeBusinessId!
-                   });
-               }
-           }
-        }
-
-        const supplier = await db.suppliers.get(selectedPO.supplierId);
-        if (supplier) {
-            await db.suppliers.update(supplier.id, {
-                balance: (supplier.balance || 0) + totalReceivedCost,
-                updated_at: Date.now(),
-            });
-        }
+        await Promise.allSettled([
+            db.purchaseOrders.reload(),
+            db.products.reload(),
+            db.stockMovements.reload(),
+            db.suppliers.reload(),
+        ]);
 
         setIsReceivePOModalOpen(false);
         setSelectedPO(null);
         success("Order received and stock updated.");
       } catch (err: any) {
-        error("Failed to receive order.");
+        error("Failed to receive order: " + (err?.message || 'Please try again.'));
       } finally {
         setIsSaving(false);
       }

@@ -4,6 +4,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db, type Category } from '../../db';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
+import { CategoryService } from '../../services/catalog';
 
 interface CategoryManagementModalProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ const COLOR_OPTIONS = [
 export default function CategoryManagementModal({ isOpen, onClose }: CategoryManagementModalProps) {
   const { success, error, warning } = useToast();
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  const activeBranchId = useStore(state => state.activeBranchId);
   const categories = useLiveQuery(
     () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],
@@ -50,29 +52,30 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
     }
 
     try {
-      if (editingId) {
-        await db.categories.update(editingId, { ...form, updated_at: Date.now() });
-        success("Category updated successfully.");
-      } else {
-        await db.categories.add({
-          id: crypto.randomUUID(),
-          ...form,
-          updated_at: Date.now(),
-          businessId: activeBusinessId!
-        });
-        success("New category created.");
-      }
+      if (!activeBusinessId) return error("Please log in again.");
+      await CategoryService.save({
+        category: { id: editingId || undefined, ...form },
+        businessId: activeBusinessId,
+        branchId: activeBranchId,
+      });
+      await db.categories.reload();
+      success(editingId ? "Category updated successfully." : "New category created.");
       resetForm();
-      db.syncAll(); // Proactive sync
-    } catch (err) {
+    } catch (err: any) {
       error("Failed to save category.");
     }
   };
 
   const handleDelete = async (id: string, name: string) => {
     if (confirm(`Are you sure you want to delete "${name}"? Products in this category will need to be reassigned.`)) {
-      await db.categories.delete(id);
-      success("Category removed.");
+      try {
+        if (!activeBusinessId) return error("Please log in again.");
+        await CategoryService.delete({ categoryId: id, businessId: activeBusinessId, branchId: activeBranchId });
+        await db.categories.reload();
+        success("Category removed.");
+      } catch (err: any) {
+        error(err?.message || "Failed to remove category.");
+      }
     }
   };
 

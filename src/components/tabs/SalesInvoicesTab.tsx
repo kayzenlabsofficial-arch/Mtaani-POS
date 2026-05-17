@@ -18,12 +18,15 @@ import {
   X,
 } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
-import { db, type Customer, type Product, type SalesInvoice, type SalesInvoiceItem, type ServiceItem } from '../../db';
+import { db, type SalesInvoice, type SalesInvoiceItem, type ServiceItem } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { getBusinessSettings } from '../../utils/settings';
 import { belongsToActiveBranch } from '../../utils/branchScope';
+import { SalesInvoiceService } from '../../services/salesInvoices';
+import { CustomerService } from '../../services/customers';
+import { ServiceItemService } from '../../services/catalog';
 
 type DraftLine = SalesInvoiceItem & { id: string };
 type ViewMode = 'INVOICES' | 'SERVICES';
@@ -153,15 +156,6 @@ export default function SalesInvoicesTab() {
     setLines([]);
   };
 
-  const nextInvoiceNumber = () => {
-    const max = (invoices || []).reduce((highest, invoice) => {
-      const match = String(invoice.invoiceNumber || '').match(/INV-(\d+)/i);
-      const num = match ? Number(match[1]) : 0;
-      return Number.isFinite(num) && num > highest ? num : highest;
-    }, 0);
-    return `INV-${String(max + 1).padStart(4, '0')}`;
-  };
-
   const selectCatalogItem = (id: string) => {
     if (!id) {
       setLineInput(prev => ({ ...prev, itemId: '', name: '', unitPrice: '' }));
@@ -233,61 +227,25 @@ export default function SalesInvoicesTab() {
 
     setIsSaving(true);
     try {
-      const invoiceNumber = nextInvoiceNumber();
-      const calculated = invoiceTotals(lines);
-      const invoice: SalesInvoice = {
-        id: `sales_invoice_${activeBusinessId}_${activeBranchId}_${crypto.randomUUID()}`,
-        invoiceNumber,
+      const result = await SalesInvoiceService.create({
         customerId: customer.id,
-        customerName: customer.name,
-        customerPhone: customer.phone,
-        customerEmail: customer.email,
         items: lines.map(({ id, ...line }) => line),
-        subtotal: calculated.subtotal,
-        tax: calculated.tax,
-        total: calculated.total,
-        paidAmount: 0,
-        balance: calculated.total,
-        status: 'SENT',
-        issueDate: Date.now(),
         dueDate: invoiceForm.dueDate ? toDayStart(invoiceForm.dueDate) : undefined,
         notes: invoiceForm.notes.trim() || undefined,
         preparedBy: currentUser?.name || 'Staff',
         branchId: activeBranchId,
         businessId: activeBusinessId,
-      };
-
-      await db.salesInvoices.add(invoice);
-
-      for (const line of lines) {
-        if (line.itemType !== 'PRODUCT' || !line.itemId) continue;
-        const product = await db.products.get(line.itemId);
-        if (!product) continue;
-        await db.products.update(line.itemId, {
-          stockQuantity: Math.max(0, Number(product.stockQuantity || 0) - Number(line.quantity || 0)),
-          updated_at: Date.now(),
-        });
-        await db.stockMovements.add({
-          id: crypto.randomUUID(),
-          productId: line.itemId,
-          type: 'OUT',
-          quantity: -Number(line.quantity || 0),
-          timestamp: Date.now(),
-          reference: `Invoice ${invoiceNumber}`,
-          branchId: activeBranchId,
-          businessId: activeBusinessId,
-        } as any);
-      }
-
-      await db.customers.update(customer.id, {
-        totalSpent: Number(customer.totalSpent || 0) + calculated.total,
-        balance: Number(customer.balance || 0) + calculated.total,
-        updated_at: Date.now(),
       });
 
+      await Promise.allSettled([
+        db.salesInvoices.reload(),
+        db.customers.reload(),
+        db.products.reload(),
+        db.stockMovements.reload(),
+      ]);
       setIsInvoiceModalOpen(false);
       resetInvoiceForm();
-      setSelectedInvoice(invoice);
+      setSelectedInvoice(result.invoice);
       success('Invoice created.');
     } catch (err: any) {
       error('Could not save invoice: ' + err.message);
@@ -315,22 +273,17 @@ export default function SalesInvoicesTab() {
     setIsSaving(true);
     try {
       const payload = {
+        id: editingService?.id,
         name: serviceForm.name.trim(),
         category: serviceForm.category.trim() || 'General',
         description: serviceForm.description.trim() || undefined,
         price: 0,
         taxCategory: serviceForm.taxCategory,
         isActive: serviceForm.isActive ? 1 : 0,
-        businessId: activeBusinessId,
-        updated_at: Date.now(),
       };
-      if (editingService) {
-        await db.serviceItems.update(editingService.id, payload);
-        success('Service updated.');
-      } else {
-        await db.serviceItems.add({ id: `service_${activeBusinessId}_${crypto.randomUUID()}`, ...payload } as ServiceItem);
-        success('Service added.');
-      }
+      await ServiceItemService.save({ service: payload, businessId: activeBusinessId });
+      await db.serviceItems.reload();
+      success(editingService ? 'Service updated.' : 'Service added.');
       setIsServiceModalOpen(false);
       setEditingService(null);
     } catch (err: any) {
@@ -348,35 +301,27 @@ export default function SalesInvoicesTab() {
     if (amount > Number(paymentInvoice.balance || 0)) return error('Amount is more than the invoice balance.');
     setIsSaving(true);
     try {
-      const customer = await db.customers.get(paymentInvoice.customerId);
-      const paidAmount = Number(paymentInvoice.paidAmount || 0) + amount;
-      const balance = Math.max(0, Number(paymentInvoice.total || 0) - paidAmount);
-      const status = balance <= 0 ? 'PAID' : 'PARTIAL';
-      await db.customerPayments.add({
-        id: crypto.randomUUID(),
+      await CustomerService.recordPayment({
         customerId: paymentInvoice.customerId,
         amount,
         paymentMethod: paymentForm.method,
         transactionCode: paymentForm.reference.trim() || undefined,
         reference: `Invoice ${paymentInvoice.invoiceNumber}`,
         allocations: [{ sourceType: 'INVOICE', sourceId: paymentInvoice.id, amount }],
-        timestamp: Date.now(),
         preparedBy: currentUser?.name,
-        branchId: activeBranchId,
         businessId: activeBusinessId,
-      } as any);
-      await db.salesInvoices.update(paymentInvoice.id, { paidAmount, balance, status, updated_at: Date.now() });
-      if (customer) {
-        await db.customers.update(customer.id, {
-          balance: Math.max(0, Number(customer.balance || 0) - amount),
-          updated_at: Date.now(),
-        });
-      }
-      const updated = { ...paymentInvoice, paidAmount, balance, status } as SalesInvoice;
+        branchId: activeBranchId,
+      });
+      await Promise.allSettled([
+        db.customerPayments.reload(),
+        db.salesInvoices.reload(),
+        db.customers.reload(),
+      ]);
+      const updated = await db.salesInvoices.get(paymentInvoice.id);
       setPaymentInvoice(null);
       setPaymentForm({ amount: '', method: 'CASH', reference: '' });
-      setSelectedInvoice(updated);
-      success(balance <= 0 ? 'Invoice cleared.' : 'Balance reduced.');
+      setSelectedInvoice(updated || paymentInvoice);
+      success((updated?.balance || 0) <= 0 ? 'Invoice cleared.' : 'Balance reduced.');
     } catch (err: any) {
       error('Could not clear balance: ' + err.message);
     } finally {
@@ -391,35 +336,19 @@ export default function SalesInvoicesTab() {
     if (!confirm(`Cancel invoice ${invoice.invoiceNumber}?`)) return;
     setIsSaving(true);
     try {
-      const customer = await db.customers.get(invoice.customerId);
-      await db.salesInvoices.update(invoice.id, { status: 'CANCELLED', balance: 0, updated_at: Date.now() });
-      if (customer) {
-        await db.customers.update(customer.id, {
-          totalSpent: Math.max(0, Number(customer.totalSpent || 0) - Number(invoice.total || 0)),
-          balance: Math.max(0, Number(customer.balance || 0) - Number(invoice.balance || 0)),
-          updated_at: Date.now(),
-        });
-      }
-      for (const line of invoice.items || []) {
-        if (line.itemType !== 'PRODUCT' || !line.itemId || !activeBusinessId || !activeBranchId) continue;
-        const product = await db.products.get(line.itemId);
-        if (!product) continue;
-        await db.products.update(line.itemId, {
-          stockQuantity: Number(product.stockQuantity || 0) + Number(line.quantity || 0),
-          updated_at: Date.now(),
-        });
-        await db.stockMovements.add({
-          id: crypto.randomUUID(),
-          productId: line.itemId,
-          type: 'RETURN',
-          quantity: Number(line.quantity || 0),
-          timestamp: Date.now(),
-          reference: `Cancelled invoice ${invoice.invoiceNumber}`,
-          branchId: activeBranchId,
-          businessId: activeBusinessId,
-        } as any);
-      }
-      setSelectedInvoice({ ...invoice, status: 'CANCELLED', balance: 0 });
+      if (!activeBusinessId || !activeBranchId) return error('Please select a branch first.');
+      const result = await SalesInvoiceService.cancel({
+        invoiceId: invoice.id,
+        businessId: activeBusinessId,
+        branchId: activeBranchId,
+      });
+      await Promise.allSettled([
+        db.salesInvoices.reload(),
+        db.customers.reload(),
+        db.products.reload(),
+        db.stockMovements.reload(),
+      ]);
+      setSelectedInvoice(result.invoice);
       success('Invoice cancelled.');
     } catch (err: any) {
       error('Could not cancel invoice: ' + err.message);

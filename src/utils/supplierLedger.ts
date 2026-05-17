@@ -1,4 +1,5 @@
-import { db, type Supplier, type SupplierPayment } from '../db';
+import { db, type Supplier } from '../db';
+import { SupplierService } from '../services/suppliers';
 import { calculateCashDrawer, getTodayStartMs } from './cashDrawer';
 
 export type SupplierPaymentInput = {
@@ -76,85 +77,22 @@ export async function settleSupplierPayment({
     throw new Error(`Payment exceeds supplier balance by Ksh ${(totalDeduction - (freshSupplier.balance || 0)).toLocaleString()}.`);
   }
 
-  const paymentId = crypto.randomUUID();
-  const paymentRecord: SupplierPayment = {
-    id: paymentId,
-    supplierId: freshSupplier.id,
-    purchaseOrderIds: payment.purchaseOrderIds,
-    creditNoteIds: payment.creditNoteIds,
-    amount: cashAmount,
-    paymentMethod: payment.method,
-    transactionCode: payment.transactionCode,
-    reference: payment.reference || 'Supplier payment',
-    source: payment.source,
-    accountId: payment.source === 'ACCOUNT' ? payment.accountId : undefined,
-    timestamp: Date.now(),
+  const result = await SupplierService.settlePayment({
+    supplier: freshSupplier,
+    payment,
+    activeBranchId,
+    activeBusinessId,
     preparedBy,
-    branchId: activeBranchId,
-    businessId: activeBusinessId,
     shiftId,
-  };
-
-  await db.supplierPayments.add(paymentRecord);
-
-  for (const cn of creditNotes) {
-    await db.creditNotes.update(cn.id, {
-      status: 'ALLOCATED',
-      allocatedTo: paymentId,
-      updated_at: Date.now(),
-    });
-  }
-
-  let invoicesToAllocate = [];
-  if (payment.purchaseOrderIds?.length) {
-    for (const poId of payment.purchaseOrderIds) {
-      const po = await db.purchaseOrders.get(poId);
-      if (po && po.supplierId === freshSupplier.id && po.status === 'RECEIVED' && po.paymentStatus !== 'PAID') {
-        invoicesToAllocate.push(po);
-      }
-    }
-  } else {
-    invoicesToAllocate = await db.purchaseOrders
-      .where('supplierId').equals(freshSupplier.id)
-      .filter(po => po.status === 'RECEIVED' && po.paymentStatus !== 'PAID')
-      .toArray();
-    invoicesToAllocate.sort((a, b) => (a.receivedDate || a.orderDate || 0) - (b.receivedDate || b.orderDate || 0));
-  }
-
-  let remainingPool = totalDeduction;
-  for (const inv of invoicesToAllocate) {
-    if (remainingPool <= 0) break;
-    const due = Math.max(0, Number(inv.totalAmount || 0) - Number(inv.paidAmount || 0));
-    const paymentForThisInv = Math.min(due, remainingPool);
-    const newPaidAmount = Number(inv.paidAmount || 0) + paymentForThisInv;
-    await db.purchaseOrders.update(inv.id, {
-      paidAmount: newPaidAmount,
-      paymentStatus: newPaidAmount >= Number(inv.totalAmount || 0) - 0.01 ? 'PAID' : 'PARTIAL',
-      updated_at: Date.now(),
-    });
-    remainingPool -= paymentForThisInv;
-  }
-
-  await db.suppliers.update(freshSupplier.id, {
-    balance: Math.max(0, Number(freshSupplier.balance || 0) - totalDeduction),
-    updated_at: Date.now(),
   });
 
-  if (payment.source === 'ACCOUNT' && payment.accountId && cashAmount > 0) {
-    const account = await db.financialAccounts.get(payment.accountId);
-    if (account) {
-      await db.financialAccounts.update(account.id, {
-        balance: Number(account.balance || 0) - cashAmount,
-        updated_at: Date.now(),
-      });
-    }
-  }
+  await Promise.allSettled([
+    db.supplierPayments.reload(),
+    db.creditNotes.reload(),
+    db.purchaseOrders.reload(),
+    db.suppliers.reload(),
+    db.financialAccounts.reload(),
+  ]);
 
-  return {
-    paymentId,
-    cashAmount,
-    creditTotal,
-    totalDeduction,
-    allocatedInvoiceCount: invoicesToAllocate.length,
-  };
+  return result;
 }

@@ -6,7 +6,7 @@ import { useMtaaniPOS } from './hooks/useMtaaniPOS';
 import { useToast } from './context/ToastContext';
 import { canPerform } from './utils/accessControl';
 import { recordAuditEvent } from './utils/auditLog';
-import { applyApprovedExpenseEffects, ensureExpenseCanBeApproved } from './utils/approvalWorkflows';
+import { submitExpenseRecord } from './utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from './utils/ownerMode';
 import { calculateCashDrawer, getTodayStartMs } from './utils/cashDrawer';
 import { getBusinessSettings } from './utils/settings';
@@ -133,24 +133,7 @@ export default function MtaaniPOS() {
         businessId: activeBusinessId
       } as any;
 
-      if (autoApprove) {
-        await ensureExpenseCanBeApproved(expenseRecord);
-      }
-
-      await db.expenses.add(expenseRecord);
-
-      if (autoApprove) {
-        try {
-          await applyApprovedExpenseEffects(expenseRecord, {
-            approvedBy: currentUser.name,
-            activeBranchId,
-            activeBusinessId
-          });
-        } catch (err) {
-          await db.expenses.update(expenseRecord.id, { status: 'PENDING', approvedBy: undefined });
-          throw err;
-        }
-      }
+      await submitExpenseRecord(expenseRecord);
 
       recordAuditEvent({
         userId: currentUser.id,

@@ -34,6 +34,33 @@ const MANAGER_DELETE_TABLES = new Set([
   'purchaseOrders', 'supplierPayments', 'creditNotes', 'salesInvoices',
   'customers', 'expenses', 'stockAdjustmentRequests',
 ]);
+const COMMAND_ONLY_WRITE_TABLES = new Set([
+  'businesses',
+  'users',
+  'branches',
+  'settings',
+  'categories',
+  'expenseAccounts',
+  'products',
+  'productIngredients',
+  'serviceItems',
+  'customers',
+  'customerPayments',
+  'suppliers',
+  'supplierPayments',
+  'creditNotes',
+  'purchaseOrders',
+  'salesInvoices',
+  'expenses',
+  'financialAccounts',
+  'cashPicks',
+  'shifts',
+  'endOfDayReports',
+  'dailySummaries',
+  'stockAdjustmentRequests',
+  'stockMovements',
+  'auditLogs',
+]);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
@@ -704,6 +731,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         return new Response(JSON.stringify({ error: 'You are not allowed to change this data.' }), { status: 403, headers: jsonHeaders() });
       }
 
+      if (!service && COMMAND_ONLY_WRITE_TABLES.has(table)) {
+        return new Response(JSON.stringify({ error: `Writes to ${table} must use the domain API.` }), { status: 409, headers: jsonHeaders() });
+      }
+
       if (table === 'branches') {
         items.forEach(item => {
           for (const field of BRANCH_MPESA_LOCKED_FIELDS) delete item[field];
@@ -791,6 +822,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         id = body?.id;
       }
       if (!id) return new Response(JSON.stringify({ error: 'ID required for DELETE' }), { status: 400, headers: jsonHeaders() });
+
+      if (!service && COMMAND_ONLY_WRITE_TABLES.has(table)) {
+        return new Response(JSON.stringify({ error: `Deletes from ${table} must use the domain API.` }), { status: 409, headers: jsonHeaders() });
+      }
 
       if (table === 'businesses') {
         if (principal.role !== 'ROOT' && !service) return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });

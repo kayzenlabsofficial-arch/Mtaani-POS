@@ -5,11 +5,11 @@ import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { canUseOwnerMode, getCashDrawerLimit, getCashFloatTarget, isOwnerCashSweepEnabled, isOwnerModeEnabled } from '../../utils/ownerMode';
-import { recordAuditEvent } from '../../utils/auditLog';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
 import { getBusinessSettings } from '../../utils/settings';
 import { belongsToActiveBranch } from '../../utils/branchScope';
+import { CashService, ClosingService } from '../../services/operations';
 import {
   Banknote,
   BarChart3,
@@ -219,23 +219,14 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     if (!activeBranchId || !activeBusinessId || !currentUser || !shouldSweepCash || isBankingExcess) return;
     setIsBankingExcess(true);
     try {
-      await db.cashPicks.add({
-        id: crypto.randomUUID(),
+      await CashService.createPick({
         amount: sweepAmount,
-        timestamp: Date.now(),
         status: 'APPROVED',
         userName: currentUser.name,
         branchId: activeBranchId,
         businessId: activeBusinessId,
       });
-      recordAuditEvent({
-        userId: currentUser.id,
-        userName: currentUser.name,
-        action: 'cash.pick.owner_sweep',
-        entity: 'cashPick',
-        severity: 'INFO',
-        details: `Owner cash sweep recorded for Ksh ${sweepAmount.toLocaleString()}`,
-      });
+      await db.cashPicks.reload();
       success(`Banked Ksh ${sweepAmount.toLocaleString()} and left Ksh ${cashFloatTarget.toLocaleString()} in drawer.`);
     } catch (err: any) {
       error(err.message || 'Cash sweep failed.');
@@ -294,39 +285,28 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     try {
       const now = Date.now();
       const shiftId = activeShift?.id || `shift_${activeBranchId}_${new Date().toISOString().slice(0, 10)}_${currentUser.id}`;
-      await db.endOfDayReports.add({
-        id: `eod_${activeBranchId}_${now}`,
+      await ClosingService.closeShift({
         shiftId,
-        timestamp: now,
-        totalSales: stats.totalSales,
-        grossSales: stats.grossSales,
-        taxTotal: stats.taxTotal,
-        cashSales: stats.cashSales,
-        mpesaSales: stats.mpesaSales,
-        totalExpenses: stats.totalExpenses,
-        totalPicks: stats.totalPicks,
-        totalRefunds: 0,
-        expectedCash: stats.expectedCash,
-        reportedCash,
-        difference: reportedCash - stats.expectedCash,
-        cashierName: currentUser.name,
+        startTime: since,
+        report: {
+          timestamp: now,
+          totalSales: stats.totalSales,
+          grossSales: stats.grossSales,
+          taxTotal: stats.taxTotal,
+          cashSales: stats.cashSales,
+          mpesaSales: stats.mpesaSales,
+          totalExpenses: stats.totalExpenses,
+          totalPicks: stats.totalPicks,
+          totalRefunds: 0,
+          expectedCash: stats.expectedCash,
+          reportedCash,
+          difference: reportedCash - stats.expectedCash,
+          cashierName: currentUser.name,
+        },
         branchId: activeBranchId,
         businessId: activeBusinessId,
       });
-
-      if (activeShift?.id) {
-        await db.shifts.update(activeShift.id, { status: 'CLOSED', endTime: now, updated_at: now });
-      } else {
-        await db.shifts.add({
-          id: shiftId,
-          startTime: since,
-          endTime: now,
-          cashierName: currentUser.name,
-          status: 'CLOSED',
-          branchId: activeBranchId,
-          businessId: activeBusinessId,
-        } as any);
-      }
+      await Promise.allSettled([db.endOfDayReports.reload(), db.shifts.reload()]);
       setActiveShift(null);
       success('Shift closed and Z-report saved.');
     } catch (err: any) {
@@ -345,20 +325,21 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
     setIsClosingDay(true);
     try {
-      await db.dailySummaries.add({
-        id: `day_${activeBranchId}_${new Date().toISOString().slice(0, 10)}_${Date.now()}`,
-        date: since,
-        shiftIds: todaysReports.map(report => report.shiftId || report.id),
-        totalSales: stats.totalSales,
-        grossSales: stats.grossSales,
-        taxTotal: stats.taxTotal,
-        totalExpenses: stats.totalExpenses,
-        totalPicks: stats.totalPicks,
-        totalVariance: todaysReports.reduce((sum, report) => sum + Number(report.difference || 0), 0),
-        timestamp: Date.now(),
+      await ClosingService.closeDay({
+        summary: {
+          date: since,
+          shiftIds: todaysReports.map(report => report.shiftId || report.id),
+          totalSales: stats.totalSales,
+          grossSales: stats.grossSales,
+          taxTotal: stats.taxTotal,
+          totalExpenses: stats.totalExpenses,
+          totalPicks: stats.totalPicks,
+          totalVariance: todaysReports.reduce((sum, report) => sum + Number(report.difference || 0), 0),
+        },
         branchId: activeBranchId,
         businessId: activeBusinessId,
       });
+      await db.dailySummaries.reload();
       success('Business day closed and daily summary saved.');
     } catch (err: any) {
       error(err.message || 'Failed to close day.');

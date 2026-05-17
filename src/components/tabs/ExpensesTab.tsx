@@ -8,11 +8,12 @@ import ExpenseModal from '../modals/ExpenseModal';
 import ExpenseAccountModal from '../modals/ExpenseAccountModal';
 import { canPerform } from '../../utils/accessControl';
 import { recordAuditEvent } from '../../utils/auditLog';
-import { applyApprovedExpenseEffects, ensureExpenseCanBeApproved } from '../../utils/approvalWorkflows';
+import { submitExpenseRecord } from '../../utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
 import { getBusinessSettings } from '../../utils/settings';
 import { belongsToActiveBranch } from '../../utils/branchScope';
+import { ExpenseService } from '../../services/expenses';
 
 
 export default function ExpensesTab() {
@@ -95,24 +96,7 @@ export default function ExpensesTab() {
            businessId: activeBusinessId!
         } as any;
 
-        if (autoApprove) {
-          await ensureExpenseCanBeApproved(expenseRecord);
-        }
-
-        await db.expenses.add(expenseRecord);
-
-        if (autoApprove) {
-          try {
-            await applyApprovedExpenseEffects(expenseRecord, {
-              approvedBy: currentUser.name,
-              activeBranchId: activeBranchId!,
-              activeBusinessId: activeBusinessId!
-            });
-          } catch (err) {
-            await db.expenses.update(expenseRecord.id, { status: 'PENDING', approvedBy: undefined });
-            throw err;
-          }
-        }
+        await submitExpenseRecord(expenseRecord);
 
         recordAuditEvent({
           userId: currentUser.id,
@@ -134,10 +118,16 @@ export default function ExpensesTab() {
 
   const handleDeleteExpense = async (id: string) => {
       if (!isAdmin || isSaving) return;
+      if (!activeBusinessId || !activeBranchId) return error("Select a branch before deleting an expense.");
       if (confirm("Are you sure you want to delete this expense? This action cannot be undone.")) {
           setIsSaving(true);
           try {
-            await db.expenses.delete(id);
+            await ExpenseService.delete({
+              expenseId: id,
+              businessId: activeBusinessId,
+              branchId: activeBranchId,
+            });
+            await db.expenses.reload();
             recordAuditEvent({
               userId: currentUser?.id,
               userName: currentUser?.name,

@@ -6,6 +6,7 @@ import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { saveBranchMpesaSettings } from '../../services/mpesaSettings';
+import { BranchService } from '../../services/admin';
 
 
 export default function BranchManagementTab() {
@@ -65,28 +66,21 @@ export default function BranchManagementTab() {
     setSaving(true);
     try {
       let savedBranchId = editingId;
-      if (editingId) {
-        await db.branches.update(editingId, {
+      const result = await BranchService.save({
+        branch: {
+          id: editingId || undefined,
           name: form.name.trim(),
           location: form.location.trim(),
           phone: form.phone.trim() || undefined,
           tillNumber: form.tillNumber.trim() || undefined,
           kraPin: form.kraPin.trim() || undefined,
           isActive: form.isActive,
-        });
-      } else {
-        savedBranchId = 'branch_' + crypto.randomUUID().split('-')[0];
-        await db.branches.add({
-          id: savedBranchId,
-          name: form.name.trim(),
-          location: form.location.trim(),
-          phone: form.phone.trim() || undefined,
-          tillNumber: form.tillNumber.trim() || undefined,
-          kraPin: form.kraPin.trim() || undefined,
-          isActive: true,
-          businessId: activeBusinessId,
-        });
-      }
+        },
+        businessId: activeBusinessId,
+        branchId: editingId || useStore.getState().activeBranchId,
+      });
+      savedBranchId = result.branch.id;
+      await db.branches.reload();
 
       if (isMpesaUnlocked && savedBranchId) {
         const result = await saveBranchMpesaSettings({
@@ -125,15 +119,16 @@ export default function BranchManagementTab() {
     setSaving(true);
     try {
       if (!b.isActive) {
-        await db.branches.update(b.id, { isActive: true });
+        await BranchService.setActive({ branchId: b.id, isActive: true, businessId: activeBusinessId! });
       } else {
         const activeBranches = (branches || []).filter(br => br.isActive);
         if (activeBranches.length <= 1) {
           warning('At least one branch must remain active.');
           return;
         }
-        await db.branches.update(b.id, { isActive: false });
+        await BranchService.setActive({ branchId: b.id, isActive: false, businessId: activeBusinessId! });
       }
+      await db.branches.reload();
     } finally {
       setSaving(false);
     }
@@ -150,7 +145,8 @@ export default function BranchManagementTab() {
     if (confirm(`Delete branch "${b.name}"? Its records will also be removed. This cannot be undone.`)) {
       setSaving(true);
       try {
-        await db.branches.delete(b.id);
+        await BranchService.delete({ branchId: b.id, businessId: activeBusinessId! });
+        await db.branches.reload();
         success("Branch permanently removed.");
       } catch (err) {
         error("Could not delete this branch. It may still have records linked to it.");

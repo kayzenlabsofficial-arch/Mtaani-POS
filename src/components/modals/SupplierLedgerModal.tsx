@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { X, Truck, FileText, DollarSign, Plus, Calendar, ChevronRight, CheckCircle2, AlertCircle, Ban, Receipt, Printer, Edit, Loader2, Share2 } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
-import { db, type Supplier, type PurchaseOrder, type CreditNote } from '../../db';
+import { db, type Supplier, type PurchaseOrder } from '../../db';
 import { useToast } from '../../context/ToastContext';
 import { shareDocument } from '../../utils/shareUtils';
 import { SearchableSelect } from '../shared/SearchableSelect';
+import { SupplierService } from '../../services/suppliers';
 
 interface SupplierLedgerModalProps {
   supplier: Supplier | null;
@@ -89,7 +90,6 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
         return;
       }
 
-      const cnId = crypto.randomUUID();
       const linkedProduct = creditNoteForm.productId ? await db.products.get(creditNoteForm.productId) : null;
       if (creditNoteForm.productId && !linkedProduct) {
         error("Selected product was not found.");
@@ -100,41 +100,23 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
         return;
       }
 
-      const cn: CreditNote = {
-        id: cnId,
+      await SupplierService.recordCreditNote({
         supplierId: supplier.id,
         amount,
         reference: creditNoteForm.reference,
         reason: creditNoteForm.reason,
-        status: 'PENDING',
-        timestamp: Date.now(),
         productId: linkedProduct?.id,
         quantity: linkedProduct ? qty : undefined,
         shiftId,
         branchId: supplier.branchId,
-        businessId: supplier.businessId
-      };
-      
-      await db.creditNotes.add(cn);
+        businessId: supplier.businessId,
+      });
 
-      // If a product was returned, deduct stock
-      if (linkedProduct) {
-            await db.products.update(linkedProduct.id, {
-               stockQuantity: (linkedProduct.stockQuantity || 0) - qty,
-               updated_at: Date.now(),
-            });
-            await db.stockMovements.add({
-               id: crypto.randomUUID(),
-               productId: linkedProduct.id,
-               type: 'OUT',
-               quantity: -qty,
-               timestamp: Date.now(),
-               reference: `Supplier Return: ${creditNoteForm.reference || cnId.split('-')[0].toUpperCase()}`,
-               branchId: supplier.branchId,
-               businessId: supplier.businessId,
-               shiftId
-            });
-      }
+      await Promise.allSettled([
+        db.creditNotes.reload(),
+        db.products.reload(),
+        db.stockMovements.reload(),
+      ]);
 
       success("Credit Note recorded as PENDING and stock adjusted.");
       setIsAddCreditNoteOpen(false);

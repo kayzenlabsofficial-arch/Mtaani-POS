@@ -8,6 +8,7 @@ import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 import SupplierLedgerModal from '../modals/SupplierLedgerModal';
 import { settleSupplierPayment, type SupplierPaymentInput } from '../../utils/supplierLedger';
 import { belongsToActiveBranch } from '../../utils/branchScope';
+import { SupplierService } from '../../services/suppliers';
 
 
 export default function SuppliersTab({ setActiveTab, financialAccounts }: { setActiveTab?: (tab: string) => void, financialAccounts: any[] }) {
@@ -78,15 +79,17 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
   const handleSaveSupplier = async () => {
       if (!supplierForm.company) return;
       if (isSaving) return;
+      if (!activeBusinessId || !activeBranchId) return error("Select a branch before saving a supplier.");
       setIsSaving(true);
       try {
-        if (editingSupplier) {
-            await db.suppliers.update(editingSupplier.id, { ...supplierForm });
-            success("Supplier information updated.");
-        } else {
-            await db.suppliers.add({ id: crypto.randomUUID(), ...supplierForm, balance: 0, branchId: activeBranchId!, businessId: activeBusinessId! } as any);
-            success("Supplier added.");
-        }
+        await SupplierService.saveProfile({
+            supplierId: editingSupplier?.id,
+            supplier: supplierForm,
+            branchId: activeBranchId,
+            businessId: activeBusinessId,
+        });
+        await db.suppliers.reload();
+        success(editingSupplier ? "Supplier information updated." : "Supplier added.");
         setIsSupplierModalOpen(false);
       } catch (err: any) {
         error("Failed to save supplier: " + err.message);
@@ -96,10 +99,20 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
   }
 
   const handleDeleteSupplier = async () => {
+    if (!activeBusinessId || !activeBranchId) return error("Select a branch before deleting a supplier.");
     if (editingSupplier && confirm(`Are you sure you want to delete ${editingSupplier.company}?`)) {
-      await db.suppliers.delete(editingSupplier.id);
-      setIsSupplierModalOpen(false);
-      success("Supplier removed.");
+      try {
+        await SupplierService.deleteProfile({
+          supplierId: editingSupplier.id,
+          branchId: activeBranchId,
+          businessId: activeBusinessId,
+        });
+        await db.suppliers.reload();
+        setIsSupplierModalOpen(false);
+        success("Supplier removed.");
+      } catch (err: any) {
+        error("Failed to delete supplier: " + err.message);
+      }
     }
   }
 

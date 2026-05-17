@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { MpesaService } from '../../services/mpesa';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { belongsToActiveBranch } from '../../utils/branchScope';
+import { CustomerService } from '../../services/customers';
 
 type DebtSourceType = 'SALE' | 'INVOICE';
 type DebtAllocation = { sourceType: DebtSourceType; sourceId: string; amount: number };
@@ -352,15 +353,17 @@ export default function CustomersTab() {
 
   const handleSaveCustomer = async () => {
       if (isSaving) return;
+      if (!activeBusinessId || !activeBranchId) return error("Select a branch before saving a customer.");
       setIsSaving(true);
       try {
-        if (editingCustomer) {
-            await db.customers.update(editingCustomer.id, { ...customerForm });
-            success("Customer updated.");
-        } else {
-            await db.customers.add({ id: crypto.randomUUID(), ...customerForm, totalSpent: 0, balance: 0, branchId: activeBranchId!, businessId: activeBusinessId! } as any);
-            success("Customer added.");
-        }
+        await CustomerService.saveProfile({
+            customerId: editingCustomer?.id,
+            customer: customerForm,
+            businessId: activeBusinessId,
+            branchId: activeBranchId,
+        });
+        await db.customers.reload();
+        success(editingCustomer ? "Customer updated." : "Customer added.");
         setIsCustomerModalOpen(false);
       } catch (err: any) {
         error("Failed to save customer: " + err.message);
@@ -371,10 +374,16 @@ export default function CustomersTab() {
 
   const handleDeleteCustomer = async () => {
     if (isSaving) return;
+    if (!activeBusinessId || !activeBranchId) return error("Select a branch before deleting a customer.");
     if (editingCustomer && confirm(`Are you sure you want to delete ${editingCustomer.name}?`)) {
       setIsSaving(true);
       try {
-        await db.customers.delete(editingCustomer.id);
+        await CustomerService.deleteProfile({
+          customerId: editingCustomer.id,
+          businessId: activeBusinessId,
+          branchId: activeBranchId,
+        });
+        await db.customers.reload();
         setIsCustomerModalOpen(false);
         success("Customer removed.");
       } catch (err: any) {
@@ -426,22 +435,28 @@ export default function CustomersTab() {
         setMpesaState('SUCCESS');
         
         if (editingCustomer) {
-          const newBalance = Math.max(0, editingCustomer.balance - amount);
-          await db.customerPayments.add({
-            id: crypto.randomUUID(),
-            customerId: editingCustomer.id,
-            amount,
-            paymentMethod: 'MPESA',
-            transactionCode: res.receiptNumber || requestId,
-            reference: `M-Pesa repayment from ${editingCustomer.name}`,
-            allocations: statementCustomerId === editingCustomer.id ? buildPaymentAllocations(amount) : [],
-            timestamp: Date.now(),
-            preparedBy: currentUser?.name,
-            branchId: activeBranchId!,
-            businessId: activeBusinessId!,
-          });
-          await db.customers.update(editingCustomer.id, { balance: newBalance });
-          success(`Ksh ${amount} received! New balance: Ksh ${newBalance}`);
+          try {
+            const paymentResult = await CustomerService.recordPayment({
+              customerId: editingCustomer.id,
+              amount,
+              paymentMethod: 'MPESA',
+              transactionCode: res.receiptNumber || requestId,
+              reference: `M-Pesa repayment from ${editingCustomer.name}`,
+              allocations: statementCustomerId === editingCustomer.id ? buildPaymentAllocations(amount) : [],
+              preparedBy: currentUser?.name,
+              branchId: activeBranchId!,
+              businessId: activeBusinessId!,
+            });
+            await Promise.allSettled([
+              db.customerPayments.reload(),
+              db.customers.reload(),
+              db.salesInvoices.reload(),
+            ]);
+            success(`Ksh ${amount} received! New balance: Ksh ${paymentResult.customerBalance.toLocaleString()}`);
+          } catch (err: any) {
+            setMpesaState('FAILED');
+            error(err?.message || "Payment received but could not update the customer account.");
+          }
         }
         
         setTimeout(() => {
@@ -466,23 +481,22 @@ export default function CustomersTab() {
     setIsSaving(true);
     try {
       const allocations = buildPaymentAllocations(amount);
-      await db.customerPayments.add({
-        id: crypto.randomUUID(),
+      await CustomerService.recordPayment({
         customerId: statementCustomer.id,
         amount,
         paymentMethod: paymentForm.method,
         transactionCode: paymentForm.reference.trim() || undefined,
         reference: `${paymentForm.method} payment from ${statementCustomer.name}`,
         allocations,
-        timestamp: Date.now(),
         preparedBy: currentUser?.name,
-        branchId: activeBranchId,
         businessId: activeBusinessId,
+        branchId: activeBranchId,
       });
-      await db.customers.update(statementCustomer.id, {
-        balance: Math.max(0, Number(statementCustomer.balance || 0) - amount),
-        updated_at: Date.now(),
-      });
+      await Promise.allSettled([
+        db.customerPayments.reload(),
+        db.customers.reload(),
+        db.salesInvoices.reload(),
+      ]);
       setPaymentForm({ amount: '', method: 'CASH', reference: '' });
       success(amount >= (statementCustomer.balance || 0) ? "Customer balance cleared." : "Payment recorded.");
     } catch (err: any) {

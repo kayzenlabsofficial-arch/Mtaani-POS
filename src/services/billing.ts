@@ -1,4 +1,4 @@
-import { getApiKey } from '../runtimeConfig';
+import { apiRequest } from './apiClient';
 
 const API_BASE = '/api/billing';
 
@@ -64,25 +64,21 @@ export interface BillingSummaryRow {
   invoice: BillingInvoice;
 }
 
-async function requestBilling<T>(path: string, options: RequestInit = {}): Promise<T & { error?: string }> {
+type BillingRequestOptions = {
+  method?: string;
+  body?: unknown;
+  headers?: Record<string, string>;
+};
+
+async function requestBilling<T>(path: string, options: BillingRequestOptions = {}): Promise<T & { error?: string }> {
   try {
-    if (typeof window !== 'undefined' && navigator.onLine === false) {
-      return { error: 'Offline: billing needs internet.' } as T & { error: string };
-    }
-    const apiKey = await getApiKey();
-    const res = await fetch(`${API_BASE}${path}`, {
+    return await apiRequest<T & { error?: string }>(`${API_BASE}${path}`, {
       ...options,
-      credentials: 'same-origin',
-      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
         ...(options.headers || {}),
       },
     });
-    const data: any = await res.json().catch(() => ({}));
-    if (!res.ok) return { ...(data || {}), error: data?.error || `Billing request failed (${res.status})` };
-    return data;
   } catch (err: any) {
     return { error: err?.message || 'Billing request failed.' } as T & { error: string };
   }
@@ -102,14 +98,14 @@ export const BillingService = {
   saveAccount(account: Partial<BillingAccount> & { businessId: string }) {
     return requestBilling<{ success: boolean; account: BillingAccount; invoice: BillingInvoice }>('/account', {
       method: 'POST',
-      body: JSON.stringify(account),
+      body: account,
     });
   },
 
   generateInvoice(businessId: string, period?: string) {
     return requestBilling<{ success: boolean; invoice: BillingInvoice }>('/invoice', {
       method: 'POST',
-      body: JSON.stringify({ businessId, period }),
+      body: { businessId, period },
     });
   },
 
@@ -124,7 +120,7 @@ export const BillingService = {
   }) {
     return requestBilling<{ success: boolean; paymentId: string; invoice: BillingInvoice }>('/payment', {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: input,
     });
   },
 
@@ -136,7 +132,7 @@ export const BillingService = {
   }) {
     return requestBilling<{ success: boolean; paymentId: string; invoiceId: string; checkoutRequestId: string; message: string }>('/stkpush', {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: input,
     });
   },
 

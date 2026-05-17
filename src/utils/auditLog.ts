@@ -1,5 +1,5 @@
-import { db, type AuditLog } from '../db';
 import { useStore } from '../store';
+import { apiRequest } from '../services/apiClient';
 
 export type AuditSeverity = 'INFO' | 'WARN' | 'CRITICAL';
 
@@ -21,17 +21,17 @@ export function recordAuditEvent(event: Omit<AuditEvent, 'id' | 'ts'>): void {
   const state = useStore.getState();
   if (!state.activeBusinessId) return;
 
-  const row: AuditLog = {
-    id: crypto.randomUUID(),
-    ts: Date.now(),
-    ...event,
+  apiRequest('/api/audit/log', {
+    method: 'POST',
+    body: {
+      ...event,
+      businessId: state.activeBusinessId,
+      branchId: state.activeBranchId || undefined,
+    },
     businessId: state.activeBusinessId,
-    branchId: state.activeBranchId || undefined,
-    updated_at: Date.now(),
-  };
-
-  db.auditLogs.add(row).catch(err => {
-    console.warn('[Audit] failed to persist event to CloudDB', err);
+    branchId: state.activeBranchId,
+  }).catch(err => {
+    console.warn('[Audit] failed to persist event', err);
   });
 }
 
@@ -40,4 +40,3 @@ export function recordAuditEvent(event: Omit<AuditEvent, 'id' | 'ts'>): void {
 export function getAuditEvents(): AuditEvent[] {
   return [];
 }
-

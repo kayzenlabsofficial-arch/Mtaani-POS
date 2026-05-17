@@ -25,6 +25,7 @@ import {
   type HardwareDeviceSummary,
   type HardwareSupport,
 } from '../../utils/hardware';
+import { BusinessSettingsService } from '../../services/businessSettings';
 
 
 export default function SettingsTab({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
@@ -215,7 +216,10 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
   const handleSaveSettings = async () => {
       setIsUpdating(true);
       try {
-        await db.settings.put({
+        if (!activeBusinessId) return error('Please log in again.');
+        await BusinessSettingsService.save({
+          businessId: activeBusinessId,
+          settings: {
             ...(savedSettings || {}),
             id: settingsIdForBusiness(activeBusinessId),
             storeName: storeSettings.storeName,
@@ -228,8 +232,10 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
             cashSweepEnabled: ownerSettings.cashSweepEnabled ? 1 : 0,
             cashDrawerLimit: Number(ownerSettings.cashDrawerLimit) || DEFAULT_CASH_DRAWER_LIMIT,
             cashFloatTarget: Number(ownerSettings.cashFloatTarget) || DEFAULT_CASH_FLOAT_TARGET,
-            businessId: activeBusinessId!,
+            businessId: activeBusinessId,
+          },
         });
+        await db.settings.reload();
         success("Business settings saved.");
       } catch (err) {
         console.error(err);

@@ -9,6 +9,8 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { enrichProductsWithBundleStock, getProductIngredients, isBundleProduct } from '../../utils/bundleInventory';
 import { belongsToActiveBranch } from '../../utils/branchScope';
+import { StockService } from '../../services/stock';
+import { ProductService } from '../../services/products';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -199,25 +201,18 @@ export default function InventoryTab() {
     };
     try {
       const productId = editingProduct?.id || crypto.randomUUID();
-      if (editingProduct) {
-        await db.products.update(editingProduct.id, payload as any);
-        if (selectedProduct?.id === editingProduct.id) setSelectedProduct({ ...selectedProduct, ...payload });
-        success('Product updated.');
-      } else {
-        await db.products.add({ id: productId, ...payload } as any);
-        success('Product added.');
-      }
-      await db.productIngredients.where('productId').equals(productId).delete();
-      if (productForm.isBundle && cleanIngredients.length > 0) {
-        await db.productIngredients.bulkAdd(cleanIngredients.map(row => ({
-          id: `${productId}_${row.ingredientProductId}`,
-          productId,
-          ingredientProductId: row.ingredientProductId,
-          quantity: row.quantity,
-          businessId: activeBusinessId,
-          updated_at: Date.now()
-        })));
-      }
+      const result = await ProductService.save({
+        product: { id: productId, ...payload } as any,
+        ingredients: cleanIngredients,
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+      });
+      await Promise.allSettled([
+        db.products.reload(),
+        db.productIngredients.reload(),
+      ]);
+      if (selectedProduct?.id === productId) setSelectedProduct(result.product);
+      success(editingProduct ? 'Product updated.' : 'Product added.');
       setIsProductModalOpen(false);
       setEditingProduct(null);
       setIngredientRows([]);
@@ -231,23 +226,21 @@ export default function InventoryTab() {
     const qty = Number(restockQty);
     if (qty <= 0) return error('Enter a valid restock quantity.');
     try {
-      await db.products.update(selectedProduct.id, {
-        stockQuantity: (selectedProduct.stockQuantity || 0) + qty,
-        ...(restockCost ? { costPrice: Number(restockCost) || 0 } : {})
-      } as any);
-      await db.stockMovements.add({
-        id: crypto.randomUUID(),
+      const result = await StockService.restock({
         productId: selectedProduct.id,
-        type: 'IN',
         quantity: qty,
-        timestamp: Date.now(),
+        costPrice: restockCost ? Number(restockCost) || 0 : undefined,
         reference: 'Manual restock',
         branchId: activeBranchId,
-        businessId: activeBusinessId
+        businessId: activeBusinessId,
       });
+      await Promise.allSettled([
+        db.products.reload(),
+        db.stockMovements.reload(),
+      ]);
       setSelectedProduct({
         ...selectedProduct,
-        stockQuantity: (selectedProduct.stockQuantity || 0) + qty,
+        stockQuantity: result.stockQuantity,
         ...(restockCost ? { costPrice: Number(restockCost) || 0 } : {})
       });
       setRestockQty('');
@@ -684,10 +677,14 @@ export default function InventoryTab() {
                 <input type="number" value={productForm.costPrice} onChange={e => setProductForm({ ...productForm, costPrice: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Stock qty</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{editingProduct ? 'Current stock' : 'Opening stock'}</label>
                 {productForm.isBundle ? (
                   <div className="w-full bg-emerald-50 border-2 border-emerald-100 rounded-xl px-4 py-3 text-sm font-black text-emerald-700">
                     Auto from ingredients
+                  </div>
+                ) : editingProduct ? (
+                  <div className="w-full bg-slate-100 border-2 border-slate-200 rounded-xl px-4 py-3 text-sm font-black text-slate-600">
+                    {productForm.stockQuantity || 0} {productForm.unit || 'pcs'}
                   </div>
                 ) : (
                   <input type="number" step="any" value={productForm.stockQuantity} onChange={e => setProductForm({ ...productForm, stockQuantity: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
