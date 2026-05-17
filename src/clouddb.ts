@@ -245,6 +245,8 @@ export class CloudTable<T extends { id: string }> {
   private cache = new Map<string, T>();
   private loaded = false;
   private loadedScopeKey: string | null = null;
+  private hydrateInFlight: Promise<void> | null = null;
+  private hydrateScopeKey: string | null = null;
 
   constructor(public readonly name: string) {}
 
@@ -277,7 +279,6 @@ export class CloudTable<T extends { id: string }> {
     this.cache.clear();
     this.loaded = false;
     this.loadedScopeKey = scopeKey;
-    emitChange();
     return true;
   }
 
@@ -296,38 +297,54 @@ export class CloudTable<T extends { id: string }> {
 
   async hydrate(): Promise<void> {
     const scope = await this.currentScope();
-    this.clearIfScopeChanged(scope.key);
-
-    if (!scope.canHydrate) {
-      this.cache.clear();
-      this.loaded = true;
-      this.loadedScopeKey = scope.key;
-      emitChange();
+    if (this.hydrateInFlight && this.hydrateScopeKey === scope.key) {
+      await this.hydrateInFlight;
       return;
     }
 
-    try {
-      const rows: T[] = await d1Fetch(this.name, 'GET');
-      const latestScope = await this.currentScope();
-      if (latestScope.key !== scope.key) {
+    const runHydrate = async () => {
+      this.clearIfScopeChanged(scope.key);
+
+      if (!scope.canHydrate) {
         this.cache.clear();
-        this.loaded = false;
-        this.loadedScopeKey = latestScope.key;
+        this.loaded = true;
+        this.loadedScopeKey = scope.key;
         emitChange();
         return;
       }
 
-      // Only clear and update if we successfully got data
-      this.cache.clear();
-      rows.forEach(r => this.cache.set(r.id, r));
-      this.loaded = true;
-      this.loadedScopeKey = scope.key;
-      emitChange(); // Trigger UI update
-    } catch (e) {
-      console.error(`[CloudDB] Failed to hydrate "${this.name}":`, e);
-      // Keep old cache data on failure
-      this.loaded = false; 
-    }
+      try {
+        const rows: T[] = await d1Fetch(this.name, 'GET');
+        const latestScope = await this.currentScope();
+        if (latestScope.key !== scope.key) {
+          this.cache.clear();
+          this.loaded = false;
+          this.loadedScopeKey = latestScope.key;
+          emitChange();
+          return;
+        }
+
+        // Only clear and update if we successfully got data
+        this.cache.clear();
+        rows.forEach(r => this.cache.set(r.id, r));
+        this.loaded = true;
+        this.loadedScopeKey = scope.key;
+        emitChange(); // Trigger UI update
+      } catch (e) {
+        console.error(`[CloudDB] Failed to hydrate "${this.name}":`, e);
+        // Keep old cache data on failure
+        this.loaded = false;
+      }
+    };
+
+    this.hydrateScopeKey = scope.key;
+    this.hydrateInFlight = runHydrate().finally(() => {
+      if (this.hydrateScopeKey === scope.key) {
+        this.hydrateInFlight = null;
+        this.hydrateScopeKey = null;
+      }
+    });
+    await this.hydrateInFlight;
   }
 
   private async ensure(): Promise<void> {
