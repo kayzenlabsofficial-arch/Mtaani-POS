@@ -135,6 +135,9 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
     if (!res) throw networkError || new Error('Request failed.');
 
     if (!res.ok) {
+      if (res.status === 401) {
+        useStore.getState().logout();
+      }
       let msg = `${method} /api/data/${table} → ${res.status}`;
       const text = await res.text().catch(() => '');
       try {
