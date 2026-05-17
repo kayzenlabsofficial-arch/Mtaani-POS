@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, total REAL NOT NUL
 CREATE TABLE IF NOT EXISTS cashPicks (id TEXT PRIMARY KEY, amount REAL NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, userName TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, startTime INTEGER NOT NULL, endTime INTEGER, openingFloat REAL, cashierName TEXT NOT NULL, status TEXT NOT NULL, branchId TEXT, lastSyncAt INTEGER, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS endOfDayReports (id TEXT PRIMARY KEY, shiftId TEXT, timestamp INTEGER NOT NULL, openingFloat REAL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, cashSales REAL NOT NULL, mpesaSales REAL NOT NULL, totalExpenses REAL NOT NULL, totalPicks REAL NOT NULL, totalRefunds REAL, expectedCash REAL NOT NULL, reportedCash REAL NOT NULL, difference REAL NOT NULL, cashierName TEXT NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, amount REAL NOT NULL, category TEXT NOT NULL, description TEXT, timestamp INTEGER NOT NULL, userName TEXT, status TEXT NOT NULL, source TEXT, accountId TEXT, productId TEXT, quantity REAL, preparedBy TEXT, approvedBy TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, totalSpent REAL, balance REAL, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS customerPayments (id TEXT PRIMARY KEY, customerId TEXT NOT NULL, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, reference TEXT, timestamp INTEGER NOT NULL, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
@@ -358,6 +358,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['products',   'unit TEXT'],
           ['products',   'branchId TEXT'],
           ['products',   'costPrice REAL'],
+          ['products',   "taxCategory TEXT DEFAULT 'A'"],
           ['products',   'reorderPoint REAL'],
           ['products',   'isBundle INTEGER DEFAULT 0'],
           ['products',   'components TEXT'],
@@ -385,6 +386,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['stockAdjustmentRequests', 'approvedBy TEXT'],
           ['users',      'branchId TEXT'],
           ['cashPicks',  'shiftId TEXT'],
+          ['stockMovements', 'shiftId TEXT'],
           ['expenses',   'source TEXT'],
           ['expenses',   'accountId TEXT'],
           ['expenses',   'productId TEXT'],
@@ -467,8 +469,47 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     }
 
     if (table === 'transactions') {
+      // Cash sales now validate products and write stock movements atomically.
+      // Older D1 databases may be missing columns needed by that side-effect path.
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN branchId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN businessId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN shiftId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN approvedBy TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN pendingRefundItems TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN changeGiven REAL').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN mpesaReference TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN mpesaCode TEXT').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN mpesaCustomer TEXT').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN mpesaCheckoutRequestId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN cashierId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN customerId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN customerName TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN discount REAL').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN discountType TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN splitPayments TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN splitData TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE transactions ADD COLUMN isSynced INTEGER').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN businessId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN branchId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN unit TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN costPrice REAL').run(); } catch (e) {}
+      try { await env.DB.prepare("ALTER TABLE products ADD COLUMN taxCategory TEXT DEFAULT 'A'").run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN isBundle INTEGER DEFAULT 0').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN components TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN updated_at INTEGER').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE customers ADD COLUMN totalSpent REAL').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE customers ADD COLUMN balance REAL').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE customers ADD COLUMN businessId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE customers ADD COLUMN updated_at INTEGER').run(); } catch (e) {}
+      await env.DB.prepare('CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER)').run();
+      try { await env.DB.prepare('ALTER TABLE productIngredients ADD COLUMN businessId TEXT').run(); } catch (e) {}
+      await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId)').run();
+      await env.DB.prepare('CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER)').run();
+      try { await env.DB.prepare('ALTER TABLE stockMovements ADD COLUMN reference TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE stockMovements ADD COLUMN branchId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE stockMovements ADD COLUMN businessId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE stockMovements ADD COLUMN shiftId TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER').run(); } catch (e) {}
     }
 
     if (table === 'products') {
@@ -476,6 +517,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN unit TEXT').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN branchId TEXT').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN costPrice REAL').run(); } catch (e) {}
+      try { await env.DB.prepare("ALTER TABLE products ADD COLUMN taxCategory TEXT DEFAULT 'A'").run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN reorderPoint REAL').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN isBundle INTEGER DEFAULT 0').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN components TEXT').run(); } catch (e) {}
@@ -629,6 +671,23 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             return new Response(JSON.stringify({ error: 'X-Branch-ID header required for POST to this table' }), { status: 400, headers: jsonHeaders() });
           }
           items.forEach(item => { item.branchId = branchId; });
+        }
+      }
+
+      if (table === 'settings' && principal.role !== 'ROOT' && !service) {
+        for (const item of items) {
+          const existing = item?.id
+            ? await env.DB.prepare('SELECT aiAssistantEnabled, aiDailyRequestLimit FROM settings WHERE id = ? AND businessId = ? LIMIT 1')
+              .bind(item.id, businessId)
+              .first<any>()
+            : null;
+          if (existing) {
+            item.aiAssistantEnabled = existing.aiAssistantEnabled;
+            item.aiDailyRequestLimit = existing.aiDailyRequestLimit;
+          } else {
+            delete item.aiAssistantEnabled;
+            delete item.aiDailyRequestLimit;
+          }
         }
       }
 

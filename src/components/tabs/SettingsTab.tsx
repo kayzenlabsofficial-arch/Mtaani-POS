@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, ShieldCheck, RefreshCcw, Download, ChevronDown, ScanLine, Printer, Usb, SlidersHorizontal, Building2, Terminal, ShieldAlert, Cpu, Check, Activity, X, Bot } from 'lucide-react';
+import { Save, ShieldCheck, RefreshCcw, Download, ChevronDown, ScanLine, Printer, Usb, SlidersHorizontal, Building2, Terminal, ShieldAlert, Cpu, Check, Activity, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
@@ -43,11 +43,6 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
     cashDrawerLimit: String(DEFAULT_CASH_DRAWER_LIMIT),
     cashFloatTarget: String(DEFAULT_CASH_FLOAT_TARGET),
   });
-  const [aiSettings, setAiSettings] = useState({
-    aiAssistantEnabled: true,
-    aiDailyRequestLimit: '20',
-  });
-
   const [isUpdating, setIsUpdating] = useState(false);
   const [openSection, setOpenSection] = useState<'IDENTITY' | 'HARDWARE' | 'SYSTEM' | 'SECURITY'>('IDENTITY');
   const [openHardwareSub, setOpenHardwareSub] = useState<'SCANNER' | 'PRINTER' | 'DRAWER'>('SCANNER');
@@ -82,10 +77,6 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
           cashSweepEnabled: savedSettings.cashSweepEnabled !== 0,
           cashDrawerLimit: String(savedSettings.cashDrawerLimit ?? DEFAULT_CASH_DRAWER_LIMIT),
           cashFloatTarget: String(savedSettings.cashFloatTarget ?? DEFAULT_CASH_FLOAT_TARGET),
-        });
-        setAiSettings({
-          aiAssistantEnabled: savedSettings.aiAssistantEnabled !== 0,
-          aiDailyRequestLimit: String(savedSettings.aiDailyRequestLimit ?? 20),
         });
      }
   }, [savedSettings]);
@@ -237,8 +228,6 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
             cashSweepEnabled: ownerSettings.cashSweepEnabled ? 1 : 0,
             cashDrawerLimit: Number(ownerSettings.cashDrawerLimit) || DEFAULT_CASH_DRAWER_LIMIT,
             cashFloatTarget: Number(ownerSettings.cashFloatTarget) || DEFAULT_CASH_FLOAT_TARGET,
-            aiAssistantEnabled: aiSettings.aiAssistantEnabled ? 1 : 0,
-            aiDailyRequestLimit: Math.min(200, Math.max(1, Number(aiSettings.aiDailyRequestLimit) || 20)),
             businessId: activeBusinessId!,
         });
         success("Business settings saved.");
@@ -564,49 +553,6 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                   >
                     {isUpdating ? <RefreshCcw size={16} className="animate-spin" /> : <Save size={16} />}
                     Save owner mode
-                  </button>
-               </div>
-            </div>
-
-            <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
-               <h3 className="text-base font-bold text-slate-900 mb-6 flex items-center gap-2">
-                  <Bot className="text-blue-600" /> AI Assistant
-               </h3>
-
-               <div className="space-y-4">
-                  <button
-                    type="button"
-                    onClick={() => setAiSettings(prev => ({ ...prev, aiAssistantEnabled: !prev.aiAssistantEnabled }))}
-                    className={`w-full flex items-center justify-between gap-4 p-4 rounded-2xl border-2 transition-all ${aiSettings.aiAssistantEnabled ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-slate-50 border-slate-100 text-slate-600'}`}
-                  >
-                    <div className="text-left">
-                      <p className="text-[10px] font-black uppercase tracking-widest">POS AI access</p>
-                      <p className="text-xs font-bold mt-1">{aiSettings.aiAssistantEnabled ? 'Floating assistant enabled' : 'Assistant disabled for staff'}</p>
-                    </div>
-                    <div className={`w-12 h-7 rounded-full p-1 flex transition-all ${aiSettings.aiAssistantEnabled ? 'bg-blue-600 justify-end' : 'bg-slate-300 justify-start'}`}>
-                      <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
-                    </div>
-                  </button>
-
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Daily requests per user</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={200}
-                      value={aiSettings.aiDailyRequestLimit}
-                      onChange={e => setAiSettings(prev => ({ ...prev, aiDailyRequestLimit: e.target.value }))}
-                      className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none shadow-sm"
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleSaveSettings}
-                    disabled={isUpdating}
-                    className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-blue press flex items-center justify-center gap-3 disabled:opacity-50"
-                  >
-                    {isUpdating ? <RefreshCcw size={16} className="animate-spin" /> : <Save size={16} />}
-                    Save AI limit
                   </button>
                </div>
             </div>

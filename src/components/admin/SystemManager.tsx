@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { db, type Business } from '../../db';
+import { db, type Business, type BusinessSettings } from '../../db';
 import { useLiveQuery } from '../../clouddb';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { resetAttempts } from '../../security';
 import { BillingService, type BillingDiscountType, type BillingSummaryRow } from '../../services/billing';
-import { Building2, CloudOff, KeyRound, Network, ReceiptText, ShieldCheck, Store, UserRound, X } from 'lucide-react';
+import { getApiKey } from '../../runtimeConfig';
+import { Building2, Bot, CloudOff, KeyRound, Network, ReceiptText, ShieldCheck, Store, UserRound, X } from 'lucide-react';
 
 const MaterialIcon = ({ name, className = "" }: { name: string, className?: string }) => {
   const icons: Record<string, React.ElementType> = {
@@ -13,6 +14,7 @@ const MaterialIcon = ({ name, className = "" }: { name: string, className?: stri
     admin_panel_settings: ShieldCheck,
     close: X,
     cloud_off: CloudOff,
+    smart_toy: Bot,
     hub: Network,
     key_reset: KeyRound,
     receipt_long: ReceiptText,
@@ -25,6 +27,63 @@ const MaterialIcon = ({ name, className = "" }: { name: string, className?: stri
 };
 
 const defaultBannerMessage = 'Your Mtaani POS software subscription is due. Pay by M-Pesa to keep your account current.';
+const DEFAULT_AI_LIMIT = 20;
+
+function defaultBusinessSettings(business: Business): BusinessSettings {
+  return {
+    id: `core_${business.id}`,
+    storeName: business.name,
+    location: 'Nairobi, Kenya',
+    tillNumber: '',
+    kraPin: '',
+    receiptFooter: 'Thank you for shopping!',
+    ownerModeEnabled: 0,
+    autoApproveOwnerActions: 1,
+    cashSweepEnabled: 1,
+    cashDrawerLimit: 5000,
+    cashFloatTarget: 1000,
+    aiAssistantEnabled: 1,
+    aiDailyRequestLimit: DEFAULT_AI_LIMIT,
+    businessId: business.id,
+    updated_at: Date.now(),
+  };
+}
+
+async function fetchBusinessSettingsForRoot(business: Business): Promise<BusinessSettings> {
+  const apiKey = await getApiKey();
+  const res = await fetch('/api/data/settings', {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': apiKey,
+      'X-Business-ID': business.id,
+    },
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`Could not load AI settings (${res.status}).`);
+  const rows = await res.json().catch(() => []) as BusinessSettings[];
+  return rows.find(row => row.id === `core_${business.id}`) || rows[0] || defaultBusinessSettings(business);
+}
+
+async function saveBusinessSettingsForRoot(settings: BusinessSettings) {
+  const apiKey = await getApiKey();
+  const res = await fetch('/api/data/settings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': apiKey,
+      'X-Business-ID': settings.businessId,
+    },
+    credentials: 'same-origin',
+    cache: 'no-store',
+    body: JSON.stringify([{ ...settings, updated_at: Date.now() }]),
+  });
+  if (!res.ok) {
+    const body: any = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `Could not save AI settings (${res.status}).`);
+  }
+}
 
 function money(value: unknown) {
   return `Ksh ${Math.round(Number(value) || 0).toLocaleString()}`;
@@ -77,6 +136,12 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
     receiptNumber: '',
     notes: '',
   });
+  const [aiSourceSettings, setAiSourceSettings] = useState<BusinessSettings | null>(null);
+  const [aiForm, setAiForm] = useState({
+    enabled: true,
+    dailyLimit: String(DEFAULT_AI_LIMIT),
+  });
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
   const invoice = billingRow?.invoice;
   const branchCount = billingRow?.branchCount ?? invoice?.branchCount ?? 0;
@@ -105,6 +170,29 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
       amount: balance > 0 ? String(Math.ceil(balance)) : '',
     }));
   }, [balance, business.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsAiLoading(true);
+    fetchBusinessSettingsForRoot(business)
+      .then((settings) => {
+        if (cancelled) return;
+        setAiSourceSettings(settings);
+        setAiForm({
+          enabled: settings.aiAssistantEnabled !== 0,
+          dailyLimit: String(settings.aiDailyRequestLimit ?? DEFAULT_AI_LIMIT),
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) error(err?.message || 'Could not load AI settings.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsAiLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [business.id]);
 
   const handleResetPassword = async (userId: string, userName: string) => {
     if (!confirm(`Reset password for ${userName}?`)) return;
@@ -181,6 +269,34 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
     success(`Recorded ${money(amount)} software payment.`);
     setPaymentForm({ amount: '', method: 'MPESA', receiptNumber: '', notes: '' });
     await onBillingChanged?.();
+  };
+
+  const handleSaveAi = async () => {
+    const dailyLimit = Math.min(200, Math.max(1, Number(aiForm.dailyLimit) || DEFAULT_AI_LIMIT));
+    setIsProcessing(true);
+    try {
+      const base = aiSourceSettings || defaultBusinessSettings(business);
+      const next: BusinessSettings = {
+        ...base,
+        id: base.id || `core_${business.id}`,
+        businessId: business.id,
+        storeName: base.storeName || business.name,
+        location: base.location || 'Nairobi, Kenya',
+        tillNumber: base.tillNumber || '',
+        kraPin: base.kraPin || '',
+        receiptFooter: base.receiptFooter || 'Thank you for shopping!',
+        aiAssistantEnabled: aiForm.enabled ? 1 : 0,
+        aiDailyRequestLimit: dailyLimit,
+      };
+      await saveBusinessSettingsForRoot(next);
+      setAiSourceSettings(next);
+      setAiForm({ enabled: next.aiAssistantEnabled !== 0, dailyLimit: String(next.aiDailyRequestLimit ?? DEFAULT_AI_LIMIT) });
+      success(`AI allowance saved for ${business.name}.`);
+    } catch (err: any) {
+      error(err?.message || 'Could not save AI allowance.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -306,6 +422,56 @@ export function ManageBusinessModal({ business, billingRow, onBillingChanged, on
               </button>
             </section>
           </div>
+
+          <section className="mt-5 rounded-3xl border border-blue-500/20 bg-blue-500/10 p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-center gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-500/15 text-blue-200">
+                  <MaterialIcon name="smart_toy" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-black uppercase tracking-tight text-white">AI allowance</h4>
+                  <p className="mt-1 text-[11px] font-semibold text-blue-100/70">Only business admins can use AI. Super Admin controls the business limit.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[auto_10rem_auto] sm:items-end">
+                <button
+                  type="button"
+                  onClick={() => setAiForm(prev => ({ ...prev, enabled: !prev.enabled }))}
+                  disabled={isAiLoading || isProcessing}
+                  className={`flex h-12 min-w-44 items-center justify-between rounded-2xl border px-4 text-sm font-black disabled:opacity-50 ${aiForm.enabled ? 'border-blue-400/30 bg-blue-500/20 text-blue-100' : 'border-slate-800 bg-slate-900 text-slate-400'}`}
+                >
+                  {aiForm.enabled ? 'AI enabled' : 'AI disabled'}
+                  <span className={`flex h-6 w-11 rounded-full p-1 ${aiForm.enabled ? 'justify-end bg-blue-500' : 'justify-start bg-slate-700'}`}>
+                    <span className="h-4 w-4 rounded-full bg-white" />
+                  </span>
+                </button>
+
+                <label className="block">
+                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-blue-100/60">Daily prompts</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="200"
+                    value={aiForm.dailyLimit}
+                    onChange={(e) => setAiForm(prev => ({ ...prev, dailyLimit: e.target.value }))}
+                    disabled={isAiLoading || isProcessing}
+                    className="mt-2 h-12 w-full rounded-2xl border border-blue-400/20 bg-slate-950 px-4 text-sm font-black text-white outline-none focus:border-blue-300 disabled:opacity-50"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleSaveAi}
+                  disabled={isAiLoading || isProcessing}
+                  className="h-12 rounded-2xl bg-blue-600 px-5 text-[10px] font-black uppercase tracking-widest text-white shadow-lg shadow-blue-600/20 transition-all hover:bg-blue-500 disabled:opacity-50"
+                >
+                  {isAiLoading ? 'Loading' : 'Save AI'}
+                </button>
+              </div>
+            </div>
+          </section>
 
           <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
             <section className="rounded-3xl border border-slate-800 bg-slate-950 p-5 lg:col-span-1">

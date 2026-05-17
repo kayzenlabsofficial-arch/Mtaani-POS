@@ -126,7 +126,7 @@ async function getAiSettings(db: D1Database, businessId: string) {
 
 async function getUsage(db: D1Database, businessId: string, userId: string, userName: string, branchId: string | null) {
   const day = nairobiDay();
-  const id = `${businessId}|${userId}|${day}`;
+  const id = `${businessId}|BUSINESS|${day}`;
   const row = await first<any>(db, 'SELECT count FROM aiUsage WHERE id = ?', id);
   return {
     id,
@@ -137,7 +137,7 @@ async function getUsage(db: D1Database, businessId: string, userId: string, user
       await db.prepare(
         `INSERT OR REPLACE INTO aiUsage (id, businessId, userId, userName, branchId, day, count, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(id, businessId, userId, userName, branchId, day, next, Date.now()).run();
+      ).bind(id, businessId, 'BUSINESS', `Last used by ${userName || userId}`, branchId, day, next, Date.now()).run();
       return next;
     },
   };
@@ -586,7 +586,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const usage = await getUsage(env.DB, businessId, userId, userName, branchId);
     if (usage.count >= settings.dailyLimit) {
       return json({
-        error: `Daily AI limit reached (${settings.dailyLimit}). Ask an admin to raise the limit or try again tomorrow.`,
+        error: `Daily business AI limit reached (${settings.dailyLimit}). Ask the Super Admin to raise the limit or try again tomorrow.`,
         usage: { used: usage.count, limit: settings.dailyLimit, remaining: 0, day: usage.day },
       }, 429);
     }
