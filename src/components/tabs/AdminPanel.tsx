@@ -191,6 +191,13 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
     if (confirm(`Are you sure you want to delete staff member "${userToDelete?.name}"? This action is permanent.`)) {
       await db.users.delete(id);
+      recordAuditEvent({
+        action: 'admin.user_delete',
+        entity: 'user',
+        entityId: id,
+        severity: 'WARN',
+        details: `Deleted user ${userToDelete?.name} (${userToDelete?.role}).`
+      });
       await db.sync();
     }
   };
@@ -200,6 +207,13 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
     await db.users.update(id, { password: editingPassword, updated_at: Date.now() });
     setEditingUserId(null);
     setEditingPassword('');
+    recordAuditEvent({
+      action: 'admin.user_password_reset',
+      entity: 'user',
+      entityId: id,
+      severity: 'WARN',
+      details: `Reset password for user ID ${id}.`
+    });
     await db.sync();
     success("Password updated successfully.");
   };
