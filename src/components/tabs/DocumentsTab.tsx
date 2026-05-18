@@ -268,7 +268,7 @@ export default function DocumentsTab() {
              { id: 'SUPPLIER_PAYMENTS', label: 'Supplier payments' },
              { id: 'INVOICES', label: 'Invoices & bills' },
              { id: 'SHIFTS', label: 'Shift reports' },
-             { id: 'DAILY', label: 'Daily Z reports' }
+             { id: 'DAILY', label: 'Daily close reports' }
            ].map(type => (
              <button 
                key={type.id} 
@@ -498,7 +498,7 @@ export default function DocumentsTab() {
                       isPay ? 'Supplier payment' :
                       isSalesInvoice ? `Customer invoice #${safeText(r.invoiceNumber || shortId(r.id))}` :
                       isShift ? `Shift report` :
-                      isDaily ? `Daily Z report` :
+                      isDaily ? `Daily close report` :
                       `Invoice #${safeText(r.invoiceNumber || shortId(r.id))}`}
                    </h4>
                    <div className="flex items-center gap-2 mt-1 flex-wrap">

@@ -753,7 +753,7 @@ function drawCloseDayShiftSummary(doc: jsPDF, y: number, shiftReports: any[]): n
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     st(doc, white);
-    doc.text(chunkIndex === 0 ? 'ZED History Report - Closed Shift Summary' : 'Closed Shift Summary Continued', M + 2, y + 6.3);
+    doc.text(chunkIndex === 0 ? 'Daily Close Report - Closed Shift Summary' : 'Closed Shift Summary Continued', M + 2, y + 6.3);
     y += 9;
 
     sf(doc, sectionBlue);
@@ -839,7 +839,7 @@ function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'
   const reported = safe(r.reportedCash || expected);
   const diff = safe(r.difference ?? r.totalVariance);
   const shiftReports = parseList(r.shiftReports);
-  const reportTitle = isDaily ? 'ZED History Report' : 'Shift Report';
+  const reportTitle = isDaily ? 'Daily Close Report' : 'Shift Report';
   let y = banner(
     doc,
     reportTitle,
@@ -853,13 +853,13 @@ function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'
     ['Date Created', issuedDate.toLocaleDateString('en-KE')],
     ['Date Issued', issuedDate.toLocaleDateString('en-KE')],
     [isDaily ? 'Business Day' : 'Shift ID', isDaily ? reportDate.toLocaleDateString('en-KE') : safeStr(r.shiftId, 'N/A')],
-    ['Report Type', isDaily ? 'Daily Z Report' : 'Shift Close'],
+    ['Report Type', isDaily ? 'Daily Close' : 'Shift Close'],
   ]);
 
   if (isDaily && shiftReports.length) {
     y = drawCloseDayShiftSummary(doc, y, shiftReports);
     const finalVariance = shiftReports.reduce((sum, report) => sum + safe(report.difference), 0);
-    y = bigTotal(doc, 'DAILY Z TOTAL SALES', ksh(totalSales), y, brandBlue);
+    y = bigTotal(doc, 'DAILY CLOSE TOTAL SALES', ksh(totalSales), y, brandBlue);
     y = bigTotal(doc, 'TOTAL CASHIER VARIANCE', ksh(finalVariance), y, Math.abs(finalVariance) < 0.01 ? green : red);
     footer(doc);
     return doc.output('blob');

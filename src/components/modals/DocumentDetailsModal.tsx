@@ -277,7 +277,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                       isPayment ? 'Supplier payment note' :
                       isSalesInvoice ? 'Customer invoice' :
                       isReport ? 'End of shift report' :
-                      isDailySummary ? 'Daily Z report' :
+                      isDailySummary ? 'Daily close report' :
                       (isPO && selectedRecord.approvalStatus === 'PENDING') ? 'Purchase order waiting approval' :
                       isPO ? 'Purchase order' :
                       `Purchase document`}
@@ -645,7 +645,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                           <div className="w-16 h-16 bg-white/20 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-white/30 backdrop-blur-md">
                              <TrendingUp size={32} />
                           </div>
-                          <h3 className="text-2xl font-black">Daily Z report</h3>
+                          <h3 className="text-2xl font-black">Daily close report</h3>
                           <p className="text-blue-100 text-xs font-bold  tracking-[0.2em] mt-2">One close per business day</p>
                        </div>
 

@@ -403,10 +403,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     if (!activeBranchId || !activeBusinessId || isClosingDay) return;
     const since = getTodayStartMs();
     if (todaysDailySummary) {
-      warning('This branch already has a daily Z report for today. A day can only be closed once.');
+      warning('This branch already has a daily close report for today. A day can only be closed once.');
       return;
     }
-    if (!confirm('Close the business day and create today\'s Z report? This can only be done once per day.')) return;
+    if (!confirm('Close the business day and create today\'s daily close report? This can only be done once per day.')) return;
     const stats = getClosureStats(since);
     const todaysReports = (branchReports || []).filter(report => (report.timestamp || 0) >= since);
     const closedShiftTotals = todaysReports.reduce((totals, report) => ({
@@ -444,9 +444,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       });
       await db.dailySummaries.reload();
       if (result.idempotent) {
-        warning('This branch was already closed today. No second Z report was created.');
+        warning('This branch was already closed today. No second daily close report was created.');
       } else {
-        success('Business day closed and daily Z report saved.');
+        success('Business day closed and daily close report saved.');
       }
     } catch (err: any) {
       error(err.message || 'Failed to close day.');

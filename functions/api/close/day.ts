@@ -101,7 +101,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     `).bind(businessId, branchId, summaryDate - DAY_MS, summaryDate + DAY_MS).first<any>();
     if (existing) {
       return json({
-        error: `This branch already has a daily Z report for ${new Date(summaryDate).toLocaleDateString('en-KE')}.`,
+        error: `This branch already has a daily close report for ${new Date(summaryDate).toLocaleDateString('en-KE')}.`,
         summaryId: existing.id,
       }, 409);
     }
@@ -137,7 +137,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ success: true, summaryId: id, idempotent: false });
   } catch (err: any) {
     if (/unique|constraint/i.test(String(err?.message || ''))) {
-      return json({ error: 'This branch already has a daily Z report for that day.' }, 409);
+      return json({ error: 'This branch already has a daily close report for that day.' }, 409);
     }
     const status = err instanceof PolicyError ? err.status : 500;
     return json({ error: err?.message || 'Could not close day.' }, status);
