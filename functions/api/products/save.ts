@@ -51,6 +51,8 @@ async function ensureSchema(db: D1Database) {
       barcode TEXT NOT NULL,
       imageUrl TEXT,
       reorderPoint REAL,
+      expiryTracking INTEGER DEFAULT 0,
+      expiryDate INTEGER,
       isBundle INTEGER DEFAULT 0,
       components TEXT,
       businessId TEXT,
@@ -79,6 +81,7 @@ async function ensureSchema(db: D1Database) {
       branchId TEXT,
       businessId TEXT,
       shiftId TEXT,
+      expiryDate INTEGER,
       updated_at INTEGER
     )
   `).run();
@@ -105,6 +108,8 @@ async function ensureSchema(db: D1Database) {
     'unit TEXT',
     'imageUrl TEXT',
     'reorderPoint REAL',
+    'expiryTracking INTEGER DEFAULT 0',
+    'expiryDate INTEGER',
     'isBundle INTEGER DEFAULT 0',
     'components TEXT',
     'businessId TEXT',
@@ -116,6 +121,7 @@ async function ensureSchema(db: D1Database) {
   }
   try { await db.prepare('CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId)').run(); } catch {}
   try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN shiftId TEXT').run(); } catch {}
+  try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN expiryDate INTEGER').run(); } catch {}
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -183,6 +189,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const now = Date.now();
+    const expiryTracking = isTruthy(productInput.expiryTracking);
+    const expiryDate = expiryTracking && productInput.expiryDate !== undefined && productInput.expiryDate !== null && productInput.expiryDate !== ''
+      ? Math.max(0, asNumber(productInput.expiryDate))
+      : null;
+    if (expiryTracking && !expiryDate) throw new PolicyError('Enter a valid expiry date.', 400);
     const product = {
       id: productId,
       name,
@@ -194,6 +205,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       unit: trimText(productInput.unit, 24) || 'pcs',
       barcode: trimText(productInput.barcode, 80) || `SKU-${Date.now()}`,
       reorderPoint: Math.max(0, asNumber(productInput.reorderPoint, 5)),
+      expiryTracking: expiryTracking ? 1 : 0,
+      expiryDate,
       isBundle: isBundle ? 1 : 0,
       components: isBundle ? cleanIngredients.map((row: any) => ({ productId: row.ingredientProductId, quantity: row.quantity })) : [],
       branchId: existing?.branchId || branchId,
@@ -203,8 +216,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(`
-        INSERT OR REPLACE INTO products (id, name, category, sellingPrice, costPrice, taxCategory, stockQuantity, unit, barcode, reorderPoint, isBundle, components, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO products (id, name, category, sellingPrice, costPrice, taxCategory, stockQuantity, unit, barcode, reorderPoint, expiryTracking, expiryDate, isBundle, components, businessId, branchId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         product.id,
         product.name,
@@ -216,6 +229,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         product.unit,
         product.barcode,
         product.reorderPoint,
+        product.expiryTracking,
+        product.expiryDate,
         product.isBundle,
         JSON.stringify(product.components),
         businessId,
@@ -239,8 +254,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!existing && !isBundle && product.stockQuantity > 0) {
       statements.push(
         env.DB.prepare(`
-          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, expiryDate, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
           product.id,
@@ -251,6 +266,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           product.branchId,
           businessId,
           null,
+          product.expiryDate,
           now,
         )
       );

@@ -60,7 +60,7 @@ async function ensureSyncSchema(db: D1Database) {
 
   await db.prepare('CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId)').run();
-  await db.prepare('CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER)').run();
+  await db.prepare('CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, expiryDate INTEGER, updated_at INTEGER)').run();
 
   const migrations = [
     'ALTER TABLE transactions ADD COLUMN branchId TEXT',
@@ -86,6 +86,8 @@ async function ensureSyncSchema(db: D1Database) {
     'ALTER TABLE products ADD COLUMN unit TEXT',
     'ALTER TABLE products ADD COLUMN costPrice REAL',
     "ALTER TABLE products ADD COLUMN taxCategory TEXT DEFAULT 'A'",
+    'ALTER TABLE products ADD COLUMN expiryTracking INTEGER DEFAULT 0',
+    'ALTER TABLE products ADD COLUMN expiryDate INTEGER',
     'ALTER TABLE products ADD COLUMN isBundle INTEGER DEFAULT 0',
     'ALTER TABLE products ADD COLUMN components TEXT',
     'ALTER TABLE products ADD COLUMN updated_at INTEGER',
@@ -98,6 +100,7 @@ async function ensureSyncSchema(db: D1Database) {
     'ALTER TABLE stockMovements ADD COLUMN branchId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN businessId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN expiryDate INTEGER',
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
   ];
   for (const sql of migrations) {
@@ -212,5 +215,3 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   return json({ success: true, applied: validMutations.length, skipped: skippedCount });
 };
-
-

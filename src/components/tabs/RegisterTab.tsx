@@ -13,6 +13,7 @@ import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { getAssignedHardware, getHardwareProfile, printReceiptViaAssignedPrinter } from '../../utils/hardware';
 import { getBusinessSettings } from '../../utils/settings';
 import { belongsToActiveBranch } from '../../utils/branchScope';
+import { expiryBadgeClass, getExpiryInfo } from '../../utils/expiry';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -58,6 +59,7 @@ function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
   const stock = product.stockQuantity || 0;
   const isOut = stock <= 0;
   const isLow = !isOut && stock <= (product.reorderPoint || 5);
+  const expiry = getExpiryInfo(product);
   const initials = product.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
   const color = colorFor(product.name);
 
@@ -88,6 +90,11 @@ function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
               {isBundleProduct(product) && <span className="text-emerald-600 flex-shrink-0">bulk</span>}
               {product.barcode && <span className="hidden sm:inline font-mono normal-case tracking-normal text-slate-500 stable-meta">#{product.barcode}</span>}
               <span className="flex-shrink-0">{product.unit || 'pcs'}</span>
+              {expiry.tracking && (
+                <span className={`text-[8px] font-black border px-1.5 py-0.5 rounded-full flex-shrink-0 ${expiryBadgeClass(expiry.status)}`}>
+                  {expiry.label}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -1494,8 +1501,9 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
   return (
     <div className="flex flex-col h-full animate-in fade-in gap-4">
 
+      <div className="sticky top-0 z-30 -mx-1 flex-shrink-0 space-y-3 bg-slate-50/95 px-1 pb-3 pt-1 backdrop-blur supports-[backdrop-filter]:bg-slate-50/80">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 flex-shrink-0">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-black text-slate-900">Register</h2>
           <p className="text-[11px] text-slate-500 font-medium">
@@ -1543,7 +1551,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
       </div>
 
       {/* Category pills */}
-      <div ref={scrollRef} className="flex items-center gap-2 overflow-x-auto no-scrollbar flex-shrink-0">
+      <div ref={scrollRef} className="flex items-center gap-2 overflow-x-auto no-scrollbar">
         {categories.map(cat => (
           <button
             key={cat}
@@ -1555,6 +1563,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
             {cat}
           </button>
         ))}
+      </div>
       </div>
 
       {/* Scanner */}

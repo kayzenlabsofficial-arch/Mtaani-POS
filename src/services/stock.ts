@@ -21,12 +21,13 @@ export const StockService = {
     productId: string;
     quantity: number;
     costPrice?: number;
+    expiryDate?: number;
     reference?: string;
     businessId: string;
     branchId: string;
     shiftId?: string;
   }) {
-    return apiRequest<{ success: boolean; productId: string; stockQuantity: number; costPrice?: number }>('/api/stock/restock', {
+    return apiRequest<{ success: boolean; productId: string; stockQuantity: number; costPrice?: number; expiryDate?: number }>('/api/stock/restock', {
       method: 'POST',
       body: input,
       businessId: input.businessId,

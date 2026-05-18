@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, ArrowDown, ArrowUp, Banknote, Ban, ChevronsUpDown, Pencil, Package, Plus, Search, TriangleAlert, Utensils, X } from 'lucide-react';
+import { Activity, ArrowDown, ArrowUp, Banknote, Ban, CalendarClock, ChevronsUpDown, Pencil, Package, Plus, Search, TriangleAlert, Utensils, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Product } from '../../db';
 import { useStore } from '../../store';
@@ -11,6 +11,7 @@ import { enrichProductsWithBundleStock, getProductIngredients, isBundleProduct }
 import { belongsToActiveBranch } from '../../utils/branchScope';
 import { StockService } from '../../services/stock';
 import { ProductService } from '../../services/products';
+import { dateInputToExpiryMs, expiryBadgeClass, expiryMsToDateInput, formatExpiryDate, getExpiryInfo } from '../../utils/expiry';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -29,6 +30,7 @@ const MaterialIcon = ({ name, className = "", style = {} }: { name: string, clas
       restaurant: Utensils,
       monitoring: Activity,
       edit: Pencil,
+      calendar: CalendarClock,
     };
     const Icon = icons[name] || Package;
     const { fontSize, ...rest } = style || {};
@@ -52,10 +54,12 @@ const CATEGORY_COLORS = [
   'bg-amber-500', 'bg-rose-500', 'bg-indigo-500', 'bg-teal-500',
 ];
 
+type SortColumn = 'name' | 'stock' | 'price' | 'expiry';
+
 export default function InventoryTab() {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<'name' | 'stock' | 'price'>('name');
+  const [sortBy, setSortBy] = useState<SortColumn>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -63,6 +67,7 @@ export default function InventoryTab() {
   const [isRestocking, setIsRestocking] = useState(false);
   const [restockQty, setRestockQty] = useState('');
   const [restockCost, setRestockCost] = useState('');
+  const [restockExpiryDate, setRestockExpiryDate] = useState('');
   const [productForm, setProductForm] = useState({
     name: '',
     category: 'General',
@@ -73,6 +78,8 @@ export default function InventoryTab() {
     barcode: '',
     reorderPoint: '5',
     taxCategory: 'A' as 'A' | 'C' | 'E',
+    expiryTracking: false,
+    expiryDate: '',
     isBundle: false
   });
   const [ingredientRows, setIngredientRows] = useState<{ ingredientProductId: string; quantity: string }[]>([]);
@@ -130,6 +137,11 @@ export default function InventoryTab() {
     if (sortBy === 'name') res = a.name.localeCompare(b.name);
     else if (sortBy === 'stock') res = (a.stockQuantity || 0) - (b.stockQuantity || 0);
     else if (sortBy === 'price') res = a.sellingPrice - b.sellingPrice;
+    else if (sortBy === 'expiry') {
+      const aExpiry = getExpiryInfo(a).timestamp ?? Number.MAX_SAFE_INTEGER;
+      const bExpiry = getExpiryInfo(b).timestamp ?? Number.MAX_SAFE_INTEGER;
+      res = aExpiry - bExpiry;
+    }
     return sortDir === 'asc' ? res : -res;
   });
 
@@ -139,8 +151,13 @@ export default function InventoryTab() {
     const qty = p.stockQuantity || 0;
     return qty > 0 && qty <= (p.reorderPoint || 5);
   }).length || 0;
+  const expiringSoon = displayProducts.filter(p => {
+    const status = getExpiryInfo(p).status;
+    return status === 'SOON' || status === 'TODAY';
+  }).length || 0;
+  const expired = displayProducts.filter(p => getExpiryInfo(p).status === 'EXPIRED').length || 0;
 
-  const toggleSort = (col: 'name' | 'stock' | 'price') => {
+  const toggleSort = (col: SortColumn) => {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortBy(col); setSortDir('asc'); }
   };
@@ -157,6 +174,8 @@ export default function InventoryTab() {
       barcode: product?.barcode || '',
       reorderPoint: product?.reorderPoint !== undefined ? String(product.reorderPoint) : '5',
       taxCategory: product?.taxCategory || 'A',
+      expiryTracking: Boolean((product as any)?.expiryTracking || (product as any)?.expiryDate),
+      expiryDate: expiryMsToDateInput((product as any)?.expiryDate),
       isBundle: isBundleProduct(product)
     });
     const savedIngredients = getProductIngredients(product, productIngredients || []);
@@ -181,6 +200,11 @@ export default function InventoryTab() {
       error('A bulk item cannot use itself as an ingredient.');
       return;
     }
+    const expiryDate = productForm.expiryTracking ? dateInputToExpiryMs(productForm.expiryDate) : null;
+    if (productForm.expiryTracking && !expiryDate) {
+      error('Choose an expiry date or turn off expiry tracking.');
+      return;
+    }
 
     const payload = {
       name: productForm.name.trim(),
@@ -192,6 +216,8 @@ export default function InventoryTab() {
       unit: productForm.unit.trim() || 'pcs',
       barcode: productForm.barcode.trim() || `SKU-${Date.now()}`,
       reorderPoint: Number(productForm.reorderPoint) || 5,
+      expiryTracking: productForm.expiryTracking ? 1 : 0,
+      expiryDate,
       isBundle: productForm.isBundle ? 1 : 0,
       components: productForm.isBundle
         ? cleanIngredients.map(row => ({ productId: row.ingredientProductId, quantity: row.quantity }))
@@ -225,11 +251,14 @@ export default function InventoryTab() {
     if (!selectedProduct || !activeBusinessId || !activeBranchId) return;
     const qty = Number(restockQty);
     if (qty <= 0) return error('Enter a valid restock quantity.');
+    const expiryDate = restockExpiryDate ? dateInputToExpiryMs(restockExpiryDate) : null;
+    if (restockExpiryDate && !expiryDate) return error('Choose a valid expiry date.');
     try {
       const result = await StockService.restock({
         productId: selectedProduct.id,
         quantity: qty,
         costPrice: restockCost ? Number(restockCost) || 0 : undefined,
+        expiryDate: expiryDate || undefined,
         reference: 'Manual restock',
         branchId: activeBranchId,
         businessId: activeBusinessId,
@@ -241,10 +270,12 @@ export default function InventoryTab() {
       setSelectedProduct({
         ...selectedProduct,
         stockQuantity: result.stockQuantity,
-        ...(restockCost ? { costPrice: Number(restockCost) || 0 } : {})
+        ...(restockCost ? { costPrice: Number(restockCost) || 0 } : {}),
+        ...(result.expiryDate ? { expiryTracking: 1, expiryDate: result.expiryDate } : {})
       });
       setRestockQty('');
       setRestockCost('');
+      setRestockExpiryDate('');
       setIsRestocking(false);
       success('Stock updated.');
     } catch (err: any) {
@@ -284,7 +315,7 @@ export default function InventoryTab() {
       keywords: `${p.name} ${p.barcode || ''} ${p.category || ''}`,
     }));
 
-  const SortIcon = ({ col }: { col: 'name' | 'stock' | 'price' }) =>
+  const SortIcon = ({ col }: { col: SortColumn }) =>
     sortBy === col ? (
       <MaterialIcon name={sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward'} className="text-primary" style={{ fontSize: '13px' }} />
     ) : (
@@ -309,12 +340,13 @@ export default function InventoryTab() {
       </div>
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
         {[
           { label: 'Total products', value: products?.length || 0, icon: 'inventory_2', color: 'bg-primary', unit: '' },
           { label: 'Stock value', value: `Ksh ${totalValue.toLocaleString()}`, icon: 'payments', color: 'bg-emerald-600', unit: '' },
           { label: 'Low stock', value: lowStock, icon: 'warning', color: 'bg-amber-500', unit: 'items' },
           { label: 'Out of stock', value: outOfStock, icon: 'do_not_disturb_on', color: 'bg-rose-600', unit: 'items' },
+          { label: 'Expiry watch', value: `${expired}/${expiringSoon}`, icon: 'calendar', color: expired ? 'bg-rose-600' : expiringSoon ? 'bg-amber-500' : 'bg-slate-700', unit: 'expired/soon' },
         ].map(kpi => (
           <div key={kpi.label} className="bg-white border border-slate-100 rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all">
             <div className={`w-10 h-10 ${kpi.color} rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm`}>
@@ -374,7 +406,7 @@ export default function InventoryTab() {
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden flex-1 flex flex-col min-h-0">
 
         {/* Table header */}
-        <div className="hidden md:grid md:grid-cols-[minmax(0,1.6fr)_10rem_5rem_8rem_8rem] items-center gap-4 px-6 py-3 bg-slate-50 border-b border-slate-100 flex-shrink-0">
+        <div className="hidden md:grid md:grid-cols-[minmax(0,1.6fr)_9rem_5rem_7rem_8rem_8rem] items-center gap-4 px-6 py-3 bg-slate-50 border-b border-slate-100 flex-shrink-0">
           <button className="min-w-0 flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left hover:text-slate-700 transition-colors" onClick={() => toggleSort('name')}>
             Product <SortIcon col="name" />
           </button>
@@ -382,6 +414,9 @@ export default function InventoryTab() {
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Unit</div>
           <button className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-700 transition-colors" onClick={() => toggleSort('stock')}>
             Stock <SortIcon col="stock" />
+          </button>
+          <button className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-700 transition-colors" onClick={() => toggleSort('expiry')}>
+            Expiry <SortIcon col="expiry" />
           </button>
           <button className="flex items-center gap-1 justify-end text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-700 transition-colors" onClick={() => toggleSort('price')}>
             Price <SortIcon col="price" />
@@ -403,13 +438,14 @@ export default function InventoryTab() {
             const isLow = !isOut && stock <= (product.reorderPoint || 5);
             const catIdx = categories?.findIndex(c => c.name === product.category) ?? 0;
             const catColor = CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length];
+            const expiry = getExpiryInfo(product);
 
             return (
               <button
                 type="button"
                 key={product.id}
                 onClick={() => setSelectedProduct(product)}
-                className="w-full text-left grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1.6fr)_10rem_5rem_8rem_8rem] items-center gap-3 md:gap-4 px-3 sm:px-4 md:px-6 py-3 hover:bg-slate-50 transition-colors cursor-pointer group"
+                className="w-full text-left grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1.6fr)_9rem_5rem_7rem_8rem_8rem] items-center gap-3 md:gap-4 px-3 sm:px-4 md:px-6 py-3 hover:bg-slate-50 transition-colors cursor-pointer group"
               >
                 {/* Product info */}
                 <div className="min-w-0 flex items-center gap-3">
@@ -427,6 +463,11 @@ export default function InventoryTab() {
                       )}
                       {product.taxCategory === 'A' && (
                         <span className="hidden sm:inline-flex text-[8px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full flex-shrink-0">VAT</span>
+                      )}
+                      {expiry.tracking && (
+                        <span className={`md:hidden text-[8px] font-black border px-1.5 py-0.5 rounded-full flex-shrink-0 ${expiryBadgeClass(expiry.status)}`}>
+                          {expiry.label}
+                        </span>
                       )}
                     </div>
                   </div>
@@ -457,6 +498,17 @@ export default function InventoryTab() {
                   )}
                   {isOut && (
                     <span className="text-[8px] font-black bg-rose-50 text-rose-700 border border-rose-100 px-1.5 py-0.5 rounded-full">Out</span>
+                  )}
+                </div>
+
+                {/* Expiry */}
+                <div className="hidden md:block min-w-0">
+                  {expiry.tracking ? (
+                    <span className={`inline-flex max-w-full truncate text-[9px] font-black border px-2 py-1 rounded-full ${expiryBadgeClass(expiry.status)}`}>
+                      {expiry.label}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-slate-300">Not tracked</span>
                   )}
                 </div>
 
@@ -510,6 +562,11 @@ export default function InventoryTab() {
                   {selectedProduct.taxCategory === 'A' && (
                     <span className="text-[9px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-2 py-0.5 rounded-full mt-1 inline-block">VAT applicable</span>
                   )}
+                  {getExpiryInfo(selectedProduct).tracking && (
+                    <span className={`ml-1 text-[9px] font-black border px-2 py-0.5 rounded-full mt-1 inline-block ${expiryBadgeClass(getExpiryInfo(selectedProduct).status)}`}>
+                      {getExpiryInfo(selectedProduct).label}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -519,6 +576,7 @@ export default function InventoryTab() {
                 { label: 'Cost price', value: selectedProduct.costPrice ? `Ksh ${selectedProduct.costPrice.toLocaleString()}` : '—' },
                 { label: isBundleProduct(selectedProduct) ? 'Available from ingredients' : 'Stock qty', value: `${selectedProduct.stockQuantity || 0} ${selectedProduct.unit || 'pcs'}` },
                 { label: 'Reorder point', value: selectedProduct.reorderPoint || 5 },
+                { label: 'Expiry', value: getExpiryInfo(selectedProduct).tracking ? getExpiryInfo(selectedProduct).dateLabel : 'Not tracked' },
                 { label: 'Barcode', value: selectedProduct.barcode || '---' },
               ].map(row => (
                 <div key={row.label} className="flex justify-between items-center py-3 border-b border-slate-50">
@@ -582,6 +640,9 @@ export default function InventoryTab() {
                         <div className="min-w-0">
                           <p className="text-[11px] font-black text-slate-800 truncate">{move.reference || move.type}</p>
                           <p className="text-[9px] font-bold text-slate-400">{new Date(move.timestamp).toLocaleString('en-KE')}</p>
+                          {move.expiryDate && (
+                            <p className="text-[9px] font-black text-amber-600">Exp: {formatExpiryDate(move.expiryDate)}</p>
+                          )}
                         </div>
                         <span className={`text-xs font-black tabular-nums ${move.quantity >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                           {move.quantity >= 0 ? '+' : ''}{move.quantity}
@@ -606,7 +667,7 @@ export default function InventoryTab() {
                   <MaterialIcon name="restaurant" style={{ fontSize: '18px' }} /> Ingredients
                 </button>
               ) : (
-                <button onClick={() => setIsRestocking(true)} className="py-3 bg-primary text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+                <button onClick={() => { setRestockExpiryDate(expiryMsToDateInput(selectedProduct.expiryDate)); setIsRestocking(true); }} className="py-3 bg-primary text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
                   <MaterialIcon name="add" style={{ fontSize: '18px' }} /> Restock
                 </button>
               )}
@@ -633,6 +694,11 @@ export default function InventoryTab() {
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Latest unit cost</label>
                 <input type="number" step="any" value={restockCost} onChange={e => setRestockCost(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="Optional" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Batch expiry date</label>
+                <input type="date" value={restockExpiryDate} onChange={e => setRestockExpiryDate(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+                <p className="mt-1 text-[10px] font-bold text-slate-400">Leave blank if this batch does not expire.</p>
               </div>
               <button onClick={handleRestock} disabled={!restockQty || Number(restockQty) <= 0} className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50">
                 Update stock
@@ -705,6 +771,36 @@ export default function InventoryTab() {
                   <option value="C">C - Zero Rated</option>
                   <option value="E">E - Exempt</option>
                 </select>
+              </div>
+              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_180px] gap-3 rounded-2xl border-2 border-slate-100 bg-slate-50 p-4">
+                <button
+                  type="button"
+                  onClick={() => setProductForm({ ...productForm, expiryTracking: !productForm.expiryTracking, expiryDate: productForm.expiryTracking ? '' : productForm.expiryDate })}
+                  className="flex items-center justify-between gap-4 text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`w-10 h-10 rounded-xl flex items-center justify-center ${productForm.expiryTracking ? 'bg-amber-500 text-white' : 'bg-white text-slate-400 border border-slate-100'}`}>
+                      <MaterialIcon name="calendar" style={{ fontSize: '20px' }} />
+                    </span>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-700">Track expiry</p>
+                      <p className="text-xs font-bold text-slate-500 mt-0.5">Show expired and soon-to-expire stock in inventory and register.</p>
+                    </div>
+                  </div>
+                  <div className={`w-12 h-7 rounded-full p-1 flex transition-all ${productForm.expiryTracking ? 'bg-amber-500 justify-end' : 'bg-slate-300 justify-start'}`}>
+                    <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
+                  </div>
+                </button>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Expiry date</label>
+                  <input
+                    type="date"
+                    value={productForm.expiryDate}
+                    disabled={!productForm.expiryTracking}
+                    onChange={e => setProductForm({ ...productForm, expiryDate: e.target.value })}
+                    className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                  />
+                </div>
               </div>
               <div className="sm:col-span-2">
                 <button

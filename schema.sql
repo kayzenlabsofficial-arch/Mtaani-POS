@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS products (
     barcode TEXT NOT NULL,
     imageUrl TEXT,
     reorderPoint REAL,
+    expiryTracking INTEGER DEFAULT 0,
+    expiryDate INTEGER,
     isBundle INTEGER DEFAULT 0,
     components TEXT,
     businessId TEXT,
@@ -144,6 +146,7 @@ CREATE TABLE IF NOT EXISTS stockMovements (
     branchId TEXT,
     businessId TEXT,
     shiftId TEXT,
+    expiryDate INTEGER,
     updated_at INTEGER
 );
 

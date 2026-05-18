@@ -45,6 +45,7 @@ async function ensureSchema(db: D1Database) {
       branchId TEXT,
       businessId TEXT,
       shiftId TEXT,
+      expiryDate INTEGER,
       updated_at INTEGER
     )
   `).run();
@@ -65,6 +66,9 @@ async function ensureSchema(db: D1Database) {
     )
   `).run();
   try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN shiftId TEXT').run(); } catch {}
+  try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN expiryDate INTEGER').run(); } catch {}
+  try { await db.prepare('ALTER TABLE products ADD COLUMN expiryTracking INTEGER DEFAULT 0').run(); } catch {}
+  try { await db.prepare('ALTER TABLE products ADD COLUMN expiryDate INTEGER').run(); } catch {}
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -92,10 +96,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const hasCost = body?.costPrice !== undefined && body?.costPrice !== null && body?.costPrice !== '';
     const costPrice = hasCost ? roundMoney(asNumber(body.costPrice)) : null;
     if (costPrice !== null && costPrice < 0) throw new PolicyError('Cost price cannot be negative.', 400);
+    const hasExpiryDate = body?.expiryDate !== undefined && body?.expiryDate !== null && body?.expiryDate !== '';
+    const expiryDate = hasExpiryDate ? Math.max(0, asNumber(body.expiryDate)) : null;
+    if (hasExpiryDate && !expiryDate) throw new PolicyError('Enter a valid expiry date.', 400);
 
     await ensureSchema(env.DB);
     const product = await env.DB.prepare(`
-      SELECT id, name, stockQuantity, costPrice, branchId
+      SELECT id, name, stockQuantity, costPrice, expiryDate, branchId
       FROM products
       WHERE id = ? AND businessId = ?
       LIMIT 1
@@ -104,19 +111,34 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (product.branchId && product.branchId !== branchId) throw new PolicyError('Product belongs to another branch.', 403);
 
     const now = Date.now();
-    const updateSql = costPrice !== null
-      ? `UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) + ?, costPrice = ?, updated_at = ? WHERE id = ? AND businessId = ?`
-      : `UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ?`;
-    const updateProduct = costPrice !== null
-      ? env.DB.prepare(updateSql).bind(quantity, costPrice, now, productId, businessId)
-      : env.DB.prepare(updateSql).bind(quantity, now, productId, businessId);
+    const updateFields = ['stockQuantity = COALESCE(stockQuantity, 0) + ?'];
+    const updateBindings: any[] = [quantity];
+    const existingExpiryDate = asNumber(product.expiryDate);
+    const nextExpiryDate = expiryDate !== null
+      ? existingExpiryDate > 0 ? Math.min(existingExpiryDate, expiryDate) : expiryDate
+      : null;
+    if (costPrice !== null) {
+      updateFields.push('costPrice = ?');
+      updateBindings.push(costPrice);
+    }
+    if (nextExpiryDate !== null) {
+      updateFields.push('expiryTracking = 1', 'expiryDate = ?');
+      updateBindings.push(nextExpiryDate);
+    }
+    updateFields.push('updated_at = ?');
+    updateBindings.push(now, productId, businessId);
+    const updateProduct = env.DB.prepare(`
+      UPDATE products
+      SET ${updateFields.join(', ')}
+      WHERE id = ? AND businessId = ?
+    `).bind(...updateBindings);
     const nextStockQuantity = asNumber(product.stockQuantity) + quantity;
 
     await env.DB.batch([
       updateProduct,
       env.DB.prepare(`
-        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, expiryDate, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         productId,
@@ -127,6 +149,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         branchId,
         businessId,
         body?.shiftId || null,
+        expiryDate,
         now,
       ),
       env.DB.prepare(`
@@ -153,6 +176,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       productId,
       stockQuantity: nextStockQuantity,
       costPrice: costPrice ?? asNumber(product.costPrice),
+      expiryDate: nextExpiryDate ?? undefined,
     });
   } catch (err: any) {
     const status = err instanceof PolicyError ? err.status : 500;

@@ -54,6 +54,8 @@ export interface Product {
   barcode: string;
   reorderPoint?: number; // Minimum stock before alarm triggers
   imageUrl?: string;
+  expiryTracking?: boolean | number | string;
+  expiryDate?: number;
   isBundle?: boolean | number | string;
   components?: { productId: string; quantity: number }[];
   businessId: string;
@@ -196,6 +198,7 @@ export interface StockMovement {
   branchId: string;
   businessId: string;
   shiftId?: string; // Link to the shift if applicable (e.g. shop item expense)
+  expiryDate?: number; // Optional batch expiry for received stock
   updated_at?: number;
 }
 
