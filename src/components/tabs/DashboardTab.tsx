@@ -92,6 +92,33 @@ function percentChange(current: number, previous: number) {
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
+function splitDetails(record: any) {
+  const raw = record?.splitPayments || record?.splitData?.splitPayments;
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+  return raw;
+}
+
+function paymentAmount(record: any, method: 'CASH' | 'MPESA' | 'PDQ') {
+  const paymentMethod = String(record?.paymentMethod || '').toUpperCase();
+  if (paymentMethod === method) return Number(record?.total || 0);
+  if (paymentMethod !== 'SPLIT') return 0;
+
+  const split = splitDetails(record);
+  if (method === 'CASH') return Number(split?.cashAmount || 0);
+  return String(split?.secondaryMethod || '').toUpperCase() === method
+    ? Number(split?.secondaryAmount || 0)
+    : 0;
+}
+
+function recordInShift(record: any, since: number, until: number, shiftId?: string) {
+  if (shiftId && record?.shiftId) return record.shiftId === shiftId;
+  const ts = Number(record?.timestamp || record?.issueDate || 0);
+  return ts >= since && ts <= until;
+}
+
 export default function DashboardTab({ setActiveTab, openExpenseModal }: DashboardTabProps) {
   const [trendView, setTrendView] = useState<'DAY' | 'WEEK'>('DAY');
   const chartRef = React.useRef<HTMLDivElement | null>(null);
@@ -289,56 +316,55 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     }
   };
 
-  const getClosureStats = (since: number, until = Date.now()) => {
-    const txs = (branchTransactions || []).filter(t => (t.timestamp || 0) >= since && (t.timestamp || 0) <= until && t.status !== 'VOIDED');
-    const invoices = (branchSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= since && (invoice.issueDate || 0) <= until && invoice.status !== 'CANCELLED');
-    const expenses = (branchExpenses || []).filter(e => (e.timestamp || 0) >= since && (e.timestamp || 0) <= until && e.status !== 'REJECTED');
-    const picks = (branchCashPicks || []).filter(p => (p.timestamp || 0) >= since && (p.timestamp || 0) <= until && p.status !== 'REJECTED');
-    const supplierPayments = (branchSupplierPayments || []).filter(p => (p.timestamp || 0) >= since && (p.timestamp || 0) <= until);
-    const customerPayments = (branchCustomerPayments || []).filter(p => (p.timestamp || 0) >= since && (p.timestamp || 0) <= until);
-    const drawer = calculateCashDrawer({ transactions: txs, expenses, cashPicks: picks, supplierPayments, customerPayments, since });
-    const mpesaSales = txs.reduce((sum, tx) => {
-      if (tx.paymentMethod === 'MPESA') return sum + Number(tx.total || 0);
-      if (tx.paymentMethod === 'SPLIT' && tx.splitPayments?.secondaryMethod === 'MPESA') return sum + Number(tx.splitPayments.secondaryAmount || 0);
-      return sum;
-    }, 0);
+  const getClosureStats = (since: number, until = Date.now(), shiftId?: string) => {
+    const txs = (branchTransactions || []).filter(t => recordInShift(t, since, until, shiftId) && t.status !== 'VOIDED');
+    const invoices = (branchSalesInvoices || []).filter(invoice => recordInShift(invoice, since, until, shiftId) && invoice.status !== 'CANCELLED');
+    const expenses = (branchExpenses || []).filter(e => recordInShift(e, since, until, shiftId) && e.status !== 'REJECTED');
+    const picks = (branchCashPicks || []).filter(p => recordInShift(p, since, until, shiftId) && p.status !== 'REJECTED');
+    const supplierPayments = (branchSupplierPayments || []).filter(p => recordInShift(p, since, until, shiftId));
+    const cashSales = txs.reduce((sum, tx) => sum + paymentAmount(tx, 'CASH'), 0);
+    const mpesaSales = txs.reduce((sum, tx) => sum + paymentAmount(tx, 'MPESA'), 0);
+    const pdqSales = txs.reduce((sum, tx) => sum + paymentAmount(tx, 'PDQ'), 0);
     const grossSales = txs.reduce((sum, tx) => sum + Number(tx.subtotal ?? tx.total ?? 0), 0)
       + invoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || invoice.total || 0), 0);
     const totalSales = txs.reduce((sum, tx) => sum + Number(tx.total || 0), 0)
       + invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
     const taxTotal = txs.reduce((sum, tx) => sum + Number(tx.tax || 0), 0)
       + invoices.reduce((sum, invoice) => sum + Number(invoice.tax || 0), 0);
-    const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const totalExpenses = expenses.filter(e => e.source === 'TILL').reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const supplierPaymentsTotal = supplierPayments.filter(p => p.source === 'TILL').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const remittanceTotal = totalExpenses + supplierPaymentsTotal;
     const totalPicks = picks.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const expectedCashPicked = Math.max(0, cashSales - remittanceTotal);
+    const cashierVariance = totalPicks - expectedCashPicked;
 
     return {
       txs,
       grossSales,
       totalSales,
       taxTotal,
-      cashSales: drawer.cashSales + drawer.customerCashPayments,
+      cashSales,
       mpesaSales,
+      pdqSales,
       totalExpenses,
+      supplierPaymentsTotal,
+      remittanceTotal,
       totalPicks,
-      expectedCash: Math.max(0, drawer.actualCashDrawer),
+      expectedCash: expectedCashPicked,
+      cashierVariance,
     };
   };
 
   const handleCloseShift = async () => {
     if (!activeBranchId || !activeBusinessId || !currentUser || isClosingShift) return;
     const since = Number(activeShift?.startTime || getTodayStartMs());
-    const stats = getClosureStats(since);
+    const shiftId = activeShift?.id || `shift_${activeBranchId}_${new Date().toISOString().slice(0, 10)}_${currentUser.id}`;
+    const stats = getClosureStats(since, Date.now(), shiftId);
     if (stats.txs.length === 0 && !confirm('No sales found for this shift. Close it anyway?')) return;
-
-    const reportedInput = window.prompt('Enter counted cash in drawer', String(Math.round(stats.expectedCash)));
-    if (reportedInput === null) return;
-    const reportedCash = Number(reportedInput);
-    if (!Number.isFinite(reportedCash) || reportedCash < 0) return warning('Enter a valid counted cash amount.');
 
     setIsClosingShift(true);
     try {
       const now = Date.now();
-      const shiftId = activeShift?.id || `shift_${activeBranchId}_${new Date().toISOString().slice(0, 10)}_${currentUser.id}`;
       await ClosingService.closeShift({
         shiftId,
         startTime: since,
@@ -349,12 +375,15 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           taxTotal: stats.taxTotal,
           cashSales: stats.cashSales,
           mpesaSales: stats.mpesaSales,
+          pdqSales: stats.pdqSales,
           totalExpenses: stats.totalExpenses,
+          supplierPaymentsTotal: stats.supplierPaymentsTotal,
+          remittanceTotal: stats.remittanceTotal,
           totalPicks: stats.totalPicks,
           totalRefunds: 0,
           expectedCash: stats.expectedCash,
-          reportedCash,
-          difference: reportedCash - stats.expectedCash,
+          reportedCash: stats.totalPicks,
+          difference: stats.cashierVariance,
           cashierName: currentUser.name,
         },
         branchId: activeBranchId,
@@ -380,6 +409,22 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     if (!confirm('Close the business day and create today\'s Z report? This can only be done once per day.')) return;
     const stats = getClosureStats(since);
     const todaysReports = (branchReports || []).filter(report => (report.timestamp || 0) >= since);
+    const closedShiftTotals = todaysReports.reduce((totals, report) => ({
+      totalSales: totals.totalSales + Number(report.totalSales || 0),
+      grossSales: totals.grossSales + Number(report.grossSales || 0),
+      taxTotal: totals.taxTotal + Number(report.taxTotal || 0),
+      totalExpenses: totals.totalExpenses + Number(report.totalExpenses || 0),
+      totalPicks: totals.totalPicks + Number(report.totalPicks || 0),
+      totalVariance: totals.totalVariance + Number(report.difference || 0),
+    }), { totalSales: 0, grossSales: 0, taxTotal: 0, totalExpenses: 0, totalPicks: 0, totalVariance: 0 });
+    const closeTotals = todaysReports.length ? closedShiftTotals : {
+      totalSales: stats.totalSales,
+      grossSales: stats.grossSales,
+      taxTotal: stats.taxTotal,
+      totalExpenses: stats.totalExpenses,
+      totalPicks: stats.totalPicks,
+      totalVariance: stats.cashierVariance,
+    };
 
     setIsClosingDay(true);
     try {
@@ -387,12 +432,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         summary: {
           date: since,
           shiftIds: todaysReports.map(report => report.shiftId || report.id),
-          totalSales: stats.totalSales,
-          grossSales: stats.grossSales,
-          taxTotal: stats.taxTotal,
-          totalExpenses: stats.totalExpenses,
-          totalPicks: stats.totalPicks,
-          totalVariance: todaysReports.reduce((sum, report) => sum + Number(report.difference || 0), 0),
+          totalSales: closeTotals.totalSales,
+          grossSales: closeTotals.grossSales,
+          taxTotal: closeTotals.taxTotal,
+          totalExpenses: closeTotals.totalExpenses,
+          totalPicks: closeTotals.totalPicks,
+          totalVariance: closeTotals.totalVariance,
         },
         branchId: activeBranchId,
         businessId: activeBusinessId,

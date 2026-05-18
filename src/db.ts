@@ -143,7 +143,10 @@ export interface EndOfDayReport {
   taxTotal: number;
   cashSales: number;
   mpesaSales: number;
+  pdqSales?: number;
   totalExpenses: number;
+  supplierPaymentsTotal?: number;
+  remittanceTotal?: number;
   totalPicks: number;
   totalRefunds?: number; // Total amount refunded during this shift
   expectedCash: number;

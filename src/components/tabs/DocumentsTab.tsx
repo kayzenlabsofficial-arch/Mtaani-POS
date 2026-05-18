@@ -22,6 +22,20 @@ const safeText = (value: unknown) => String(value ?? '');
 const safeMoney = (value: unknown) => Number(value) || 0;
 const shortId = (value: unknown) => safeText(value).split('-')[0].toUpperCase();
 const recordTimestamp = (record: any) => Number(record?.timestamp) || Number(record?.issueDate) || Number(record?.orderDate) || Date.now();
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const parseRecordList = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.map(item => safeText(item)).filter(Boolean);
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.map(item => safeText(item)).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
 
 export default function DocumentsTab() {
   const [docSearch, setDocSearch] = useState("");
@@ -59,7 +73,27 @@ export default function DocumentsTab() {
     ...(allSalesInvoices || []).map(i => ({ ...i, recordType: 'SALES_INVOICE' as const, total: i.total, timestamp: i.issueDate })),
     ...(allPurchaseOrders || []).filter(po => po.status === 'RECEIVED').map(po => ({ ...po, recordType: 'PURCHASE_ORDER' as const, total: po.totalAmount, timestamp: po.receivedDate || po.orderDate })),
     ...(allReports || []).map(r => ({ ...r, recordType: 'CLOSE_DAY_REPORT' as const, total: r.totalSales || 0, timestamp: r.timestamp || Date.now() })),
-    ...(allDailySummaries || []).map(ds => ({ ...ds, recordType: 'DAILY_SUMMARY' as const, total: ds.totalSales || 0, timestamp: ds.timestamp || Date.now() }))
+    ...(allDailySummaries || []).map(ds => {
+      const shiftIds = parseRecordList(ds.shiftIds);
+      const shiftIdSet = new Set(shiftIds.map(id => id.toLowerCase()));
+      const dayStart = Number(ds.date || ds.timestamp || 0);
+      const dayEnd = dayStart + DAY_MS;
+      const shiftReports = (allReports || []).filter(report => {
+        const reportIds = [report.shiftId, report.id].map(value => safeText(value).toLowerCase()).filter(Boolean);
+        if (reportIds.some(id => shiftIdSet.has(id))) return true;
+        if (shiftIdSet.size > 0) return false;
+        const ts = Number(report.timestamp || 0);
+        return dayStart > 0 && ts >= dayStart && ts < dayEnd;
+      });
+      return {
+        ...ds,
+        shiftIds,
+        shiftReports,
+        recordType: 'DAILY_SUMMARY' as const,
+        total: ds.totalSales || 0,
+        timestamp: ds.timestamp || Date.now()
+      };
+    })
   ].sort((a, b) => ((Number(b.timestamp) || 0) - (Number(a.timestamp) || 0)));
 
   if (!allTransactions || !allExpenses || !allSupplierPayments || !allSalesInvoices || !allPurchaseOrders || !allReports || !allDailySummaries) {
@@ -234,7 +268,7 @@ export default function DocumentsTab() {
              { id: 'SUPPLIER_PAYMENTS', label: 'Supplier payments' },
              { id: 'INVOICES', label: 'Invoices & bills' },
              { id: 'SHIFTS', label: 'Shift reports' },
-             { id: 'DAILY', label: 'Daily summary' }
+             { id: 'DAILY', label: 'Daily Z reports' }
            ].map(type => (
              <button 
                key={type.id} 

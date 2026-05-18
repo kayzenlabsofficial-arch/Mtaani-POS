@@ -32,7 +32,10 @@ async function ensureCloseShiftSchema(db: D1Database) {
       taxTotal REAL NOT NULL DEFAULT 0,
       cashSales REAL NOT NULL DEFAULT 0,
       mpesaSales REAL NOT NULL DEFAULT 0,
+      pdqSales REAL NOT NULL DEFAULT 0,
       totalExpenses REAL NOT NULL DEFAULT 0,
+      supplierPaymentsTotal REAL NOT NULL DEFAULT 0,
+      remittanceTotal REAL NOT NULL DEFAULT 0,
       totalPicks REAL NOT NULL DEFAULT 0,
       totalRefunds REAL,
       expectedCash REAL NOT NULL DEFAULT 0,
@@ -78,6 +81,9 @@ async function ensureCloseShiftSchema(db: D1Database) {
     'ALTER TABLE endOfDayReports ADD COLUMN shiftId TEXT',
     'ALTER TABLE endOfDayReports ADD COLUMN openingFloat REAL',
     'ALTER TABLE endOfDayReports ADD COLUMN totalRefunds REAL',
+    'ALTER TABLE endOfDayReports ADD COLUMN pdqSales REAL',
+    'ALTER TABLE endOfDayReports ADD COLUMN supplierPaymentsTotal REAL',
+    'ALTER TABLE endOfDayReports ADD COLUMN remittanceTotal REAL',
     'ALTER TABLE endOfDayReports ADD COLUMN branchId TEXT',
     'ALTER TABLE endOfDayReports ADD COLUMN businessId TEXT',
     'ALTER TABLE endOfDayReports ADD COLUMN updated_at INTEGER',
@@ -121,7 +127,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const taxTotal = nonNegative(report.taxTotal);
     const cashSales = nonNegative(report.cashSales);
     const mpesaSales = nonNegative(report.mpesaSales);
+    const pdqSales = nonNegative(report.pdqSales);
     const totalExpenses = nonNegative(report.totalExpenses);
+    const supplierPaymentsTotal = nonNegative(report.supplierPaymentsTotal);
+    const remittanceTotal = nonNegative(report.remittanceTotal ?? (totalExpenses + supplierPaymentsTotal));
     const totalPicks = nonNegative(report.totalPicks);
     const totalRefunds = nonNegative(report.totalRefunds);
     const expectedCash = nonNegative(report.expectedCash);
@@ -129,9 +138,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const difference = n(report.difference, reportedCash - expectedCash);
     await env.DB.batch([
       env.DB.prepare(`
-        INSERT INTO endOfDayReports (id, shiftId, timestamp, totalSales, grossSales, taxTotal, cashSales, mpesaSales, totalExpenses, totalPicks, totalRefunds, expectedCash, reportedCash, difference, cashierName, branchId, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(reportId, shiftId, now, totalSales, grossSales, taxTotal, cashSales, mpesaSales, totalExpenses, totalPicks, totalRefunds, expectedCash, reportedCash, difference, cashierName, branchId, businessId, now),
+        INSERT INTO endOfDayReports (id, shiftId, timestamp, totalSales, grossSales, taxTotal, cashSales, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, expectedCash, reportedCash, difference, cashierName, branchId, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(reportId, shiftId, now, totalSales, grossSales, taxTotal, cashSales, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, expectedCash, reportedCash, difference, cashierName, branchId, businessId, now),
       env.DB.prepare(`
         INSERT INTO shifts (id, startTime, endTime, cashierName, status, branchId, businessId, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)

@@ -19,6 +19,35 @@ interface DocumentDetailsModalProps {
   onReceive?: (record: any) => void;
 }
 
+const moneyText = (value: unknown) => `Ksh ${(Number(value) || 0).toLocaleString()}`;
+
+const parseList = (value: any): any[] => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+const reportValue = (record: any, key: string) => {
+  if (key === 'remittanceTotal') {
+    return Number(record?.remittanceTotal ?? ((Number(record?.supplierPaymentsTotal) || 0) + (Number(record?.totalExpenses) || 0))) || 0;
+  }
+  return Number(record?.[key]) || 0;
+};
+
+const reportShiftLabel = (record: any, index: number) => {
+  const cashier = String(record?.cashierName || '').trim();
+  if (cashier) return cashier;
+  const id = String(record?.shiftId || record?.id || '').split('-')[0].slice(0, 8).toUpperCase();
+  return id || `Shift ${index + 1}`;
+};
+
 export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord, handleRefund, onApprove, onReject, onReceive }: DocumentDetailsModalProps) {
   const [returnQuantities, setReturnQuantities] = useState<{ [productId: string]: number }>({});
   const [isReturnMode, setIsReturnMode] = useState(false);
@@ -79,6 +108,17 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const isPO = selectedRecord.recordType === 'PURCHASE_ORDER';
   const isReport = selectedRecord.recordType === 'CLOSE_DAY_REPORT';
   const isDailySummary = selectedRecord.recordType === 'DAILY_SUMMARY';
+  const reportRows: Array<{ label: string; key: string; negative?: boolean; highlight?: boolean; total?: boolean }> = [
+    { label: 'Cash Sale', key: 'cashSales' },
+    { label: 'M-Pesa Sales', key: 'mpesaSales' },
+    { label: 'PDQ Sales', key: 'pdqSales' },
+    { label: 'Remittance (Supplier payments + Expenses)', key: 'remittanceTotal', negative: true },
+    { label: 'Cash Picked', key: 'totalPicks' },
+    { label: 'Cashier Variance', key: 'difference', highlight: true },
+    { label: 'Gross Sales', key: 'grossSales', total: true },
+    { label: 'VAT', key: 'taxTotal', total: true },
+  ];
+  const dailyShiftReports = parseList(selectedRecord.shiftReports);
 
   const updateReturnQty = (productId: string, delta: number, max: number) => {
      const current = returnQuantities[productId] || 0;
@@ -237,7 +277,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                       isPayment ? 'Supplier payment note' :
                       isSalesInvoice ? 'Customer invoice' :
                       isReport ? 'End of shift report' :
-                      isDailySummary ? 'Daily business report' :
+                      isDailySummary ? 'Daily Z report' :
                       (isPO && selectedRecord.approvalStatus === 'PENDING') ? 'Purchase order waiting approval' :
                       isPO ? 'Purchase order' :
                       `Purchase document`}
@@ -556,71 +596,44 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                  {/* Shift Report Details */}
                  {isReport && (
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-                       {/* Fiscal Header Style */}
                        <div className="text-center py-4 border-b border-dashed border-slate-200">
-                              <p className="text-[10px] font-black  tracking-[0.2em] text-slate-400 mb-1">Shift report</p>
+                          <p className="text-[10px] font-black tracking-[0.2em] text-slate-400 mb-1">Shift report</p>
                           <p className="text-xs font-bold text-slate-600">Shift ID: {selectedRecord.shiftId || 'N/A'}</p>
                           <p className="text-xs font-bold text-slate-600">Cashier: {selectedRecord.cashierName}</p>
                        </div>
 
-                       <div className="space-y-3">
-                          <div className="flex justify-between text-sm font-bold text-slate-700">
-                             <span>Total sales (gross)</span>
-                             <span>Ksh {(Number(selectedRecord.grossSales) || 0).toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between text-sm font-bold text-slate-400 italic">
-                             <span>- M-Pesa sales</span>
-                             <span>Ksh {(Number(selectedRecord.mpesaSales) || 0).toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between text-sm font-bold text-red-600">
-                             <span>Total expenses</span>
-                             <span>- Ksh {(Number(selectedRecord.totalExpenses) || 0).toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between text-sm font-bold text-slate-600">
-                             <span>Confirmed banking</span>
-                             <span>- Ksh {(Number(selectedRecord.totalPicks) || 0).toLocaleString()}</span>
-                          </div>
+                       <div className="overflow-hidden rounded-xl border border-slate-200">
+                          {reportRows.map((row, index) => {
+                            const value = reportValue(selectedRecord, row.key);
+                            const isVariance = row.key === 'difference';
+                            const valueClass = isVariance
+                              ? value === 0 ? 'text-green-700' : 'text-red-700'
+                              : row.negative ? 'text-red-600' : 'text-slate-900';
+                            return (
+                              <div
+                                key={row.key}
+                                className={`flex justify-between gap-4 px-4 py-3 text-sm border-b border-slate-100 last:border-b-0 ${
+                                  row.highlight ? 'bg-blue-50 font-black' : row.total ? 'bg-slate-50 font-black' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'
+                                }`}
+                              >
+                                <span className="font-bold text-slate-700">{row.label}</span>
+                                <span className={`font-black tabular-nums text-right ${valueClass}`}>{row.negative && value > 0 ? '- ' : ''}{moneyText(value)}</span>
+                              </div>
+                            );
+                          })}
                        </div>
 
-                       <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-xl space-y-1">
-                          <div className="flex justify-between items-center opacity-60 text-[10px] font-black  ">
-                             <span>Expected cash</span>
-                             <span>Reported cash</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                             <span className="text-lg font-black tracking-tight">Ksh {(Number(selectedRecord.expectedCash) || 0).toLocaleString()}</span>
-                             <span className="text-lg font-black tracking-tight underline italic small-caps leading-none px-2 py-1 bg-white/10 rounded">Ksh {(Number(selectedRecord.reportedCash) || 0).toLocaleString()}</span>
-                          </div>
-                       </div>
-
-                       {/* VARIANCE SECTION */}
                        <div className={`p-5 rounded-xl border-2 ${(Number(selectedRecord.difference) || 0) === 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                          <div className="flex items-center gap-3 mb-2">
+                          <div className="flex items-center gap-3">
                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${(Number(selectedRecord.difference) || 0) === 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                                 {(Number(selectedRecord.difference) || 0) === 0 ? <CheckCircle2 size={24}/> : <AlertTriangle size={24}/>}
                              </div>
                              <div>
-                                <p className="text-[10px] font-black   text-slate-400">Cash difference</p>
+                                <p className="text-[10px] font-black text-slate-400">Cashier variance</p>
                                 <h4 className={`text-xl font-black ${(Number(selectedRecord.difference) || 0) === 0 ? 'text-green-700' : 'text-red-700'}`}>
-                                   Ksh {(Number(selectedRecord.difference) || 0).toLocaleString()}
+                                   {moneyText(selectedRecord.difference)}
                                 </h4>
                              </div>
-                          </div>
-                          {(Number(selectedRecord.difference) || 0) !== 0 && (
-                             <p className="text-[11px] font-bold text-red-600 leading-relaxed bg-white/50 p-3 rounded-xl border border-red-100 italic">
-                                * This cash difference of Ksh {Math.abs(Number(selectedRecord.difference) || 0).toLocaleString()} has been saved for follow up.
-                             </p>
-                          )}
-                       </div>
-
-                       <div className="pt-4 border-t border-dashed border-slate-200">
-                          <div className="flex justify-between text-[11px] font-black text-slate-400  ">
-                             <span>e-TIMS tax compliance</span>
-                             <span>Total tax (16%)</span>
-                          </div>
-                          <div className="flex justify-between items-center mt-1">
-                             <span className="text-xs text-slate-500 font-bold italic">Standard VAT collected</span>
-                             <span className="text-sm font-black text-slate-900">Ksh {(Number(selectedRecord.taxTotal) || 0).toLocaleString()}</span>
                           </div>
                        </div>
                     </div>
@@ -651,26 +664,61 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
 
                        <div className="space-y-4">
                           <div className="flex items-center justify-between px-2">
-                             <p className="text-[10px] font-black text-slate-400  tracking-[0.2em]">Expenses & banking</p>
-                             <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{selectedRecord.shiftIds?.length || 0} shifts included</span>
+                             <p className="text-[10px] font-black text-slate-400 tracking-[0.2em]">Closed shift summary</p>
+                             <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{dailyShiftReports.length || selectedRecord.shiftIds?.length || 0} shifts included</span>
                           </div>
-                          
-                          <div className="space-y-3">
-                             <div className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm">
-                                <div className="flex gap-3 items-center">
-                                   <div className="w-10 h-10 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center"><Wallet size={20}/></div>
-                                   <span className="text-sm font-bold text-slate-700">Daily expenses</span>
-                                </div>
-                                <span className="text-sm font-black text-red-600">- Ksh {(Number(selectedRecord.totalExpenses) || 0).toLocaleString()}</span>
-                             </div>
-                             <div className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm">
-                                <div className="flex gap-3 items-center">
-                                   <div className="w-10 h-10 bg-green-50 text-green-600 rounded-xl flex items-center justify-center"><Banknote size={20}/></div>
-                                   <span className="text-sm font-bold text-slate-700">Bank deposits</span>
-                                </div>
-                                <span className="text-sm font-black text-slate-900">- Ksh {(Number(selectedRecord.totalPicks) || 0).toLocaleString()}</span>
-                             </div>
-                          </div>
+
+                          {dailyShiftReports.length > 0 ? (
+                            <div className="overflow-x-auto rounded-xl border border-slate-200">
+                              <table className="w-full min-w-[640px] text-xs">
+                                <thead className="bg-slate-900 text-white">
+                                  <tr>
+                                    <th className="text-left px-3 py-2 font-black">Line item</th>
+                                    {dailyShiftReports.map((report, index) => (
+                                      <th key={report.id || report.shiftId || index} className="text-right px-3 py-2 font-black">{reportShiftLabel(report, index)}</th>
+                                    ))}
+                                    <th className="text-right px-3 py-2 font-black">Total</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {reportRows.map((row, rowIndex) => {
+                                    const total = dailyShiftReports.reduce((sum, report) => sum + reportValue(report, row.key), 0);
+                                    return (
+                                      <tr key={row.key} className={`${row.highlight ? 'bg-blue-50' : row.total ? 'bg-slate-50' : rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} border-b border-slate-100 last:border-b-0`}>
+                                        <td className="px-3 py-2 font-bold text-slate-700">{row.label}</td>
+                                        {dailyShiftReports.map((report, index) => {
+                                          const value = reportValue(report, row.key);
+                                          return (
+                                            <td key={`${report.id || report.shiftId || index}-${row.key}`} className={`px-3 py-2 text-right font-black tabular-nums ${value < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                                              {row.negative && value > 0 ? '- ' : ''}{moneyText(value)}
+                                            </td>
+                                          );
+                                        })}
+                                        <td className={`px-3 py-2 text-right font-black tabular-nums ${total < 0 ? 'text-red-600' : 'text-slate-900'}`}>{row.negative && total > 0 ? '- ' : ''}{moneyText(total)}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                               <div className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm">
+                                  <div className="flex gap-3 items-center">
+                                     <div className="w-10 h-10 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center"><Wallet size={20}/></div>
+                                     <span className="text-sm font-bold text-slate-700">Daily expenses</span>
+                                  </div>
+                                  <span className="text-sm font-black text-red-600">- {moneyText(selectedRecord.totalExpenses)}</span>
+                               </div>
+                               <div className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm">
+                                  <div className="flex gap-3 items-center">
+                                     <div className="w-10 h-10 bg-green-50 text-green-600 rounded-xl flex items-center justify-center"><Banknote size={20}/></div>
+                                     <span className="text-sm font-bold text-slate-700">Cash picked</span>
+                                  </div>
+                                  <span className="text-sm font-black text-slate-900">{moneyText(selectedRecord.totalPicks)}</span>
+                               </div>
+                            </div>
+                          )}
                        </div>
 
                        <div className="pt-6 border-t border-dashed border-slate-200">
@@ -680,7 +728,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                                 <h4 className="text-sm font-bold text-slate-500">e-TIMS 16% VAT summary</h4>
                              </div>
                              <div className="text-right">
-                                <p className="text-2xl font-black text-blue-600">Ksh {selectedRecord.taxTotal.toLocaleString()}</p>
+                                <p className="text-2xl font-black text-blue-600">{moneyText(selectedRecord.taxTotal)}</p>
                                 <p className="text-[9px] font-black text-blue-400  ">Total VAT collected</p>
                              </div>
                           </div>

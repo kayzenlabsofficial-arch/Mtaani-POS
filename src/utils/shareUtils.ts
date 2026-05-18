@@ -545,7 +545,7 @@ function buildRemittance(r: any, supplierName?: string, bizName?: string): Blob 
   y = kvRow(doc, 'Recorded By', safeStr(r.preparedBy || r.cashierName), y);
   y += 6;
 
-  const rows = [
+  const rows: string[][] = [
     ...(r.invoiceDetails || []).map((i: any) => [new Date(i.date).toLocaleDateString(), 'INVOICE', String(i.ref).toUpperCase(), ksh(i.amount)]),
     ...(r.creditNoteDetails || []).map((c: any) => [new Date(c.date).toLocaleDateString(), 'CREDIT NOTE', String(c.ref).toUpperCase(), `-${ksh(c.amount)}`]),
   ];
@@ -702,6 +702,121 @@ function drawCloseReportStatement(doc: jsPDF, y: number, title: string, rows: Cl
   return y + 8;
 }
 
+function shiftLabel(report: any, index: number): string {
+  const cashier = safeStr(report?.cashierName, '').trim();
+  if (cashier) return cashier;
+  const id = safeStr(report?.shiftId || report?.id, '').split('-')[0].slice(0, 10).toUpperCase();
+  return id || `Shift ${index + 1}`;
+}
+
+function drawCloseDayShiftSummary(doc: jsPDF, y: number, shiftReports: any[]): number {
+  const sectionBlue: RGB = [78, 132, 186];
+  const totalBlue: RGB = [222, 234, 246];
+  const highlightBlue: RGB = [157, 188, 224];
+  const lineBlue: RGB = [203, 213, 225];
+  const rows: Array<{ label: string; key: string; highlight?: boolean; total?: boolean; deduct?: boolean }> = [
+    { label: 'Cash Sale', key: 'cashSales' },
+    { label: 'M-Pesa Sales', key: 'mpesaSales' },
+    { label: 'PDQ Sales', key: 'pdqSales' },
+    { label: 'Remittance', key: 'remittanceTotal', deduct: true },
+    { label: 'Cash Picked', key: 'totalPicks' },
+    { label: 'Cashier Variance', key: 'difference', highlight: true },
+    { label: 'Gross Sales', key: 'grossSales', total: true },
+    { label: 'VAT', key: 'taxTotal', total: true },
+  ];
+  const chunks: any[][] = [];
+  for (let i = 0; i < shiftReports.length; i += 4) chunks.push(shiftReports.slice(i, i + 4));
+
+  const valueFor = (report: any, key: string) => {
+    if (key === 'remittanceTotal') {
+      return safe(report.remittanceTotal ?? (safe(report.supplierPaymentsTotal) + safe(report.totalExpenses)));
+    }
+    return safe(report?.[key]);
+  };
+
+  chunks.forEach((chunk, chunkIndex) => {
+    const hasTotal = chunkIndex === chunks.length - 1;
+    const colCount = chunk.length + (hasTotal ? 1 : 0);
+    const labelW = 54;
+    const valueW = (W - labelW) / Math.max(1, colCount);
+
+    const ensureRoom = (height: number) => {
+      if (y + height <= pageBottom(doc)) return;
+      footer(doc);
+      doc.addPage();
+      y = 18;
+    };
+
+    ensureRoom(17 + rows.length * 8);
+    sf(doc, sectionBlue);
+    doc.rect(M, y, W, 9, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    st(doc, white);
+    doc.text(chunkIndex === 0 ? 'ZED History Report - Closed Shift Summary' : 'Closed Shift Summary Continued', M + 2, y + 6.3);
+    y += 9;
+
+    sf(doc, sectionBlue);
+    doc.rect(M, y, W, 8, 'F');
+    sd(doc, lineBlue);
+    doc.rect(M, y, labelW, 8);
+    doc.setFontSize(7.5);
+    doc.text('Line Item', M + 2, y + 5.4);
+    chunk.forEach((report, index) => {
+      const x = M + labelW + index * valueW;
+      doc.rect(x, y, valueW, 8);
+      doc.text(fitLine(doc, shiftLabel(report, chunkIndex * 4 + index), valueW - 4), x + valueW - 2, y + 5.4, { align: 'right' });
+    });
+    if (hasTotal) {
+      const x = M + labelW + chunk.length * valueW;
+      doc.rect(x, y, valueW, 8);
+      doc.text('Total', x + valueW - 2, y + 5.4, { align: 'right' });
+    }
+    y += 8;
+
+    rows.forEach((row, rowIndex) => {
+      const rowH = row.highlight ? 8 : 7;
+      ensureRoom(rowH);
+      if (row.highlight) sf(doc, highlightBlue);
+      else if (row.total) sf(doc, totalBlue);
+      else if (rowIndex % 2 === 0) sf(doc, [250, 252, 255] as RGB);
+      else sf(doc, white);
+      doc.rect(M, y, W, rowH, 'F');
+
+      sd(doc, lineBlue);
+      doc.rect(M, y, labelW, rowH);
+      chunk.forEach((_, index) => doc.rect(M + labelW + index * valueW, y, valueW, rowH));
+      if (hasTotal) doc.rect(M + labelW + chunk.length * valueW, y, valueW, rowH);
+
+      doc.setFont('helvetica', row.highlight || row.total ? 'bold' : 'normal');
+      doc.setFontSize(7.4);
+      st(doc, slate900);
+      doc.text(fitLine(doc, row.label, labelW - 4), M + 2, y + rowH - 2.2);
+
+      chunk.forEach((report, index) => {
+        const value = valueFor(report, row.key);
+        const x = M + labelW + index * valueW;
+        st(doc, value < 0 || row.deduct ? red : slate900);
+        const formatted = row.deduct && value > 0 ? `-${kshAccounting(value)}` : kshAccounting(value);
+        doc.text(fitLine(doc, formatted, valueW - 4), x + valueW - 2, y + rowH - 2.2, { align: 'right' });
+      });
+
+      if (hasTotal) {
+        const total = shiftReports.reduce((sum, report) => sum + valueFor(report, row.key), 0);
+        const x = M + labelW + chunk.length * valueW;
+        st(doc, total < 0 || row.deduct ? red : slate900);
+        const formatted = row.deduct && total > 0 ? `-${kshAccounting(total)}` : kshAccounting(total);
+        doc.text(fitLine(doc, formatted, valueW - 4), x + valueW - 2, y + rowH - 2.2, { align: 'right' });
+      }
+
+      y += rowH;
+    });
+    y += 8;
+  });
+
+  return y;
+}
+
 function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'): Blob {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const isDaily = r.recordType === 'DAILY_SUMMARY';
@@ -713,16 +828,18 @@ function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'
   const totalSales = safe(r.totalSales ?? grossSales);
   const cashSales = safe(r.cashSales ?? Math.max(0, totalSales - safe(r.mpesaSales)));
   const mpesaSales = safe(r.mpesaSales);
+  const pdqSales = safe(r.pdqSales);
   const expenses = safe(r.totalExpenses);
+  const supplierPaymentsTotal = safe(r.supplierPaymentsTotal);
+  const remittanceTotal = safe(r.remittanceTotal ?? (supplierPaymentsTotal + expenses));
   const banked = safe(r.totalPicks);
   const refunds = safe(r.totalRefunds);
   const taxTotal = safe(r.taxTotal);
   const expected = safe(r.expectedCash);
   const reported = safe(r.reportedCash || expected);
   const diff = safe(r.difference ?? r.totalVariance);
-  const salesBeforeVat = Math.max(0, totalSales - taxTotal);
-  const netCashAfterBanking = Math.max(0, reported - banked);
-  const reportTitle = isDaily ? 'Daily Z Report' : 'Shift Report';
+  const shiftReports = parseList(r.shiftReports);
+  const reportTitle = isDaily ? 'ZED History Report' : 'Shift Report';
   let y = banner(
     doc,
     reportTitle,
@@ -736,47 +853,37 @@ function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'
     ['Date Created', issuedDate.toLocaleDateString('en-KE')],
     ['Date Issued', issuedDate.toLocaleDateString('en-KE')],
     [isDaily ? 'Business Day' : 'Shift ID', isDaily ? reportDate.toLocaleDateString('en-KE') : safeStr(r.shiftId, 'N/A')],
-    ['Report Type', isDaily ? 'Daily Z Close' : 'Shift Close'],
+    ['Report Type', isDaily ? 'Daily Z Report' : 'Shift Close'],
   ]);
+
+  if (isDaily && shiftReports.length) {
+    y = drawCloseDayShiftSummary(doc, y, shiftReports);
+    const finalVariance = shiftReports.reduce((sum, report) => sum + safe(report.difference), 0);
+    y = bigTotal(doc, 'DAILY Z TOTAL SALES', ksh(totalSales), y, brandBlue);
+    y = bigTotal(doc, 'TOTAL CASHIER VARIANCE', ksh(finalVariance), y, Math.abs(finalVariance) < 0.01 ? green : red);
+    footer(doc);
+    return doc.output('blob');
+  }
 
   const rows: CloseReportRow[] = isDaily
     ? [
-        { label: 'Revenue', kind: 'section' },
-        { label: 'Gross sales', value: grossSales },
-        { label: 'VAT collected', value: taxTotal },
-        { label: 'Net sales', value: totalSales, kind: 'total' },
-        { label: 'Cash Movement', kind: 'section' },
-        { label: 'Operating expenses', value: expenses, format: 'deduct' },
-        { label: 'Cash picks / banked', value: banked, format: 'deduct' },
-        { label: 'Shift Summary', kind: 'section' },
-        { label: 'Shifts included', value: String(shiftIds.length || 0), format: 'plain', kind: 'note' },
-        { label: 'Staff cash difference', value: diff, kind: 'highlight' },
-        { label: 'VAT Summary', kind: 'section' },
-        { label: 'Sales before VAT', value: salesBeforeVat },
-        { label: 'VAT collected', value: taxTotal },
-        { label: 'Sales with VAT', value: totalSales, kind: 'highlight' },
+        { label: 'Total Sales', value: totalSales, kind: 'highlight' },
+        { label: 'Remittance (Supplier payments + Expenses)', value: expenses, format: 'deduct' },
+        { label: 'Cash Picked', value: banked },
+        { label: 'Cashier Variance', value: diff, kind: 'highlight' },
+        { label: 'Shifts Included', value: String(shiftIds.length || 0), format: 'plain', kind: 'note' },
+        { label: 'Gross Sales', value: grossSales, kind: 'total' },
+        { label: 'VAT', value: taxTotal, kind: 'total' },
       ]
     : [
-        { label: 'Revenue', kind: 'section' },
-        { label: 'Gross sales', value: grossSales },
-        { label: 'VAT collected', value: taxTotal },
-        { label: 'Net sales', value: totalSales, kind: 'total' },
-        { label: 'Payments', kind: 'section' },
-        { label: 'Cash receipts', value: cashSales },
-        { label: 'M-Pesa receipts', value: mpesaSales },
-        { label: 'Operating Cash', kind: 'section' },
-        { label: 'Operating expenses', value: expenses, format: 'deduct' },
-        { label: 'Cash picks / banked', value: banked, format: 'deduct' },
-        ...(refunds > 0 ? [{ label: 'Refunds', value: refunds, format: 'deduct' as const }] : []),
-        { label: 'Cash Reconciliation', kind: 'section' },
-        { label: 'Expected cash', value: expected },
-        { label: 'Reported cash', value: reported },
-        { label: 'Cash difference', value: diff, kind: 'highlight' },
-        { label: 'Net cash after banking', value: netCashAfterBanking, kind: 'total' },
-        { label: 'VAT Summary', kind: 'section' },
-        { label: 'Sales before VAT', value: salesBeforeVat },
-        { label: 'VAT collected', value: taxTotal },
-        { label: 'Sales with VAT', value: totalSales, kind: 'highlight' },
+        { label: 'Cash Sale', value: cashSales },
+        { label: 'M-Pesa Sales', value: mpesaSales },
+        { label: 'PDQ Sales', value: pdqSales },
+        { label: 'Remittance (Supplier payments + Expenses)', value: remittanceTotal, format: 'deduct' },
+        { label: 'Cash Picked', value: banked },
+        { label: 'Cashier Variance', value: diff, kind: 'highlight' },
+        { label: 'Gross Sales', value: grossSales, kind: 'total' },
+        { label: 'VAT', value: taxTotal, kind: 'total' },
       ];
 
   y = drawCloseReportStatement(doc, y, reportTitle, rows);
