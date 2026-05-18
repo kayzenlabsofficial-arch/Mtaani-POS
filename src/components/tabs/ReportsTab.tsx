@@ -207,6 +207,7 @@ export default function ReportsTab() {
   const [productSearch, setProductSearch] = React.useState('');
   const [productGroupSearch, setProductGroupSearch] = React.useState('');
   const [productTableSearch, setProductTableSearch] = React.useState('');
+  const [productTablePage, setProductTablePage] = React.useState(1);
   const [isSharing, setIsSharing] = useState(false);
   const [salesChartRef, salesChartSize] = useChartSize();
   const [expenseChartRef, expenseChartSize] = useChartSize();
@@ -215,6 +216,18 @@ export default function ReportsTab() {
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
+
+  React.useEffect(() => {
+    setProductTablePage(1);
+  }, [
+    productDateRange,
+    productSelectedMonth,
+    productCustomStart,
+    productCustomEnd,
+    selectedProductIds,
+    selectedProductGroups,
+    productTableSearch,
+  ]);
 
   if (!canPerform(currentUser, 'report.view')) {
     return (
@@ -665,6 +678,12 @@ export default function ReportsTab() {
     const textMatch = !productTableSearchText || `${row.name} ${row.group} ${row.source}`.toLowerCase().includes(productTableSearchText);
     return productMatch && groupMatch && textMatch;
   });
+  const productRowsPerPage = 20;
+  const productTotalPages = Math.max(1, Math.ceil(visibleProductRows.length / productRowsPerPage));
+  const productCurrentPage = Math.min(productTablePage, productTotalPages);
+  const productPageStart = visibleProductRows.length === 0 ? 0 : (productCurrentPage - 1) * productRowsPerPage;
+  const productPageRows = visibleProductRows.slice(productPageStart, productPageStart + productRowsPerPage);
+  const productPageEnd = productPageStart + productPageRows.length;
   const productSummary = visibleProductRows.reduce(
     (acc, row) => {
       acc.qty += row.qty;
@@ -1114,6 +1133,7 @@ export default function ReportsTab() {
                   <div className="rounded-xl bg-slate-900/80 p-3">
                     <p>Rows</p>
                     <p className="mt-1 text-lg text-white">{visibleProductRows.length}</p>
+                    <p className="mt-0.5 text-[9px] text-slate-600">20 per page</p>
                   </div>
                   <div className="rounded-xl bg-slate-900/80 p-3">
                     <p>Sold</p>
@@ -1166,9 +1186,9 @@ export default function ReportsTab() {
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleProductRows.map((row, index) => (
-                      <tr key={row.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-indigo-50`}>
-                        <td className="border border-slate-200 px-3 py-2 font-black text-slate-400">{index + 1}</td>
+                    {productPageRows.map((row, index) => (
+                      <tr key={row.id} className={`${(productPageStart + index) % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-indigo-50`}>
+                        <td className="border border-slate-200 px-3 py-2 font-black text-slate-400">{productPageStart + index + 1}</td>
                         <td className="border border-slate-200 px-3 py-2">
                           <div className="min-w-0">
                             <p className="font-black text-slate-900">{row.name}</p>
@@ -1211,6 +1231,34 @@ export default function ReportsTab() {
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+              <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-[10px] font-black uppercase tracking-widest">
+                  Showing {visibleProductRows.length === 0 ? 0 : productPageStart + 1}-{productPageEnd} of {visibleProductRows.length} rows
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setProductTablePage(Math.max(1, productCurrentPage - 1))}
+                    disabled={productCurrentPage <= 1}
+                    className="flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-widest text-slate-700 transition-all hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ChevronRight size={14} className="rotate-180" />
+                    Prev
+                  </button>
+                  <span className="min-w-24 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    Page {productCurrentPage} of {productTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setProductTablePage(Math.min(productTotalPages, productCurrentPage + 1))}
+                    disabled={productCurrentPage >= productTotalPages}
+                    className="flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-widest text-slate-700 transition-all hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
