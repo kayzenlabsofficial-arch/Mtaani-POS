@@ -5,6 +5,10 @@ import autoTable from 'jspdf-autotable';
 const M = 14;          // page margin mm
 const W = 210 - M * 2; // content width (A4)
 
+function contentWidth(doc: jsPDF): number {
+  return doc.internal.pageSize.getWidth() - M * 2;
+}
+
 // ─── Color helpers ────────────────────────────────────────────────────────────
 type RGB = [number, number, number];
 const slate900: RGB = [15, 23, 42];
@@ -67,10 +71,11 @@ function pageBottom(doc: jsPDF): number {
 // ─── Shared drawing primitives ────────────────────────────────────────────────
 function banner(doc: jsPDF, title: string, ref: string, date: string, bizName = 'MTAANI POS', location = 'Mtaani Street, Nairobi CBD, Kenya'): number {
   const top = 10;
+  const contentW = contentWidth(doc);
   const rightPanelW = 58;
-  const rightX = M + W - rightPanelW;
+  const rightX = M + contentW - rightPanelW;
   const rightMax = rightPanelW - 10;
-  const leftMax = W - rightPanelW - 16;
+  const leftMax = contentW - rightPanelW - 16;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
@@ -93,7 +98,7 @@ function banner(doc: jsPDF, title: string, ref: string, date: string, bizName = 
   const headerH = Math.max(38, leftNeeded, rightNeeded);
 
   sf(doc, brandBlue);
-  doc.rect(M, top, W, headerH, 'F');
+  doc.rect(M, top, contentW, headerH, 'F');
   sf(doc, brandBlueDark);
   doc.rect(M, top, 4, headerH, 'F');
   sf(doc, [37, 99, 235] as RGB);
@@ -126,7 +131,7 @@ function banner(doc: jsPDF, title: string, ref: string, date: string, bizName = 
   doc.setFontSize(11);
   st(doc, white);
   titleLines.forEach(line => {
-    doc.text(line, M + W - 5, rightY, { align: 'right' });
+    doc.text(line, M + contentW - 5, rightY, { align: 'right' });
     rightY += 5;
   });
 
@@ -135,11 +140,11 @@ function banner(doc: jsPDF, title: string, ref: string, date: string, bizName = 
   st(doc, brandBlueLight);
   rightY += 2;
   refLines.forEach(line => {
-    doc.text(line, M + W - 5, rightY, { align: 'right' });
+    doc.text(line, M + contentW - 5, rightY, { align: 'right' });
     rightY += 4;
   });
   dateLines.forEach(line => {
-    doc.text(line, M + W - 5, rightY, { align: 'right' });
+    doc.text(line, M + contentW - 5, rightY, { align: 'right' });
     rightY += 4;
   });
 
@@ -257,16 +262,17 @@ function bigTotal(doc: jsPDF, label: string, value: string, y: number, color: RG
 
 function footer(doc: jsPDF) {
   const h = doc.internal.pageSize.getHeight();
+  const contentW = contentWidth(doc);
   const y = h - 12;
   sd(doc, slate100);
   doc.setLineWidth(0.3);
-  doc.line(M, y - 4, M + W, y - 4);
+  doc.line(M, y - 4, M + contentW, y - 4);
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(7);
   st(doc, slate600);
   doc.text(
-    fitLine(doc, `Made by Mtaani POS - ${new Date().toLocaleString()}`, W),
-    M + W / 2, y, { align: 'center' }
+    fitLine(doc, `Made by Mtaani POS - ${new Date().toLocaleString()}`, contentW),
+    M + contentW / 2, y, { align: 'center' }
   );
 }
 
@@ -1486,6 +1492,7 @@ export type ProductPerformanceExportInput = {
 
 export async function generateAndDownloadProductPerformanceReport(report: ProductPerformanceExportInput) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+  const reportW = contentWidth(doc);
   let y = banner(
     doc,
     'Product Performance Report',
@@ -1495,16 +1502,36 @@ export async function generateAndDownloadProductPerformanceReport(report: Produc
     report.location || 'Nairobi, Kenya'
   );
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  st(doc, slate600);
-  doc.text(`Period: ${safeStr(report.periodLabel, 'All time')}`, M, y);
-  doc.text(`Items: ${safeStr(report.productScope, 'All items')}`, M + 78, y);
-  doc.text(`Groups: ${safeStr(report.groupScope, 'All groups')}`, M + 150, y);
-  y += 8;
-
   autoTable(doc, {
     startY: y,
+    body: [[
+      `Period\n${safeStr(report.periodLabel, 'All time')}`,
+      `Items\n${safeStr(report.productScope, 'All items')}`,
+      `Groups\n${safeStr(report.groupScope, 'All groups')}`,
+    ]],
+    theme: 'grid',
+    styles: {
+      font: 'helvetica',
+      fontSize: 7,
+      cellPadding: 2,
+      lineColor: [203, 213, 225],
+      lineWidth: 0.1,
+      textColor: slate900,
+      overflow: 'linebreak',
+      valign: 'middle',
+    },
+    bodyStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { cellWidth: reportW / 3 },
+      1: { cellWidth: reportW / 3 },
+      2: { cellWidth: reportW / 3 },
+    },
+    margin: { left: M, right: M },
+  });
+
+  const summaryY = ((doc as any).lastAutoTable?.finalY || y) + 5;
+  autoTable(doc, {
+    startY: summaryY,
     head: [['Rows', 'Sold Items', 'Qty Sold', 'Sales', 'VAT', 'Cost', 'Profit', 'Margin', 'Stock']],
     body: [[
       report.summary.rowCount.toLocaleString(),
@@ -1518,9 +1545,10 @@ export async function generateAndDownloadProductPerformanceReport(report: Produc
       report.summary.stock.toLocaleString(undefined, { maximumFractionDigits: 2 }),
     ]],
     theme: 'grid',
-    styles: { font: 'helvetica', fontSize: 7, cellPadding: 2, lineColor: [203, 213, 225], lineWidth: 0.1 },
-    headStyles: { fillColor: brandBlue, textColor: white, fontStyle: 'bold' },
-    bodyStyles: { textColor: slate900 },
+    tableWidth: reportW,
+    styles: { font: 'helvetica', fontSize: 7, cellPadding: 2, lineColor: [203, 213, 225], lineWidth: 0.1, halign: 'right', valign: 'middle' },
+    headStyles: { fillColor: brandBlue, textColor: white, fontStyle: 'bold', halign: 'right' },
+    bodyStyles: { textColor: slate900, halign: 'right' },
     margin: { left: M, right: M },
   });
 
@@ -1543,25 +1571,28 @@ export async function generateAndDownloadProductPerformanceReport(report: Produc
     ]),
     theme: 'grid',
     showHead: 'everyPage',
-    styles: { font: 'helvetica', fontSize: 6.4, cellPadding: 1.6, lineColor: [203, 213, 225], lineWidth: 0.08, overflow: 'linebreak' },
-    headStyles: { fillColor: brandBlue, textColor: white, fontStyle: 'bold' },
+    tableWidth: reportW,
+    styles: { font: 'helvetica', fontSize: 6.4, cellPadding: 1.6, lineColor: [203, 213, 225], lineWidth: 0.08, overflow: 'linebreak', valign: 'middle' },
+    headStyles: { fillColor: brandBlue, textColor: white, fontStyle: 'bold', valign: 'middle' },
     alternateRowStyles: { fillColor: slate100 },
     columnStyles: {
       0: { cellWidth: 9, halign: 'right' },
-      1: { cellWidth: 42 },
-      2: { cellWidth: 28 },
+      1: { cellWidth: 58, halign: 'left' },
+      2: { cellWidth: 36, halign: 'left' },
       3: { cellWidth: 19, halign: 'right' },
-      4: { cellWidth: 24, halign: 'right' },
-      5: { cellWidth: 20, halign: 'right' },
-      6: { cellWidth: 22, halign: 'right' },
-      7: { cellWidth: 24, halign: 'right' },
-      8: { cellWidth: 17, halign: 'right' },
-      9: { cellWidth: 18, halign: 'right' },
+      4: { cellWidth: 26, halign: 'right' },
+      5: { cellWidth: 21, halign: 'right' },
+      6: { cellWidth: 23, halign: 'right' },
+      7: { cellWidth: 25, halign: 'right' },
+      8: { cellWidth: 16, halign: 'right' },
+      9: { cellWidth: 19, halign: 'right' },
       10: { cellWidth: 17, halign: 'right' },
     },
     margin: { left: M, right: M },
   });
 
   footer(doc);
-  download(doc.output('blob'), `Product-Performance-${report.title.replace(/\s+/g, '-')}`);
+  const cleanTitle = report.title.replace(/\s+/g, '-');
+  const filename = cleanTitle.startsWith('Product-Performance') ? cleanTitle : `Product-Performance-${cleanTitle}`;
+  download(doc.output('blob'), filename);
 }
