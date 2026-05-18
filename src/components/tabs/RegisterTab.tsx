@@ -161,6 +161,7 @@ function SalePanel({
   const [checkoutStep, setCheckoutStep] = useState<'ITEMS' | 'PAYMENT' | 'REVIEW'>('ITEMS');
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT'>('CASH');
   const [paymentWindow, setPaymentWindow] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT' | null>(null);
+  const [showAdvancedCheckout, setShowAdvancedCheckout] = useState(false);
   const [discountType, setDiscountType] = useState<'FIXED' | 'PERCENT'>('FIXED');
   const [discountValue, setDiscountValue] = useState('');
   const [cashTendered, setCashTendered] = useState('');
@@ -226,7 +227,20 @@ function SalePanel({
   const runCheckout = async (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => {
     const result = await onCheckout(status, method, options);
     if (result) {
+      setPaymentMode('CASH');
       setPaymentWindow(null);
+      setShowAdvancedCheckout(false);
+      setDiscountValue('');
+      setCashTendered('');
+      setMpesaRef('');
+      setMpesaPhone('');
+      setMpesaVerification(null);
+      setMpesaState('IDLE');
+      setPdqRef('');
+      setSelectedCustomerId('');
+      setSplitCash('');
+      setSplitSecondaryMethod('MPESA');
+      setSplitSecondaryRef('');
       onCheckoutSuccess?.();
     }
     return result;
@@ -471,6 +485,17 @@ function SalePanel({
   const selectedPaymentOption = paymentOptions.find(option => option.id === paymentWindow) || paymentOptions.find(option => option.id === paymentMode) || paymentOptions[0];
   const SelectedPaymentIcon = selectedPaymentOption.icon;
   const paymentLabel = (method: string) => method === 'MPESA' ? 'M-Pesa' : method === 'PDQ' ? 'Card' : method;
+  const mainPaymentOptions = paymentOptions.filter(option => option.id === 'CASH' || option.id === 'MPESA' || option.id === 'PDQ');
+  const checkoutBusy = isCheckingOut || isVerifyingMpesa || mpesaState === 'PUSHING' || mpesaState === 'POLLING';
+  const completeSaleLabel = paymentMode === 'CASH'
+    ? 'Complete cash sale'
+    : paymentMode === 'MPESA'
+      ? 'Verify and complete'
+      : paymentMode === 'PDQ'
+        ? 'Complete card sale'
+        : paymentMode === 'SPLIT'
+          ? 'Complete split sale'
+          : 'Save credit sale';
 
   return (
     <aside className={`bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col min-h-[22rem] lg:sticky lg:top-0 lg:max-h-[calc(100vh-9rem)] shadow-sm ${className}`}>
@@ -529,6 +554,300 @@ function SalePanel({
         ))}
       </div>
 
+      <div className="border-t border-slate-100 bg-white p-4 space-y-3">
+        <div className="rounded-2xl bg-slate-950 p-4 text-white">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Amount due</p>
+              <p className="mt-1 text-3xl font-black tabular-nums">Ksh {total.toLocaleString()}</p>
+            </div>
+            <div className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <p>{itemCount.toLocaleString()} item{itemCount === 1 ? '' : 's'}</p>
+              {discountAmount > 0 && <p className="mt-1 text-rose-300">Discount Ksh {discountAmount.toLocaleString()}</p>}
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+            <div className="rounded-xl bg-white/10 px-3 py-2">
+              <p>Subtotal</p>
+              <p className="mt-0.5 text-sm text-white">Ksh {subtotal.toLocaleString()}</p>
+            </div>
+            <div className="rounded-xl bg-white/10 px-3 py-2">
+              <p>Method</p>
+              <p className="mt-0.5 text-sm text-white">{paymentLabel(paymentMode)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {mainPaymentOptions.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                setPaymentMode(id);
+                setPaymentWindow(null);
+              }}
+              data-testid={`payment-${id.toLowerCase()}`}
+              className={`min-h-16 rounded-2xl border px-2 py-3 text-center transition-all ${
+                paymentMode === id
+                  ? 'border-primary bg-primary text-white shadow-sm'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-primary/40'
+              }`}
+            >
+              <Icon className="mx-auto mb-1 h-5 w-5" strokeWidth={2.4} />
+              <span className="block text-[10px] font-black uppercase tracking-widest">{label}</span>
+            </button>
+          ))}
+        </div>
+
+        {paymentMode === 'CASH' && (
+          <div className="space-y-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <label className="relative min-w-0">
+                <Calculator className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="number"
+                  min="0"
+                  value={cashTendered}
+                  onChange={(event) => setCashTendered(event.target.value)}
+                  placeholder="Cash received"
+                  data-testid="cash-received"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setCashTendered(String(total))}
+                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-widest text-slate-600"
+              >
+                Exact
+              </button>
+            </div>
+            {(cashTendered || tendered > total) && (
+              <div className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
+                tendered >= total ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
+              }`}>
+                {tendered >= total ? `Change: Ksh ${changeDue.toLocaleString()}` : `Short by Ksh ${(total - tendered).toLocaleString()}`}
+              </div>
+            )}
+          </div>
+        )}
+
+        {paymentMode === 'MPESA' && (
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <input
+                value={mpesaPhone}
+                onChange={(event) => setMpesaPhone(event.target.value)}
+                placeholder="Customer phone for STK"
+                data-testid="mpesa-phone"
+                className="h-11 rounded-xl border border-emerald-100 bg-emerald-50 px-3 text-sm font-bold outline-none focus:border-emerald-500"
+              />
+              <button
+                type="button"
+                onClick={sendMpesaPrompt}
+                disabled={mpesaState === 'PUSHING' || mpesaState === 'POLLING' || isCheckingOut}
+                data-testid="mpesa-prompt"
+                className="h-11 rounded-xl bg-emerald-600 px-4 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+              >
+                {mpesaState === 'PUSHING' || mpesaState === 'POLLING' ? 'Waiting' : 'Send STK'}
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <input
+                value={mpesaRef}
+                onChange={(event) => setMpesaRef(event.target.value.toUpperCase())}
+                placeholder="Or receipt code"
+                data-testid="mpesa-reference"
+                className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold uppercase outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+              <button
+                type="button"
+                onClick={() => verifyMpesaCode(mpesaRef, total)}
+                disabled={isVerifyingMpesa || !mpesaRef.trim()}
+                className="flex h-11 items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 text-[10px] font-black uppercase tracking-widest text-blue-700 disabled:opacity-50"
+              >
+                {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                Verify
+              </button>
+            </div>
+            {mpesaState !== 'IDLE' && (
+              <p className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${mpesaState === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : mpesaState === 'FAILED' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
+                {mpesaState === 'PUSHING' ? 'Sending request' : mpesaState === 'POLLING' ? 'Waiting for PIN' : mpesaState === 'SUCCESS' ? 'Payment received' : 'Request failed or timed out'}
+              </p>
+            )}
+            {mpesaVerification && (
+              <p className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${mpesaVerification.usable ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
+                {mpesaVerification.message || (mpesaVerification.usable ? 'M-Pesa code verified' : 'M-Pesa code not usable')}
+              </p>
+            )}
+          </div>
+        )}
+
+        {paymentMode === 'PDQ' && (
+          <label className="relative block">
+            <CreditCard className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={pdqRef}
+              onChange={(event) => setPdqRef(event.target.value)}
+              placeholder="Card reference optional"
+              data-testid="pdq-reference"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            />
+          </label>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowAdvancedCheckout(value => !value)}
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50"
+        >
+          {showAdvancedCheckout ? 'Hide options' : 'More options'}
+          <ArrowRight size={14} className={`transition-transform ${showAdvancedCheckout ? 'rotate-90' : ''}`} />
+        </button>
+
+        {showAdvancedCheckout && (
+          <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-3">
+            <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-2">
+              <label className="relative min-w-0">
+                <Percent className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="number"
+                  min="0"
+                  value={discountValue}
+                  onChange={(event) => setDiscountValue(event.target.value)}
+                  placeholder="Discount"
+                  data-testid="checkout-discount"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                />
+              </label>
+              <select
+                value={discountType}
+                onChange={(event) => setDiscountType(event.target.value as 'FIXED' | 'PERCENT')}
+                className="h-11 rounded-xl border border-slate-200 bg-white px-2 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              >
+                <option value="FIXED">Ksh</option>
+                <option value="PERCENT">%</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setPaymentMode('SPLIT')}
+                data-testid="payment-split"
+                className={`h-11 rounded-xl border text-[10px] font-black uppercase tracking-widest ${paymentMode === 'SPLIT' ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-600'}`}
+              >
+                Split
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMode('CREDIT')}
+                data-testid="payment-credit"
+                className={`h-11 rounded-xl border text-[10px] font-black uppercase tracking-widest ${paymentMode === 'CREDIT' ? 'border-amber-500 bg-amber-500 text-white' : 'border-slate-200 bg-white text-slate-600'}`}
+              >
+                Credit
+              </button>
+            </div>
+
+            {paymentMode === 'CREDIT' && (
+              <div className="space-y-2">
+                <select
+                  value={selectedCustomerId}
+                  onChange={(event) => setSelectedCustomerId(event.target.value)}
+                  data-testid="customer-select"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                >
+                  <option value="">Select registered customer</option>
+                  {customers?.map((customer) => (
+                    <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` - ${customer.phone}` : ''}</option>
+                  ))}
+                </select>
+                <p className="rounded-xl bg-amber-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-amber-700">
+                  Credit amount: Ksh {total.toLocaleString()}
+                </p>
+              </div>
+            )}
+
+            {paymentMode === 'SPLIT' && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max={total}
+                    value={splitCash}
+                    onChange={(event) => setSplitCash(event.target.value)}
+                    placeholder="Cash part"
+                    data-testid="split-cash"
+                    className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                  />
+                  <select
+                    value={splitSecondaryMethod}
+                    onChange={(event) => setSplitSecondaryMethod(event.target.value as 'MPESA' | 'PDQ' | 'CREDIT')}
+                    data-testid="split-method"
+                    className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                  >
+                    <option value="MPESA">M-Pesa balance</option>
+                    <option value="PDQ">Card balance</option>
+                    <option value="CREDIT">Credit balance</option>
+                  </select>
+                </div>
+                <p className="rounded-xl bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  Balance: Ksh {splitSecondaryAmount.toLocaleString()}
+                </p>
+                {splitSecondaryMethod === 'CREDIT' ? (
+                  <select
+                    value={selectedCustomerId}
+                    onChange={(event) => setSelectedCustomerId(event.target.value)}
+                    data-testid="customer-select"
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                  >
+                    <option value="">Select registered customer</option>
+                    {customers?.map((customer) => (
+                      <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` - ${customer.phone}` : ''}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <input
+                      value={splitSecondaryRef}
+                      onChange={(event) => setSplitSecondaryRef(splitSecondaryMethod === 'MPESA' ? event.target.value.toUpperCase() : event.target.value)}
+                      placeholder={`${splitSecondaryMethod} reference`}
+                      data-testid="split-reference"
+                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                    />
+                    {splitSecondaryMethod === 'MPESA' && (
+                      <button
+                        type="button"
+                        onClick={() => verifyMpesaCode(splitSecondaryRef, splitSecondaryAmount)}
+                        disabled={isVerifyingMpesa || !splitSecondaryRef.trim()}
+                        className="flex h-11 items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 text-[10px] font-black uppercase tracking-widest text-blue-700 disabled:opacity-50"
+                      >
+                        {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                        Verify
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <button
+          onClick={submitCheckout}
+          disabled={cart.length === 0 || checkoutBusy}
+          data-testid="complete-sale"
+          className="flex min-h-[3.25rem] w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-4 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <MaterialIcon name="payments" style={{ fontSize: '18px' }} />
+          {checkoutBusy ? 'Working...' : completeSaleLabel}
+        </button>
+      </div>
+
+      {false && (
+        <>
       <div className="border-t border-slate-100 p-4 space-y-3 bg-white">
         <div className="grid grid-cols-3 gap-2">
           {checkoutSteps.map((step, index) => {
@@ -999,6 +1318,8 @@ function SalePanel({
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </aside>
   );
