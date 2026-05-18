@@ -498,7 +498,7 @@ function SalePanel({
           : 'Save credit sale';
 
   return (
-    <aside className={`bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col min-h-[22rem] lg:sticky lg:top-0 lg:max-h-[calc(100vh-9rem)] shadow-sm ${className}`}>
+    <aside className={`bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col min-h-[22rem] max-h-[calc(100dvh-1.5rem)] lg:sticky lg:top-0 lg:h-full lg:max-h-[calc(100dvh-9rem)] shadow-sm ${className}`}>
       <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
         <div>
           <h3 className="text-sm font-black text-slate-900">Current sale</h3>
@@ -511,7 +511,7 @@ function SalePanel({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2">
+      <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar p-3 space-y-2">
         {cart.length === 0 ? (
           <div className="h-full min-h-52 flex flex-col items-center justify-center text-center text-slate-400">
             <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
@@ -554,7 +554,7 @@ function SalePanel({
         ))}
       </div>
 
-      <div className="border-t border-slate-100 bg-white p-4 space-y-3">
+      <div className="sticky bottom-0 z-20 max-h-[72dvh] shrink-0 overflow-y-auto border-t border-slate-100 bg-white p-4 space-y-3 shadow-[0_-18px_30px_rgba(15,23,42,0.08)]">
         <div className="rounded-2xl bg-slate-950 p-4 text-white">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -1612,7 +1612,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
             )}
           </div>
 
-          <div className="hidden lg:block">
+          <div className="hidden min-h-0 lg:block">
             <SalePanel onCheckout={completeCheckout} isCheckingOut={isCheckingOut} />
           </div>
         </div>
@@ -1640,7 +1640,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
 
       {isMobileCheckoutOpen && (
         <div className="lg:hidden fixed inset-0 z-[90] bg-slate-950/60 backdrop-blur-sm flex items-end" data-testid="mobile-checkout-sheet">
-          <div className="w-full max-h-[calc(100dvh-0.75rem)] bg-white rounded-t-3xl shadow-2xl overflow-hidden pb-safe">
+          <div className="flex w-full max-h-[calc(100dvh-0.75rem)] flex-col bg-white rounded-t-3xl shadow-2xl overflow-hidden pb-safe">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
               <div className="min-w-0">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Checkout</p>
@@ -1658,12 +1658,12 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
                 <X className="w-5 h-5" strokeWidth={2.4} />
               </button>
             </div>
-            <div className="max-h-[calc(100dvh-5rem)] overflow-y-auto p-3 pb-8">
+            <div className="min-h-0 flex-1 p-3 pb-3">
               <SalePanel
                 onCheckout={completeCheckout}
                 onCheckoutSuccess={() => setIsMobileCheckoutOpen(false)}
                 isCheckingOut={isCheckingOut}
-                className="border-0 shadow-none rounded-2xl min-h-0"
+                className="h-full max-h-full min-h-0 border-0 shadow-none rounded-2xl"
               />
             </div>
           </div>
