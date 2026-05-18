@@ -18,9 +18,18 @@ import { SearchableSelect } from '../shared/SearchableSelect';
 import { canPerform } from '../../utils/accessControl';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 import { belongsToActiveBranch } from '../../utils/branchScope';
+import { getBusinessSettings } from '../../utils/settings';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 const REPORTABLE_TRANSACTION_STATUSES = new Set(['PAID', 'UNPAID', 'PARTIAL_REFUND', 'PENDING_REFUND', 'REFUNDED']);
+type ReportDateRange = 'TODAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'MONTHLY' | 'CUSTOM' | 'ALL';
+type ProfitLossExportMode = 'INDIVIDUAL' | 'COMPARISON';
+
+type PeriodBounds = {
+  start: number;
+  end: number;
+  label: string;
+};
 
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
@@ -96,6 +105,46 @@ function transactionNetMetrics(transaction: any) {
   return { ratio, netSubtotal, netTotal, netTax, netDiscount, discountFactor };
 }
 
+function formatPeriodLabel(start: number, end: number) {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  const sameDay = startDate.toDateString() === endDate.toDateString();
+  if (sameDay) return startDate.toLocaleDateString();
+  return `${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`;
+}
+
+function previousPeriodBounds(current: PeriodBounds, range: ReportDateRange): PeriodBounds | null {
+  if (current.start <= 0 || current.end <= 0) return null;
+
+  if (range === 'MONTHLY') {
+    const date = new Date(current.start);
+    const start = new Date(date.getFullYear(), date.getMonth() - 1, 1);
+    const end = new Date(date.getFullYear(), date.getMonth(), 0, 23, 59, 59, 999);
+    return {
+      start: start.getTime(),
+      end: end.getTime(),
+      label: start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+    };
+  }
+
+  const span = Math.max(1, current.end - current.start + 1);
+  const end = current.start - 1;
+  const start = end - span + 1;
+  return { start, end, label: formatPeriodLabel(start, end) };
+}
+
+function expenseBreakdownFor(expenses: any[]) {
+  const totals = expenses.reduce<Record<string, number>>((acc, expense) => {
+    const category = String(expense?.category || 'General');
+    acc[category] = (acc[category] || 0) + (Number(expense?.amount) || 0);
+    return acc;
+  }, {});
+
+  return Object.entries(totals)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+}
+
 function useChartSize() {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const [size, setSize] = React.useState({ width: 0, height: 0 });
@@ -127,11 +176,12 @@ function useChartSize() {
 export default function ReportsTab() {
   const todayInput = new Date().toISOString().split('T')[0];
   const monthInput = todayInput.slice(0, 7);
-  const [dateRange, setDateRange] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'MONTHLY' | 'CUSTOM' | 'ALL'>('TODAY');
+  const [dateRange, setDateRange] = useState<ReportDateRange>('TODAY');
   const [selectedMonth, setSelectedMonth] = useState(monthInput);
   const [customStart, setCustomStart] = useState(todayInput);
   const [customEnd, setCustomEnd] = useState(todayInput);
   const [deductTaxInPL, setDeductTaxInPL] = useState(true);
+  const [profitLossExportMode, setProfitLossExportMode] = useState<ProfitLossExportMode>('INDIVIDUAL');
   const [selectedProductId, setSelectedProductId] = React.useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [salesChartRef, salesChartSize] = useChartSize();
@@ -172,6 +222,7 @@ export default function ReportsTab() {
   const allSuppliers = useLiveQuery(() => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
   const allPurchases = useLiveQuery(() => activeBusinessId && activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).and(po => po.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
   const allSalesInvoices = useLiveQuery(() => activeBusinessId && activeBranchId ? db.salesInvoices.where('branchId').equals(activeBranchId).and(invoice => invoice.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
+  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId], null);
 
   if (!allTransactions || !allProducts || !allExpenses || !allSuppliers || !allSalesInvoices) {
     return (
@@ -351,10 +402,106 @@ export default function ReportsTab() {
   });
 
   const categoryData = Object.entries(categoryPerf).map(([name, data]) => ({ name, ...data })).sort((a,b) => b.revenue - a.revenue).slice(0, 6);
-  const expenseData = Array.from(new Set(filteredExpenses.map(e => e.category))).map(cat => ({
-    name: cat,
-    value: filteredExpenses.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0)
-  })).sort((a,b) => b.value - a.value).slice(0, 5);
+  const fullExpenseBreakdown = expenseBreakdownFor(filteredExpenses);
+  const expenseData = fullExpenseBreakdown.map(item => ({
+    name: item.name,
+    value: item.value,
+  })).slice(0, 5);
+
+  const currentProfitLossPeriod = {
+    label: periodLabel,
+    grossSales,
+    discounts: totalDiscounts,
+    totalRevenue,
+    cogs: estimatedCOGS,
+    grossProfit,
+    grossProfitWithVat: totalRevenue - estimatedCOGS,
+    grossProfitWithoutVat: totalRevenue - totalTax - estimatedCOGS,
+    expenses: totalExpenseAmount,
+    netProfit,
+    netProfitWithVat: totalRevenue - estimatedCOGS - totalExpenseAmount,
+    netProfitWithoutVat: totalRevenue - totalTax - estimatedCOGS - totalExpenseAmount,
+    tax: totalTax,
+    creditSales: creditSalesAmount,
+    orderCount: salesDocumentCount,
+    expenseBreakdown: fullExpenseBreakdown,
+  };
+
+  const buildProfitLossPeriod = (bounds: PeriodBounds) => {
+    const periodTransactions = allTransactions.filter(t => t.timestamp >= bounds.start && t.timestamp <= bounds.end && reportableTransaction(t));
+    const periodSalesInvoices = allSalesInvoices.filter(invoice => invoice.issueDate >= bounds.start && invoice.issueDate <= bounds.end && invoice.status !== 'CANCELLED');
+    const periodExpenses = allExpenses.filter(e => e.timestamp >= bounds.start && e.timestamp <= bounds.end && e.status === 'APPROVED');
+    const periodTransactionMetrics = periodTransactions.map(transaction => ({
+      transaction,
+      metrics: transactionNetMetrics(transaction),
+    }));
+
+    let periodRevenue = 0;
+    let periodTax = 0;
+    let periodCogs = 0;
+
+    periodTransactionMetrics.forEach(({ transaction: t, metrics }) => {
+      periodRevenue += metrics.netTotal;
+      periodTax += metrics.netTax;
+
+      txItems(t).forEach(item => {
+        const netQty = netItemQuantity(t, item);
+        if (netQty <= 0) return;
+        const purchase = allPurchases?.find(p => purchaseItems(p).some(pi => pi.productId === item.productId));
+        const cost = Number(item.snapshotCost ?? purchaseItems(purchase).find(pi => pi.productId === item.productId)?.unitCost ?? (item.snapshotPrice * 0.7)) || 0;
+        periodCogs += cost * netQty;
+      });
+    });
+
+    periodSalesInvoices.forEach(invoice => {
+      periodRevenue += Number(invoice.total || 0);
+      periodTax += Number(invoice.tax || 0);
+
+      invoiceItems(invoice).forEach(item => {
+        const qty = Number(item.quantity || 0);
+        const unitPrice = Number(item.unitPrice || 0);
+        const productObj = item.itemType === 'PRODUCT' && item.itemId ? displayProducts.find(p => p.id === item.itemId) : undefined;
+        const cost = productObj ? Number(productObj.costPrice || unitPrice * 0.7) : 0;
+        periodCogs += cost * qty;
+      });
+    });
+
+    const periodExpensesTotal = periodExpenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+    const periodGrossSales = periodTransactionMetrics.reduce((sum, row) => sum + row.metrics.netSubtotal, 0)
+      + periodSalesInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || invoice.total || 0), 0);
+    const periodDiscounts = periodTransactionMetrics.reduce((sum, row) => sum + row.metrics.netDiscount, 0);
+    const periodOrderCount = periodTransactionMetrics.filter(row => row.metrics.netTotal > 0).length + periodSalesInvoices.length;
+    const periodCreditSales = periodTransactionMetrics.reduce((sum, { transaction: t, metrics }) => {
+      if (t.paymentMethod === 'CREDIT') return sum + metrics.netTotal;
+      if (t.paymentMethod === 'SPLIT' && t.splitPayments?.secondaryMethod === 'CREDIT') return sum + (Number(t.splitPayments.secondaryAmount || 0) * metrics.ratio);
+      return sum;
+    }, 0) + periodSalesInvoices.reduce((sum, invoice) => sum + Number(invoice.balance || 0), 0);
+    const periodGrossProfitWithVat = periodRevenue - periodCogs;
+    const periodGrossProfitWithoutVat = periodRevenue - periodTax - periodCogs;
+    const periodNetProfitWithVat = periodGrossProfitWithVat - periodExpensesTotal;
+    const periodNetProfitWithoutVat = periodGrossProfitWithoutVat - periodExpensesTotal;
+    const periodSelectedGrossProfit = deductTaxInPL ? periodGrossProfitWithoutVat : periodGrossProfitWithVat;
+    const periodSelectedNetProfit = deductTaxInPL ? periodNetProfitWithoutVat : periodNetProfitWithVat;
+
+    return {
+      label: bounds.label,
+      grossSales: periodGrossSales,
+      discounts: periodDiscounts,
+      totalRevenue: periodRevenue,
+      cogs: periodCogs,
+      grossProfit: periodSelectedGrossProfit,
+      grossProfitWithVat: periodGrossProfitWithVat,
+      grossProfitWithoutVat: periodGrossProfitWithoutVat,
+      expenses: periodExpensesTotal,
+      netProfit: periodSelectedNetProfit,
+      netProfitWithVat: periodNetProfitWithVat,
+      netProfitWithoutVat: periodNetProfitWithoutVat,
+      tax: periodTax,
+      creditSales: periodCreditSales,
+      orderCount: periodOrderCount,
+      expenseBreakdown: expenseBreakdownFor(periodExpenses),
+    };
+  };
 
   const topCashiers = Object.entries(cashierPerf).map(([name, data]) => ({ name, ...data })).sort((a,b) => b.revenue - a.revenue);
 
@@ -378,9 +525,19 @@ export default function ReportsTab() {
     setIsSharing(true);
     try {
       const { generateAndDownloadProfitLossReport } = await import('../../utils/shareUtils');
+      const previousBounds = profitLossExportMode === 'COMPARISON'
+        ? previousPeriodBounds({ start: startTime, end: endTime, label: periodLabel }, dateRange)
+        : null;
+      const periods = previousBounds
+        ? [buildProfitLossPeriod(previousBounds), currentProfitLossPeriod]
+        : [currentProfitLossPeriod];
+      const exportMode = periods.length > 1 ? profitLossExportMode : 'INDIVIDUAL';
       await generateAndDownloadProfitLossReport({
-        title: `${dateRange}-${new Date().toISOString().split('T')[0]}`,
-        periodLabel,
+        title: `${exportMode}-${dateRange}-${new Date().toISOString().split('T')[0]}`,
+        periodLabel: periods.map(period => period.label).join(' vs '),
+        reportMode: exportMode,
+        businessName: businessSettings?.storeName,
+        location: businessSettings?.location,
         grossSales,
         discounts: totalDiscounts,
         totalRevenue,
@@ -392,7 +549,8 @@ export default function ReportsTab() {
         deductTaxInPL,
         creditSales: creditSalesAmount,
         orderCount: salesDocumentCount,
-        expenseBreakdown: expenseData,
+        expenseBreakdown: fullExpenseBreakdown,
+        periods,
       });
     } catch (err) {
       console.error("P&L export failed", err);
@@ -461,6 +619,28 @@ export default function ReportsTab() {
             </div>
           )}
           <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto md:items-center">
+            <div className="col-span-2 flex h-11 rounded-xl bg-slate-100 p-1 md:col-span-1 md:w-auto">
+              {[
+                { id: 'INDIVIDUAL', label: 'Individual', icon: FileText },
+                { id: 'COMPARISON', label: 'Compare', icon: BarChart3 },
+              ].map(option => {
+                const Icon = option.icon;
+                const active = profitLossExportMode === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setProfitLossExportMode(option.id as ProfitLossExportMode)}
+                    className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-[10px] font-black uppercase tracking-widest transition-all md:flex-none ${
+                      active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <Icon size={14} />
+                    <span>{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
             <button
               type="button"
               onClick={() => setDeductTaxInPL(v => !v)}

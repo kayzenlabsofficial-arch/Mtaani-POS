@@ -64,7 +64,7 @@ function pageBottom(doc: jsPDF): number {
 }
 
 // ─── Shared drawing primitives ────────────────────────────────────────────────
-function banner(doc: jsPDF, title: string, ref: string, date: string, bizName = 'MTAANI POS'): number {
+function banner(doc: jsPDF, title: string, ref: string, date: string, bizName = 'MTAANI POS', location = 'Mtaani Street, Nairobi CBD, Kenya'): number {
   const top = 10;
   const rightPanelW = 58;
   const rightX = M + W - rightPanelW;
@@ -76,7 +76,7 @@ function banner(doc: jsPDF, title: string, ref: string, date: string, bizName = 
   const bizLines = splitToFit(doc, bizName.toUpperCase(), leftMax, 2);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  const locationLines = splitToFit(doc, 'Mtaani Street, Nairobi CBD, Kenya', leftMax, 1);
+  const locationLines = splitToFit(doc, location, leftMax, 1);
   const contactLines = splitToFit(doc, 'Email: hello@mtaanipos.co.ke | Tel: +254 700 123 456', leftMax, 1);
 
   doc.setFont('helvetica', 'bold');
@@ -929,7 +929,26 @@ export async function generateAndDownloadCustomerStatement(customer: any, sales:
   download(doc.output('blob'), `Customer-Statement-${safeStr(customer?.name, 'Customer').replace(/\s+/g, '-')}`);
 }
 
-export async function generateAndDownloadProfitLossReport(report: {
+type ProfitLossReportPeriod = {
+  label: string;
+  totalRevenue: number;
+  grossSales: number;
+  discounts: number;
+  cogs: number;
+  grossProfit?: number;
+  grossProfitWithVat?: number;
+  grossProfitWithoutVat?: number;
+  expenses: number;
+  netProfit?: number;
+  netProfitWithVat?: number;
+  netProfitWithoutVat?: number;
+  tax: number;
+  creditSales: number;
+  orderCount: number;
+  expenseBreakdown: { name: string; value: number }[];
+};
+
+type ProfitLossReportInput = {
   title: string;
   periodLabel: string;
   totalRevenue: number;
@@ -944,39 +963,252 @@ export async function generateAndDownloadProfitLossReport(report: {
   creditSales: number;
   orderCount: number;
   expenseBreakdown: { name: string; value: number }[];
-}) {
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  let y = banner(doc, 'Profit and Loss', report.title, new Date().toLocaleDateString());
-  y = kvRow(doc, 'Period', report.periodLabel, y);
-  y = kvRow(doc, 'Orders', String(report.orderCount), y);
-  y = hLine(doc, y + 2);
+  periods?: ProfitLossReportPeriod[];
+  reportMode?: 'INDIVIDUAL' | 'COMPARISON';
+  businessName?: string;
+  location?: string;
+};
 
-  y = table(doc, ['Line Item', 'Amount'], [130, 50], [
-    ['Gross Sales', ksh(report.grossSales)],
-    ['Discounts', `-${ksh(report.discounts)}`],
-    ['Net Revenue', ksh(report.totalRevenue)],
-    ['VAT Treatment', report.deductTaxInPL ? 'Deducted from P&L' : 'Shown only, not deducted'],
-    [report.deductTaxInPL ? 'Tax Deducted' : 'Tax Informational', report.deductTaxInPL ? `-${ksh(report.tax)}` : ksh(report.tax)],
-    ['Cost of Goods Sold', `-${ksh(report.cogs)}`],
-    ['Gross Profit', ksh(report.grossProfit)],
-    ['Operating Expenses', `-${ksh(report.expenses)}`],
-    ['Net Profit / Loss', ksh(report.netProfit)],
-    ['Credit Sales Included', ksh(report.creditSales)],
-  ], y);
+function normalizeProfitLossPeriod(period: ProfitLossReportPeriod): ProfitLossReportPeriod {
+  const grossProfitWithVat = safe(period.grossProfitWithVat ?? (period.totalRevenue - period.cogs));
+  const grossProfitWithoutVat = safe(period.grossProfitWithoutVat ?? (grossProfitWithVat - period.tax));
+  const netProfitWithVat = safe(period.netProfitWithVat ?? (grossProfitWithVat - period.expenses));
+  const netProfitWithoutVat = safe(period.netProfitWithoutVat ?? (grossProfitWithoutVat - period.expenses));
+  return {
+    ...period,
+    grossProfitWithVat,
+    grossProfitWithoutVat,
+    netProfitWithVat,
+    netProfitWithoutVat,
+    grossProfit: safe(period.grossProfit ?? grossProfitWithoutVat),
+    netProfit: safe(period.netProfit ?? netProfitWithoutVat),
+    expenseBreakdown: period.expenseBreakdown || [],
+  };
+}
 
-  if (report.expenseBreakdown.length) {
-    y = hLine(doc, y + 6);
+function profitLossPeriods(report: ProfitLossReportInput): ProfitLossReportPeriod[] {
+  const periods = report.periods?.length
+    ? report.periods
+    : [{
+        label: report.periodLabel,
+        totalRevenue: report.totalRevenue,
+        grossSales: report.grossSales,
+        discounts: report.discounts,
+        cogs: report.cogs,
+        grossProfit: report.grossProfit,
+        expenses: report.expenses,
+        netProfit: report.netProfit,
+        tax: report.tax,
+        creditSales: report.creditSales,
+        orderCount: report.orderCount,
+        expenseBreakdown: report.expenseBreakdown,
+      }];
+
+  return periods.map(normalizeProfitLossPeriod);
+}
+
+function kshAccounting(value: any): string {
+  const amount = safe(value);
+  const text = `Ksh ${Math.abs(amount).toLocaleString()}`;
+  return amount < 0 ? `(${text})` : text;
+}
+
+type ProfitLossRow = {
+  label: string;
+  values?: Array<number | string | null | undefined>;
+  kind?: 'section' | 'normal' | 'total' | 'highlight' | 'note';
+  format?: 'money' | 'deduct' | 'plain';
+};
+
+function drawProfitLossInfoGrid(doc: jsPDF, y: number, report: ProfitLossReportInput, periods: ProfitLossReportPeriod[]): number {
+  const cols = [
+    ['Date Created', new Date().toLocaleDateString()],
+    ['Date Issued', new Date().toLocaleDateString()],
+    ['Period', report.periodLabel],
+    ['Mode', periods.length > 1 ? 'Comparison' : 'Individual'],
+  ];
+  const cellW = W / cols.length;
+  const headerH = 7;
+  const valueH = 8;
+
+  cols.forEach(([label], i) => {
+    const x = M + i * cellW;
+    sf(doc, [248, 250, 252] as RGB);
+    doc.rect(x, y, cellW, headerH, 'F');
+    sd(doc, slate100);
+    doc.rect(x, y, cellW, headerH + valueH);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
+    doc.setFontSize(7.5);
     st(doc, slate900);
-    doc.text('Expense Breakdown', M, y);
-    y += 6;
-    y = table(doc, ['Category', 'Amount'], [130, 50], report.expenseBreakdown.map(row => [row.name, ksh(row.value)]), y);
-  }
+    doc.text(fitLine(doc, label, cellW - 4), x + cellW / 2, y + 4.8, { align: 'center' });
+  });
 
-  y = hLine(doc, y + 6);
-  bigTotal(doc, report.netProfit >= 0 ? 'Net Profit' : 'Net Loss', ksh(report.netProfit), y, report.netProfit >= 0 ? brandBlue : red);
+  cols.forEach(([, value], i) => {
+    const x = M + i * cellW;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.2);
+    st(doc, slate600);
+    doc.text(fitLine(doc, value, cellW - 4), x + cellW / 2, y + headerH + 5.2, { align: 'center' });
+  });
+
+  return y + headerH + valueH + 9;
+}
+
+function drawProfitLossTable(doc: jsPDF, y: number, periods: ProfitLossReportPeriod[]): number {
+  const sectionBlue: RGB = [78, 132, 186];
+  const totalBlue: RGB = [222, 234, 246];
+  const highlightBlue: RGB = [157, 188, 224];
+  const lineBlue: RGB = [203, 213, 225];
+  const colCount = Math.max(1, periods.length);
+  const labelW = colCount > 1 ? 82 : 118;
+  const valueW = (W - labelW) / colCount;
+
+  const expenseNames = Array.from(new Set(
+    periods.flatMap(period => (period.expenseBreakdown || []).map(row => row.name))
+  ));
+  const expenseRows: ProfitLossRow[] = expenseNames.map(name => ({
+    label: name,
+    values: periods.map(period => period.expenseBreakdown.find(row => row.name === name)?.value || 0),
+    format: 'deduct',
+  }));
+
+  const rows: ProfitLossRow[] = [
+    { label: 'Revenue', kind: 'section' },
+    { label: 'Gross sales', values: periods.map(period => period.grossSales) },
+    { label: 'Less: Discounts and allowances', values: periods.map(period => period.discounts), format: 'deduct' },
+    { label: 'Net sales', values: periods.map(period => period.totalRevenue), kind: 'total' },
+    { label: 'Cost of Goods Sold', kind: 'section' },
+    { label: 'Cost of goods sold', values: periods.map(period => period.cogs), format: 'deduct' },
+    { label: 'Gross profit before VAT', values: periods.map(period => period.grossProfitWithVat), kind: 'total' },
+    { label: 'Operating Expenses', kind: 'section' },
+    ...(expenseRows.length ? expenseRows : [{ label: 'No operating expenses recorded', values: periods.map(() => 0), format: 'deduct' as const }]),
+    { label: 'Total operating expenses', values: periods.map(period => period.expenses), format: 'deduct', kind: 'total' },
+    { label: 'Operating profit (loss)', values: periods.map(period => period.netProfitWithVat), kind: 'highlight' },
+    { label: 'VAT Summary', kind: 'section' },
+    { label: 'VAT collected', values: periods.map(period => period.tax) },
+    { label: 'Profit with VAT', values: periods.map(period => period.netProfitWithVat), kind: 'highlight' },
+    { label: 'Profit without VAT', values: periods.map(period => period.netProfitWithoutVat), kind: 'highlight' },
+    { label: 'Credit sales included', values: periods.map(period => period.creditSales) },
+    { label: 'Sales documents', values: periods.map(period => period.orderCount), format: 'plain', kind: 'note' },
+  ];
+
+  const drawTitle = () => {
+    sf(doc, sectionBlue);
+    doc.rect(M, y, W, 9, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    st(doc, white);
+    doc.text('Profit and Loss Report', M + 2, y + 6.3);
+    y += 9;
+  };
+
+  const drawHeader = () => {
+    sf(doc, sectionBlue);
+    doc.rect(M, y, W, 8, 'F');
+    sd(doc, lineBlue);
+    doc.rect(M, y, labelW, 8);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    st(doc, white);
+    doc.text('Line Item', M + 2, y + 5.4);
+    periods.forEach((period, i) => {
+      const x = M + labelW + i * valueW;
+      doc.rect(x, y, valueW, 8);
+      doc.text(fitLine(doc, period.label, valueW - 4), x + valueW - 2, y + 5.4, { align: 'right' });
+    });
+    y += 8;
+  };
+
+  const ensureRoom = (height: number) => {
+    if (y + height <= pageBottom(doc)) return;
+    footer(doc);
+    doc.addPage();
+    y = 18;
+    drawHeader();
+  };
+
+  const formatValue = (value: number | string | null | undefined, format: ProfitLossRow['format']) => {
+    if (format === 'plain') return textValue(value, '0');
+    const numeric = safe(value);
+    if (format === 'deduct') return numeric > 0 ? `-${kshAccounting(numeric)}` : kshAccounting(numeric);
+    return kshAccounting(numeric);
+  };
+
+  drawTitle();
+  drawHeader();
+
+  rows.forEach((row, index) => {
+    const rowH = row.kind === 'section' ? 7 : row.kind === 'highlight' ? 8 : 7;
+    ensureRoom(rowH);
+
+    if (row.kind === 'section') {
+      sf(doc, sectionBlue);
+    } else if (row.kind === 'highlight') {
+      sf(doc, highlightBlue);
+    } else if (row.kind === 'total') {
+      sf(doc, totalBlue);
+    } else if (index % 2 === 0) {
+      sf(doc, [250, 252, 255] as RGB);
+    } else {
+      sf(doc, white);
+    }
+    doc.rect(M, y, W, rowH, 'F');
+
+    sd(doc, lineBlue);
+    doc.setLineWidth(row.kind === 'total' || row.kind === 'highlight' ? 0.22 : 0.12);
+    doc.rect(M, y, labelW, rowH);
+    periods.forEach((_, i) => {
+      doc.rect(M + labelW + i * valueW, y, valueW, rowH);
+    });
+
+    doc.setFont('helvetica', row.kind === 'normal' || !row.kind || row.kind === 'note' ? 'normal' : 'bold');
+    doc.setFontSize(row.kind === 'section' ? 8 : 7.6);
+    st(doc, row.kind === 'section' ? white : slate900);
+    doc.text(fitLine(doc, row.label, labelW - 4), M + 2, y + rowH - 2.2);
+
+    if (row.values) {
+      row.values.forEach((value, i) => {
+        const numeric = typeof value === 'number' ? value : safe(value);
+        const x = M + labelW + i * valueW;
+        st(doc, row.kind === 'section' ? white : numeric < 0 ? red : slate900);
+        doc.text(
+          fitLine(doc, formatValue(value, row.format || 'money'), valueW - 4),
+          x + valueW - 2,
+          y + rowH - 2.2,
+          { align: 'right' }
+        );
+      });
+    }
+
+    y += rowH;
+  });
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7.2);
+  st(doc, slate600);
+  const note = 'VAT is shown at the bottom so profit can be read with VAT included or after VAT is removed.';
+  const noteLines = splitToFit(doc, note, W, 2);
+  ensureRoom(noteLines.length * 4 + 4);
+  doc.text(noteLines, M, y + 5);
+  return y + noteLines.length * 4 + 9;
+}
+
+export async function generateAndDownloadProfitLossReport(report: ProfitLossReportInput) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const periods = profitLossPeriods(report);
+  let y = banner(
+    doc,
+    periods.length > 1 ? 'Profit and Loss Comparison' : 'Profit and Loss Report',
+    report.title,
+    new Date().toLocaleDateString(),
+    report.businessName || 'MTAANI POS',
+    report.location || 'Nairobi, Kenya'
+  );
+  y = drawProfitLossInfoGrid(doc, y, report, periods);
+  y = drawProfitLossTable(doc, y, periods);
+  const finalPeriod = periods[periods.length - 1];
+  const finalProfit = safe(finalPeriod.netProfitWithoutVat);
+  bigTotal(doc, finalProfit >= 0 ? 'Profit Without VAT' : 'Loss Without VAT', ksh(finalProfit), y, finalProfit >= 0 ? brandBlue : red);
   footer(doc);
   download(doc.output('blob'), `Profit-Loss-${report.title.replace(/\s+/g, '-')}`);
 }
-
