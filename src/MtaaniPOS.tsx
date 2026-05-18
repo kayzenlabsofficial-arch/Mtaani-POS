@@ -71,6 +71,7 @@ export default function MtaaniPOS() {
   const activeBusiness = useLiveQuery(() => activeBusinessId ? db.businesses.get(activeBusinessId) : Promise.resolve(undefined), [activeBusinessId]);
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   const activeShift = useStore(state => state.activeShift);
+  const isRegisterTab = activeTab === 'REGISTER';
 
   const [expenseForm, setExpenseForm] = useState({
     description: '',
@@ -199,8 +200,8 @@ export default function MtaaniPOS() {
 
         <BillingBanner activeBusinessId={activeBusinessId} currentUser={currentUser} />
 
-        <main className="flex-1 overflow-y-auto main-scroll app-safe-scroll relative bg-slate-100 md:bg-transparent p-3 pb-28 sm:p-4 sm:pb-28 md:p-6 md:pb-6 lg:p-8">
-          <div className="max-w-[1440px] mx-auto min-h-full">
+        <main className={`flex-1 main-scroll app-safe-scroll relative bg-slate-100 md:bg-transparent ${isRegisterTab ? 'overflow-hidden p-0' : 'overflow-y-auto p-3 pb-28 sm:p-4 sm:pb-28 md:p-6 md:pb-6 lg:p-8'}`}>
+          <div className={isRegisterTab ? 'h-full min-h-0' : 'max-w-[1440px] mx-auto min-h-full'}>
             {activeTab === 'REGISTER' && <RegisterTab toggleCart={toggleCart} handleCheckout={handleCheckout} />}
             {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={navigateToTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}
             {activeTab === 'INVENTORY' && <InventoryTab />}

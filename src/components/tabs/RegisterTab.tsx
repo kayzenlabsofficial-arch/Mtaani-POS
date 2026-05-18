@@ -505,7 +505,7 @@ function SalePanel({
           : 'Save credit sale';
 
   return (
-    <aside className={`bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col min-h-[22rem] max-h-[calc(100dvh-1.5rem)] lg:sticky lg:top-0 lg:h-full lg:max-h-[calc(100dvh-9rem)] shadow-sm ${className}`}>
+    <aside className={`flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm ${className}`}>
       <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
         <div>
           <h3 className="text-sm font-black text-slate-900">Current sale</h3>
@@ -561,7 +561,7 @@ function SalePanel({
         ))}
       </div>
 
-      <div className="sticky bottom-0 z-20 max-h-[72dvh] shrink-0 overflow-y-auto border-t border-slate-100 bg-white p-4 space-y-3 shadow-[0_-18px_30px_rgba(15,23,42,0.08)]">
+      <div className="sticky bottom-0 z-20 max-h-[72dvh] shrink-0 overflow-y-auto border-t border-slate-100 bg-white p-4 space-y-3 shadow-[0_-18px_30px_rgba(15,23,42,0.08)] lg:max-h-none lg:overflow-visible">
         <div className="rounded-2xl bg-slate-950 p-4 text-white">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -1499,9 +1499,10 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
   };
 
   return (
-    <div className="flex flex-col h-full animate-in fade-in gap-4">
+    <div className="flex h-full min-h-0 flex-col animate-in fade-in bg-slate-100 md:bg-transparent">
 
-      <div className="sticky top-0 z-30 -mx-1 flex-shrink-0 space-y-3 bg-slate-50/95 px-1 pb-3 pt-1 backdrop-blur supports-[backdrop-filter]:bg-slate-50/80">
+      <div className="z-30 flex-shrink-0 border-b border-slate-200/70 bg-slate-100/95 px-3 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-slate-100/85 sm:px-4 md:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1440px] space-y-3">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
@@ -1565,21 +1566,24 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
         ))}
       </div>
       </div>
+      </div>
 
       {/* Scanner */}
       {isScannerOpen && (
-        <div className="bg-slate-950 rounded-2xl overflow-hidden flex-shrink-0">
-          <div className="relative aspect-video max-h-44">
-            <BarcodeScanner onScan={barcode => {
-              handleBarcodeScan(barcode);
-            }} />
-            <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-primary/60 shadow-[0_0_10px_rgba(37,99,235,0.8)] animate-pulse pointer-events-none" />
-          </div>
-          <div className="flex items-center justify-between px-4 py-2 border-t border-slate-800">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Point at barcode</p>
-            <button onClick={() => setIsScannerOpen(false)} className="text-[10px] font-bold text-slate-500 hover:text-rose-400 flex items-center gap-1">
-              <MaterialIcon name="close" style={{ fontSize: '14px' }} /> Close
-            </button>
+        <div className="mx-auto w-full max-w-[1440px] flex-shrink-0 px-3 pt-4 sm:px-4 md:px-6 lg:px-8">
+          <div className="bg-slate-950 rounded-2xl overflow-hidden">
+            <div className="relative aspect-video max-h-44">
+              <BarcodeScanner onScan={barcode => {
+                handleBarcodeScan(barcode);
+              }} />
+              <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-primary/60 shadow-[0_0_10px_rgba(37,99,235,0.8)] animate-pulse pointer-events-none" />
+            </div>
+            <div className="flex items-center justify-between px-4 py-2 border-t border-slate-800">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Point at barcode</p>
+              <button onClick={() => setIsScannerOpen(false)} className="text-[10px] font-bold text-slate-500 hover:text-rose-400 flex items-center gap-1">
+                <MaterialIcon name="close" style={{ fontSize: '14px' }} /> Close
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1596,9 +1600,10 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
       )}
 
       {activeBusinessId && (
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-4 min-h-0">
+        <div className="mx-auto w-full max-w-[1440px] flex-1 min-h-0 px-3 pb-24 pt-4 sm:px-4 md:px-6 md:pb-6 lg:px-8">
+          <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           {/* Product rows */}
-          <div className="overflow-y-auto no-scrollbar pb-24 lg:pb-0">
+          <div className="h-full min-h-0 overflow-y-auto no-scrollbar">
             {sorted.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-3">
@@ -1621,8 +1626,9 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
             )}
           </div>
 
-          <div className="hidden min-h-0 lg:block">
+          <div className="hidden h-full min-h-0 lg:block">
             <SalePanel onCheckout={completeCheckout} isCheckingOut={isCheckingOut} />
+          </div>
           </div>
         </div>
       )}
