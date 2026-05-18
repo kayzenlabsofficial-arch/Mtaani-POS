@@ -131,6 +131,7 @@ async function ensureCheckoutSchema(db: D1Database) {
     'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_transaction ON idempotencyKeys(businessId, branchId, transactionId)',
     'CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER)',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
+    'ALTER TABLE transactions ADD COLUMN shiftId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedTransactionId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT',

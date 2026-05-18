@@ -36,7 +36,8 @@ const parseList = (value: any): any[] => {
 
 const reportValue = (record: any, key: string) => {
   if (key === 'remittanceTotal') {
-    return Number(record?.remittanceTotal ?? ((Number(record?.supplierPaymentsTotal) || 0) + (Number(record?.totalExpenses) || 0))) || 0;
+    const rawRemittance = Number(record?.remittanceTotal ?? ((Number(record?.supplierPaymentsTotal) || 0) + (Number(record?.totalExpenses) || 0))) || 0;
+    return Math.min(Number(record?.cashSales) || 0, rawRemittance);
   }
   return Number(record?.[key]) || 0;
 };

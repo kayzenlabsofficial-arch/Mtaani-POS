@@ -1,6 +1,6 @@
 import { db, type Supplier } from '../db';
 import { SupplierService } from '../services/suppliers';
-import { calculateCashDrawer, getTodayStartMs } from './cashDrawer';
+import { calculateShiftCashFromSales, getTodayStartMs } from './cashDrawer';
 
 export type SupplierPaymentInput = {
   amount: number;
@@ -20,6 +20,7 @@ export async function settleSupplierPayment({
   activeBusinessId,
   preparedBy,
   shiftId,
+  shiftStart,
 }: {
   supplier: Supplier;
   payment: SupplierPaymentInput;
@@ -27,6 +28,7 @@ export async function settleSupplierPayment({
   activeBusinessId: string;
   preparedBy: string;
   shiftId?: string;
+  shiftStart?: number;
 }) {
   const cashAmount = Number(payment.amount || 0);
   if (cashAmount < 0) throw new Error('Payment amount cannot be negative.');
@@ -51,15 +53,16 @@ export async function settleSupplierPayment({
       db.cashPicks.where('branchId').equals(activeBranchId).toArray(),
       db.supplierPayments.where('branchId').equals(activeBranchId).toArray(),
     ]);
-    const drawer = calculateCashDrawer({
+    const drawer = calculateShiftCashFromSales({
       transactions,
       expenses,
       cashPicks,
       supplierPayments,
-      since: getTodayStartMs(),
-    }).actualCashDrawer;
+      shiftId,
+      since: shiftStart || getTodayStartMs(),
+    }).availableCashSales;
     if (cashAmount > drawer) {
-      throw new Error(`Insufficient till cash. Drawer has Ksh ${Math.max(0, drawer).toLocaleString()}.`);
+      throw new Error(`Insufficient cash sales in this shift. Available: Ksh ${Math.max(0, drawer).toLocaleString()}.`);
     }
   }
 

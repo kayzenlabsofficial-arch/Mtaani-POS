@@ -9,6 +9,8 @@ import SupplierLedgerModal from '../modals/SupplierLedgerModal';
 import { settleSupplierPayment, type SupplierPaymentInput } from '../../utils/supplierLedger';
 import { belongsToActiveBranch } from '../../utils/branchScope';
 import { SupplierService } from '../../services/suppliers';
+import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSession';
+import { getTodayStartMs } from '../../utils/cashDrawer';
 
 
 export default function SuppliersTab({ setActiveTab, financialAccounts }: { setActiveTab?: (tab: string) => void, financialAccounts: any[] }) {
@@ -24,8 +26,11 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
   const isAdmin = useStore(state => state.isAdmin);
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  const activeShift = useStore(state => state.activeShift);
+  const currentUser = useStore(state => state.currentUser);
   const { success, error } = useToast();
   const [isSaving, setIsSaving] = useState(false);
+  const currentShiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser?.id);
 
   const allSuppliers = useLiveQuery(
     () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]),
@@ -126,8 +131,9 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
           payment,
           activeBranchId: activeBranchId!,
           activeBusinessId: activeBusinessId!,
-          preparedBy: useStore.getState().currentUser?.name || 'Staff',
-          shiftId: useStore.getState().activeShift?.id,
+          preparedBy: currentUser?.name || 'Staff',
+          shiftId: currentShiftId,
+          shiftStart: getCurrentShiftStart(activeShift, getTodayStartMs()),
         });
         success("Payment recorded successfully.");
         setIsPaymentModalOpen(false);
@@ -316,7 +322,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
         supplier={selectedSupplierForPayment}
         onSave={handleSavePayment}
         financialAccounts={financialAccounts}
-        shiftId={useStore.getState().activeShift?.id}
+        shiftId={currentShiftId}
       />
 
       <SupplierLedgerModal 
@@ -324,7 +330,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
         onClose={() => { setIsLedgerModalOpen(false); setSelectedSupplierForLedger(null); }}
         onEdit={(s) => { setIsLedgerModalOpen(false); setSelectedSupplierForLedger(null); openEditSupplier(s); }}
         onPay={(s) => { setIsLedgerModalOpen(false); setSelectedSupplierForLedger(null); openPaymentModal(s); }}
-        shiftId={useStore.getState().activeShift?.id}
+        shiftId={currentShiftId}
         products={allProducts || []}
       />
     </div>

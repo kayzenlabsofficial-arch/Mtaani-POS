@@ -6,6 +6,7 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 import { getProductIngredients, isBundleProduct } from '../utils/bundleInventory';
 import { SalesService } from '../services/sales';
 import { flushOutboxNow } from '../offline/offlineSync';
+import { getCurrentShiftId } from '../utils/shiftSession';
 
 export function useMtaaniPOS() {
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'REPORTS' | 'ADMIN_PANEL'>('REGISTER');
@@ -23,6 +24,7 @@ export function useMtaaniPOS() {
     currentUser, login, logout, isSystemAdmin,
     activeBusinessId, setActiveBusinessId,
     activeBranchId, setActiveBranchId,
+    activeShift,
     setActiveShift
   } = useStore();
 
@@ -252,6 +254,7 @@ export function useMtaaniPOS() {
       const paymentReference = mpesaRef || checkoutData.mpesaRef || checkoutData.pdqRef || checkoutData.paymentReference;
       const mpesaPaymentCode = method === 'MPESA' || splitPayments?.secondaryMethod === 'MPESA' ? paymentReference : undefined;
       const transactionId = crypto.randomUUID();
+      const shiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser!.id);
       const newTransaction: Transaction = {
         id: transactionId,
         items: cart.map(item => ({
@@ -280,6 +283,7 @@ export function useMtaaniPOS() {
         branchId: activeBranchId!,
         cashierId: currentUser!.id,
         cashierName: currentUser!.name,
+        shiftId,
         customerId: effectiveCustomerId,
         customerName: effectiveCustomerName,
         discount: discountAmount,

@@ -46,7 +46,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                    />
                 </div>
                 {tillOverdrawn && (
-                   <p className="text-[10px] text-red-500 font-bold mt-1">Exceeds cash in drawer!</p>
+                   <p className="text-[10px] text-red-500 font-bold mt-1">Exceeds cash sales in this shift!</p>
                 )}
              </div>
              <div className="relative">
@@ -94,7 +94,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
                     </button>
                  </div>
                  <p className="text-[9px] text-slate-400 mt-1 italic">
-                    {expenseForm.source === 'TILL' ? '* Deducted from cashier drawer.' : (expenseForm.source === 'SHOP' ? '* Deducted from shop inventory.' : '* Direct payment by owner (Bank/M-Pesa).')}
+                    {expenseForm.source === 'TILL' ? '* Deducted from this shift cash sales.' : (expenseForm.source === 'SHOP' ? '* Deducted from shop inventory.' : '* Direct payment by owner (Bank/M-Pesa).')}
                  </p>
               </div>
 
@@ -172,4 +172,3 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
     </div>
   );
 }
-

@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     isSynced INTEGER,
     approvedBy TEXT,
     pendingRefundItems TEXT,
+    shiftId TEXT,
     branchId TEXT,
     businessId TEXT,
     updated_at INTEGER

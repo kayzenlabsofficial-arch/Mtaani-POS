@@ -729,7 +729,10 @@ function drawCloseDayShiftSummary(doc: jsPDF, y: number, shiftReports: any[]): n
 
   const valueFor = (report: any, key: string) => {
     if (key === 'remittanceTotal') {
-      return safe(report.remittanceTotal ?? (safe(report.supplierPaymentsTotal) + safe(report.totalExpenses)));
+      return Math.min(
+        safe(report.cashSales),
+        safe(report.remittanceTotal ?? (safe(report.supplierPaymentsTotal) + safe(report.totalExpenses)))
+      );
     }
     return safe(report?.[key]);
   };
@@ -831,7 +834,7 @@ function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'
   const pdqSales = safe(r.pdqSales);
   const expenses = safe(r.totalExpenses);
   const supplierPaymentsTotal = safe(r.supplierPaymentsTotal);
-  const remittanceTotal = safe(r.remittanceTotal ?? (supplierPaymentsTotal + expenses));
+  const remittanceTotal = Math.min(cashSales, safe(r.remittanceTotal ?? (supplierPaymentsTotal + expenses)));
   const banked = safe(r.totalPicks);
   const refunds = safe(r.totalRefunds);
   const taxTotal = safe(r.taxTotal);

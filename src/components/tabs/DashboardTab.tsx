@@ -7,6 +7,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import { canUseOwnerMode, getCashDrawerLimit, getCashFloatTarget, isOwnerCashSweepEnabled, isOwnerModeEnabled } from '../../utils/ownerMode';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
+import { getCurrentShiftId } from '../../utils/shiftSession';
 import { getBusinessSettings } from '../../utils/settings';
 import { belongsToActiveBranch } from '../../utils/branchScope';
 import { CashService, ClosingService } from '../../services/operations';
@@ -117,6 +118,17 @@ function recordInShift(record: any, since: number, until: number, shiftId?: stri
   if (shiftId && record?.shiftId) return record.shiftId === shiftId;
   const ts = Number(record?.timestamp || record?.issueDate || 0);
   return ts >= since && ts <= until;
+}
+
+function splitFundedRemittance(cashSales: number, expenses: number, supplierPayments: number) {
+  const rawRemittance = Math.max(0, expenses + supplierPayments);
+  const remittanceTotal = Math.min(Math.max(0, cashSales), rawRemittance);
+  if (rawRemittance <= 0 || remittanceTotal <= 0) {
+    return { totalExpenses: 0, supplierPaymentsTotal: 0, remittanceTotal: 0 };
+  }
+  const totalExpenses = Math.round(Math.min(expenses, remittanceTotal * (expenses / rawRemittance)) * 100) / 100;
+  const supplierPaymentsTotal = Math.round((remittanceTotal - totalExpenses) * 100) / 100;
+  return { totalExpenses, supplierPaymentsTotal, remittanceTotal };
 }
 
 export default function DashboardTab({ setActiveTab, openExpenseModal }: DashboardTabProps) {
@@ -304,6 +316,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         amount: sweepAmount,
         status: 'APPROVED',
         userName: currentUser.name,
+        shiftId: getCurrentShiftId(activeShift, activeBranchId, currentUser.id),
         branchId: activeBranchId,
         businessId: activeBusinessId,
       });
@@ -331,9 +344,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       + invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
     const taxTotal = txs.reduce((sum, tx) => sum + Number(tx.tax || 0), 0)
       + invoices.reduce((sum, invoice) => sum + Number(invoice.tax || 0), 0);
-    const totalExpenses = expenses.filter(e => e.source === 'TILL').reduce((sum, e) => sum + Number(e.amount || 0), 0);
-    const supplierPaymentsTotal = supplierPayments.filter(p => p.source === 'TILL').reduce((sum, p) => sum + Number(p.amount || 0), 0);
-    const remittanceTotal = totalExpenses + supplierPaymentsTotal;
+    const rawTotalExpenses = expenses.filter(e => e.source === 'TILL').reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const rawSupplierPaymentsTotal = supplierPayments.filter(p => p.source === 'TILL').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const { totalExpenses, supplierPaymentsTotal, remittanceTotal } = splitFundedRemittance(cashSales, rawTotalExpenses, rawSupplierPaymentsTotal);
     const totalPicks = picks.reduce((sum, p) => sum + Number(p.amount || 0), 0);
     const expectedCashPicked = Math.max(0, cashSales - remittanceTotal);
     const cashierVariance = totalPicks - expectedCashPicked;
@@ -358,7 +371,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const handleCloseShift = async () => {
     if (!activeBranchId || !activeBusinessId || !currentUser || isClosingShift) return;
     const since = Number(activeShift?.startTime || getTodayStartMs());
-    const shiftId = activeShift?.id || `shift_${activeBranchId}_${new Date().toISOString().slice(0, 10)}_${currentUser.id}`;
+    const shiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser.id) || `shift_${activeBranchId}_${new Date().toISOString().slice(0, 10)}_${currentUser.id}`;
     const stats = getClosureStats(since, Date.now(), shiftId);
     if (stats.txs.length === 0 && !confirm('No sales found for this shift. Close it anyway?')) return;
 

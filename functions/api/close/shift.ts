@@ -128,9 +128,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const cashSales = nonNegative(report.cashSales);
     const mpesaSales = nonNegative(report.mpesaSales);
     const pdqSales = nonNegative(report.pdqSales);
-    const totalExpenses = nonNegative(report.totalExpenses);
-    const supplierPaymentsTotal = nonNegative(report.supplierPaymentsTotal);
-    const remittanceTotal = nonNegative(report.remittanceTotal ?? (totalExpenses + supplierPaymentsTotal));
+    const rawTotalExpenses = nonNegative(report.totalExpenses);
+    const rawSupplierPaymentsTotal = nonNegative(report.supplierPaymentsTotal);
+    const rawRemittanceTotal = nonNegative(report.remittanceTotal ?? (rawTotalExpenses + rawSupplierPaymentsTotal));
+    const remittanceTotal = Math.min(cashSales, rawRemittanceTotal);
+    const remittanceScale = rawRemittanceTotal > 0 ? remittanceTotal / rawRemittanceTotal : 0;
+    const totalExpenses = Math.round(rawTotalExpenses * remittanceScale * 100) / 100;
+    const supplierPaymentsTotal = Math.round((remittanceTotal - totalExpenses) * 100) / 100;
     const totalPicks = nonNegative(report.totalPicks);
     const totalRefunds = nonNegative(report.totalRefunds);
     const expectedCash = nonNegative(report.expectedCash);

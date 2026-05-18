@@ -7,6 +7,8 @@ import { useStore } from '../../store';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 import { settleSupplierPayment, type SupplierPaymentInput } from '../../utils/supplierLedger';
 import { belongsToActiveBranch } from '../../utils/branchScope';
+import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSession';
+import { getTodayStartMs } from '../../utils/cashDrawer';
 
 
 export default function SupplierPaymentsTab({ financialAccounts }: { financialAccounts: any[] }) {
@@ -22,6 +24,8 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
 
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  const activeShift = useStore(state => state.activeShift);
+  const currentUser = useStore(state => state.currentUser);
   
   const allSuppliers = useLiveQuery(
     () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]),
@@ -70,8 +74,9 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
           payment,
           activeBranchId: activeBranchId!,
           activeBusinessId: activeBusinessId!,
-          preparedBy: useStore.getState().currentUser?.name || 'Staff',
-          shiftId: useStore.getState().activeShift?.id,
+          preparedBy: currentUser?.name || 'Staff',
+          shiftId: getCurrentShiftId(activeShift, activeBranchId, currentUser?.id),
+          shiftStart: getCurrentShiftStart(activeShift, getTodayStartMs()),
         });
         success("Payment recorded successfully.");
         setIsPaymentModalOpen(false);

@@ -14,7 +14,6 @@ import {
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
-import { SearchableSelect } from '../shared/SearchableSelect';
 import { canPerform } from '../../utils/accessControl';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 import { belongsToActiveBranch } from '../../utils/branchScope';
@@ -29,6 +28,23 @@ type PeriodBounds = {
   start: number;
   end: number;
   label: string;
+};
+
+type ProductPerformanceRow = {
+  id: string;
+  name: string;
+  group: string;
+  unit: string;
+  qty: number;
+  revenue: number;
+  cogs: number;
+  profit: number;
+  tax: number;
+  stock: number | null;
+  source: 'Product' | 'Service' | 'Custom';
+  avgPrice: number;
+  margin: number;
+  share: number;
 };
 
 function roundMoney(value: number) {
@@ -182,7 +198,15 @@ export default function ReportsTab() {
   const [customEnd, setCustomEnd] = useState(todayInput);
   const [deductTaxInPL, setDeductTaxInPL] = useState(true);
   const [profitLossExportMode, setProfitLossExportMode] = useState<ProfitLossExportMode>('INDIVIDUAL');
-  const [selectedProductId, setSelectedProductId] = React.useState<string | null>(null);
+  const [productDateRange, setProductDateRange] = useState<ReportDateRange>('MONTH');
+  const [productSelectedMonth, setProductSelectedMonth] = useState(monthInput);
+  const [productCustomStart, setProductCustomStart] = useState(todayInput);
+  const [productCustomEnd, setProductCustomEnd] = useState(todayInput);
+  const [selectedProductIds, setSelectedProductIds] = React.useState<string[]>([]);
+  const [selectedProductGroups, setSelectedProductGroups] = React.useState<string[]>([]);
+  const [productSearch, setProductSearch] = React.useState('');
+  const [productGroupSearch, setProductGroupSearch] = React.useState('');
+  const [productTableSearch, setProductTableSearch] = React.useState('');
   const [isSharing, setIsSharing] = useState(false);
   const [salesChartRef, salesChartSize] = useChartSize();
   const [expenseChartRef, expenseChartSize] = useChartSize();
@@ -236,53 +260,62 @@ export default function ReportsTab() {
   }
 
   // 1. Date Filtering Logic
-  const getPeriodBounds = () => {
+  const getPeriodBoundsFor = (
+    range: ReportDateRange,
+    monthlyValue: string,
+    customStartValue: string,
+    customEndValue: string
+  ) => {
     const now = new Date();
-    if (dateRange === 'TODAY') {
+    if (range === 'TODAY') {
       const start = new Date();
       start.setHours(0,0,0,0);
       const end = new Date();
       end.setHours(23,59,59,999);
       return { start: start.getTime(), end: end.getTime(), label: start.toLocaleDateString() };
     }
-    if (dateRange === 'WEEK') {
+    if (range === 'WEEK') {
       const start = new Date();
       start.setDate(start.getDate() - 7);
       start.setHours(0,0,0,0);
       return { start: start.getTime(), end: now.getTime(), label: 'Last 7 days' };
     }
-    if (dateRange === 'MONTH') {
+    if (range === 'MONTH') {
       const start = new Date();
       start.setMonth(start.getMonth() - 1);
       start.setHours(0,0,0,0);
       return { start: start.getTime(), end: now.getTime(), label: 'Last 30 days' };
     }
-    if (dateRange === 'QUARTER') {
+    if (range === 'QUARTER') {
       const start = new Date();
       start.setMonth(start.getMonth() - 3);
       start.setHours(0,0,0,0);
       return { start: start.getTime(), end: now.getTime(), label: 'Last quarter' };
     }
-    if (dateRange === 'MONTHLY') {
-      const [year, month] = selectedMonth.split('-').map(Number);
+    if (range === 'MONTHLY') {
+      const [year, month] = monthlyValue.split('-').map(Number);
       const start = new Date(year, month - 1, 1);
       const end = new Date(year, month, 0, 23, 59, 59, 999);
       return { start: start.getTime(), end: end.getTime(), label: start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) };
     }
-    if (dateRange === 'CUSTOM') {
-      const start = new Date(customStart || todayInput);
+    if (range === 'CUSTOM') {
+      const start = new Date(customStartValue || todayInput);
       start.setHours(0,0,0,0);
-      const end = new Date(customEnd || customStart || todayInput);
+      const end = new Date(customEndValue || customStartValue || todayInput);
       end.setHours(23,59,59,999);
       return { start: start.getTime(), end: end.getTime(), label: `${start.toLocaleDateString()} to ${end.toLocaleDateString()}` };
     }
     return { start: 0, end: now.getTime(), label: 'All time' };
   };
+  const getPeriodBounds = () => getPeriodBoundsFor(dateRange, selectedMonth, customStart, customEnd);
   const { start: startTime, end: endTime, label: periodLabel } = getPeriodBounds();
   const filteredTransactions = allTransactions.filter(t => t.timestamp >= startTime && t.timestamp <= endTime && reportableTransaction(t));
   const filteredSalesInvoices = allSalesInvoices.filter(invoice => invoice.issueDate >= startTime && invoice.issueDate <= endTime && invoice.status !== 'CANCELLED');
   const filteredExpenses = allExpenses.filter(e => e.timestamp >= startTime && e.timestamp <= endTime && e.status === 'APPROVED');
   const displayProducts = enrichProductsWithBundleStock(allProducts || [], productIngredients || []);
+  const productPeriodBounds = getPeriodBoundsFor(productDateRange, productSelectedMonth, productCustomStart, productCustomEnd);
+  const productPeriodTransactions = allTransactions.filter(t => t.timestamp >= productPeriodBounds.start && t.timestamp <= productPeriodBounds.end && reportableTransaction(t));
+  const productPeriodSalesInvoices = allSalesInvoices.filter(invoice => invoice.issueDate >= productPeriodBounds.start && invoice.issueDate <= productPeriodBounds.end && invoice.status !== 'CANCELLED');
   const filteredTransactionMetrics = filteredTransactions.map(transaction => ({
     transaction,
     metrics: transactionNetMetrics(transaction),
@@ -505,20 +538,153 @@ export default function ReportsTab() {
 
   const topCashiers = Object.entries(cashierPerf).map(([name, data]) => ({ name, ...data })).sort((a,b) => b.revenue - a.revenue);
 
-  const selectedProduct = displayProducts.find(p => p.id === selectedProductId);
-  const selectedProductSales = filteredTransactions.filter(t => txItems(t).some(i => i.productId === selectedProductId));
-  const selectedInvoiceProductLines = filteredSalesInvoices.flatMap(invoice => invoiceItems(invoice).filter(item => item.itemId === selectedProductId));
-  const productStats = {
-    totalQty: selectedProductSales.reduce((acc, t) => acc + txItems(t).filter(i => i.productId === selectedProductId).reduce((s, i) => s + netItemQuantity(t, i), 0), 0)
-      + selectedInvoiceProductLines.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
-    totalRevenue: selectedProductSales.reduce((acc, t) => {
-      const metrics = transactionNetMetrics(t);
-      return acc + txItems(t).filter(i => i.productId === selectedProductId).reduce((s, i) => s + (Number(i.snapshotPrice || 0) * netItemQuantity(t, i) * metrics.discountFactor), 0);
-    }, 0)
-      + selectedInvoiceProductLines.reduce((sum, item) => {
-        const amount = Number(item.quantity || 0) * Number(item.unitPrice || 0);
-        return sum + amount + (item.taxCategory === 'A' ? amount * 0.16 : 0);
-      }, 0)
+  const productPerformanceMap: Record<string, ProductPerformanceRow> = {};
+  const ensureProductRow = (
+    id: string,
+    name: string,
+    group: string,
+    unit: string,
+    stock: number | null,
+    source: ProductPerformanceRow['source']
+  ) => {
+    if (!productPerformanceMap[id]) {
+      productPerformanceMap[id] = {
+        id,
+        name,
+        group,
+        unit,
+        stock,
+        source,
+        qty: 0,
+        revenue: 0,
+        cogs: 0,
+        profit: 0,
+        tax: 0,
+        avgPrice: 0,
+        margin: 0,
+        share: 0,
+      };
+    }
+    return productPerformanceMap[id];
+  };
+
+  displayProducts.forEach(product => {
+    ensureProductRow(
+      product.id,
+      product.name,
+      product.category || 'Uncategorized',
+      product.unit || 'units',
+      Number(product.stockQuantity ?? 0),
+      'Product'
+    );
+  });
+
+  productPeriodTransactions.forEach(transaction => {
+    const metrics = transactionNetMetrics(transaction);
+    txItems(transaction).forEach(item => {
+      const netQty = netItemQuantity(transaction, item);
+      if (netQty <= 0) return;
+
+      const productObj = displayProducts.find(p => p.id === item.productId);
+      const purchase = allPurchases?.find(p => purchaseItems(p).some(pi => pi.productId === item.productId));
+      const purchaseLine = purchaseItems(purchase).find(pi => pi.productId === item.productId);
+      const unitCost = Number(item.snapshotCost ?? purchaseLine?.unitCost ?? productObj?.costPrice ?? (Number(item.snapshotPrice || 0) * 0.7)) || 0;
+      const baseLineRevenue = Number(item.snapshotPrice || 0) * netQty;
+      const lineRevenue = baseLineRevenue * metrics.discountFactor;
+      const lineCogs = unitCost * netQty;
+      const lineTax = metrics.netSubtotal > 0 ? metrics.netTax * (baseLineRevenue / metrics.netSubtotal) : 0;
+      const row = ensureProductRow(
+        item.productId,
+        item.name || productObj?.name || 'Unnamed product',
+        productObj?.category || item.category || 'Uncategorized',
+        item.unit || productObj?.unit || 'units',
+        productObj ? Number(productObj.stockQuantity ?? 0) : null,
+        'Product'
+      );
+
+      row.qty += netQty;
+      row.revenue += lineRevenue;
+      row.cogs += lineCogs;
+      row.profit += lineRevenue - lineCogs;
+      row.tax += lineTax;
+    });
+  });
+
+  productPeriodSalesInvoices.forEach(invoice => {
+    invoiceItems(invoice).forEach(item => {
+      const qty = Number(item.quantity || 0);
+      if (qty <= 0) return;
+
+      const unitPrice = Number(item.unitPrice || 0);
+      const baseLineRevenue = qty * unitPrice;
+      const lineTax = item.taxCategory === 'A' ? baseLineRevenue * 0.16 : 0;
+      const lineRevenue = baseLineRevenue + lineTax;
+      const productObj = item.itemType === 'PRODUCT' && item.itemId ? displayProducts.find(p => p.id === item.itemId) : undefined;
+      const source = item.itemType === 'SERVICE' ? 'Service' : item.itemType === 'CUSTOM' ? 'Custom' : 'Product';
+      const unitCost = productObj ? Number(productObj.costPrice ?? unitPrice * 0.7) || 0 : 0;
+      const key = productObj?.id || `${source}:${String(item.name || 'Item').trim().toLowerCase()}`;
+      const row = ensureProductRow(
+        key,
+        item.name || productObj?.name || 'Invoice item',
+        productObj?.category || (source === 'Service' ? 'Services' : source === 'Custom' ? 'Custom Sales' : 'Uncategorized'),
+        productObj?.unit || 'units',
+        productObj ? Number(productObj.stockQuantity ?? 0) : null,
+        source
+      );
+
+      row.qty += qty;
+      row.revenue += lineRevenue;
+      row.cogs += unitCost * qty;
+      row.profit += lineRevenue - (unitCost * qty);
+      row.tax += lineTax;
+    });
+  });
+
+  const productTotalRevenue = Object.values(productPerformanceMap).reduce((sum, row) => sum + row.revenue, 0);
+  const productPerformanceRows = Object.values(productPerformanceMap)
+    .map(row => ({
+      ...row,
+      avgPrice: row.qty > 0 ? row.revenue / row.qty : 0,
+      margin: row.revenue > 0 ? (row.profit / row.revenue) * 100 : 0,
+      share: productTotalRevenue > 0 ? (row.revenue / productTotalRevenue) * 100 : 0,
+    }))
+    .sort((a, b) => b.revenue - a.revenue || a.name.localeCompare(b.name));
+  const productGroups = Array.from(new Set(productPerformanceRows.map(row => row.group))).sort((a, b) => a.localeCompare(b));
+  const selectedProductSet = new Set(selectedProductIds);
+  const selectedProductGroupSet = new Set(selectedProductGroups);
+  const productSearchText = productSearch.trim().toLowerCase();
+  const productGroupSearchText = productGroupSearch.trim().toLowerCase();
+  const productTableSearchText = productTableSearch.trim().toLowerCase();
+  const productSelectionOptions = productPerformanceRows
+    .filter(row => `${row.name} ${row.group} ${row.source}`.toLowerCase().includes(productSearchText))
+    .slice(0, 160);
+  const productGroupOptions = productGroups.filter(group => group.toLowerCase().includes(productGroupSearchText));
+  const visibleProductRows = productPerformanceRows.filter(row => {
+    const productMatch = selectedProductSet.size === 0 || selectedProductSet.has(row.id);
+    const groupMatch = selectedProductGroupSet.size === 0 || selectedProductGroupSet.has(row.group);
+    const textMatch = !productTableSearchText || `${row.name} ${row.group} ${row.source}`.toLowerCase().includes(productTableSearchText);
+    return productMatch && groupMatch && textMatch;
+  });
+  const productSummary = visibleProductRows.reduce(
+    (acc, row) => {
+      acc.qty += row.qty;
+      acc.revenue += row.revenue;
+      acc.cogs += row.cogs;
+      acc.profit += row.profit;
+      acc.tax += row.tax;
+      acc.stock += Number(row.stock || 0);
+      if (row.qty > 0) acc.activeItems += 1;
+      return acc;
+    },
+    { qty: 0, revenue: 0, cogs: 0, profit: 0, tax: 0, stock: 0, activeItems: 0 }
+  );
+  const productSummaryMargin = productSummary.revenue > 0 ? (productSummary.profit / productSummary.revenue) * 100 : 0;
+  const productTopRow = visibleProductRows.find(row => row.revenue > 0);
+  const toggleProductSelection = (id: string) => {
+    setSelectedProductIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
+  };
+  const toggleProductGroupSelection = (group: string) => {
+    setSelectedProductGroups(current => current.includes(group) ? current.filter(item => item !== group) : [...current, group]);
   };
 
   const handleExportProfitLoss = async () => {
@@ -779,69 +945,274 @@ export default function ReportsTab() {
           </section>
         </div>
 
-        {/* Product Pulse Section */}
-        <section className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-elevated relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none -mr-48 -mt-48 group-hover:bg-indigo-600/20 transition-all duration-700" />
-          
-          <div className="relative z-10">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 mb-12">
-              <div>
+        {/* Product Performance Sheet */}
+        <section className="bg-slate-950 rounded-[2rem] sm:rounded-[3rem] p-4 sm:p-6 lg:p-8 text-white shadow-elevated overflow-hidden">
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+              <div className="min-w-0">
                 <h3 className="text-2xl font-bold tracking-tight flex items-center gap-4">
                   <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-indigo">
                     <Activity size={28} />
                   </div>
                   Product sales details
                 </h3>
-                <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-3 opacity-60">Detailed product sales</p>
+                <p className="mt-3 text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">{productPeriodBounds.label}</p>
               </div>
-              <div className="w-full md:w-96">
-                <label className="block text-[10px] font-bold text-indigo-400 uppercase tracking-[0.2em] mb-3 ml-2">Select product</label>
-                <SearchableSelect
-                  value={selectedProductId || ''}
-                  onChange={(v) => setSelectedProductId(v || null)}
-                  placeholder="Search for a product..."
-                  options={displayProducts.map(p => ({
-                    value: p.id,
-                    label: p.name,
-                    keywords: `${p.name} ${p.barcode || ''} ${p.category || ''}`,
-                  }))}
-                  buttonClassName="bg-white/5 border-white/10 hover:border-indigo-500/50 rounded-2xl px-6 py-5 text-sm font-black text-white"
-                  searchInputClassName="bg-white"
-                />
+
+              <div className="flex w-full flex-col gap-2 xl:w-auto xl:items-end">
+                <div className="no-scrollbar flex max-w-full overflow-x-auto rounded-2xl bg-white/10 p-1">
+                  {[
+                    { id: 'TODAY', label: 'Today' },
+                    { id: 'WEEK', label: 'Week' },
+                    { id: 'MONTH', label: 'Month' },
+                    { id: 'QUARTER', label: 'Quarter' },
+                    { id: 'MONTHLY', label: 'Monthly' },
+                    { id: 'CUSTOM', label: 'Custom' },
+                    { id: 'ALL', label: 'All' }
+                  ].map(range => (
+                    <button
+                      key={range.id}
+                      onClick={() => setProductDateRange(range.id as ReportDateRange)}
+                      className={`h-9 flex-shrink-0 rounded-xl px-3 text-[11px] font-black transition-all ${
+                        productDateRange === range.id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {range.label}
+                    </button>
+                  ))}
+                </div>
+                {productDateRange === 'MONTHLY' && (
+                  <input
+                    type="month"
+                    value={productSelectedMonth}
+                    onChange={e => setProductSelectedMonth(e.target.value)}
+                    className="h-10 w-full rounded-xl border border-white/10 bg-white/10 px-4 text-sm font-black text-white outline-none focus:border-indigo-400 xl:w-52"
+                  />
+                )}
+                {productDateRange === 'CUSTOM' && (
+                  <div className="flex w-full flex-col gap-2 sm:flex-row xl:w-auto">
+                    <input
+                      type="date"
+                      value={productCustomStart}
+                      onChange={e => setProductCustomStart(e.target.value)}
+                      className="h-10 rounded-xl border border-white/10 bg-white/10 px-4 text-sm font-black text-white outline-none focus:border-indigo-400"
+                    />
+                    <input
+                      type="date"
+                      value={productCustomEnd}
+                      onChange={e => setProductCustomEnd(e.target.value)}
+                      className="h-10 rounded-xl border border-white/10 bg-white/10 px-4 text-sm font-black text-white outline-none focus:border-indigo-400"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
-            {selectedProduct ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 animate-in slide-in-from-bottom-8 duration-500">
-                 <div className="bg-white/5 backdrop-blur-sm border-2 border-white/5 p-8 rounded-[2rem] hover:bg-white/10 transition-all">
-                    <p className="text-indigo-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><Layers size={14}/> Units sold</p>
-                    <div className="flex items-baseline gap-2">
-                       <h4 className="text-5xl font-black tabular-nums">{productStats.totalQty}</h4>
-                       <span className="text-sm font-bold text-slate-500 uppercase">{selectedProduct.unit || 'units'}</span>
-                    </div>
-                 </div>
-                 <div className="bg-white/5 backdrop-blur-sm border-2 border-white/5 p-8 rounded-[2rem] hover:bg-white/10 transition-all">
-                    <p className="text-emerald-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><TrendingUp size={14}/> Product sales</p>
-                    <h4 className="text-4xl font-black tabular-nums">Ksh {productStats.totalRevenue.toLocaleString()}</h4>
-                 </div>
-                 <div className="bg-white/5 backdrop-blur-sm border-2 border-white/5 p-8 rounded-[2rem] hover:bg-white/10 transition-all">
-                    <p className="text-amber-400 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2"><Package size={14}/> Stock left</p>
-                    <h4 className={`text-4xl font-black tabular-nums ${selectedProduct.stockQuantity < 10 ? 'text-rose-500' : 'text-white'}`}>{selectedProduct.stockQuantity}</h4>
-                 </div>
-                 <div className="grad-indigo p-8 rounded-[2rem] shadow-indigo flex flex-col justify-between">
-                    <div>
-                       <p className="text-indigo-200 text-[10px] font-black uppercase tracking-widest mb-2">Profit</p>
-                       <h4 className="text-3xl font-black truncate">Ksh {(productPerf[selectedProduct.id]?.profit || 0).toLocaleString()}</h4>
-                    </div>
-                    <div className="text-[10px] font-black bg-white/20 px-4 py-1.5 rounded-full w-fit uppercase tracking-widest">Profit rate: {(( (productPerf[selectedProduct.id]?.profit || 0) / (productStats.totalRevenue || 1) ) * 100).toFixed(1)}%</div>
-                 </div>
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_0.85fr_1fr]">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Package size={16} className="text-indigo-300" />
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">Items</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setSelectedProductIds([])} className="h-8 rounded-lg bg-white px-3 text-[10px] font-black uppercase tracking-wider text-slate-950">All</button>
+                    <button
+                      onClick={() => setSelectedProductIds(Array.from(new Set([...selectedProductIds, ...productSelectionOptions.map(row => row.id)])))}
+                      className="h-8 rounded-lg border border-white/10 px-3 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:text-white"
+                    >
+                      Select visible
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-slate-900/80 px-3">
+                  <Search size={16} className="text-slate-500" />
+                  <input
+                    value={productSearch}
+                    onChange={e => setProductSearch(e.target.value)}
+                    placeholder="Search items"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-bold text-white outline-none placeholder:text-slate-600"
+                  />
+                </div>
+                <div className="mt-3 max-h-44 space-y-1 overflow-y-auto pr-1">
+                  {productSelectionOptions.map(row => (
+                    <label key={row.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold text-slate-300 transition-colors hover:bg-white/10">
+                      <input
+                        type="checkbox"
+                        checked={selectedProductSet.has(row.id)}
+                        onChange={() => toggleProductSelection(row.id)}
+                        className="h-4 w-4 rounded border-white/20 bg-slate-900 accent-indigo-500"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{row.name}</span>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">{row.source}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  {selectedProductIds.length === 0 ? 'All items selected' : `${selectedProductIds.length} selected`}
+                </p>
               </div>
-            ) : (
-              <div className="py-32 border-4 border-dashed border-white/5 rounded-[3rem] flex flex-col items-center justify-center text-slate-700">
-                <Box size={64} className="opacity-10 mb-6" />
-                <p className="text-[11px] font-bold uppercase tracking-[0.3em] opacity-40">Select a product to see details</p>
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Layers size={16} className="text-emerald-300" />
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">Groups</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setSelectedProductGroups([])} className="h-8 rounded-lg bg-white px-3 text-[10px] font-black uppercase tracking-wider text-slate-950">All</button>
+                    <button
+                      onClick={() => setSelectedProductGroups(Array.from(new Set([...selectedProductGroups, ...productGroupOptions])))}
+                      className="h-8 rounded-lg border border-white/10 px-3 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:text-white"
+                    >
+                      Select visible
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-slate-900/80 px-3">
+                  <Search size={16} className="text-slate-500" />
+                  <input
+                    value={productGroupSearch}
+                    onChange={e => setProductGroupSearch(e.target.value)}
+                    placeholder="Search groups"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-bold text-white outline-none placeholder:text-slate-600"
+                  />
+                </div>
+                <div className="mt-3 max-h-44 space-y-1 overflow-y-auto pr-1">
+                  {productGroupOptions.map(group => (
+                    <label key={group} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold text-slate-300 transition-colors hover:bg-white/10">
+                      <input
+                        type="checkbox"
+                        checked={selectedProductGroupSet.has(group)}
+                        onChange={() => toggleProductGroupSelection(group)}
+                        className="h-4 w-4 rounded border-white/20 bg-slate-900 accent-emerald-500"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{group}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  {selectedProductGroups.length === 0 ? 'All groups selected' : `${selectedProductGroups.length} selected`}
+                </p>
               </div>
-            )}
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-center gap-2">
+                  <SlidersHorizontal size={16} className="text-amber-300" />
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">Sheet search</p>
+                </div>
+                <div className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-slate-900/80 px-3">
+                  <Search size={16} className="text-slate-500" />
+                  <input
+                    value={productTableSearch}
+                    onChange={e => setProductTableSearch(e.target.value)}
+                    placeholder="Search table"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-bold text-white outline-none placeholder:text-slate-600"
+                  />
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  <div className="rounded-xl bg-slate-900/80 p-3">
+                    <p>Rows</p>
+                    <p className="mt-1 text-lg text-white">{visibleProductRows.length}</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-900/80 p-3">
+                    <p>Sold</p>
+                    <p className="mt-1 text-lg text-white">{productSummary.activeItems}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-slate-500"><Layers size={13} /> Units sold</p>
+                <p className="mt-3 text-2xl font-black tabular-nums">{productSummary.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-emerald-300"><TrendingUp size={13} /> Sales</p>
+                <p className="mt-3 text-2xl font-black tabular-nums">Ksh {Math.round(productSummary.revenue).toLocaleString()}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-indigo-300"><Target size={13} /> Profit</p>
+                <p className={`mt-3 text-2xl font-black tabular-nums ${productSummary.profit < 0 ? 'text-rose-300' : 'text-white'}`}>Ksh {Math.round(productSummary.profit).toLocaleString()}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-amber-300"><Calendar size={13} /> VAT</p>
+                <p className="mt-3 text-2xl font-black tabular-nums">Ksh {Math.round(productSummary.tax).toLocaleString()}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Top item</p>
+                <p className="mt-3 truncate text-xl font-black">{productTopRow?.name || 'No sales'}</p>
+                <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{productSummaryMargin.toFixed(1)}% margin</p>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl">
+              <div className="max-h-[560px] overflow-auto">
+                <table className="w-full min-w-[1180px] border-collapse text-left text-xs text-slate-700">
+                  <thead className="sticky top-0 z-10 bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    <tr>
+                      <th className="border border-slate-300 px-3 py-3">#</th>
+                      <th className="border border-slate-300 px-3 py-3">Product</th>
+                      <th className="border border-slate-300 px-3 py-3">Group</th>
+                      <th className="border border-slate-300 px-3 py-3 text-right">Qty sold</th>
+                      <th className="border border-slate-300 px-3 py-3 text-right">Sales</th>
+                      <th className="border border-slate-300 px-3 py-3 text-right">VAT</th>
+                      <th className="border border-slate-300 px-3 py-3 text-right">Cost</th>
+                      <th className="border border-slate-300 px-3 py-3 text-right">Profit</th>
+                      <th className="border border-slate-300 px-3 py-3 text-right">Margin</th>
+                      <th className="border border-slate-300 px-3 py-3 text-right">Stock</th>
+                      <th className="border border-slate-300 px-3 py-3 text-right">Share</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleProductRows.map((row, index) => (
+                      <tr key={row.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-indigo-50`}>
+                        <td className="border border-slate-200 px-3 py-2 font-black text-slate-400">{index + 1}</td>
+                        <td className="border border-slate-200 px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="font-black text-slate-900">{row.name}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{row.source}</p>
+                          </div>
+                        </td>
+                        <td className="border border-slate-200 px-3 py-2 font-bold text-slate-600">{row.group}</td>
+                        <td className="border border-slate-200 px-3 py-2 text-right font-black tabular-nums text-slate-900">{row.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                        <td className="border border-slate-200 px-3 py-2 text-right font-black tabular-nums text-slate-900">Ksh {Math.round(row.revenue).toLocaleString()}</td>
+                        <td className="border border-slate-200 px-3 py-2 text-right font-bold tabular-nums text-slate-500">Ksh {Math.round(row.tax).toLocaleString()}</td>
+                        <td className="border border-slate-200 px-3 py-2 text-right font-bold tabular-nums text-slate-500">Ksh {Math.round(row.cogs).toLocaleString()}</td>
+                        <td className={`border border-slate-200 px-3 py-2 text-right font-black tabular-nums ${row.profit < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>Ksh {Math.round(row.profit).toLocaleString()}</td>
+                        <td className="border border-slate-200 px-3 py-2 text-right font-black tabular-nums text-slate-900">{row.margin.toFixed(1)}%</td>
+                        <td className={`border border-slate-200 px-3 py-2 text-right font-black tabular-nums ${row.stock !== null && row.stock <= 5 ? 'text-rose-600' : 'text-slate-900'}`}>
+                          {row.stock === null ? '-' : row.stock.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="border border-slate-200 px-3 py-2 text-right font-bold tabular-nums text-slate-500">{row.share.toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                    {visibleProductRows.length === 0 && (
+                      <tr>
+                        <td colSpan={11} className="border border-slate-200 px-3 py-16 text-center">
+                          <Box size={40} className="mx-auto mb-4 text-slate-300" />
+                          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">No product rows found</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                  <tfoot className="sticky bottom-0 bg-slate-900 text-white">
+                    <tr className="text-[11px] font-black uppercase tracking-widest">
+                      <td className="border border-slate-700 px-3 py-3" colSpan={3}>Total</td>
+                      <td className="border border-slate-700 px-3 py-3 text-right tabular-nums">{productSummary.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                      <td className="border border-slate-700 px-3 py-3 text-right tabular-nums">Ksh {Math.round(productSummary.revenue).toLocaleString()}</td>
+                      <td className="border border-slate-700 px-3 py-3 text-right tabular-nums">Ksh {Math.round(productSummary.tax).toLocaleString()}</td>
+                      <td className="border border-slate-700 px-3 py-3 text-right tabular-nums">Ksh {Math.round(productSummary.cogs).toLocaleString()}</td>
+                      <td className="border border-slate-700 px-3 py-3 text-right tabular-nums">Ksh {Math.round(productSummary.profit).toLocaleString()}</td>
+                      <td className="border border-slate-700 px-3 py-3 text-right tabular-nums">{productSummaryMargin.toFixed(1)}%</td>
+                      <td className="border border-slate-700 px-3 py-3 text-right tabular-nums">{productSummary.stock.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                      <td className="border border-slate-700 px-3 py-3 text-right tabular-nums">{productTotalRevenue > 0 ? ((productSummary.revenue / productTotalRevenue) * 100).toFixed(1) : '0.0'}%</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
           </div>
         </section>
 

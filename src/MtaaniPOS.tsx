@@ -8,9 +8,11 @@ import { canPerform } from './utils/accessControl';
 import { recordAuditEvent } from './utils/auditLog';
 import { submitExpenseRecord } from './utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from './utils/ownerMode';
-import { calculateCashDrawer, getTodayStartMs } from './utils/cashDrawer';
+import { calculateShiftCashFromSales, getTodayStartMs } from './utils/cashDrawer';
 import { getBusinessSettings } from './utils/settings';
 import { belongsToActiveBranch } from './utils/branchScope';
+import { useStore } from './store';
+import { getCurrentShiftId, getCurrentShiftStart } from './utils/shiftSession';
 
 // Modular Components
 import RegisterTab from './components/tabs/RegisterTab';
@@ -68,6 +70,7 @@ export default function MtaaniPOS() {
   const activeBranch = branches?.find(b => b.id === activeBranchId);
   const activeBusiness = useLiveQuery(() => activeBusinessId ? db.businesses.get(activeBusinessId) : Promise.resolve(undefined), [activeBusinessId]);
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
+  const activeShift = useStore(state => state.activeShift);
 
   const [expenseForm, setExpenseForm] = useState({
     description: '',
@@ -91,16 +94,15 @@ export default function MtaaniPOS() {
   const expenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
   const cashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
   const supplierPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
-  const customerPayments = useLiveQuery(() => activeBranchId ? db.customerPayments.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
-
-  const actualCashDrawer = calculateCashDrawer({
+  const currentShiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser?.id);
+  const shiftCashAvailable = calculateShiftCashFromSales({
     transactions: transactions || [],
     expenses: expenses || [],
     cashPicks: cashPicks || [],
     supplierPayments: supplierPayments || [],
-    customerPayments: customerPayments || [],
-    since: getTodayStartMs(),
-  }).actualCashDrawer;
+    since: getCurrentShiftStart(activeShift, getTodayStartMs()),
+    shiftId: currentShiftId,
+  }).availableCashSales;
 
   const handleSaveExpense = async () => {
     if (isSavingExpense) return;
@@ -108,7 +110,7 @@ export default function MtaaniPOS() {
     if (!currentUser || !activeBusinessId || !activeBranchId) return;
     if (amount <= 0) return error("Invalid amount.");
     if (!canPerform(currentUser, 'expense.create')) return error("You do not have permission to create expenses.");
-    if (expenseForm.source === 'TILL' && amount > actualCashDrawer) return error("Insufficient cash in drawer.");
+    if (expenseForm.source === 'TILL' && amount > shiftCashAvailable) return error("Insufficient cash sales in this shift.");
     if (expenseForm.source === 'ACCOUNT' && !expenseForm.accountId) return error("Select the account paying this expense.");
     if (expenseForm.source === 'SHOP' && !expenseForm.productId) return error("Select the stock item being expensed.");
 
@@ -129,6 +131,7 @@ export default function MtaaniPOS() {
         accountId: expenseForm.source === 'ACCOUNT' ? expenseForm.accountId : undefined,
         productId: expenseForm.source === 'SHOP' ? expenseForm.productId : undefined,
         quantity: expenseForm.source === 'SHOP' ? Number(expenseForm.quantity || 1) : undefined,
+        shiftId: currentShiftId,
         branchId: activeBranchId,
         businessId: activeBusinessId
       } as any;
@@ -256,7 +259,7 @@ export default function MtaaniPOS() {
         setExpenseForm={setExpenseForm} 
         handleSaveExpense={handleSaveExpense}
         isSaving={isSavingExpense}
-        actualCashDrawer={actualCashDrawer}
+        actualCashDrawer={shiftCashAvailable}
         accounts={expenseAccounts || []} 
         financialAccounts={financialAccounts || []} 
         products={products || []} 
