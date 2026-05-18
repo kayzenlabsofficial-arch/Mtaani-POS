@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBusiness } from '../_authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 
 interface Env {
   DB: D1Database;

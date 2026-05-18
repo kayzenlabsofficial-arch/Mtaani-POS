@@ -1,6 +1,6 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../_authUtils';
-import { PolicyError } from '../_salesSecurity';
-import { ensureExpenseActionSchema, prepareExpenseSubmit } from './_expenseOps';
+import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { PolicyError } from '../salesSecurity';
+import { ensureExpenseActionSchema, prepareExpenseSubmit } from './expenseOps';
 
 interface Env {
   DB: D1Database;

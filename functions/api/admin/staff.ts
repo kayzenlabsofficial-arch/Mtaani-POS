@@ -1,5 +1,5 @@
-import { authorizeRequest, canAccessBusiness, hashPassword } from '../_authUtils';
-import { PolicyError } from '../_salesSecurity';
+import { authorizeRequest, canAccessBusiness, hashPassword } from '../authUtils';
+import { PolicyError } from '../salesSecurity';
 
 interface Env {
   DB: D1Database;

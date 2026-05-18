@@ -1,5 +1,5 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../_authUtils';
-import { decryptSecret } from './_secureCredentials';
+import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { decryptSecret } from './secureCredentials';
 
 interface Env {
   DB: D1Database;

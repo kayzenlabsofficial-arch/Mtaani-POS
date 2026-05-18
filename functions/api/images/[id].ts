@@ -1,4 +1,4 @@
-import { authorizeRequest } from '../_authUtils';
+import { authorizeRequest } from '../authUtils';
 
 interface Env {
   IMAGES_KV: KVNamespace;
