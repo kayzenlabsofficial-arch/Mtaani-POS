@@ -4,7 +4,7 @@ import {
   Landmark, Scale, Calendar, ChevronRight, ArrowUpRight, 
   ArrowDownRight, CreditCard, Share2, Loader2, TrendingUp,
   Target, Info, Search, Box, PieChart as PieIcon, Layers,
-  Users, Clock, ShoppingBag, ShieldAlert, SlidersHorizontal, Download, FileText, ChevronDown
+  Users, Clock, ShoppingBag, ShieldAlert, Download, FileText, ChevronDown
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
@@ -206,9 +206,11 @@ export default function ReportsTab() {
   const [selectedProductGroups, setSelectedProductGroups] = React.useState<string[]>([]);
   const [productSearch, setProductSearch] = React.useState('');
   const [productGroupSearch, setProductGroupSearch] = React.useState('');
-  const [productTableSearch, setProductTableSearch] = React.useState('');
   const [productTablePage, setProductTablePage] = React.useState(1);
+  const [isExportingProducts, setIsExportingProducts] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const productTopScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const productTableScrollRef = React.useRef<HTMLDivElement | null>(null);
   const [salesChartRef, salesChartSize] = useChartSize();
   const [expenseChartRef, expenseChartSize] = useChartSize();
   const [categoryChartRef, categoryChartSize] = useChartSize();
@@ -226,7 +228,6 @@ export default function ReportsTab() {
     productCustomEnd,
     selectedProductIds,
     selectedProductGroups,
-    productTableSearch,
   ]);
 
   if (!canPerform(currentUser, 'report.view')) {
@@ -667,7 +668,6 @@ export default function ReportsTab() {
   const selectedProductGroupSet = new Set(selectedProductGroups);
   const productSearchText = productSearch.trim().toLowerCase();
   const productGroupSearchText = productGroupSearch.trim().toLowerCase();
-  const productTableSearchText = productTableSearch.trim().toLowerCase();
   const productSelectionOptions = productPerformanceRows
     .filter(row => `${row.name} ${row.group} ${row.source}`.toLowerCase().includes(productSearchText))
     .slice(0, 160);
@@ -675,8 +675,7 @@ export default function ReportsTab() {
   const visibleProductRows = productPerformanceRows.filter(row => {
     const productMatch = selectedProductSet.size === 0 || selectedProductSet.has(row.id);
     const groupMatch = selectedProductGroupSet.size === 0 || selectedProductGroupSet.has(row.group);
-    const textMatch = !productTableSearchText || `${row.name} ${row.group} ${row.source}`.toLowerCase().includes(productTableSearchText);
-    return productMatch && groupMatch && textMatch;
+    return productMatch && groupMatch;
   });
   const productRowsPerPage = 20;
   const productTotalPages = Math.max(1, Math.ceil(visibleProductRows.length / productRowsPerPage));
@@ -704,6 +703,52 @@ export default function ReportsTab() {
   };
   const toggleProductGroupSelection = (group: string) => {
     setSelectedProductGroups(current => current.includes(group) ? current.filter(item => item !== group) : [...current, group]);
+  };
+  const syncProductHorizontalScroll = (source: 'top' | 'table') => {
+    const topScroll = productTopScrollRef.current;
+    const tableScroll = productTableScrollRef.current;
+    if (!topScroll || !tableScroll) return;
+    if (source === 'top') tableScroll.scrollLeft = topScroll.scrollLeft;
+    else topScroll.scrollLeft = tableScroll.scrollLeft;
+  };
+  const scrollProductSheet = (direction: 'left' | 'right') => {
+    const topScroll = productTopScrollRef.current;
+    const tableScroll = productTableScrollRef.current;
+    const currentLeft = tableScroll?.scrollLeft ?? topScroll?.scrollLeft ?? 0;
+    const nextLeft = Math.max(0, currentLeft + (direction === 'left' ? -360 : 360));
+    tableScroll?.scrollTo({ left: nextLeft, behavior: 'smooth' });
+    topScroll?.scrollTo({ left: nextLeft, behavior: 'smooth' });
+  };
+
+  const handleExportProductPerformance = async () => {
+    setIsExportingProducts(true);
+    try {
+      const { generateAndDownloadProductPerformanceReport } = await import('../../utils/shareUtils');
+      await generateAndDownloadProductPerformanceReport({
+        title: `Product-Performance-${productDateRange}-${new Date().toISOString().split('T')[0]}`,
+        periodLabel: productPeriodBounds.label,
+        businessName: businessSettings?.storeName,
+        location: businessSettings?.location,
+        productScope: selectedProductIds.length === 0 ? 'All items' : `${selectedProductIds.length} selected item${selectedProductIds.length === 1 ? '' : 's'}`,
+        groupScope: selectedProductGroups.length === 0 ? 'All groups' : `${selectedProductGroups.length} selected group${selectedProductGroups.length === 1 ? '' : 's'}`,
+        rows: visibleProductRows,
+        summary: {
+          qty: productSummary.qty,
+          revenue: productSummary.revenue,
+          tax: productSummary.tax,
+          cogs: productSummary.cogs,
+          profit: productSummary.profit,
+          margin: productSummaryMargin,
+          stock: productSummary.stock,
+          activeItems: productSummary.activeItems,
+          rowCount: visibleProductRows.length,
+        },
+      });
+    } catch (err) {
+      console.error('Product performance export failed', err);
+    } finally {
+      setIsExportingProducts(false);
+    }
   };
 
   const handleExportProfitLoss = async () => {
@@ -1024,10 +1069,19 @@ export default function ReportsTab() {
                     />
                   </div>
                 )}
+                <button
+                  type="button"
+                  onClick={handleExportProductPerformance}
+                  disabled={isExportingProducts || visibleProductRows.length === 0}
+                  className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white px-4 text-[11px] font-black uppercase tracking-widest text-slate-950 transition-all hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 xl:w-auto"
+                >
+                  {isExportingProducts ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                  Export PDF
+                </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_0.85fr_1fr]">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_0.85fr]">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
@@ -1115,32 +1169,6 @@ export default function ReportsTab() {
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="flex items-center gap-2">
-                  <SlidersHorizontal size={16} className="text-amber-300" />
-                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">Sheet search</p>
-                </div>
-                <div className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-slate-900/80 px-3">
-                  <Search size={16} className="text-slate-500" />
-                  <input
-                    value={productTableSearch}
-                    onChange={e => setProductTableSearch(e.target.value)}
-                    placeholder="Search table"
-                    className="min-w-0 flex-1 bg-transparent text-sm font-bold text-white outline-none placeholder:text-slate-600"
-                  />
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  <div className="rounded-xl bg-slate-900/80 p-3">
-                    <p>Rows</p>
-                    <p className="mt-1 text-lg text-white">{visibleProductRows.length}</p>
-                    <p className="mt-0.5 text-[9px] text-slate-600">20 per page</p>
-                  </div>
-                  <div className="rounded-xl bg-slate-900/80 p-3">
-                    <p>Sold</p>
-                    <p className="mt-1 text-lg text-white">{productSummary.activeItems}</p>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -1168,7 +1196,43 @@ export default function ReportsTab() {
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl">
-              <div className="max-h-[560px] overflow-auto">
+              <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    {visibleProductRows.length} rows, 20 per page
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => scrollProductSheet('left')}
+                      className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-100"
+                    >
+                      <ChevronRight size={14} className="rotate-180" />
+                      Left
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scrollProductSheet('right')}
+                      className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-100"
+                    >
+                      Right
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+                <div
+                  ref={productTopScrollRef}
+                  onScroll={() => syncProductHorizontalScroll('top')}
+                  className="h-4 overflow-x-auto overflow-y-hidden rounded-lg border border-slate-200 bg-white"
+                >
+                  <div className="h-1 w-[1180px]" />
+                </div>
+              </div>
+              <div
+                ref={productTableScrollRef}
+                onScroll={() => syncProductHorizontalScroll('table')}
+                className="max-h-[560px] overflow-auto"
+              >
                 <table className="w-full min-w-[1180px] border-collapse text-left text-xs text-slate-700">
                   <thead className="sticky top-0 z-10 bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-500">
                     <tr>

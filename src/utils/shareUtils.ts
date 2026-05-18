@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
 const M = 14;          // page margin mm
@@ -1446,4 +1447,121 @@ export async function generateAndDownloadProfitLossReport(report: ProfitLossRepo
   bigTotal(doc, finalProfit >= 0 ? 'Profit Without VAT' : 'Loss Without VAT', ksh(finalProfit), y, finalProfit >= 0 ? brandBlue : red);
   footer(doc);
   download(doc.output('blob'), `Profit-Loss-${report.title.replace(/\s+/g, '-')}`);
+}
+
+export type ProductPerformanceExportRow = {
+  name: string;
+  group: string;
+  source: string;
+  qty: number;
+  revenue: number;
+  tax: number;
+  cogs: number;
+  profit: number;
+  margin: number;
+  stock: number | null;
+  share: number;
+};
+
+export type ProductPerformanceExportInput = {
+  title: string;
+  periodLabel: string;
+  businessName?: string;
+  location?: string;
+  productScope?: string;
+  groupScope?: string;
+  rows: ProductPerformanceExportRow[];
+  summary: {
+    qty: number;
+    revenue: number;
+    tax: number;
+    cogs: number;
+    profit: number;
+    margin: number;
+    stock: number;
+    activeItems: number;
+    rowCount: number;
+  };
+};
+
+export async function generateAndDownloadProductPerformanceReport(report: ProductPerformanceExportInput) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+  let y = banner(
+    doc,
+    'Product Performance Report',
+    report.title,
+    new Date().toLocaleDateString(),
+    report.businessName || 'MTAANI POS',
+    report.location || 'Nairobi, Kenya'
+  );
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  st(doc, slate600);
+  doc.text(`Period: ${safeStr(report.periodLabel, 'All time')}`, M, y);
+  doc.text(`Items: ${safeStr(report.productScope, 'All items')}`, M + 78, y);
+  doc.text(`Groups: ${safeStr(report.groupScope, 'All groups')}`, M + 150, y);
+  y += 8;
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Rows', 'Sold Items', 'Qty Sold', 'Sales', 'VAT', 'Cost', 'Profit', 'Margin', 'Stock']],
+    body: [[
+      report.summary.rowCount.toLocaleString(),
+      report.summary.activeItems.toLocaleString(),
+      report.summary.qty.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+      ksh(report.summary.revenue),
+      ksh(report.summary.tax),
+      ksh(report.summary.cogs),
+      ksh(report.summary.profit),
+      `${safe(report.summary.margin).toFixed(1)}%`,
+      report.summary.stock.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+    ]],
+    theme: 'grid',
+    styles: { font: 'helvetica', fontSize: 7, cellPadding: 2, lineColor: [203, 213, 225], lineWidth: 0.1 },
+    headStyles: { fillColor: brandBlue, textColor: white, fontStyle: 'bold' },
+    bodyStyles: { textColor: slate900 },
+    margin: { left: M, right: M },
+  });
+
+  const finalSummaryY = ((doc as any).lastAutoTable?.finalY || y) + 7;
+  autoTable(doc, {
+    startY: finalSummaryY,
+    head: [['#', 'Product', 'Group', 'Qty sold', 'Sales', 'VAT', 'Cost', 'Profit', 'Margin', 'Stock', 'Share']],
+    body: report.rows.map((row, index) => [
+      String(index + 1),
+      safeStr(row.name),
+      safeStr(row.group),
+      safe(row.qty).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+      ksh(row.revenue),
+      ksh(row.tax),
+      ksh(row.cogs),
+      ksh(row.profit),
+      `${safe(row.margin).toFixed(1)}%`,
+      row.stock === null ? '-' : safe(row.stock).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+      `${safe(row.share).toFixed(1)}%`,
+    ]),
+    theme: 'grid',
+    showHead: 'everyPage',
+    styles: { font: 'helvetica', fontSize: 6.4, cellPadding: 1.6, lineColor: [203, 213, 225], lineWidth: 0.08, overflow: 'linebreak' },
+    headStyles: { fillColor: brandBlue, textColor: white, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: slate100 },
+    columnStyles: {
+      0: { cellWidth: 9, halign: 'right' },
+      1: { cellWidth: 42 },
+      2: { cellWidth: 28 },
+      3: { cellWidth: 19, halign: 'right' },
+      4: { cellWidth: 24, halign: 'right' },
+      5: { cellWidth: 20, halign: 'right' },
+      6: { cellWidth: 22, halign: 'right' },
+      7: { cellWidth: 24, halign: 'right' },
+      8: { cellWidth: 17, halign: 'right' },
+      9: { cellWidth: 18, halign: 'right' },
+      10: { cellWidth: 17, halign: 'right' },
+    },
+    margin: { left: M, right: M },
+  });
+
+  footer(doc);
+  download(doc.output('blob'), `Product-Performance-${report.title.replace(/\s+/g, '-')}`);
 }
