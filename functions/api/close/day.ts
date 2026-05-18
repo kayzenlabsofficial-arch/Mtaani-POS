@@ -7,6 +7,7 @@ interface Env {
 }
 
 const CLOSE_DAY_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -67,6 +68,7 @@ async function ensureCloseDaySchema(db: D1Database) {
     'ALTER TABLE dailySummaries ADD COLUMN branchId TEXT',
     'ALTER TABLE dailySummaries ADD COLUMN businessId TEXT',
     'ALTER TABLE dailySummaries ADD COLUMN updated_at INTEGER',
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_branch_date ON dailySummaries(businessId, branchId, date)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
@@ -86,14 +88,23 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await ensureCloseDaySchema(env.DB);
     const now = Date.now();
     const summary = body?.summary || {};
-    const summaryDate = dayStartMs(n(summary.date, now) || now);
+    const requestedDate = n(summary.date, 0);
+    const summaryDate = requestedDate > 0 ? requestedDate : dayStartMs(now);
     const existing = await env.DB.prepare(`
       SELECT id
       FROM dailySummaries
-      WHERE businessId = ? AND branchId = ? AND date = ?
+      WHERE businessId = ?
+        AND branchId = ?
+        AND date > ?
+        AND date < ?
       LIMIT 1
-    `).bind(businessId, branchId, summaryDate).first<any>();
-    if (existing) return json({ success: true, summaryId: existing.id, idempotent: true });
+    `).bind(businessId, branchId, summaryDate - DAY_MS, summaryDate + DAY_MS).first<any>();
+    if (existing) {
+      return json({
+        error: `This branch already has a daily Z report for ${new Date(summaryDate).toLocaleDateString('en-KE')}.`,
+        summaryId: existing.id,
+      }, 409);
+    }
 
     const id = String(body?.summaryId || `day_${businessId}_${branchId}_${new Date(summaryDate).toISOString().slice(0, 10)}`).trim();
     const totalSales = nonNegative(summary.totalSales);
@@ -125,6 +136,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     ).run();
     return json({ success: true, summaryId: id, idempotent: false });
   } catch (err: any) {
+    if (/unique|constraint/i.test(String(err?.message || ''))) {
+      return json({ error: 'This branch already has a daily Z report for that day.' }, 409);
+    }
     const status = err instanceof PolicyError ? err.status : 500;
     return json({ error: err?.message || 'Could not close day.' }, status);
   }

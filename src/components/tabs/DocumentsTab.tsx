@@ -464,7 +464,7 @@ export default function DocumentsTab() {
                       isPay ? 'Supplier payment' :
                       isSalesInvoice ? `Customer invoice #${safeText(r.invoiceNumber || shortId(r.id))}` :
                       isShift ? `Shift report` :
-                      isDaily ? `Daily summary` :
+                      isDaily ? `Daily Z report` :
                       `Invoice #${safeText(r.invoiceNumber || shortId(r.id))}`}
                    </h4>
                    <div className="flex items-center gap-2 mt-1 flex-wrap">

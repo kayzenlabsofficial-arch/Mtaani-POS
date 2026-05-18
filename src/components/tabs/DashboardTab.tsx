@@ -180,6 +180,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       : Promise.resolve([]),
     [activeBusinessId, activeBranchId], []
   );
+  const branchDailySummaries = useLiveQuery(
+    () => activeBusinessId && activeBranchId
+      ? db.dailySummaries.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
+  );
   const pendingApprovalCount = useLiveQuery(async () => {
     if (!activeBusinessId || !activeBranchId) return 0;
     const [expenses, refunds, purchaseOrders, picks] = await Promise.all([
@@ -195,6 +201,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const lowStockItems = displayProducts.filter(p => (p.stockQuantity || 0) <= (p.reorderPoint || 5)).slice(0, 5) || [];
   const todayStart = getTodayStartMs();
   const yesterdayStart = todayStart - DAY_MS;
+  const todaysDailySummary = (branchDailySummaries || []).find(summary => {
+    const summaryDate = Number(summary.date || summary.timestamp || 0);
+    return summaryDate >= todayStart && summaryDate < todayStart + DAY_MS;
+  });
   const todaysTransactions = (branchTransactions || []).filter(t => (t.timestamp || 0) >= todayStart && t.status !== 'VOIDED' && t.status !== 'QUOTE');
   const todaysInvoices = (branchSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= todayStart && invoice.status !== 'CANCELLED');
   const yesterdaysTransactions = (branchTransactions || []).filter(t => (t.timestamp || 0) >= yesterdayStart && (t.timestamp || 0) < todayStart && t.status !== 'VOIDED' && t.status !== 'QUOTE');
@@ -352,7 +362,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       });
       await Promise.allSettled([db.endOfDayReports.reload(), db.shifts.reload()]);
       setActiveShift(null);
-      success('Shift closed and Z-report saved.');
+      success('Shift closed and shift report saved.');
     } catch (err: any) {
       error(err.message || 'Failed to close shift.');
     } finally {
@@ -362,14 +372,18 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
   const handleCloseDay = async () => {
     if (!activeBranchId || !activeBusinessId || isClosingDay) return;
-    if (!confirm('Close the business day and create the daily summary?')) return;
     const since = getTodayStartMs();
+    if (todaysDailySummary) {
+      warning('This branch already has a daily Z report for today. A day can only be closed once.');
+      return;
+    }
+    if (!confirm('Close the business day and create today\'s Z report? This can only be done once per day.')) return;
     const stats = getClosureStats(since);
     const todaysReports = (branchReports || []).filter(report => (report.timestamp || 0) >= since);
 
     setIsClosingDay(true);
     try {
-      await ClosingService.closeDay({
+      const result = await ClosingService.closeDay({
         summary: {
           date: since,
           shiftIds: todaysReports.map(report => report.shiftId || report.id),
@@ -384,7 +398,11 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         businessId: activeBusinessId,
       });
       await db.dailySummaries.reload();
-      success('Business day closed and daily summary saved.');
+      if (result.idempotent) {
+        warning('This branch was already closed today. No second Z report was created.');
+      } else {
+        success('Business day closed and daily Z report saved.');
+      }
     } catch (err: any) {
       error(err.message || 'Failed to close day.');
     } finally {

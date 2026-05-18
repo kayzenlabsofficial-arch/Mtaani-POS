@@ -292,6 +292,7 @@ CREATE TABLE IF NOT EXISTS dailySummaries (
     businessId TEXT,
     updated_at INTEGER
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_branch_date ON dailySummaries(businessId, branchId, date);
 
 -- stockAdjustmentRequests: matches Dexie interface exactly
 CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (

@@ -562,101 +562,226 @@ function buildRemittance(r: any, supplierName?: string, bizName?: string): Blob 
 }
 
 // ─── Thermal Report (80mm) ───────────────────────────────────────────────────
-function buildReport(r: any, bizName = 'MTAANI POS'): Blob {
+type CloseReportRow = {
+  label: string;
+  value?: number | string | null;
+  kind?: 'section' | 'normal' | 'total' | 'highlight' | 'note';
+  format?: 'money' | 'deduct' | 'plain';
+};
+
+function parseList(value: any): any[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function drawCloseReportInfoGrid(doc: jsPDF, y: number, cells: Array<[string, string]>): number {
+  const cellW = W / cells.length;
+  const headerH = 7;
+  const valueH = 8;
+
+  cells.forEach(([label, value], i) => {
+    const x = M + i * cellW;
+    sf(doc, [248, 250, 252] as RGB);
+    doc.rect(x, y, cellW, headerH, 'F');
+    sd(doc, slate100);
+    doc.rect(x, y, cellW, headerH + valueH);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    st(doc, slate900);
+    doc.text(fitLine(doc, label, cellW - 4), x + cellW / 2, y + 4.8, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.2);
+    st(doc, slate600);
+    doc.text(fitLine(doc, value, cellW - 4), x + cellW / 2, y + headerH + 5.2, { align: 'center' });
+  });
+
+  return y + headerH + valueH + 9;
+}
+
+function drawCloseReportStatement(doc: jsPDF, y: number, title: string, rows: CloseReportRow[]): number {
+  const sectionBlue: RGB = [78, 132, 186];
+  const totalBlue: RGB = [222, 234, 246];
+  const highlightBlue: RGB = [157, 188, 224];
+  const lineBlue: RGB = [203, 213, 225];
+  const labelW = 124;
+  const valueW = W - labelW;
+
+  const formatValue = (value: CloseReportRow['value'], format: CloseReportRow['format']) => {
+    if (format === 'plain') return textValue(value, '0');
+    const numeric = safe(value);
+    if (format === 'deduct') return numeric > 0 ? `-${kshAccounting(numeric)}` : kshAccounting(numeric);
+    return kshAccounting(numeric);
+  };
+
+  const drawTitle = () => {
+    sf(doc, sectionBlue);
+    doc.rect(M, y, W, 9, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    st(doc, white);
+    doc.text(title, M + 2, y + 6.3);
+    y += 9;
+  };
+
+  const drawHeader = () => {
+    sf(doc, sectionBlue);
+    doc.rect(M, y, W, 8, 'F');
+    sd(doc, lineBlue);
+    doc.rect(M, y, labelW, 8);
+    doc.rect(M + labelW, y, valueW, 8);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    st(doc, white);
+    doc.text('Line Item', M + 2, y + 5.4);
+    doc.text('Amount', M + W - 2, y + 5.4, { align: 'right' });
+    y += 8;
+  };
+
+  const ensureRoom = (height: number) => {
+    if (y + height <= pageBottom(doc)) return;
+    footer(doc);
+    doc.addPage();
+    y = 18;
+    drawHeader();
+  };
+
+  drawTitle();
+  drawHeader();
+
+  rows.forEach((row, index) => {
+    const rowH = row.kind === 'section' ? 7 : row.kind === 'highlight' ? 8 : 7;
+    ensureRoom(rowH);
+
+    if (row.kind === 'section') {
+      sf(doc, sectionBlue);
+    } else if (row.kind === 'highlight') {
+      sf(doc, highlightBlue);
+    } else if (row.kind === 'total') {
+      sf(doc, totalBlue);
+    } else if (index % 2 === 0) {
+      sf(doc, [250, 252, 255] as RGB);
+    } else {
+      sf(doc, white);
+    }
+    doc.rect(M, y, W, rowH, 'F');
+
+    sd(doc, lineBlue);
+    doc.setLineWidth(row.kind === 'total' || row.kind === 'highlight' ? 0.22 : 0.12);
+    doc.rect(M, y, labelW, rowH);
+    doc.rect(M + labelW, y, valueW, rowH);
+
+    doc.setFont('helvetica', row.kind === 'normal' || !row.kind || row.kind === 'note' ? 'normal' : 'bold');
+    doc.setFontSize(row.kind === 'section' ? 8 : 7.6);
+    st(doc, row.kind === 'section' ? white : slate900);
+    doc.text(fitLine(doc, row.label, labelW - 4), M + 2, y + rowH - 2.2);
+
+    if (row.value !== undefined && row.value !== null) {
+      const numeric = typeof row.value === 'number' ? row.value : safe(row.value);
+      st(doc, numeric < 0 ? red : row.kind === 'section' ? white : slate900);
+      doc.text(
+        fitLine(doc, formatValue(row.value, row.format || 'money'), valueW - 4),
+        M + W - 2,
+        y + rowH - 2.2,
+        { align: 'right' }
+      );
+    }
+
+    y += rowH;
+  });
+
+  return y + 8;
+}
+
+function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'): Blob {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const isDaily = r.recordType === 'DAILY_SUMMARY';
   const ref = safeStr((r.id || '').split('-')[0], 'RPT').toUpperCase();
-  let y = banner(
-    doc,
-    isDaily ? 'Daily Business Summary' : 'End of Shift Report',
-    ref,
-    new Date(r.timestamp).toLocaleString('en-KE'),
-    bizName
-  );
-  y = hLine(doc, y);
-  const summaryTop = y;
-  sf(doc, [248, 250, 252] as RGB);
-  doc.roundedRect(M, summaryTop - 4, W, 25, 3, 3, 'F');
-  y = kvRow(doc, 'Report Type', isDaily ? 'Daily Summary' : 'End of Shift', y);
-  y = kvRow(doc, 'Branch', branchLabel(r), y);
-  y = kvRow(doc, 'Prepared By', safeStr(r.cashierName, 'System'), y);
-  y += 6;
-
+  const reportDate = new Date(safe(r.date || r.timestamp || Date.now()));
+  const issuedDate = new Date(r.timestamp || Date.now());
+  const shiftIds = parseList(r.shiftIds);
   const grossSales = safe(r.grossSales ?? r.totalSales);
-  const cashSales = safe(r.cashSales ?? (grossSales - safe(r.mpesaSales)));
+  const totalSales = safe(r.totalSales ?? grossSales);
+  const cashSales = safe(r.cashSales ?? Math.max(0, totalSales - safe(r.mpesaSales)));
   const mpesaSales = safe(r.mpesaSales);
   const expenses = safe(r.totalExpenses);
   const banked = safe(r.totalPicks);
+  const refunds = safe(r.totalRefunds);
   const taxTotal = safe(r.taxTotal);
   const expected = safe(r.expectedCash);
   const reported = safe(r.reportedCash || expected);
   const diff = safe(r.difference ?? r.totalVariance);
-
-  y = table(
+  const salesBeforeVat = Math.max(0, totalSales - taxTotal);
+  const netCashAfterBanking = Math.max(0, reported - banked);
+  const reportTitle = isDaily ? 'Daily Z Report' : 'Shift Report';
+  let y = banner(
     doc,
-    ['Money Item', 'Amount', 'Type', 'Note'],
-    [70, 36, 24, 52],
-    [
-      ['Gross Sales', ksh(grossSales), 'IN', 'Sales before deductions'],
-      ['Cash Sales', ksh(cashSales), 'IN', 'Cash receipts'],
-      ['M-Pesa Sales', ksh(mpesaSales), 'IN', 'Mobile money receipts'],
-      ['Expenses', ksh(expenses), 'OUT', 'Business cost'],
-      ['Banked / Cash Picks', ksh(banked), 'OUT', 'Transferred from till'],
-      ['VAT (16%)', ksh(taxTotal), 'TAX', 'Tax component']
-    ],
-    y
+    reportTitle,
+    ref,
+    issuedDate.toLocaleDateString('en-KE'),
+    bizName,
+    location
   );
 
-  y = bigTotal(doc, 'NET SALES', ksh(safe(r.totalSales ?? grossSales)), y, brandBlue);
+  y = drawCloseReportInfoGrid(doc, y, [
+    ['Date Created', issuedDate.toLocaleDateString('en-KE')],
+    ['Date Issued', issuedDate.toLocaleDateString('en-KE')],
+    [isDaily ? 'Business Day' : 'Shift ID', isDaily ? reportDate.toLocaleDateString('en-KE') : safeStr(r.shiftId, 'N/A')],
+    ['Report Type', isDaily ? 'Daily Z Close' : 'Shift Close'],
+  ]);
 
-  const paymentBase = Math.max(grossSales, 1);
-  const cashPct = Math.max(0, Math.min(100, (cashSales / paymentBase) * 100));
-  const mpesaPct = Math.max(0, Math.min(100, (mpesaSales / paymentBase) * 100));
-  const chartX = M;
-  const chartW = W;
-  const barW = chartW - 48;
+  const rows: CloseReportRow[] = isDaily
+    ? [
+        { label: 'Revenue', kind: 'section' },
+        { label: 'Gross sales', value: grossSales },
+        { label: 'VAT collected', value: taxTotal },
+        { label: 'Net sales', value: totalSales, kind: 'total' },
+        { label: 'Cash Movement', kind: 'section' },
+        { label: 'Operating expenses', value: expenses, format: 'deduct' },
+        { label: 'Cash picks / banked', value: banked, format: 'deduct' },
+        { label: 'Shift Summary', kind: 'section' },
+        { label: 'Shifts included', value: String(shiftIds.length || 0), format: 'plain', kind: 'note' },
+        { label: 'Staff cash difference', value: diff, kind: 'highlight' },
+        { label: 'VAT Summary', kind: 'section' },
+        { label: 'Sales before VAT', value: salesBeforeVat },
+        { label: 'VAT collected', value: taxTotal },
+        { label: 'Sales with VAT', value: totalSales, kind: 'highlight' },
+      ]
+    : [
+        { label: 'Revenue', kind: 'section' },
+        { label: 'Gross sales', value: grossSales },
+        { label: 'VAT collected', value: taxTotal },
+        { label: 'Net sales', value: totalSales, kind: 'total' },
+        { label: 'Payments', kind: 'section' },
+        { label: 'Cash receipts', value: cashSales },
+        { label: 'M-Pesa receipts', value: mpesaSales },
+        { label: 'Operating Cash', kind: 'section' },
+        { label: 'Operating expenses', value: expenses, format: 'deduct' },
+        { label: 'Cash picks / banked', value: banked, format: 'deduct' },
+        ...(refunds > 0 ? [{ label: 'Refunds', value: refunds, format: 'deduct' as const }] : []),
+        { label: 'Cash Reconciliation', kind: 'section' },
+        { label: 'Expected cash', value: expected },
+        { label: 'Reported cash', value: reported },
+        { label: 'Cash difference', value: diff, kind: 'highlight' },
+        { label: 'Net cash after banking', value: netCashAfterBanking, kind: 'total' },
+        { label: 'VAT Summary', kind: 'section' },
+        { label: 'Sales before VAT', value: salesBeforeVat },
+        { label: 'VAT collected', value: taxTotal },
+        { label: 'Sales with VAT', value: totalSales, kind: 'highlight' },
+      ];
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  st(doc, slate900);
-  doc.text('PAYMENT MIX', chartX, y);
-  y += 6;
-
-  sf(doc, slate100);
-  doc.rect(chartX + 32, y - 3.5, barW, 4, 'F');
-  sf(doc, green);
-  doc.rect(chartX + 32, y - 3.5, (barW * cashPct) / 100, 4, 'F');
-  st(doc, slate600);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text('Cash', chartX, y);
-  doc.text(`${cashPct.toFixed(1)}%`, chartX + chartW, y, { align: 'right' });
-  y += 8;
-
-  sf(doc, slate100);
-  doc.rect(chartX + 32, y - 3.5, barW, 4, 'F');
-  sf(doc, blue);
-  doc.rect(chartX + 32, y - 3.5, (barW * mpesaPct) / 100, 4, 'F');
-  st(doc, slate600);
-  doc.text('M-Pesa', chartX, y);
-  doc.text(`${mpesaPct.toFixed(1)}%`, chartX + chartW, y, { align: 'right' });
-  y += 10;
-
-  y = table(
-    doc,
-    ['Cash Check', 'Expected', 'Counted', 'Difference'],
-    [70, 40, 40, 40],
-    [[
-      isDaily ? 'Business Day Close' : 'Shift Till Close',
-      ksh(expected),
-      ksh(reported),
-      ksh(diff)
-    ]],
-    y
-  );
-
+  y = drawCloseReportStatement(doc, y, reportTitle, rows);
   const ok = Math.abs(diff) < 0.01;
-  y = bigTotal(doc, ok ? 'STATUS: BALANCED' : 'STATUS: VARIANCE FOUND', ksh(Math.abs(diff)), y, ok ? green : red);
+  y = bigTotal(doc, ok ? 'STATUS: BALANCED' : 'STATUS: VARIANCE FOUND', ok ? ksh(totalSales) : ksh(Math.abs(diff)), y, ok ? brandBlue : red);
   footer(doc);
   return doc.output('blob');
 }
@@ -809,7 +934,7 @@ function buildPDF(record: any, supplier?: any, bizName?: string, location?: stri
     case 'PURCHASE_ORDER':   return buildPO(record, supplier, bizName);
     case 'SUPPLIER_PAYMENT': return buildRemittance(record, supplier?.company || supplier, bizName);
     case 'CLOSE_DAY_REPORT':
-    case 'DAILY_SUMMARY':    return buildReport(record, bizName);
+    case 'DAILY_SUMMARY':    return buildReport(record, bizName, location);
     default:                 return buildReceipt(record, bizName, location); // treat unknown as receipt
   }
 }

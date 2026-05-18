@@ -553,7 +553,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                      </div>
                  )}
 
-                 {/* Shift Report Details (Z-Report) */}
+                 {/* Shift Report Details */}
                  {isReport && (
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
                        {/* Fiscal Header Style */}
@@ -632,8 +632,8 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                           <div className="w-16 h-16 bg-white/20 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-white/30 backdrop-blur-md">
                              <TrendingUp size={32} />
                           </div>
-                          <h3 className="text-2xl font-black">Daily performance</h3>
-                          <p className="text-blue-100 text-xs font-bold  tracking-[0.2em] mt-2">Overall store summary</p>
+                          <h3 className="text-2xl font-black">Daily Z report</h3>
+                          <p className="text-blue-100 text-xs font-bold  tracking-[0.2em] mt-2">One close per business day</p>
                        </div>
 
                        <div className="grid grid-cols-2 gap-4">
@@ -802,4 +802,3 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     </div>
   );
 }
-
