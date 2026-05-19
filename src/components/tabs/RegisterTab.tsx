@@ -1468,6 +1468,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
       return;
     }
     addToCart(product);
+    setSearchQuery('');
     toggleCart?.(true);
     setRecentlyAdded(prev => new Set([...prev, product.id]));
     setTimeout(() => setRecentlyAdded(prev => { const n = new Set(prev); n.delete(product.id); return n; }), 600);
