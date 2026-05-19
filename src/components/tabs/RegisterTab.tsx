@@ -1468,10 +1468,10 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
     }
   };
 
-  const inStock = displayProducts.filter(p => (p.stockQuantity || 0) > 0).length || 0;
-  const outOfStock = displayProducts.filter(p => (p.stockQuantity || 0) <= 0).length || 0;
   const saleTotal = cart.reduce((sum, item) => sum + ((Number(item.sellingPrice) || 0) * (Number(item.cartQuantity) || 0)), 0);
   const saleItemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
+  const selectedProductCount = cart.length;
+  const selectedProductLabel = selectedProductCount === 1 ? 'product selected for sale' : 'products selected for sale';
   React.useEffect(() => {
     if (cart.length === 0) setIsMobileCheckoutOpen(false);
   }, [cart.length]);
@@ -1508,7 +1508,10 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
         <div>
           <h2 className="text-lg font-black text-slate-900">Register</h2>
           <p className="text-[11px] text-slate-500 font-medium">
-            {inStock} available · <span className="text-rose-500">{outOfStock} out of stock</span>
+            {selectedProductCount.toLocaleString()} {selectedProductLabel}
+            {saleItemCount > 0 && (
+              <span className="text-primary"> · {saleItemCount.toLocaleString()} item{saleItemCount === 1 ? '' : 's'} · Ksh {saleTotal.toLocaleString()}</span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
