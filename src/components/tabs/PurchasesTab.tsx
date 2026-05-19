@@ -9,6 +9,11 @@ import { SearchableSelect } from '../shared/SearchableSelect';
 import { belongsToActiveBranch } from '../../utils/branchScope';
 import { PurchaseService } from '../../services/purchases';
 
+const inventoryOrderPrice = (product?: Product | null) => {
+  const costPrice = Number(product?.costPrice || 0);
+  const sellingPrice = Number(product?.sellingPrice || 0);
+  return costPrice > 0 ? costPrice : sellingPrice;
+};
 
 export default function PurchasesTab() {
   const { error, success } = useToast();
@@ -67,7 +72,7 @@ export default function PurchasesTab() {
   };
 
   const handleSelectPoProduct = (product: Product) => {
-     setPoItemInput({ ...poItemInput, search: product.name, productId: product.id, name: product.name, cost: (product.sellingPrice * 0.7).toFixed(0) }); 
+     setPoItemInput({ ...poItemInput, search: product.name, productId: product.id, name: product.name, cost: String(inventoryOrderPrice(product)) }); 
   };
 
   const handleSavePO = async () => {
@@ -108,7 +113,7 @@ export default function PurchasesTab() {
          productId: i.productId,
          name: i.name,
          expectedQuantity: i.expectedQuantity,
-         unitCost: i.unitCost
+         unitCost: inventoryOrderPrice(allProducts?.find(product => product.id === i.productId)) || i.unitCost
       })));
       setIsPOModalOpen(true);
   };
@@ -345,7 +350,7 @@ export default function PurchasesTab() {
                              {allProducts?.filter(p => p.name.toLowerCase().includes(poItemInput.search.toLowerCase()) || p.barcode.includes(poItemInput.search)).slice(0, 5).map(p => (
                                 <div key={p.id} data-testid={`purchase-product-option-${p.id}`} onClick={() => handleSelectPoProduct(p)} className="px-5 py-4 text-sm font-bold text-slate-700 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center justify-between">
                                    <span>{p.name}</span>
-                                   <span className="text-[10px] text-slate-400 font-mono">{p.barcode}</span>
+                                   <span className="text-[10px] text-slate-400 font-mono">Ksh {inventoryOrderPrice(p).toLocaleString()}</span>
                                 </div>
                              ))}
                           </div>
@@ -359,7 +364,7 @@ export default function PurchasesTab() {
                           </div>
                           <div className="flex-[2] relative">
                              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300">Ksh</span>
-                             <input data-testid="purchase-item-cost" type="number" placeholder="Unit cost" value={poItemInput.cost} onChange={e => setPoItemInput({...poItemInput, cost: e.target.value})} className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl pl-12 pr-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" />
+                             <input data-testid="purchase-item-cost" type="number" placeholder="Inventory price" value={poItemInput.cost} readOnly className="w-full bg-white border-2 border-transparent rounded-2xl pl-12 pr-5 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm read-only:bg-slate-100 read-only:text-slate-500" />
                           </div>
                           <button data-testid="purchase-add-item" onClick={handleAddPoItem} className="w-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-indigo active:scale-95 transition-all">
                              <Plus size={24}/>
