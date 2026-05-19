@@ -215,11 +215,24 @@ export function useMtaaniPOS() {
     }
     
     try {
-      const productIngredients = activeBusinessId
+      const cartProductIds = cart.map(item => item.id);
+      const products = await db.products.bulkGet(cartProductIds);
+      const productsById = new Map(products.filter(Boolean).map(product => [product!.id, product!]));
+      const hasBundle = cart.some(item => {
+        const product = productsById.get(item.id);
+        return !!product && isBundleProduct(product);
+      });
+      const productIngredients = hasBundle && activeBusinessId
         ? await db.productIngredients.where('businessId').equals(activeBusinessId).toArray()
         : [];
+      const ingredientIds = hasBundle
+        ? Array.from(new Set(productIngredients.map(row => row.ingredientProductId).filter(Boolean)))
+        : [];
+      const ingredientProducts = ingredientIds.length ? await db.products.bulkGet(ingredientIds) : [];
+      const ingredientProductsById = new Map(ingredientProducts.filter(Boolean).map(product => [product!.id, product!]));
+
       for (const item of cart) {
-        const prod = await db.products.get(item.id);
+        const prod = productsById.get(item.id);
         if (!prod) continue;
         const saleQty = Number(item.cartQuantity) || 0;
         if (isBundleProduct(prod)) {
@@ -229,7 +242,7 @@ export function useMtaaniPOS() {
             return null;
           }
           for (const row of ingredients) {
-            const ingredient = await db.products.get(row.ingredientProductId);
+            const ingredient = ingredientProductsById.get(row.ingredientProductId);
             const requiredQty = row.quantity * saleQty;
             if (!ingredient || (ingredient.stockQuantity || 0) < requiredQty) {
               error(`Insufficient ingredient stock for ${item.name}.`);
