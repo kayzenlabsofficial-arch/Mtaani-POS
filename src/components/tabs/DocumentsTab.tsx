@@ -40,7 +40,7 @@ const parseRecordList = (value: unknown): string[] => {
 export default function DocumentsTab() {
   const [docSearch, setDocSearch] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
-  const [filterType, setFilterType] = useState<'ALL' | 'APPROVALS' | 'SALES' | 'EXPENSES' | 'SUPPLIER_PAYMENTS' | 'INVOICES' | 'SHIFTS' | 'DAILY' | 'MPESA'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'APPROVALS' | 'SALES' | 'EXPENSES' | 'SUPPLIER_PAYMENTS' | 'CREDIT_NOTES' | 'INVOICES' | 'SHIFTS' | 'DAILY' | 'MPESA'>('ALL');
   const todayInput = new Date().toISOString().split('T')[0];
   const [dateMode, setDateMode] = useState<'ALL' | 'CUSTOM'>('ALL');
   const [dateStart, setDateStart] = useState(todayInput);
@@ -60,6 +60,7 @@ export default function DocumentsTab() {
   const allTransactions = useLiveQuery(() => activeBusinessId && activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
   const allExpenses = useLiveQuery(() => activeBusinessId && activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
   const allSupplierPayments = useLiveQuery(() => activeBusinessId && activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
+  const allCreditNotes = useLiveQuery(() => activeBusinessId && activeBranchId ? db.creditNotes.where('branchId').equals(activeBranchId).and(cn => cn.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
   const allSalesInvoices = useLiveQuery(() => activeBusinessId && activeBranchId ? db.salesInvoices.where('branchId').equals(activeBranchId).and(i => i.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
   const allPurchaseOrders = useLiveQuery(() => activeBusinessId && activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).and(po => po.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
   const allReports = useLiveQuery(() => activeBusinessId && activeBranchId ? db.endOfDayReports.where('branchId').equals(activeBranchId).and(r => r.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
@@ -70,6 +71,7 @@ export default function DocumentsTab() {
     ...(allTransactions || []).map(t => ({ ...t, recordType: 'SALE' as const })),
     ...(allExpenses || []).map(e => ({ ...e, recordType: 'EXPENSE' as const, total: e.amount })),
     ...(allSupplierPayments || []).map(p => ({ ...p, recordType: 'SUPPLIER_PAYMENT' as const, total: p.amount })),
+    ...(allCreditNotes || []).map(cn => ({ ...cn, recordType: 'CREDIT_NOTE' as const, total: cn.amount })),
     ...(allSalesInvoices || []).map(i => ({ ...i, recordType: 'SALES_INVOICE' as const, total: i.total, timestamp: i.issueDate })),
     ...(allPurchaseOrders || []).filter(po => po.status === 'RECEIVED').map(po => ({ ...po, recordType: 'PURCHASE_ORDER' as const, total: po.totalAmount, timestamp: po.receivedDate || po.orderDate })),
     ...(allReports || []).map(r => ({ ...r, recordType: 'CLOSE_DAY_REPORT' as const, total: r.totalSales || 0, timestamp: r.timestamp || Date.now() })),
@@ -96,7 +98,7 @@ export default function DocumentsTab() {
     })
   ].sort((a, b) => ((Number(b.timestamp) || 0) - (Number(a.timestamp) || 0)));
 
-  if (!allTransactions || !allExpenses || !allSupplierPayments || !allSalesInvoices || !allPurchaseOrders || !allReports || !allDailySummaries) {
+  if (!allTransactions || !allExpenses || !allSupplierPayments || !allCreditNotes || !allSalesInvoices || !allPurchaseOrders || !allReports || !allDailySummaries) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
            <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
@@ -141,6 +143,8 @@ export default function DocumentsTab() {
       r.id,
       r.description,
       r.reference,
+      r.reason,
+      r.status,
       r.invoiceNumber,
       r.customerName,
       r.category,
@@ -160,6 +164,7 @@ export default function DocumentsTab() {
     if (filterType === 'SALES' && r.recordType === 'SALE') return true;
     if (filterType === 'EXPENSES' && r.recordType === 'EXPENSE') return true;
     if (filterType === 'SUPPLIER_PAYMENTS' && r.recordType === 'SUPPLIER_PAYMENT') return true;
+    if (filterType === 'CREDIT_NOTES' && r.recordType === 'CREDIT_NOTE') return true;
     if (filterType === 'INVOICES' && (r.recordType === 'PURCHASE_ORDER' || r.recordType === 'SALES_INVOICE')) return true;
     if (filterType === 'SHIFTS' && r.recordType === 'CLOSE_DAY_REPORT') return true;
     if (filterType === 'DAILY' && r.recordType === 'DAILY_SUMMARY') return true;
@@ -266,6 +271,7 @@ export default function DocumentsTab() {
              { id: 'MPESA', label: 'M-Pesa payments' },
              { id: 'EXPENSES', label: 'Expenses' },
              { id: 'SUPPLIER_PAYMENTS', label: 'Supplier payments' },
+             { id: 'CREDIT_NOTES', label: 'Credit notes' },
              { id: 'INVOICES', label: 'Invoices & bills' },
              { id: 'SHIFTS', label: 'Shift reports' },
              { id: 'DAILY', label: 'Daily close reports' }
@@ -464,6 +470,7 @@ export default function DocumentsTab() {
              const isSale = r.recordType === 'SALE';
              const isExp = r.recordType === 'EXPENSE';
              const isPay = r.recordType === 'SUPPLIER_PAYMENT';
+             const isCreditNote = r.recordType === 'CREDIT_NOTE';
              const isSalesInvoice = r.recordType === 'SALES_INVOICE';
              const isShift = r.recordType === 'CLOSE_DAY_REPORT';
              const isDaily = r.recordType === 'DAILY_SUMMARY';
@@ -479,6 +486,7 @@ export default function DocumentsTab() {
                   isSale ? 'bg-emerald-50 text-emerald-600' : 
                   isExp ? 'bg-orange-50 text-orange-600' : 
                   isPay ? 'bg-purple-50 text-purple-600' :
+                  isCreditNote ? 'bg-blue-50 text-blue-600' :
                   isSalesInvoice ? 'bg-blue-50 text-blue-600' :
                   isShift ? 'bg-slate-900 text-white' :
                   isDaily ? 'bg-indigo-600 text-white' :
@@ -487,6 +495,7 @@ export default function DocumentsTab() {
                    {isSale ? <Receipt size={18} /> : 
                     isExp ? <Wallet size={18} /> : 
                     isPay ? <Landmark size={18} /> :
+                    isCreditNote ? <RotateCcw size={18} /> :
                     isSalesInvoice ? <FileText size={18} /> :
                     isShift ? <CalendarCheck size={18} /> :
                     <ClipboardList size={18} />}
@@ -496,6 +505,7 @@ export default function DocumentsTab() {
                      {isSale ? `Receipt #${shortId(r.id)}` :
                       isExp ? `Expense: ${safeText(r.category || 'General')}` :
                       isPay ? 'Supplier payment' :
+                      isCreditNote ? `Credit note #${safeText(r.reference || shortId(r.id))}` :
                       isSalesInvoice ? `Customer invoice #${safeText(r.invoiceNumber || shortId(r.id))}` :
                       isShift ? `Shift report` :
                       isDaily ? `Daily close report` :
@@ -511,11 +521,13 @@ export default function DocumentsTab() {
                   isSale ? 'bg-slate-100 text-slate-600' : 
                   isExp ? 'bg-orange-50 text-orange-600' : 
                   isPay ? 'bg-purple-50 text-purple-600' :
+                  isCreditNote ? 'bg-blue-50 text-blue-600' :
                   isSalesInvoice ? 'bg-blue-50 text-blue-600' :
                   'bg-blue-50 text-blue-600'
                 }`}>
                   {isSale ? sentenceValue(r.status) : 
                    isSalesInvoice ? (r.status === 'SENT' ? 'Unpaid' : sentenceValue(r.status)) :
+                   isCreditNote ? sentenceValue(r.status, 'PENDING') :
                    r.recordType === 'PURCHASE_ORDER' ? sentenceValue(r.paymentStatus, 'UNPAID') :
                    isShift ? 'Closed' :
                    isDaily ? 'Done' :

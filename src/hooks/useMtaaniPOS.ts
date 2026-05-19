@@ -143,6 +143,22 @@ export function useMtaaniPOS() {
     }
   };
 
+  const scrollAdminPanelToTopOnDesktop = () => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (!window.matchMedia('(min-width: 768px)').matches) return;
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const appScroller = document.querySelector<HTMLElement>('.main-scroll');
+        if (appScroller) {
+          appScroller.scrollTo({ top: 0, left: 0 });
+        } else {
+          window.scrollTo({ top: 0, left: 0 });
+        }
+      });
+    });
+  };
+
   const navigateToTab = (tab: any) => {
     const nextTab = tab as typeof activeTab;
     if (!isOnline && nextTab !== 'REGISTER') {
@@ -165,6 +181,7 @@ export function useMtaaniPOS() {
     setActiveTab(nextTab);
     setSidebarOpen(false);
     setIsMoreMenuOpen(false);
+    if (nextTab === 'ADMIN_PANEL') scrollAdminPanelToTopOnDesktop();
   };
 
   useEffect(() => {

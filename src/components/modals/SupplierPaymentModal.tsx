@@ -4,11 +4,19 @@ import { useLiveQuery } from '../../clouddb';
 import { db, type Supplier } from '../../db';
 import { SearchableSelect } from '../shared/SearchableSelect';
 
+type InvoiceAllocation = { purchaseOrderId: string; amount: number };
+
+const roundMoney = (value: number) => Math.round(value * 100) / 100;
+const moneyInput = (value: number) => {
+  const rounded = roundMoney(value);
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/\.?0+$/, '');
+};
+
 interface SupplierPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   supplier: Supplier | null;
-  onSave: (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, source: 'TILL' | 'ACCOUNT', accountId?: string, transactionCode?: string, purchaseOrderIds?: string[], creditNoteIds?: string[] }) => Promise<void>;
+  onSave: (payment: { amount: number, method: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE', reference: string, source: 'TILL' | 'ACCOUNT', accountId?: string, transactionCode?: string, purchaseOrderIds?: string[], invoiceAllocations?: InvoiceAllocation[], creditNoteIds?: string[] }) => Promise<void>;
   financialAccounts: any[];
   shiftId?: string;
 }
@@ -24,6 +32,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
     accountId: ''
   });
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
+  const [invoiceAmounts, setInvoiceAmounts] = useState<Record<string, string>>({});
   const [selectedCreditNoteIds, setSelectedCreditNoteIds] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -42,28 +51,54 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
     [supplier]
   ) || [];
 
+  const invoiceDue = (inv: any) => roundMoney(Math.max(0, Number(inv.totalAmount || 0) - Number(inv.paidAmount || 0)));
+  const selectedInvoices = React.useMemo(
+    () => outstandingInvoices.filter(inv => selectedInvoiceIds.includes(inv.id)),
+    [outstandingInvoices, selectedInvoiceIds]
+  );
+  const selectedCreditNotes = React.useMemo(
+    () => pendingCreditNotes.filter(cn => selectedCreditNoteIds.includes(cn.id)),
+    [pendingCreditNotes, selectedCreditNoteIds]
+  );
+  const invoiceAllocations = React.useMemo<InvoiceAllocation[]>(
+    () => selectedInvoices
+      .map(inv => ({
+        purchaseOrderId: inv.id,
+        amount: roundMoney(Math.max(0, Number(invoiceAmounts[inv.id] || 0))),
+      }))
+      .filter(allocation => allocation.amount > 0),
+    [selectedInvoices, invoiceAmounts]
+  );
+  const invoiceAllocationTotal = roundMoney(invoiceAllocations.reduce((sum, allocation) => sum + allocation.amount, 0));
+  const creditTotal = roundMoney(selectedCreditNotes.reduce((sum, cn) => sum + Number(cn.amount || 0), 0));
+  const calculatedCashAmount = roundMoney(Math.max(0, invoiceAllocationTotal - creditTotal));
+  const hasInvoiceSelection = selectedInvoiceIds.length > 0;
+  const hasAllocationSelection = hasInvoiceSelection || selectedCreditNoteIds.length > 0;
+  const hasInvalidInvoiceAmount = selectedInvoices.some(inv => {
+    const amount = Number(invoiceAmounts[inv.id] || 0);
+    return amount < 0 || amount > invoiceDue(inv) + 0.01;
+  });
+  const creditExceedsInvoices = hasInvoiceSelection && creditTotal > invoiceAllocationTotal + 0.01;
+
   useEffect(() => {
-    const selectedInvoices = outstandingInvoices.filter(inv => selectedInvoiceIds.includes(inv.id));
-    const invTotal = selectedInvoices.reduce((acc, inv) => acc + (inv.totalAmount - (inv.paidAmount || 0)), 0);
-    
-    const selectedCNs = pendingCreditNotes.filter(cn => selectedCreditNoteIds.includes(cn.id));
-    const cnTotal = selectedCNs.reduce((acc, cn) => acc + cn.amount, 0);
-    
-    const finalAmount = Math.max(0, invTotal - cnTotal);
-    
     const invRefs = selectedInvoices.map(inv => inv.invoiceNumber || inv.id.split('-')[0].toUpperCase());
-    const cnRefs = selectedCNs.map(cn => cn.reference || 'CR');
+    const cnRefs = selectedCreditNotes.map(cn => cn.reference || 'CR');
     
     let refStr = "";
     if (invRefs.length > 0) refStr += `Payment for ${invRefs.length} bill(s)`;
     if (cnRefs.length > 0) refStr += (refStr ? ' | ' : '') + `Less Credit: ${cnRefs.join(', ')}`;
+
+    if (!hasAllocationSelection) {
+      setPaymentForm(prev => prev.reference ? { ...prev, amount: '', reference: '' } : prev);
+      return;
+    }
     
     setPaymentForm(prev => ({ 
         ...prev, 
-        amount: finalAmount.toString(), 
+        amount: moneyInput(calculatedCashAmount), 
         reference: refStr 
     }));
-  }, [selectedInvoiceIds, selectedCreditNoteIds, outstandingInvoices, pendingCreditNotes]);
+  }, [selectedInvoices, selectedCreditNotes, calculatedCashAmount, hasAllocationSelection]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -77,13 +112,31 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
       accountId: ''
     });
     setSelectedInvoiceIds([]);
+    setInvoiceAmounts({});
     setSelectedCreditNoteIds([]);
   }, [isOpen, supplier?.id]);
 
   const toggleInvoice = (id: string) => {
-    setSelectedInvoiceIds(prev => 
-        prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
+    const invoice = outstandingInvoices.find(inv => inv.id === id);
+    if (selectedInvoiceIds.includes(id)) {
+      setSelectedInvoiceIds(prev => prev.filter(i => i !== id));
+      setInvoiceAmounts(current => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+      return;
+    }
+    setSelectedInvoiceIds(prev => prev.includes(id) ? prev : [...prev, id]);
+    setInvoiceAmounts(current => ({ ...current, [id]: moneyInput(invoice ? invoiceDue(invoice) : 0) }));
+  };
+
+  const setInvoiceAmount = (id: string, value: string) => {
+    setInvoiceAmounts(prev => ({ ...prev, [id]: value }));
+  };
+
+  const setInvoiceQuickAmount = (id: string, amount: number) => {
+    setInvoiceAmounts(prev => ({ ...prev, [id]: moneyInput(amount) }));
   };
 
   const toggleCreditNote = (id: string) => {
@@ -104,9 +157,11 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const amount = Number(paymentForm.amount);
+    const amount = roundMoney(Number(paymentForm.amount || 0));
     // Allow zero amount if credit notes cover the full invoice
     if (amount < 0 || isSaving) return;
+    if (hasInvoiceSelection && invoiceAllocations.length === 0) return;
+    if (hasInvalidInvoiceAmount || creditExceedsInvoices) return;
     if (paymentForm.source === 'ACCOUNT' && amount > 0 && !paymentForm.accountId) return;
     
     setIsSaving(true);
@@ -118,12 +173,14 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
         transactionCode: paymentForm.transactionCode,
         source: paymentForm.source,
         accountId: paymentForm.source === 'ACCOUNT' ? paymentForm.accountId : undefined,
-        purchaseOrderIds: selectedInvoiceIds.length > 0 ? selectedInvoiceIds : undefined,
+        purchaseOrderIds: invoiceAllocations.length > 0 ? invoiceAllocations.map(allocation => allocation.purchaseOrderId) : undefined,
+        invoiceAllocations: invoiceAllocations.length > 0 ? invoiceAllocations : undefined,
         creditNoteIds: selectedCreditNoteIds.length > 0 ? selectedCreditNoteIds : undefined
       } as any);
       
       setPaymentForm({ amount: '', method: 'CASH', reference: '', transactionCode: '', purchaseOrderId: '', source: 'TILL', accountId: '' });
       setSelectedInvoiceIds([]);
+      setInvoiceAmounts({});
       setSelectedCreditNoteIds([]);
     } catch (err) {
       console.error(err);
@@ -131,6 +188,14 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
       setIsSaving(false);
     }
   };
+
+  const submitDisabled = isSaving
+    || paymentForm.amount === ''
+    || Number(paymentForm.amount) < 0
+    || (hasInvoiceSelection && invoiceAllocations.length === 0)
+    || hasInvalidInvoiceAmount
+    || creditExceedsInvoices
+    || (paymentForm.source === 'ACCOUNT' && Number(paymentForm.amount) > 0 && !paymentForm.accountId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4 pb-safe">
@@ -167,28 +232,71 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5 ml-1">
                     Select invoices {selectedInvoiceIds.length > 0 && `(${selectedInvoiceIds.length})`}
                 </label>
-                <div className="space-y-1 max-h-[160px] overflow-y-auto no-scrollbar pr-1">
+                <div className="space-y-1 max-h-[240px] overflow-y-auto no-scrollbar pr-1">
                     {outstandingInvoices.length === 0 ? (
                         <div className="text-[10px] text-slate-400 italic bg-slate-50 p-2.5 rounded-xl border border-dashed border-slate-200">
                             No outstanding invoices.
                         </div>
                     ) : (
-                        outstandingInvoices.map(inv => (
-                            <div 
-                                key={inv.id} 
-                                data-testid={`supplier-payment-invoice-${inv.id}`}
-                                onClick={() => toggleInvoice(inv.id)}
-                                className={`flex items-center gap-2 p-2.5 rounded-xl border-2 transition-all cursor-pointer ${selectedInvoiceIds.includes(inv.id) ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100 hover:border-slate-200'}`}
-                            >
-                                <div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center shrink-0 ${selectedInvoiceIds.includes(inv.id) ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-200'}`}>
-                                    {selectedInvoiceIds.includes(inv.id) && <Save size={10} />}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-[11px] font-bold text-slate-900 leading-none truncate">#{inv.invoiceNumber || inv.id.split('-')[0].toUpperCase()}</p>
-                                    <p className="text-[9px] text-slate-500 font-medium mt-0.5">Due: Ksh {(inv.totalAmount - (inv.paidAmount || 0)).toLocaleString()}</p>
-                                </div>
-                            </div>
-                        ))
+                        outstandingInvoices.map(inv => {
+                            const due = invoiceDue(inv);
+                            const isSelected = selectedInvoiceIds.includes(inv.id);
+                            const enteredAmount = Number(invoiceAmounts[inv.id] || 0);
+                            const isInvalid = isSelected && (enteredAmount < 0 || enteredAmount > due + 0.01);
+                            return (
+                              <div 
+                                  key={inv.id} 
+                                  data-testid={`supplier-payment-invoice-${inv.id}`}
+                                  onClick={() => toggleInvoice(inv.id)}
+                                  className={`space-y-2 p-2.5 rounded-xl border-2 transition-all cursor-pointer ${isSelected ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100 hover:border-slate-200'}`}
+                              >
+                                  <div className="flex items-center gap-2">
+                                      <div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-200'}`}>
+                                          {isSelected && <Save size={10} />}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                          <p className="text-[11px] font-bold text-slate-900 leading-none truncate">#{inv.invoiceNumber || inv.id.split('-')[0].toUpperCase()}</p>
+                                          <p className="text-[9px] text-slate-500 font-medium mt-0.5">Due: Ksh {due.toLocaleString()}</p>
+                                      </div>
+                                  </div>
+                                  {isSelected && (
+                                    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5 items-center pl-6" onClick={e => e.stopPropagation()}>
+                                      <div className="relative">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400">Ksh</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max={due}
+                                          step="0.01"
+                                          value={invoiceAmounts[inv.id] || ''}
+                                          onChange={e => setInvoiceAmount(inv.id, e.target.value)}
+                                          data-testid={`supplier-payment-invoice-amount-${inv.id}`}
+                                          className={`w-full rounded-lg border bg-white py-2 pl-9 pr-2 text-[11px] font-black tabular-nums outline-none focus:border-blue-500 ${isInvalid ? 'border-rose-300 text-rose-600' : 'border-blue-100 text-slate-900'}`}
+                                          placeholder="0"
+                                        />
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setInvoiceQuickAmount(inv.id, due / 2)}
+                                        className="h-9 px-2.5 rounded-lg bg-white border border-blue-100 text-[9px] font-black text-blue-700 hover:bg-blue-100"
+                                      >
+                                        Half
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setInvoiceQuickAmount(inv.id, due)}
+                                        className="h-9 px-2.5 rounded-lg bg-blue-600 text-[9px] font-black text-white hover:bg-blue-700"
+                                      >
+                                        Full
+                                      </button>
+                                    </div>
+                                  )}
+                                  {isInvalid && (
+                                    <p className="pl-6 text-[9px] font-bold text-rose-600">Amount cannot be above the invoice balance.</p>
+                                  )}
+                              </div>
+                            );
+                        })
                     )}
                 </div>
               </div>
@@ -224,7 +332,9 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
             {/* Amount & Method */}
             <div className="grid grid-cols-1 gap-4 pt-1">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5 ml-1">Amount to clear</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 ml-1">
+                  {hasAllocationSelection ? 'Cash to pay after credits' : 'Amount to clear'}
+                </label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-3 text-slate-400 font-black text-xs">Ksh</span>
                   <input 
@@ -232,11 +342,31 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
                     required
                     value={paymentForm.amount} 
                     onChange={e => setPaymentForm({...paymentForm, amount: e.target.value})} 
+                    readOnly={hasAllocationSelection}
                     data-testid="supplier-payment-amount"
-                    className="w-full bg-slate-100 border-2 border-transparent rounded-xl pl-10 pr-4 py-2.5 text-lg font-black text-slate-900 focus:outline-none focus:border-green-500 focus:bg-white transition-all" 
+                    className={`w-full border-2 border-transparent rounded-xl pl-10 pr-4 py-2.5 text-lg font-black text-slate-900 focus:outline-none focus:border-green-500 transition-all ${hasAllocationSelection ? 'bg-slate-100' : 'bg-white'}`}
                     placeholder="0" 
                   />
                 </div>
+                {hasAllocationSelection && (
+                  <div className="mt-2 grid grid-cols-3 gap-1.5 text-center">
+                    <div className="rounded-lg bg-blue-50 px-2 py-2">
+                      <p className="text-[8px] font-black text-blue-500">Invoices</p>
+                      <p className="text-[10px] font-black text-slate-900 tabular-nums">Ksh {invoiceAllocationTotal.toLocaleString()}</p>
+                    </div>
+                    <div className="rounded-lg bg-orange-50 px-2 py-2">
+                      <p className="text-[8px] font-black text-orange-500">Credits</p>
+                      <p className="text-[10px] font-black text-slate-900 tabular-nums">Ksh {creditTotal.toLocaleString()}</p>
+                    </div>
+                    <div className="rounded-lg bg-emerald-50 px-2 py-2">
+                      <p className="text-[8px] font-black text-emerald-600">Cash</p>
+                      <p className="text-[10px] font-black text-slate-900 tabular-nums">Ksh {calculatedCashAmount.toLocaleString()}</p>
+                    </div>
+                  </div>
+                )}
+                {creditExceedsInvoices && (
+                  <p className="mt-2 text-[10px] font-bold text-rose-600">Selected credits are more than the selected invoice amounts.</p>
+                )}
               </div>
 
               <div>
@@ -327,7 +457,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
 
             <div className="flex gap-2 pt-2 sticky bottom-0 bg-white pb-2 mt-auto">
               <button type="button" data-testid="supplier-payment-cancel" onClick={onClose} className="flex-1 px-4 py-3.5 bg-slate-100 text-slate-500 font-bold text-sm rounded-xl">Cancel</button>
-              <button type="submit" data-testid="supplier-payment-submit" disabled={!paymentForm.amount || Number(paymentForm.amount) < 0 || (paymentForm.source === 'ACCOUNT' && Number(paymentForm.amount) > 0 && !paymentForm.accountId) || isSaving} className="flex-[2] bg-green-600 text-white py-3.5 font-bold text-sm rounded-xl shadow-lg shadow-green-600/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+              <button type="submit" data-testid="supplier-payment-submit" disabled={submitDisabled} className="flex-[2] bg-green-600 text-white py-3.5 font-bold text-sm rounded-xl shadow-lg shadow-green-600/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                 {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                 {isSaving ? 'Saving...' : 'Save payment'}
               </button>
@@ -338,4 +468,3 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
     </div>
   );
 }
-

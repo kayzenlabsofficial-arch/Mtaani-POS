@@ -117,7 +117,7 @@ CREATE INDEX IF NOT EXISTS idx_hrPayrollAdjustments_staff_date ON hrPayrollAdjus
  CREATE TABLE IF NOT EXISTS serviceItems (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT, description TEXT, price REAL NOT NULL, taxCategory TEXT DEFAULT 'A', isActive INTEGER DEFAULT 1, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS salesInvoices (id TEXT PRIMARY KEY, invoiceNumber TEXT NOT NULL, customerId TEXT NOT NULL, customerName TEXT, customerPhone TEXT, customerEmail TEXT, items TEXT NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, total REAL NOT NULL, paidAmount REAL DEFAULT 0, balance REAL DEFAULT 0, status TEXT NOT NULL, issueDate INTEGER NOT NULL, dueDate INTEGER, notes TEXT, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT, phone TEXT, email TEXT, address TEXT, kraPin TEXT, balance REAL, branchId TEXT, businessId TEXT, updated_at INTEGER);
- CREATE TABLE IF NOT EXISTS supplierPayments (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, purchaseOrderId TEXT, purchaseOrderIds TEXT, creditNoteIds TEXT, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, timestamp INTEGER NOT NULL, reference TEXT, source TEXT, accountId TEXT, shiftId TEXT, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
+ CREATE TABLE IF NOT EXISTS supplierPayments (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, purchaseOrderId TEXT, purchaseOrderIds TEXT, invoiceAllocations TEXT, creditNoteIds TEXT, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, timestamp INTEGER NOT NULL, reference TEXT, source TEXT, accountId TEXT, shiftId TEXT, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS creditNotes (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, amount REAL NOT NULL, reference TEXT NOT NULL, timestamp INTEGER NOT NULL, reason TEXT, status TEXT DEFAULT 'PENDING', allocatedTo TEXT, items TEXT, productId TEXT, quantity REAL, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS dailySummaries (id TEXT PRIMARY KEY, date INTEGER NOT NULL, shiftIds TEXT NOT NULL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, totalExpenses REAL NOT NULL, totalPicks REAL NOT NULL, totalVariance REAL NOT NULL, timestamp INTEGER NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_branch_date ON dailySummaries(businessId, branchId, date);
@@ -513,6 +513,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['supplierPayments', 'source TEXT'],
           ['supplierPayments', 'accountId TEXT'],
           ['supplierPayments', 'shiftId TEXT'],
+          ['supplierPayments', 'invoiceAllocations TEXT'],
           ['supplierPayments', 'creditNoteIds TEXT'],
           ['supplierPayments', 'reference TEXT'],
           ['supplierPayments', 'preparedBy TEXT'],
@@ -682,6 +683,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashDrawerLimit REAL DEFAULT 5000').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN aiAssistantEnabled INTEGER DEFAULT 1').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN aiDailyRequestLimit INTEGER DEFAULT 20').run(); } catch (e) {}
+    }
+
+    if (table === 'supplierPayments') {
+      await env.DB.prepare('CREATE TABLE IF NOT EXISTS supplierPayments (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, purchaseOrderId TEXT, purchaseOrderIds TEXT, invoiceAllocations TEXT, creditNoteIds TEXT, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, timestamp INTEGER NOT NULL, reference TEXT, source TEXT, accountId TEXT, shiftId TEXT, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER)').run();
+      try { await env.DB.prepare('ALTER TABLE supplierPayments ADD COLUMN invoiceAllocations TEXT').run(); } catch (e) {}
     }
 
     if (table === 'creditNotes') {

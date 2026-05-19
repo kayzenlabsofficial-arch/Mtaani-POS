@@ -35,6 +35,18 @@ function asStringArray(value: unknown): string[] {
     : [];
 }
 
+function asInvoiceAllocations(value: unknown): { purchaseOrderId: string; amount: number }[] {
+  if (!Array.isArray(value)) return [];
+  const allocations = new Map<string, number>();
+  for (const item of value.slice(0, 100)) {
+    const purchaseOrderId = String(item?.purchaseOrderId || item?.id || '').trim();
+    const amount = roundMoney(asNumber(item?.amount));
+    if (!purchaseOrderId || amount <= 0) continue;
+    allocations.set(purchaseOrderId, roundMoney((allocations.get(purchaseOrderId) || 0) + amount));
+  }
+  return Array.from(allocations.entries()).map(([purchaseOrderId, amount]) => ({ purchaseOrderId, amount }));
+}
+
 function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
 }
@@ -46,6 +58,7 @@ async function ensureSchema(db: D1Database) {
       supplierId TEXT NOT NULL,
       purchaseOrderId TEXT,
       purchaseOrderIds TEXT,
+      invoiceAllocations TEXT,
       creditNoteIds TEXT,
       amount REAL NOT NULL,
       paymentMethod TEXT NOT NULL,
@@ -81,6 +94,7 @@ async function ensureSchema(db: D1Database) {
   const paymentColumns = [
     'purchaseOrderId TEXT',
     'purchaseOrderIds TEXT',
+    'invoiceAllocations TEXT',
     'creditNoteIds TEXT',
     'reference TEXT',
     'source TEXT',
@@ -131,6 +145,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const source = String(payment.source || 'TILL').toUpperCase() === 'ACCOUNT' ? 'ACCOUNT' : 'TILL';
     const method = String(payment.method || 'CASH').toUpperCase();
     const purchaseOrderIds = asStringArray(payment.purchaseOrderIds);
+    const requestedInvoiceAllocations = asInvoiceAllocations(payment.invoiceAllocations);
     const creditNoteIds = asStringArray(payment.creditNoteIds);
 
     let account: any = null;
@@ -160,26 +175,60 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const creditTotal = roundMoney(creditNotes.reduce((sum, cn) => sum + asNumber(cn.amount), 0));
-    const totalDeduction = roundMoney(cashAmount + creditTotal);
-    if (totalDeduction <= 0) throw new PolicyError('Select an invoice, credit note, or enter an amount.', 400);
-    if (totalDeduction > asNumber(supplier.balance) + 0.01) {
-      throw new PolicyError(`Payment exceeds supplier balance by Ksh ${roundMoney(totalDeduction - asNumber(supplier.balance)).toLocaleString()}.`, 409);
-    }
 
-    let invoicesToAllocate: any[] = [];
-    if (purchaseOrderIds.length) {
+    const fetchInvoice = async (poId: string) => env.DB.prepare(`
+      SELECT id, supplierId, status, paymentStatus, totalAmount, paidAmount, orderDate, receivedDate, invoiceNumber, poNumber
+      FROM purchaseOrders
+      WHERE id = ? AND businessId = ? AND branchId = ?
+      LIMIT 1
+    `).bind(poId, businessId, branchId).first<any>();
+
+    let invoicesToAllocate: Array<any & { allocationAmount?: number }> = [];
+    let storedInvoiceAllocations: { purchaseOrderId: string; amount: number; invoiceNumber?: string; poNumber?: string }[] = [];
+    let totalDeduction = roundMoney(cashAmount + creditTotal);
+
+    if (requestedInvoiceAllocations.length) {
+      let allocationTotal = 0;
+      for (const allocation of requestedInvoiceAllocations) {
+        const po = await fetchInvoice(allocation.purchaseOrderId);
+        if (!po) throw new PolicyError('One of the selected invoices was not found.', 404);
+        if (po.supplierId !== supplierId) throw new PolicyError('One selected invoice belongs to another supplier.', 403);
+        if (po.status !== 'RECEIVED' || po.paymentStatus === 'PAID') {
+          throw new PolicyError('One selected invoice is not open for payment.', 409);
+        }
+
+        const due = roundMoney(Math.max(0, asNumber(po.totalAmount) - asNumber(po.paidAmount)));
+        if (allocation.amount > due + 0.01) {
+          const ref = po.invoiceNumber || po.poNumber || po.id.split('-')[0].toUpperCase();
+          throw new PolicyError(`Payment for invoice ${ref} exceeds the remaining balance.`, 409);
+        }
+
+        allocationTotal = roundMoney(allocationTotal + allocation.amount);
+        invoicesToAllocate.push({ ...po, allocationAmount: allocation.amount });
+        storedInvoiceAllocations.push({
+          purchaseOrderId: po.id,
+          amount: allocation.amount,
+          invoiceNumber: po.invoiceNumber || undefined,
+          poNumber: po.poNumber || undefined,
+        });
+      }
+
+      if (creditTotal > allocationTotal + 0.01) {
+        throw new PolicyError('Selected credits exceed the invoice amounts. Add another invoice or reduce the credit selection.', 409);
+      }
+      const expectedCashAmount = roundMoney(Math.max(0, allocationTotal - creditTotal));
+      if (Math.abs(cashAmount - expectedCashAmount) > 0.01) {
+        throw new PolicyError(`Cash amount must be Ksh ${expectedCashAmount.toLocaleString()} for the selected invoice allocations.`, 409);
+      }
+      totalDeduction = allocationTotal;
+    } else if (purchaseOrderIds.length) {
       for (const poId of purchaseOrderIds) {
-        const po = await env.DB.prepare(`
-          SELECT id, supplierId, status, paymentStatus, totalAmount, paidAmount, orderDate, receivedDate
-          FROM purchaseOrders
-          WHERE id = ? AND businessId = ? AND branchId = ?
-          LIMIT 1
-        `).bind(poId, businessId, branchId).first<any>();
+        const po = await fetchInvoice(poId);
         if (po && po.supplierId === supplierId && po.status === 'RECEIVED' && po.paymentStatus !== 'PAID') invoicesToAllocate.push(po);
       }
     } else {
       const { results } = await env.DB.prepare(`
-        SELECT id, supplierId, status, paymentStatus, totalAmount, paidAmount, orderDate, receivedDate
+        SELECT id, supplierId, status, paymentStatus, totalAmount, paidAmount, orderDate, receivedDate, invoiceNumber, poNumber
         FROM purchaseOrders
         WHERE supplierId = ? AND businessId = ? AND branchId = ? AND status = 'RECEIVED' AND COALESCE(paymentStatus, 'UNPAID') != 'PAID'
       `).bind(supplierId, businessId, branchId).all();
@@ -187,31 +236,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         .sort((a, b) => asNumber(a.receivedDate || a.orderDate) - asNumber(b.receivedDate || b.orderDate));
     }
 
+    if (totalDeduction <= 0) throw new PolicyError('Select an invoice, credit note, or enter an amount.', 400);
+    if (totalDeduction > asNumber(supplier.balance) + 0.01) {
+      throw new PolicyError(`Payment exceeds supplier balance by Ksh ${roundMoney(totalDeduction - asNumber(supplier.balance)).toLocaleString()}.`, 409);
+    }
+
     const paymentId = crypto.randomUUID();
     const now = Date.now();
-    const statements: D1PreparedStatement[] = [
-      env.DB.prepare(`
-        INSERT INTO supplierPayments (id, supplierId, purchaseOrderIds, creditNoteIds, amount, paymentMethod, transactionCode, timestamp, reference, source, accountId, branchId, businessId, shiftId, preparedBy, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        paymentId,
-        supplierId,
-        purchaseOrderIds.length ? JSON.stringify(purchaseOrderIds) : null,
-        creditNoteIds.length ? JSON.stringify(creditNoteIds) : null,
-        cashAmount,
-        method,
-        trimText(payment.transactionCode, 80) || null,
-        now,
-        trimText(payment.reference || 'Supplier payment', 160),
-        source,
-        source === 'ACCOUNT' ? trimText(payment.accountId, 120) : null,
-        branchId,
-        businessId,
-        body?.shiftId || null,
-        trimText(body?.preparedBy || auth.principal.userName, 120),
-        now,
-      ),
-    ];
+    const statements: D1PreparedStatement[] = [];
 
     for (const cn of creditNotes) {
       statements.push(
@@ -225,9 +257,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     for (const inv of invoicesToAllocate) {
       if (remainingPool <= 0) break;
       const due = Math.max(0, asNumber(inv.totalAmount) - asNumber(inv.paidAmount));
-      const paymentForThisInv = Math.min(due, remainingPool);
+      const paymentForThisInv = roundMoney(Math.min(due, inv.allocationAmount ?? remainingPool));
       if (paymentForThisInv <= 0) continue;
       const newPaidAmount = roundMoney(asNumber(inv.paidAmount) + paymentForThisInv);
+      if (!requestedInvoiceAllocations.length) {
+        storedInvoiceAllocations.push({
+          purchaseOrderId: inv.id,
+          amount: paymentForThisInv,
+          invoiceNumber: inv.invoiceNumber || undefined,
+          poNumber: inv.poNumber || undefined,
+        });
+      }
       statements.push(
         env.DB.prepare(`UPDATE purchaseOrders SET paidAmount = ?, paymentStatus = ?, updated_at = ? WHERE id = ? AND businessId = ? AND branchId = ?`)
           .bind(
@@ -242,6 +282,33 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       remainingPool = roundMoney(remainingPool - paymentForThisInv);
       allocatedInvoiceCount += 1;
     }
+
+    const storedPurchaseOrderIds = storedInvoiceAllocations.map(allocation => allocation.purchaseOrderId);
+    statements.unshift(
+      env.DB.prepare(`
+        INSERT INTO supplierPayments (id, supplierId, purchaseOrderId, purchaseOrderIds, invoiceAllocations, creditNoteIds, amount, paymentMethod, transactionCode, timestamp, reference, source, accountId, branchId, businessId, shiftId, preparedBy, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        paymentId,
+        supplierId,
+        storedPurchaseOrderIds[0] || null,
+        storedPurchaseOrderIds.length ? JSON.stringify(storedPurchaseOrderIds) : (purchaseOrderIds.length ? JSON.stringify(purchaseOrderIds) : null),
+        storedInvoiceAllocations.length ? JSON.stringify(storedInvoiceAllocations) : null,
+        creditNoteIds.length ? JSON.stringify(creditNoteIds) : null,
+        cashAmount,
+        method,
+        trimText(payment.transactionCode, 80) || null,
+        now,
+        trimText(payment.reference || 'Supplier payment', 160),
+        source,
+        source === 'ACCOUNT' ? trimText(payment.accountId, 120) : null,
+        branchId,
+        businessId,
+        body?.shiftId || null,
+        trimText(body?.preparedBy || auth.principal.userName, 120),
+        now,
+      )
+    );
 
     statements.push(
       env.DB.prepare(`UPDATE suppliers SET balance = MAX(0, COALESCE(balance, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ?`)
@@ -284,6 +351,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       creditTotal,
       totalDeduction,
       allocatedInvoiceCount,
+      invoiceAllocations: storedInvoiceAllocations,
     });
   } catch (err: any) {
     const status = err instanceof PolicyError ? err.status : 500;

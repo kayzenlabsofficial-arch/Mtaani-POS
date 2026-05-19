@@ -9,6 +9,7 @@ export type SupplierPaymentResponse = {
   creditTotal: number;
   totalDeduction: number;
   allocatedInvoiceCount: number;
+  invoiceAllocations?: { purchaseOrderId: string; amount: number; invoiceNumber?: string; poNumber?: string }[];
 };
 
 export type SupplierCreditNoteResponse = {

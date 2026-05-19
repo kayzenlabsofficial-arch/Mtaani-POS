@@ -317,6 +317,7 @@ CREATE TABLE IF NOT EXISTS supplierPayments (
     supplierId TEXT NOT NULL,
     purchaseOrderId TEXT,
     purchaseOrderIds TEXT,
+    invoiceAllocations TEXT,
     creditNoteIds TEXT,
     amount REAL NOT NULL,
     paymentMethod TEXT NOT NULL,

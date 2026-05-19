@@ -569,6 +569,40 @@ function buildRemittance(r: any, supplierName?: string, bizName?: string): Blob 
 }
 
 // ─── Thermal Report (80mm) ───────────────────────────────────────────────────
+function buildCreditNotePDF(r: any, supplier?: any, bizName?: string, location?: string): Blob {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const ref = safeStr(r.reference || (r.id || '').split('-')[0], 'CRN').toUpperCase();
+  let y = banner(doc, 'Supplier Credit Note', ref, new Date(r.timestamp || Date.now()).toLocaleString('en-KE'), bizName, location);
+  y = hLine(doc, y);
+
+  y = kvRow(doc, 'Supplier', safeStr(supplier?.company || supplier || r.supplierName), y);
+  y = kvRow(doc, 'Contact', `${safeStr(supplier?.name, 'N/A')} | ${safeStr(supplier?.phone, 'N/A')}`, y);
+  y = kvRow(doc, 'Status', safeStr(r.status || 'PENDING'), y, r.status === 'ALLOCATED' ? green : blue);
+  y = kvRow(doc, 'Reason', safeStr(r.reason || 'Supplier return credit'), y);
+  y += 4;
+
+  const items = parseList(r.items);
+  const rows = items.length > 0
+    ? items.map((item: any) => [
+        safeStr(item.name || item.productId || 'Returned item'),
+        `${safe(item.quantity)} ${safeStr(item.unit || 'pcs', 'pcs')}`,
+        ksh(item.unitCost),
+        ksh(item.amount),
+      ])
+    : [[
+        safeStr(r.productName || r.productId || 'Returned stock'),
+        `${safe(r.quantity)} pcs`,
+        '',
+        ksh(r.amount),
+      ]];
+
+  y = table(doc, ['Returned Product', 'Qty', 'Unit Cost', 'Credit Amount'], [78, 28, 35, 41], rows, y);
+  y = bigTotal(doc, 'Credit Note Total', ksh(r.amount), y, blue);
+
+  footer(doc);
+  return doc.output('blob');
+}
+
 type CloseReportRow = {
   label: string;
   value?: number | string | null;
@@ -938,22 +972,25 @@ export function buildStatementPDF(s: any, invoices: any[], payments: any[], cred
 
   // Transaction Table
   const allTx = [
-    ...(invoices || []).map(i => ({ date: i.orderDate, type: 'INVOICE', ref: i.invoiceNumber || i.id.split('-')[0], amt: i.totalAmount, bal: 'DR' })),
-    ...(payments || []).map(p => ({ date: p.timestamp, type: 'PAYMENT', ref: p.reference || 'PAY', amt: p.amount, bal: 'CR' })),
-    ...(creditNotes || []).map(c => ({ 
-      date: c.timestamp, 
-      type: 'CREDIT', 
-      ref: c.reference || 'CRN', 
-      amt: c.amount, 
-      bal: 'CR',
-      status: c.status 
-    })).filter(c => c.status === 'ALLOCATED')
+    ...(invoices || []).map(i => ({ date: i.orderDate, type: 'INVOICE', ref: i.invoiceNumber || i.id.split('-')[0], amt: i.totalAmount, bal: 'DR', affectsBalance: true })),
+    ...(payments || []).map(p => ({ date: p.timestamp, type: 'PAYMENT', ref: p.reference || 'PAY', amt: p.amount, bal: 'CR', affectsBalance: true })),
+    ...(creditNotes || []).map(c => {
+      const isAllocated = c.status === 'ALLOCATED';
+      return {
+        date: c.timestamp,
+        type: isAllocated ? 'CREDIT NOTE' : 'PENDING CREDIT',
+        ref: c.reference || 'CRN',
+        amt: c.amount,
+        bal: 'CR',
+        affectsBalance: isAllocated,
+      };
+    })
   ].sort((a, b) => a.date - b.date);
 
   let running = 0;
   const rows = allTx.map(tx => {
     if (tx.bal === 'DR') running += tx.amt;
-    else running -= tx.amt;
+    else if (tx.affectsBalance) running -= tx.amt;
     
     return [
       new Date(tx.date).toLocaleDateString('en-KE'),
@@ -1050,6 +1087,7 @@ function buildPDF(record: any, supplier?: any, bizName?: string, location?: stri
     case 'SALES_INVOICE':    return buildSalesInvoicePDF(record, bizName, location);
     case 'PURCHASE_ORDER':   return buildPO(record, supplier, bizName);
     case 'SUPPLIER_PAYMENT': return buildRemittance(record, supplier?.company || supplier, bizName);
+    case 'CREDIT_NOTE':      return buildCreditNotePDF(record, supplier, bizName, location);
     case 'CLOSE_DAY_REPORT':
     case 'DAILY_SUMMARY':    return buildReport(record, bizName, location);
     default:                 return buildReceipt(record, bizName, location); // treat unknown as receipt

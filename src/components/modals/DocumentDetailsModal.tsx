@@ -21,6 +21,11 @@ interface DocumentDetailsModalProps {
 
 const moneyText = (value: unknown) => `Ksh ${(Number(value) || 0).toLocaleString()}`;
 
+const sentenceValue = (value: unknown, fallback = '') => {
+  const text = String(value || fallback).replace(/_/g, ' ').toLowerCase();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
+};
+
 const parseList = (value: any): any[] => {
   if (Array.isArray(value)) return value;
   if (typeof value === 'string') {
@@ -71,7 +76,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
 
   // Fetch contextual data based on record type
   const supplier = useLiveQuery(
-    () => (selectedRecord?.recordType === 'SUPPLIER_PAYMENT' || selectedRecord?.recordType === 'PURCHASE_ORDER') 
+    () => (selectedRecord?.recordType === 'SUPPLIER_PAYMENT' || selectedRecord?.recordType === 'PURCHASE_ORDER' || selectedRecord?.recordType === 'CREDIT_NOTE') 
       ? db.suppliers.get(selectedRecord.supplierId) 
       : null,
     [selectedRecord]
@@ -85,7 +90,11 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const paymentAllocations = useLiveQuery(
     async () => {
         if (selectedRecord?.recordType !== 'SUPPLIER_PAYMENT') return [];
-        const ids = selectedRecord.purchaseOrderIds || (selectedRecord.purchaseOrderId ? [selectedRecord.purchaseOrderId] : []);
+        const invoiceAllocations = parseList(selectedRecord.invoiceAllocations);
+        const allocatedIds = invoiceAllocations.map((allocation: any) => String(allocation.purchaseOrderId || '').trim()).filter(Boolean);
+        const ids = allocatedIds.length > 0
+          ? allocatedIds
+          : (parseList(selectedRecord.purchaseOrderIds).length > 0 ? parseList(selectedRecord.purchaseOrderIds) : (selectedRecord.purchaseOrderId ? [selectedRecord.purchaseOrderId] : []));
         if (ids.length === 0) return [];
         return db.purchaseOrders.bulkGet(ids);
     },
@@ -105,6 +114,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const isSale = selectedRecord.recordType === 'SALE';
   const isExpense = selectedRecord.recordType === 'EXPENSE';
   const isPayment = selectedRecord.recordType === 'SUPPLIER_PAYMENT';
+  const isCreditNote = selectedRecord.recordType === 'CREDIT_NOTE';
   const isSalesInvoice = selectedRecord.recordType === 'SALES_INVOICE';
   const isPO = selectedRecord.recordType === 'PURCHASE_ORDER';
   const isReport = selectedRecord.recordType === 'CLOSE_DAY_REPORT';
@@ -120,6 +130,13 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     { label: 'VAT', key: 'taxTotal', total: true },
   ];
   const dailyShiftReports = parseList(selectedRecord.shiftReports);
+  const supplierInvoiceAllocations = parseList(selectedRecord.invoiceAllocations);
+  const supplierInvoiceAllocationAmount = new Map(
+    supplierInvoiceAllocations
+      .map((allocation: any) => [String(allocation.purchaseOrderId || '').trim(), Number(allocation.amount || 0)] as const)
+      .filter(([id, amount]) => id && amount > 0)
+  );
+  const creditNoteItems = parseList(selectedRecord.items);
 
   const updateReturnQty = (productId: string, delta: number, max: number) => {
      const current = returnQuantities[productId] || 0;
@@ -150,17 +167,21 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     if (!selectedRecord) return;
     setIsSharing(true);
     try {
-      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
+      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isCreditNote ? 'Credit-Note' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
       
       const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
       if (isPayment) {
-        const pIds = selectedRecord.purchaseOrderIds || (selectedRecord.purchaseOrderId ? [selectedRecord.purchaseOrderId] : []);
+        const invoiceAllocations = parseList(selectedRecord.invoiceAllocations);
+        const allocationAmountById = new Map(invoiceAllocations.map((allocation: any) => [String(allocation.purchaseOrderId || '').trim(), Number(allocation.amount || 0)] as const));
+        const pIds = invoiceAllocations.length > 0
+          ? invoiceAllocations.map((allocation: any) => allocation.purchaseOrderId).filter(Boolean)
+          : (parseList(selectedRecord.purchaseOrderIds).length > 0 ? parseList(selectedRecord.purchaseOrderIds) : (selectedRecord.purchaseOrderId ? [selectedRecord.purchaseOrderId] : []));
         const pos = await db.purchaseOrders.bulkGet(pIds);
         recordWithDetails.invoiceDetails = pos.filter(Boolean).map(p => ({ 
           date: p.orderDate, 
           ref: p.invoiceNumber || String(p.id || '').split('-')[0], 
-          amount: p.totalAmount 
+          amount: allocationAmountById.get(p.id) || p.totalAmount 
         }));
         
         if (selectedRecord.creditNoteIds?.length > 0) {
@@ -188,17 +209,21 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     if (!selectedRecord) return;
     setIsSavingPDF(true);
     try {
-      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
+      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isCreditNote ? 'Credit-Note' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
 
       const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
       if (isPayment) {
-        const pIds = selectedRecord.purchaseOrderIds || (selectedRecord.purchaseOrderId ? [selectedRecord.purchaseOrderId] : []);
+        const invoiceAllocations = parseList(selectedRecord.invoiceAllocations);
+        const allocationAmountById = new Map(invoiceAllocations.map((allocation: any) => [String(allocation.purchaseOrderId || '').trim(), Number(allocation.amount || 0)] as const));
+        const pIds = invoiceAllocations.length > 0
+          ? invoiceAllocations.map((allocation: any) => allocation.purchaseOrderId).filter(Boolean)
+          : (parseList(selectedRecord.purchaseOrderIds).length > 0 ? parseList(selectedRecord.purchaseOrderIds) : (selectedRecord.purchaseOrderId ? [selectedRecord.purchaseOrderId] : []));
         const pos = await db.purchaseOrders.bulkGet(pIds);
         recordWithDetails.invoiceDetails = pos.filter(Boolean).map(p => ({ 
           date: p.orderDate, 
           ref: p.invoiceNumber || String(p.id || '').split('-')[0], 
-          amount: p.totalAmount 
+          amount: allocationAmountById.get(p.id) || p.totalAmount 
         }));
         
         if (selectedRecord.creditNoteIds?.length > 0) {
@@ -245,6 +270,11 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     }
   };
 
+  const handleBrowserPrint = () => {
+    window.print();
+    success('Choose a printer in Chrome.');
+  };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -259,23 +289,26 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                  isSale ? 'bg-green-50/50 border-green-100' : 
                  isExpense ? 'bg-orange-50/50 border-orange-100' : 
                  isPayment ? 'bg-purple-50/50 border-purple-100' :
+                 isCreditNote ? 'bg-blue-50/50 border-blue-100' :
                  'bg-blue-50/50 border-blue-100'
               } print:bg-white print:border-slate-300`}>
                   <div className={`w-14 h-14 rounded-3xl flex items-center justify-center mb-4 no-print ${
                      isSale ? 'bg-green-100 text-green-600' : 
                      isExpense ? 'bg-orange-100 text-orange-600' : 
                      isPayment ? 'bg-purple-100 text-purple-600' :
+                     isCreditNote ? 'bg-blue-100 text-blue-600' :
                      isSalesInvoice ? 'bg-blue-100 text-blue-600' :
                      isReport ? 'bg-slate-900 text-white' :
                      isDailySummary ? 'bg-blue-600 text-white' :
                      'bg-blue-100 text-blue-600'
                   }`}>
-                     {isSale ? <ReceiptText size={28} /> : isExpense ? <Wallet size={28} /> : isPayment ? <DollarSign size={28} /> : isSalesInvoice ? <FileText size={28} /> : isReport ? <CalendarCheck size={28} /> : isDailySummary ? <PackagePlus size={28} /> : <ClipboardList size={28} />}
+                     {isSale ? <ReceiptText size={28} /> : isExpense ? <Wallet size={28} /> : isPayment ? <DollarSign size={28} /> : isCreditNote ? <RotateCcw size={28} /> : isSalesInvoice ? <FileText size={28} /> : isReport ? <CalendarCheck size={28} /> : isDailySummary ? <PackagePlus size={28} /> : <ClipboardList size={28} />}
                   </div>
                   <h2 className="text-2xl font-black text-slate-900 tracking-tight ">
                      {isSale ? `Sales receipt` : 
                       isExpense ? `Expense document` : 
                       isPayment ? 'Supplier payment note' :
+                      isCreditNote ? 'Supplier credit note' :
                       isSalesInvoice ? 'Customer invoice' :
                       isReport ? 'End of shift report' :
                       isDailySummary ? 'Daily close report' :
@@ -284,7 +317,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                       `Purchase document`}
                   </h2>
                   <p className="text-xs font-bold text-slate-500  tracking-[0.2em] mt-1">
-                      Reference: {selectedRecord.invoiceNumber || (String(selectedRecord.id || '').startsWith('PO-') ? selectedRecord.id : String(selectedRecord.id || '').split('-')[0].toUpperCase())}
+                      Reference: {selectedRecord.reference || selectedRecord.invoiceNumber || (String(selectedRecord.id || '').startsWith('PO-') ? selectedRecord.id : String(selectedRecord.id || '').split('-')[0].toUpperCase())}
                   </p>
                   <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400 mt-2  ">
                      <Calendar size={12} /> {new Date(selectedRecord.issueDate || selectedRecord.orderDate || selectedRecord.timestamp || Date.now()).toLocaleString('en-KE')}
@@ -325,6 +358,13 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                          'bg-blue-100 text-blue-700'
                      }`}>
                          {selectedRecord.status === 'SENT' ? 'Unpaid' : selectedRecord.status === 'PAID' ? 'Paid' : selectedRecord.status === 'PARTIAL' ? 'Part cleared' : selectedRecord.status === 'CANCELLED' ? 'Cancelled' : selectedRecord.status}
+                     </span>
+                  )}
+                  {isCreditNote && (
+                     <span className={`mt-4 text-[10px] font-black px-3 py-1 rounded-full no-print ${
+                         selectedRecord.status === 'ALLOCATED' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                     }`}>
+                         {sentenceValue(selectedRecord.status, 'PENDING')}
                      </span>
                   )}
               </div>
@@ -514,7 +554,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                                                  <div className="w-2 h-2 rounded-full bg-blue-500" />
                                                  <span className="font-bold text-slate-700">Inv #{po.invoiceNumber || String(po.id || '').split('-')[0].toUpperCase()}</span>
                                              </div>
-                                             <span className="font-black text-slate-900 tabular-nums">Ksh {po.totalAmount.toLocaleString()}</span>
+                                             <span className="font-black text-slate-900 tabular-nums">Ksh {(supplierInvoiceAllocationAmount.get(po.id) || po.totalAmount).toLocaleString()}</span>
                                          </div>
                                      ))}
                                  </div>
@@ -544,6 +584,63 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                          <div className="flex items-center justify-between px-4 pt-4">
                              <span className="text-sm font-black text-slate-400  ">Total remitted</span>
                              <span className="text-2xl font-black text-purple-600 tabular-nums">Ksh {(selectedRecord.amount || 0).toLocaleString()}</span>
+                         </div>
+                     </div>
+                 )}
+
+                 {/* Supplier Credit Note Details */}
+                 {isCreditNote && (
+                     <div className="space-y-4">
+                         <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
+                              <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500"><User size={16} /></div>
+                                  <div>
+                                      <p className="text-[9px] font-black text-slate-400 tracking-tight">Supplier</p>
+                                      <p className="text-sm font-bold text-slate-900">{supplier?.company || 'Loading...'}</p>
+                                  </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500"><Hash size={16} /></div>
+                                  <div>
+                                      <p className="text-[9px] font-black text-slate-400 tracking-tight">Status</p>
+                                      <p className="text-sm font-bold text-slate-900">{sentenceValue(selectedRecord.status, 'PENDING')}</p>
+                                  </div>
+                              </div>
+                              <div className="flex items-start gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500 shrink-0"><FileText size={16} /></div>
+                                  <div>
+                                      <p className="text-[9px] font-black text-slate-400 tracking-tight">Reason</p>
+                                      <p className="text-sm font-bold text-slate-900">{selectedRecord.reason || 'Supplier return credit'}</p>
+                                  </div>
+                              </div>
+                         </div>
+
+                         <div className="space-y-3">
+                             <p className="text-[10px] font-black text-slate-400 ml-1">Returned products</p>
+                             {creditNoteItems.length > 0 ? creditNoteItems.map((item: any, idx: number) => (
+                                 <div key={`${item.productId || idx}`} className="flex justify-between items-center text-sm bg-white p-3 rounded-xl border border-slate-100">
+                                     <div className="flex-1 min-w-0">
+                                         <p className="font-bold text-slate-900 truncate">{item.name || 'Returned item'}</p>
+                                         <p className="text-[11px] text-slate-500 font-medium">
+                                             {Number(item.quantity || 0).toLocaleString()} {item.unit || 'pcs'} @ Ksh {(Number(item.unitCost || 0)).toLocaleString()}
+                                         </p>
+                                     </div>
+                                     <span className="font-black text-blue-600">Ksh {(Number(item.amount || 0)).toLocaleString()}</span>
+                                 </div>
+                             )) : (
+                                 <div className="flex justify-between items-center text-sm bg-white p-3 rounded-xl border border-slate-100">
+                                     <div className="flex-1 min-w-0">
+                                         <p className="font-bold text-slate-900 truncate">Returned stock</p>
+                                         <p className="text-[11px] text-slate-500 font-medium">{Number(selectedRecord.quantity || 0).toLocaleString()} pcs</p>
+                                     </div>
+                                     <span className="font-black text-blue-600">Ksh {(Number(selectedRecord.amount || 0)).toLocaleString()}</span>
+                                 </div>
+                             )}
+                         </div>
+
+                         <div className="pt-4 border-t border-dashed border-slate-200 flex items-end justify-between px-1">
+                             <span className="text-sm font-black text-slate-400">Credit note total</span>
+                             <span className="text-2xl font-black text-blue-600">Ksh {(Number(selectedRecord.amount || 0)).toLocaleString()}</span>
                          </div>
                      </div>
                  )}
@@ -791,14 +888,14 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
             </button>
 
             <div className="flex gap-2">
-              {isSale && (
+              {(isSale || isCreditNote) && (
                 <button
-                  onClick={handleHardwarePrint}
-                  disabled={isSharing || isSavingPDF || isHardwarePrinting}
+                  onClick={isSale ? handleHardwarePrint : handleBrowserPrint}
+                  disabled={isSharing || isSavingPDF || (isSale && isHardwarePrinting)}
                   className="flex-1 py-3 bg-indigo-600 text-white font-bold text-[10px]   rounded-xl flex items-center justify-center gap-2 transition-colors active:bg-indigo-700 disabled:opacity-50"
                 >
                   {isHardwarePrinting ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
-                  {isHardwarePrinting ? 'Printing...' : 'Print receipt'}
+                  {isHardwarePrinting ? 'Printing...' : isCreditNote ? 'Print credit note' : 'Print receipt'}
                 </button>
               )}
               {/* Save PDF — direct download */}

@@ -333,6 +333,12 @@ export interface SupplierPayment {
   supplierId: string;
   purchaseOrderId?: string;
   purchaseOrderIds?: string[];
+  invoiceAllocations?: {
+    purchaseOrderId: string;
+    amount: number;
+    invoiceNumber?: string;
+    poNumber?: string;
+  }[];
   creditNoteIds?: string[];
   amount: number;
   paymentMethod: 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE';

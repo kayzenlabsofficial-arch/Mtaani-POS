@@ -10,6 +10,7 @@ export type SupplierPaymentInput = {
   accountId?: string;
   transactionCode?: string;
   purchaseOrderIds?: string[];
+  invoiceAllocations?: { purchaseOrderId: string; amount: number }[];
   creditNoteIds?: string[];
 };
 
@@ -74,7 +75,17 @@ export async function settleSupplierPayment({
   }
 
   const creditTotal = creditNotes.reduce((sum, cn) => sum + Number(cn.amount || 0), 0);
-  const totalDeduction = cashAmount + creditTotal;
+  const invoiceAllocationTotal = (payment.invoiceAllocations || []).reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0);
+  if (invoiceAllocationTotal > 0) {
+    if (creditTotal > invoiceAllocationTotal + 0.01) {
+      throw new Error('Selected credits exceed the invoice amounts.');
+    }
+    const expectedCashAmount = Math.round(Math.max(0, invoiceAllocationTotal - creditTotal) * 100) / 100;
+    if (Math.abs(cashAmount - expectedCashAmount) > 0.01) {
+      throw new Error(`Cash amount must be Ksh ${expectedCashAmount.toLocaleString()} for the selected invoices.`);
+    }
+  }
+  const totalDeduction = invoiceAllocationTotal > 0 ? invoiceAllocationTotal : cashAmount + creditTotal;
   if (totalDeduction <= 0) throw new Error('Select an invoice, credit note, or enter an amount.');
   if (totalDeduction > (freshSupplier.balance || 0) + 0.01) {
     throw new Error(`Payment exceeds supplier balance by Ksh ${(totalDeduction - (freshSupplier.balance || 0)).toLocaleString()}.`);
