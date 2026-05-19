@@ -580,7 +580,7 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 text-white animate-in fade-in font-hanken sm:p-8">
+    <div className="h-[100dvh] overflow-y-auto bg-slate-950 p-4 text-white animate-in fade-in font-hanken sm:p-8">
       <div className="mx-auto max-w-7xl">
         <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
@@ -663,7 +663,7 @@ export default function SystemManagerDashboard({ onLogout }: { onLogout: () => v
                 </div>
               </div>
 
-              <div className="min-h-[420px] flex-1 space-y-4 overflow-y-auto pr-1">
+              <div className="min-h-[420px] space-y-4 pr-1">
                 {businesses?.map(b => {
                   const billing = billingByBusiness.get(b.id);
                   const rowBalance = billing?.invoice?.balance || 0;
