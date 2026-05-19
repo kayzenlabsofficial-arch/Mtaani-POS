@@ -3,7 +3,6 @@ import { ArrowLeft, ArrowRight, Ban, Banknote, Calculator, CheckCircle2, CircleD
 import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction } from '../../db';
 import { useStore, type CartItem } from '../../store';
-import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import { useToast } from '../../context/ToastContext';
 import BarcodeScanner from '../shared/BarcodeScanner';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
@@ -86,7 +85,6 @@ function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
               )}
             </div>
             <div className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden text-[9px] sm:text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              <span className="stable-meta max-w-[7rem] sm:max-w-none">{product.category || 'General'}</span>
               {isBundleProduct(product) && <span className="text-emerald-600 flex-shrink-0">bulk</span>}
               {product.barcode && <span className="hidden sm:inline font-mono normal-case tracking-normal text-slate-500 stable-meta">#{product.barcode}</span>}
               <span className="flex-shrink-0">{product.unit || 'pcs'}</span>
@@ -154,7 +152,6 @@ function CartLineItem({ item, onRemove, onDecrease, onIncrease, onQuantityChange
           <div className="stable-row-copy">
             <p className={`${compact ? 'text-[13px]' : 'text-sm sm:text-base'} stable-title-2 font-black leading-tight text-slate-900`}>{item.name}</p>
             <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              <span className="stable-meta">{item.category || 'General'}</span>
               <span className="flex-shrink-0">Ksh {unitPrice.toLocaleString()} each</span>
               {item.unit && <span className="flex-shrink-0">{item.unit}</span>}
             </div>
@@ -588,7 +585,7 @@ function SalePanel({
           : 'Save credit sale';
 
   return (
-    <aside className={`flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm ${className}`}>
+    <aside className={`flex h-full min-h-0 flex-col rounded-2xl border border-slate-100 bg-white shadow-sm ${showCartItems ? 'overflow-hidden' : 'overflow-y-auto no-scrollbar'} ${className}`}>
       <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
         <div>
           <h3 className="text-sm font-black text-slate-900">Current sale</h3>
@@ -1397,13 +1394,11 @@ function SalePanel({
 
 export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart?: (val: boolean) => void; handleCheckout?: (status: 'PAID' | 'UNPAID', method: string, mpesaRef?: string, customerName?: string, splitData?: any) => Promise<any> }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isMobileCheckoutOpen, setIsMobileCheckoutOpen] = useState(false);
   const [lastReceipt, setLastReceipt] = useState<(Transaction & { recordType: 'SALE' }) | null>(null);
-  const scrollRef = useHorizontalScroll();
   const { warning, error } = useToast();
 
   // ✅ Only require activeBusinessId — branch does not filter products
@@ -1411,28 +1406,18 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
 
   const products = useLiveQuery(
     () => {
-      if (!activeBusinessId) return Promise.resolve([]);
+      const term = searchQuery.trim().toLowerCase();
+      if (!activeBusinessId || !term) return Promise.resolve([]);
       const query = db.products.where('businessId').equals(activeBusinessId);
-      if (selectedCategory !== 'All') {
-        return query.filter(p =>
-          belongsToActiveBranch(p, activeBranchId) &&
-          p.category === selectedCategory &&
-          (!searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.barcode && p.barcode.includes(searchQuery)))
-        ).toArray();
-      }
       return query.filter(p =>
         belongsToActiveBranch(p, activeBranchId) &&
-        (!searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.barcode && p.barcode.includes(searchQuery)))
+        (String(p.name || '').toLowerCase().includes(term) || String(p.barcode || '').toLowerCase().includes(term))
       ).toArray();
     },
-    [searchQuery, selectedCategory, activeBusinessId, activeBranchId],
+    [searchQuery, activeBusinessId, activeBranchId],
     []
   );
 
-  const dbCategories = useLiveQuery(
-    () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveBranch(c, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId], []
-  );
   const productIngredients = useLiveQuery(
     () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId], []
@@ -1447,7 +1432,6 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
     null
   );
 
-  const categories = ['All', ...(dbCategories?.map(c => c.name) || [])];
   const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
   const scannerProducts = enrichProductsWithBundleStock(scannerProductsRaw || [], productIngredients || []);
 
@@ -1485,7 +1469,6 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
     }
     handleAddToCart(product);
     setSearchQuery('');
-    setSelectedCategory('All');
     setIsScannerOpen(false);
   }, [scannerProducts, warning]);
 
@@ -1537,7 +1520,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
   const saleItemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
   const selectedProductCount = cart.length;
   const selectedProductLabel = selectedProductCount === 1 ? 'product selected for sale' : 'products selected for sale';
-  const isAddingProducts = searchQuery.trim().length > 0 || selectedCategory !== 'All';
+  const isAddingProducts = searchQuery.trim().length > 0;
   React.useEffect(() => {
     if (cart.length === 0) setIsMobileCheckoutOpen(false);
   }, [cart.length]);
@@ -1620,20 +1603,6 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
         </div>
       </div>
 
-      {/* Category pills */}
-      <div ref={scrollRef} className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-        {categories.map(cat => (
-          <button
-            key={cat}
-            onClick={() => setSelectedCategory(cat)}
-            className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all flex-shrink-0 border ${
-              selectedCategory === cat ? 'bg-primary text-white border-primary shadow-md' : 'bg-white border-slate-200 text-slate-600 hover:border-primary/40 hover:text-primary'
-            }`}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
       </div>
       </div>
 
@@ -1686,7 +1655,6 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
                     type="button"
                     onClick={() => {
                       setSearchQuery('');
-                      setSelectedCategory('All');
                     }}
                     className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-[10px] font-black uppercase tracking-widest text-slate-600 transition-colors hover:border-primary/30 hover:text-primary"
                   >
@@ -1701,13 +1669,12 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
                     </div>
                     <p className="text-sm font-bold text-slate-400">No products found</p>
                     <p className="text-xs text-slate-400 mt-1 font-medium">
-                      {searchQuery ? `No results for "${searchQuery}"` : 'No products in this category'}
+                      {`No results for "${searchQuery}"`}
                     </p>
                     <button
                       type="button"
                       onClick={() => {
                         setSearchQuery('');
-                        setSelectedCategory('All');
                       }}
                       className="mt-4 px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl"
                     >
@@ -1729,7 +1696,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
                 </div>
                 <p className="text-sm font-bold text-slate-400">No items selected</p>
                 <p className="text-xs text-slate-400 mt-1 font-medium">
-                  Search, scan, or choose a category to add products.
+                  Search or scan to add products. Selected items will appear here.
                 </p>
               </div>
             ) : (

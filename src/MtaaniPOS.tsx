@@ -201,7 +201,7 @@ export default function MtaaniPOS() {
 
         <BillingBanner activeBusinessId={activeBusinessId} currentUser={currentUser} />
 
-        <main className={`flex-1 main-scroll app-safe-scroll relative bg-slate-100 md:bg-transparent ${isRegisterTab ? 'overflow-hidden p-0' : 'overflow-y-auto p-3 pb-28 sm:p-4 sm:pb-28 md:p-6 md:pb-6 lg:p-8'}`}>
+        <main className={`flex-1 main-scroll app-safe-scroll relative bg-slate-100 md:bg-transparent ${isRegisterTab ? 'overflow-y-auto p-0' : 'overflow-y-auto p-3 pb-28 sm:p-4 sm:pb-28 md:p-6 md:pb-6 lg:p-8'}`}>
           <div className={isRegisterTab ? 'h-full min-h-0' : 'max-w-[1440px] mx-auto min-h-full'}>
             {activeTab === 'REGISTER' && <RegisterTab toggleCart={toggleCart} handleCheckout={handleCheckout} />}
             {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={navigateToTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}
