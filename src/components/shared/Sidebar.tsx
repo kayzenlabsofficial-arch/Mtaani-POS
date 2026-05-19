@@ -56,7 +56,7 @@ const navGroups: Array<{
     items: [
       { id: 'INVENTORY', label: 'Inventory', icon: Package, desc: 'Products and stock', accent: 'text-slate-700 bg-slate-100 border-slate-200' },
       { id: 'SUPPLIERS', label: 'Suppliers', icon: Truck, desc: 'Supplier list', accent: 'text-cyan-700 bg-cyan-50 border-cyan-100', adminOnly: true },
-      { id: 'PURCHASES', label: 'Purchases', icon: ShoppingBag, desc: 'Orders and goods', accent: 'text-amber-700 bg-amber-50 border-amber-100' },
+      { id: 'PURCHASES', label: 'LPOs', icon: ShoppingBag, desc: 'Purchase orders', accent: 'text-amber-700 bg-amber-50 border-amber-100' },
     ],
   },
   {

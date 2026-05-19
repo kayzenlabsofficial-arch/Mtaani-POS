@@ -150,7 +150,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     if (!selectedRecord) return;
     setIsSharing(true);
     try {
-      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isSalesInvoice ? 'Invoice' : isPO ? 'Purchase-Order' : isReport ? 'Shift-Report' : 'Summary';
+      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
       
       const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
@@ -188,7 +188,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     if (!selectedRecord) return;
     setIsSavingPDF(true);
     try {
-      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isSalesInvoice ? 'Invoice' : isPO ? 'Purchase-Order' : isReport ? 'Shift-Report' : 'Summary';
+      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
 
       const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
@@ -279,8 +279,8 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                       isSalesInvoice ? 'Customer invoice' :
                       isReport ? 'End of shift report' :
                       isDailySummary ? 'Daily close report' :
-                      (isPO && selectedRecord.approvalStatus === 'PENDING') ? 'Purchase order waiting approval' :
-                      isPO ? 'Purchase order' :
+                      (isPO && selectedRecord.approvalStatus === 'PENDING') ? 'LPO waiting approval' :
+                      isPO ? 'Local purchase order' :
                       `Purchase document`}
                   </h2>
                   <p className="text-xs font-bold text-slate-500  tracking-[0.2em] mt-1">
@@ -787,7 +787,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
               className="w-full py-3.5 bg-slate-900 text-white font-bold text-[10px]   rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all disabled:opacity-50"
             >
               {isSharing ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
-              {isSharing ? 'Generating PDF...' : 'Share PDF  (WhatsApp / Gmail)'}
+              {isSharing ? 'Generating PDF...' : isPO ? 'Share LPO PDF' : 'Share PDF  (WhatsApp / Gmail)'}
             </button>
 
             <div className="flex gap-2">
@@ -808,7 +808,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                 className="flex-1 py-3 bg-white border border-slate-200 text-slate-700 font-bold text-[10px]   rounded-xl flex items-center justify-center gap-2 transition-colors active:bg-slate-100 disabled:opacity-50"
               >
                 {isSavingPDF ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
-                {isSavingPDF ? 'Saving...' : 'Save PDF'}
+                {isSavingPDF ? 'Saving...' : isPO ? 'Save LPO' : 'Save PDF'}
               </button>
 
               <button

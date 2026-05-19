@@ -201,7 +201,7 @@ export default function PurchasesTab() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
-          <h2 className="text-xl font-black text-slate-900">Purchases</h2>
+          <h2 className="text-xl font-black text-slate-900">LPOs</h2>
           <div className="flex items-center gap-3 mt-1">
             <span className="text-[10px] font-bold text-amber-600">{pendingApproval} pending</span>
             <span className="text-slate-300">·</span>
@@ -213,9 +213,9 @@ export default function PurchasesTab() {
         <button
           data-testid="purchase-new-order"
           onClick={() => { setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); setIsPOModalOpen(true); }}
-          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
+          className="flex w-full md:w-auto shrink-0 items-center justify-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start md:self-auto"
         >
-          <Plus size={18} /> New order
+          <Plus size={18} /> New LPO
         </button>
       </div>
 
@@ -294,6 +294,13 @@ export default function PurchasesTab() {
              </div>
              <p className="text-slate-500 font-black text-base">No purchase orders found</p>
              <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Orders and stock arrivals will appear here</p>
+             <button
+               data-testid="purchase-empty-new-order"
+               onClick={() => { setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); setIsPOModalOpen(true); }}
+               className="mt-5 flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-primary/20 transition-all active:scale-[0.98]"
+             >
+               <Plus size={16} /> Create LPO
+             </button>
            </div>
          )}
       </div>
@@ -310,8 +317,8 @@ export default function PurchasesTab() {
                    <ClipboardList size={24} />
                  </div>
                  <div>
-                   <h2 className="text-xl font-black text-slate-900 tracking-tight">{selectedPOToEdit ? 'Edit purchase order' : 'New purchase order'}</h2>
-                   <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Order stock from a supplier</p>
+                   <h2 className="text-xl font-black text-slate-900 tracking-tight">{selectedPOToEdit ? 'Edit LPO' : 'New LPO'}</h2>
+                   <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Local purchase order for supplier stock</p>
                  </div>
               </div>
 
@@ -408,7 +415,7 @@ export default function PurchasesTab() {
                  </button>
                  <button data-testid="purchase-save-order" onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0 || isSaving} className="flex-[2] grad-indigo text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-indigo press flex items-center justify-center gap-3">
                    {selectedPOToEdit ? <Save size={18}/> : <PackagePlus size={18}/>}
-                   {isSaving ? 'Saving...' : selectedPOToEdit ? 'Save changes' : 'Create order'}
+                   {isSaving ? 'Saving...' : selectedPOToEdit ? 'Save LPO' : 'Create LPO'}
                  </button>
               </div>
            </div>
