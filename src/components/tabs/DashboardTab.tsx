@@ -168,7 +168,11 @@ type ShiftClosePreview = {
   until: number;
   shiftId: string;
   stats: ClosureStats;
+  recoveredAfterClosedShift?: boolean;
 };
+
+const createShiftSessionId = (branchId: string, userId: string, timestamp = Date.now()) =>
+  `shift_${branchId}_${new Date(timestamp).toISOString().slice(0, 10)}_${userId}_${timestamp}`;
 
 export default function DashboardTab({ setActiveTab, openExpenseModal }: DashboardTabProps) {
   const [trendView, setTrendView] = useState<'DAY' | 'WEEK'>('DAY');
@@ -434,7 +438,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   };
 
   const getClosureStats = (since: number, until = Date.now(), shiftId?: string) => {
-    const txs = (branchTransactions || []).filter(t => recordInShift(t, since, until, shiftId) && t.status !== 'VOIDED');
+    const txs = (branchTransactions || []).filter(t => recordInShift(t, since, until, shiftId) && t.status !== 'VOIDED' && t.status !== 'QUOTE');
     const invoices = (branchSalesInvoices || []).filter(invoice => recordInShift(invoice, since, until, shiftId) && invoice.status !== 'CANCELLED');
     const expenses = (branchExpenses || []).filter(e => recordInShift(e, since, until, shiftId) && e.status !== 'REJECTED');
     const picks = (branchCashPicks || []).filter(p => recordInShift(p, since, until, shiftId) && p.status !== 'REJECTED');
@@ -478,14 +482,23 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
   const handleCloseShift = () => {
     if (!activeBranchId || !activeBusinessId || !currentUser || isClosingShift) return;
-    const since = Number(activeShift?.startTime || getTodayStartMs());
-    const shiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser.id) || `shift_${activeBranchId}_${new Date().toISOString().slice(0, 10)}_${currentUser.id}`;
     const until = Date.now();
+    const baseSince = Number(activeShift?.startTime || getTodayStartMs());
+    const fallbackShiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser.id) || `shift_${activeBranchId}_${new Date().toISOString().slice(0, 10)}_${currentUser.id}`;
+    const latestClosedShift = !activeShift
+      ? [...(branchReports || [])]
+        .filter(report => Number(report.timestamp || 0) >= getTodayStartMs() && String(report.cashierName || '') === String(currentUser.name || ''))
+        .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))[0]
+      : null;
+    const recoveredAfterClosedShift = !!latestClosedShift && Number(latestClosedShift.timestamp || 0) >= baseSince;
+    const since = recoveredAfterClosedShift ? Number(latestClosedShift?.timestamp || baseSince) : baseSince;
+    const shiftId = recoveredAfterClosedShift ? createShiftSessionId(activeBranchId, currentUser.id, until) : fallbackShiftId;
     setShiftClosePreview({
       since,
       until,
       shiftId,
-      stats: getClosureStats(since, until, shiftId),
+      stats: getClosureStats(since, until, recoveredAfterClosedShift ? undefined : shiftId),
+      recoveredAfterClosedShift,
     });
   };
 
@@ -519,6 +532,17 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         branchId: activeBranchId,
         businessId: activeBusinessId,
       });
+      const nextShiftStart = Date.now();
+      const nextShift = {
+        id: createShiftSessionId(activeBranchId, currentUser.id, nextShiftStart),
+        startTime: nextShiftStart,
+        cashierId: currentUser.id,
+        cashierName: currentUser.name,
+        status: 'OPEN',
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+        updated_at: nextShiftStart,
+      };
       await Promise.allSettled([
         db.endOfDayReports.reload(),
         db.shifts.reload(),
@@ -529,12 +553,13 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         db.supplierPayments.reload(),
         db.dailySummaries.reload(),
       ]);
-      setActiveShift(null);
+      setActiveShift(nextShift);
+      void db.shifts.add(nextShift as any).catch(() => {});
       setShiftClosePreview(null);
       if (result.idempotent) {
-        warning('This shift was already closed. Reports and shift status have been refreshed.');
+        warning('That shift was already closed. A fresh shift is ready for the next sales.');
       } else {
-        success('Shift closed and shift report saved.');
+        success('Shift closed, report saved, and a fresh shift is ready.');
       }
     } catch (err: any) {
       error(err.message || 'Failed to close shift.');
@@ -814,6 +839,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
               {shiftPreviewSaleCount === 0 && (
                 <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 mb-4">
                   <p className="text-[11px] font-bold text-amber-800">No receipts or invoices were found for this shift. You can still close it after reviewing the breakdown.</p>
+                </div>
+              )}
+
+              {shiftClosePreview.recoveredAfterClosedShift && (
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 mb-4">
+                  <p className="text-[11px] font-bold text-blue-800">A previous shift was already closed today, so this preview only includes activity after that close.</p>
                 </div>
               )}
 

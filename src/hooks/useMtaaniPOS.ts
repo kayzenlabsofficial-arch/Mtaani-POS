@@ -115,9 +115,19 @@ export function useMtaaniPOS() {
         db.resetTenantCaches();
         clearCart();
         setActiveBranchId(null);
+        setActiveShift(null);
       }
       setActiveBusinessId(authData.businessId || null);
       setActiveBranchId(authData.branchId || null);
+      if (activeShift) {
+        const shiftBusinessMatches = activeShift.businessId === authData.businessId;
+        const shiftBranchMatches = activeShift.branchId === authData.branchId;
+        const shiftUserMatches = !activeShift.cashierId || activeShift.cashierId === authData.user?.id;
+        const shiftNameMatches = !activeShift.cashierName || activeShift.cashierName === authData.user?.name;
+        if (activeShift.status !== 'OPEN' || !shiftBusinessMatches || !shiftBranchMatches || !shiftUserMatches || !shiftNameMatches) {
+          setActiveShift(null);
+        }
+      }
       await new Promise(r => setTimeout(r, 0));
       login(authData.user, authData.token || null);
       setPassword('');
@@ -126,6 +136,7 @@ export function useMtaaniPOS() {
       db.resetTenantCaches();
       setActiveBusinessId(null);
       setActiveBranchId(null);
+      setActiveShift(null);
       setLoginError(err?.message || "Connection failed. Please try again.");
     } finally {
       setIsLoggingIn(false);

@@ -152,6 +152,7 @@ export const useStore = create<POSState>()(
         isAdmin: state.isAdmin,
         isManager: state.isManager,
         isSystemAdmin: state.isSystemAdmin,
+        activeShift: state.activeShift,
         activeBusinessId: state.activeBusinessId,
         activeBranchId: state.activeBranchId,
         authToken: state.authToken,
