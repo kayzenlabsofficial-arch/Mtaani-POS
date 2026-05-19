@@ -76,6 +76,9 @@ function mpesaReferenceFor(tx: any) {
   return normaliseCode(tx.mpesaCode || tx.mpesaReference || tx.mpesaCheckoutRequestId);
 }
 
+let checkoutSchemaReady: Promise<void> | null = null;
+let transactionColumnCache: Promise<Set<string>> | null = null;
+
 async function ensureCheckoutSchema(db: D1Database) {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS idempotencyKeys (
@@ -141,6 +144,28 @@ async function ensureCheckoutSchema(db: D1Database) {
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
+}
+
+async function ensureCheckoutSchemaCached(db: D1Database) {
+  if (!checkoutSchemaReady) {
+    checkoutSchemaReady = ensureCheckoutSchema(db).catch((err) => {
+      checkoutSchemaReady = null;
+      throw err;
+    });
+  }
+  return checkoutSchemaReady;
+}
+
+async function getTransactionColumns(db: D1Database) {
+  if (!transactionColumnCache) {
+    transactionColumnCache = db.prepare(`PRAGMA table_info('transactions')`).all()
+      .then(({ results }) => new Set((results as any[]).map((row: any) => row.name)))
+      .catch((err) => {
+        transactionColumnCache = null;
+        throw err;
+      });
+  }
+  return transactionColumnCache;
 }
 
 async function getIdempotentTransaction(
@@ -231,8 +256,7 @@ async function verifyMpesaPayment(db: D1Database, businessId: string, branchId: 
 }
 
 async function transactionInsert(db: D1Database, tx: any) {
-  const { results: pragma } = await db.prepare(`PRAGMA table_info('transactions')`).all();
-  const validCols = new Set((pragma as any[]).map((r: any) => r.name));
+  const validCols = await getTransactionColumns(db);
   const cols = Object.keys(tx).filter((k) => validCols.has(k));
   if (cols.length === 0) throw new PolicyError('No valid transaction columns to insert.', 400);
   const sql = `INSERT OR REPLACE INTO transactions (${cols.map((c) => '"' + c + '"').join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
@@ -285,7 +309,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return json({ error: 'Access denied.' }, 403);
     }
 
-    await ensureCheckoutSchema(env.DB);
+    await ensureCheckoutSchemaCached(env.DB);
 
     const transactionId = String(tx.id || crypto.randomUUID()).trim();
     tx.id = transactionId;
