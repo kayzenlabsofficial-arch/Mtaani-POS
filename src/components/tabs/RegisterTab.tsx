@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Ban, Banknote, Calculator, CheckCircle2, CircleDollarSign, CreditCard, Loader2, Minus, Package, Percent, Plus, ScanBarcode, Search, ShieldCheck, ShoppingCart, Smartphone, Split, Store, UserRound, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction } from '../../db';
-import { useStore } from '../../store';
+import { useStore, type CartItem } from '../../store';
 import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import { useToast } from '../../context/ToastContext';
 import BarcodeScanner from '../shared/BarcodeScanner';
@@ -128,6 +128,87 @@ function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
   );
 }
 
+interface CartLineItemProps {
+  key?: React.Key;
+  item: CartItem;
+  onRemove: (id: string) => void;
+  onDecrease: (id: string) => void;
+  onIncrease: (id: string) => void;
+  onQuantityChange: (id: string, quantity: number) => void;
+  compact?: boolean;
+}
+
+function CartLineItem({ item, onRemove, onDecrease, onIncrease, onQuantityChange, compact = false }: CartLineItemProps) {
+  const quantity = Number(item.cartQuantity) || 0;
+  const unitPrice = Number(item.sellingPrice) || 0;
+  const lineTotal = unitPrice * quantity;
+  const initials = item.name.split(' ').map((word: string) => word[0]).join('').slice(0, 2).toUpperCase();
+
+  return (
+    <div className={`border border-slate-100 bg-white shadow-sm ${compact ? 'rounded-2xl p-3' : 'rounded-[1.15rem] p-4 sm:p-5'}`}>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+        <div className={`grid min-w-0 items-center gap-3 ${compact ? 'grid-cols-[2.25rem_minmax(0,1fr)]' : 'grid-cols-[2.75rem_minmax(0,1fr)]'}`}>
+          <div className={`${compact ? 'h-9 w-9 rounded-xl text-[11px]' : 'h-11 w-11 rounded-2xl text-xs'} ${colorFor(item.name)} flex flex-shrink-0 items-center justify-center font-black text-white shadow-sm`}>
+            {initials}
+          </div>
+          <div className="stable-row-copy">
+            <p className={`${compact ? 'text-[13px]' : 'text-sm sm:text-base'} stable-title-2 font-black leading-tight text-slate-900`}>{item.name}</p>
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              <span className="stable-meta">{item.category || 'General'}</span>
+              <span className="flex-shrink-0">Ksh {unitPrice.toLocaleString()} each</span>
+              {item.unit && <span className="flex-shrink-0">{item.unit}</span>}
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onRemove(item.id)}
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-500 transition-colors hover:bg-rose-500 hover:text-white"
+          aria-label={`Remove ${item.name}`}
+        >
+          <MaterialIcon name="close" style={{ fontSize: '16px' }} />
+        </button>
+      </div>
+
+      <div className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
+        <div className="stable-actions flex items-center gap-1 rounded-xl bg-slate-50 p-1">
+          <button
+            type="button"
+            onClick={() => onDecrease(item.id)}
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-100 bg-white text-slate-600"
+            aria-label={`Reduce ${item.name}`}
+          >
+            <MaterialIcon name="remove" style={{ fontSize: '16px' }} />
+          </button>
+          <input
+            type="number"
+            step="any"
+            value={item.cartQuantity}
+            onChange={event => onQuantityChange(item.id, Number(event.target.value))}
+            className={`${compact ? 'w-14' : 'w-16'} bg-transparent text-center text-sm font-black text-slate-900 outline-none`}
+            aria-label={`${item.name} quantity`}
+          />
+          <button
+            type="button"
+            onClick={() => onIncrease(item.id)}
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-100 bg-white text-slate-600"
+            aria-label={`Add one ${item.name}`}
+          >
+            <MaterialIcon name="add" style={{ fontSize: '16px' }} />
+          </button>
+        </div>
+        <div className="stable-actions text-right">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Line total</p>
+          <p className={`${compact ? 'text-sm' : 'text-base sm:text-lg'} whitespace-nowrap font-black tabular-nums text-slate-900`}>
+            Ksh {lineTotal.toLocaleString()}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type CheckoutOptions = {
   subtotal?: number;
   total?: number;
@@ -155,11 +236,13 @@ function SalePanel({
   isCheckingOut,
   className = '',
   onCheckoutSuccess,
+  showCartItems = true,
 }: {
   onCheckout: (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => Promise<any>;
   isCheckingOut: boolean;
   className?: string;
   onCheckoutSuccess?: () => void;
+  showCartItems?: boolean;
 }) {
   const { cart, removeFromCart, updateQuantity, setQuantity, clearCart } = useStore();
   const activeBusinessId = useStore((state) => state.activeBusinessId);
@@ -518,48 +601,28 @@ function SalePanel({
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar p-3 space-y-2">
-        {cart.length === 0 ? (
-          <div className="h-full min-h-52 flex flex-col items-center justify-center text-center text-slate-400">
-            <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
-              <MaterialIcon name="shopping_cart" style={{ fontSize: '28px' }} />
-            </div>
-            <p className="text-sm font-black">Tap an item to add it here</p>
-          </div>
-        ) : cart.map(item => (
-          <div key={item.id} className="border border-slate-100 rounded-2xl p-3 bg-white">
-            <div className="grid grid-cols-[minmax(0,1fr)_2rem] items-start gap-3">
-              <div className="stable-row-copy">
-                <p className="stable-title-2 text-[13px] font-black leading-tight text-slate-900">{item.name}</p>
-                <p className="text-[10px] font-bold text-slate-400 stable-meta mt-0.5">Ksh {item.sellingPrice?.toLocaleString()} each</p>
+      {showCartItems && (
+        <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar p-3 space-y-2">
+          {cart.length === 0 ? (
+            <div className="h-full min-h-52 flex flex-col items-center justify-center text-center text-slate-400">
+              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
+                <MaterialIcon name="shopping_cart" style={{ fontSize: '28px' }} />
               </div>
-              <button onClick={() => removeFromCart(item.id)} className="w-8 h-8 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white flex items-center justify-center flex-shrink-0">
-                <MaterialIcon name="close" style={{ fontSize: '16px' }} />
-              </button>
+              <p className="text-sm font-black">Tap an item to add it here</p>
             </div>
-            <div className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
-              <div className="flex items-center gap-1 bg-slate-50 rounded-xl p-1 stable-actions">
-                <button onClick={() => updateQuantity(item.id, -1)} className="w-8 h-8 rounded-lg bg-white text-slate-600 border border-slate-100 flex items-center justify-center">
-                  <MaterialIcon name="remove" style={{ fontSize: '16px' }} />
-                </button>
-                <input
-                  type="number"
-                  step="any"
-                  value={item.cartQuantity}
-                  onChange={e => setQuantity(item.id, Number(e.target.value))}
-                  className="w-16 bg-transparent text-center text-sm font-black text-slate-900 outline-none"
-                />
-                <button onClick={() => updateQuantity(item.id, 1)} className="w-8 h-8 rounded-lg bg-white text-slate-600 border border-slate-100 flex items-center justify-center">
-                  <MaterialIcon name="add" style={{ fontSize: '16px' }} />
-                </button>
-              </div>
-              <p className="text-right text-sm font-black text-slate-900 whitespace-nowrap stable-actions">
-                Ksh {((Number(item.sellingPrice) || 0) * (Number(item.cartQuantity) || 0)).toLocaleString()}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
+          ) : cart.map(item => (
+            <CartLineItem
+              key={item.id}
+              item={item}
+              onRemove={removeFromCart}
+              onDecrease={(id) => updateQuantity(id, -1)}
+              onIncrease={(id) => updateQuantity(id, 1)}
+              onQuantityChange={setQuantity}
+              compact
+            />
+          ))}
+        </div>
+      )}
 
       <div className="sticky bottom-0 z-20 max-h-[72dvh] shrink-0 overflow-y-auto border-t border-slate-100 bg-white p-4 space-y-3 shadow-[0_-18px_30px_rgba(15,23,42,0.08)] lg:max-h-none lg:overflow-visible">
         <div className="rounded-2xl bg-slate-950 p-4 text-white">
@@ -1344,7 +1407,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
   const { warning, error } = useToast();
 
   // ✅ Only require activeBusinessId — branch does not filter products
-  const { addToCart, activeBusinessId, activeBranchId, cart } = useStore();
+  const { addToCart, removeFromCart, updateQuantity, setQuantity, clearCart, activeBusinessId, activeBranchId, cart } = useStore();
 
   const products = useLiveQuery(
     () => {
@@ -1421,6 +1484,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
     }
     handleAddToCart(product);
     setSearchQuery('');
+    setSelectedCategory('All');
     setIsScannerOpen(false);
   }, [scannerProducts, warning]);
 
@@ -1472,6 +1536,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
   const saleItemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
   const selectedProductCount = cart.length;
   const selectedProductLabel = selectedProductCount === 1 ? 'product selected for sale' : 'products selected for sale';
+  const isAddingProducts = searchQuery.trim().length > 0 || selectedCategory !== 'All';
   React.useEffect(() => {
     if (cart.length === 0) setIsMobileCheckoutOpen(false);
   }, [cart.length]);
@@ -1605,32 +1670,101 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
       {activeBusinessId && (
         <div className="mx-auto w-full max-w-[1440px] flex-1 min-h-0 px-3 pb-24 pt-4 sm:px-4 md:px-6 md:pb-6 lg:px-8">
           <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          {/* Product rows */}
+          {/* Current sale rows */}
           <div className="h-full min-h-0 overflow-y-auto no-scrollbar">
-            {sorted.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-3">
-                  <MaterialIcon name="inventory" className="text-slate-300" style={{ fontSize: '32px' }} />
+            {isAddingProducts ? (
+              <div className="space-y-3">
+                <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-slate-900">Add products</p>
+                    <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      {sorted.length.toLocaleString()} match{sorted.length === 1 ? '' : 'es'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedCategory('All');
+                    }}
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-[10px] font-black uppercase tracking-widest text-slate-600 transition-colors hover:border-primary/30 hover:text-primary"
+                  >
+                    View sale
+                  </button>
                 </div>
-                <p className="text-sm font-bold text-slate-400">No products found</p>
-                <p className="text-xs text-slate-400 mt-1 font-medium">
-                  {searchQuery ? `No results for "${searchQuery}"` : 'Add products in Inventory'}
-                </p>
-                {searchQuery && (
-                  <button onClick={() => setSearchQuery('')} className="mt-4 px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl">Clear Search</button>
+
+                {sorted.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-3">
+                      <MaterialIcon name="inventory" className="text-slate-300" style={{ fontSize: '32px' }} />
+                    </div>
+                    <p className="text-sm font-bold text-slate-400">No products found</p>
+                    <p className="text-xs text-slate-400 mt-1 font-medium">
+                      {searchQuery ? `No results for "${searchQuery}"` : 'No products in this category'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSelectedCategory('All');
+                      }}
+                      className="mt-4 px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl"
+                    >
+                      View sale
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {sorted.map(p => (
+                      <ProductTile key={p.id} product={p} onAdd={handleAddToCart} recentlyAdded={recentlyAdded.has(p.id)} />
+                    ))}
+                  </div>
                 )}
               </div>
+            ) : cart.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-3">
+                  <MaterialIcon name="shopping_cart" className="text-slate-300" style={{ fontSize: '32px' }} />
+                </div>
+                <p className="text-sm font-bold text-slate-400">No items selected</p>
+                <p className="text-xs text-slate-400 mt-1 font-medium">
+                  Search, scan, or choose a category to add products.
+                </p>
+              </div>
             ) : (
-              <div className="space-y-2">
-                {sorted.map(p => (
-                  <ProductTile key={p.id} product={p} onAdd={handleAddToCart} recentlyAdded={recentlyAdded.has(p.id)} />
+              <div className="space-y-3">
+                <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-slate-900">Items in cart</p>
+                    <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      {selectedProductCount.toLocaleString()} product{selectedProductCount === 1 ? '' : 's'} · {saleItemCount.toLocaleString()} item{saleItemCount === 1 ? '' : 's'} · Ksh {saleTotal.toLocaleString()}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearCart}
+                    className="h-10 rounded-xl border border-rose-100 bg-rose-50 px-4 text-[10px] font-black uppercase tracking-widest text-rose-600 transition-colors hover:bg-rose-500 hover:text-white"
+                  >
+                    Clear sale
+                  </button>
+                </div>
+
+                {cart.map(item => (
+                  <CartLineItem
+                    key={item.id}
+                    item={item}
+                    onRemove={removeFromCart}
+                    onDecrease={(id) => updateQuantity(id, -1)}
+                    onIncrease={(id) => updateQuantity(id, 1)}
+                    onQuantityChange={setQuantity}
+                  />
                 ))}
               </div>
             )}
           </div>
 
           <div className="hidden h-full min-h-0 lg:block">
-            <SalePanel onCheckout={completeCheckout} isCheckingOut={isCheckingOut} />
+            <SalePanel onCheckout={completeCheckout} isCheckingOut={isCheckingOut} showCartItems={false} />
           </div>
           </div>
         </div>
