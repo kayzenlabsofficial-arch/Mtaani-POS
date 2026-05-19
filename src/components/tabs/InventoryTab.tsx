@@ -69,7 +69,6 @@ export default function InventoryTab() {
   const [isRestocking, setIsRestocking] = useState(false);
   const [restockQty, setRestockQty] = useState('');
   const [restockCost, setRestockCost] = useState('');
-  const [restockExpiryDate, setRestockExpiryDate] = useState('');
   const [productForm, setProductForm] = useState({
     name: '',
     category: 'General',
@@ -269,14 +268,11 @@ export default function InventoryTab() {
     if (!selectedProduct || !activeBusinessId || !activeBranchId) return;
     const qty = Number(restockQty);
     if (qty <= 0) return error('Enter a valid stock quantity.');
-    const expiryDate = restockExpiryDate ? dateInputToExpiryMs(restockExpiryDate) : null;
-    if (restockExpiryDate && !expiryDate) return error('Choose a valid expiry date.');
     try {
       const result = await StockService.restock({
         productId: selectedProduct.id,
         quantity: qty,
         costPrice: restockCost ? Number(restockCost) || 0 : undefined,
-        expiryDate: expiryDate || undefined,
         reference: 'Manual stock adjustment',
         branchId: activeBranchId,
         businessId: activeBusinessId,
@@ -289,11 +285,9 @@ export default function InventoryTab() {
         ...selectedProduct,
         stockQuantity: result.stockQuantity,
         ...(restockCost ? { costPrice: Number(restockCost) || 0 } : {}),
-        ...(result.expiryDate ? { expiryTracking: 1, expiryDate: result.expiryDate } : {})
       });
       setRestockQty('');
       setRestockCost('');
-      setRestockExpiryDate('');
       setIsRestocking(false);
       success('Stock updated.');
     } catch (err: any) {
@@ -714,7 +708,7 @@ export default function InventoryTab() {
                   <MaterialIcon name="restaurant" style={{ fontSize: '18px' }} /> Ingredients
                 </button>
               ) : (
-                <button onClick={() => { setRestockExpiryDate(expiryMsToDateInput(selectedProduct.expiryDate)); setIsRestocking(true); }} className="py-3 bg-primary text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+                <button onClick={() => setIsRestocking(true)} className="py-3 bg-primary text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
                   <MaterialIcon name="add" style={{ fontSize: '18px' }} /> Adjust stock
                 </button>
               )}
@@ -741,11 +735,6 @@ export default function InventoryTab() {
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Latest unit cost</label>
                 <input type="number" step="any" value={restockCost} onChange={e => setRestockCost(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="Optional" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Batch expiry date</label>
-                <input type="date" value={restockExpiryDate} onChange={e => setRestockExpiryDate(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
-                <p className="mt-1 text-[10px] font-bold text-slate-400">Leave blank if this batch does not expire.</p>
               </div>
               <button onClick={handleRestock} disabled={!restockQty || Number(restockQty) <= 0} className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50">
                 Save stock adjustment

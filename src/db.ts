@@ -364,7 +364,7 @@ export interface Expense {
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   preparedBy?: string;
   approvedBy?: string;
-  source: 'TILL' | 'ACCOUNT' | 'SHOP';
+  source: 'PETTY_CASH' | 'TILL' | 'ACCOUNT' | 'SHOP';
   accountId?: string; // Link to FinancialAccount if source is ACCOUNT
   productId?: string;
   quantity?: number;

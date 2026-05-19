@@ -3,10 +3,12 @@ import { FileMinus, Loader2 } from 'lucide-react';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { isBundleProduct } from '../../utils/bundleInventory';
 
+type ExpenseSource = 'PETTY_CASH' | 'TILL' | 'ACCOUNT' | 'SHOP';
+
 interface ExpenseModalProps {
   isOpen: boolean;
   onClose: () => void;
-  expenseForm: { amount: string, category: string, description: string, source: 'TILL' | 'ACCOUNT' | 'SHOP', accountId?: string, productId?: string, quantity?: string };
+  expenseForm: { amount: string, category: string, description: string, source: ExpenseSource, accountId?: string, productId?: string, quantity?: string };
   setExpenseForm: (form: any) => void;
   handleSaveExpense: () => Promise<void>;
   isSaving?: boolean;
@@ -20,6 +22,25 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
   if (!isOpen) return null;
   const amountValue = Number(expenseForm.amount) || 0;
   const tillOverdrawn = expenseForm.source === 'TILL' && amountValue > 0 && amountValue > actualCashDrawer;
+  const accountOptions = (financialAccounts || [])
+    .filter(acc => acc.type !== 'CASH')
+    .map(acc => ({
+      value: acc.id,
+      label: `${acc.name} (${acc.type})`,
+      keywords: `${acc.name} ${acc.type}`,
+    }));
+  const sourceOptions: { id: ExpenseSource; label: string; className: string }[] = [
+    { id: 'PETTY_CASH', label: 'Petty cash', className: 'bg-amber-50 border-amber-500 text-amber-700' },
+    { id: 'TILL', label: 'Money from till', className: 'bg-orange-50 border-orange-500 text-orange-700' },
+    { id: 'SHOP', label: 'Expense from stock', className: 'bg-purple-50 border-purple-500 text-purple-700' },
+    { id: 'ACCOUNT', label: 'General expense', className: 'bg-blue-50 border-blue-500 text-blue-700' },
+  ];
+  const sourceHelp: Record<ExpenseSource, string> = {
+    PETTY_CASH: 'Paid from petty cash. It will not reduce the till drawer.',
+    TILL: 'Deducted from this shift cash sales.',
+    SHOP: 'Deducted from shop inventory.',
+    ACCOUNT: 'Paid by a bank or M-Pesa account.',
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
@@ -28,7 +49,7 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
         <h2 className="text-xl font-black text-slate-900 mb-2 flex items-center gap-2">
            <FileMinus className="text-orange-600" /> Add expense
         </h2>
-        <p className="text-sm text-slate-500 mb-6">Log daily expenditures taken from cash drawer.</p>
+        <p className="text-sm text-slate-500 mb-6">Log petty cash, till, bank, or stock expenses.</p>
         
         <div className="space-y-4 mb-6">
              <div>
@@ -70,31 +91,29 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
               </div>
               <div>
                  <label className="block text-xs font-bold text-slate-500  mb-1.5">Source of funds</label>
-                 <div className="flex gap-2">
-                    <button 
-                       data-testid="expense-source-till"
-                       onClick={() => setExpenseForm({...expenseForm, source: 'TILL'})}
-                       className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all ${expenseForm.source === 'TILL' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white border-slate-200 text-slate-500'}`}
-                    >
-                       Till (Cash)
-                    </button>
-                    <button 
-                       data-testid="expense-source-account"
-                       onClick={() => setExpenseForm({...expenseForm, source: 'ACCOUNT'})}
-                       className={`flex-1 py-2.5 rounded-xl text-[10px] font-bold border transition-all ${expenseForm.source === 'ACCOUNT' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}
-                    >
-                       Owner account
-                    </button>
-                    <button 
-                       data-testid="expense-source-shop"
-                       onClick={() => setExpenseForm({...expenseForm, source: 'SHOP'})}
-                       className={`flex-1 py-2.5 rounded-xl text-[10px] font-bold border transition-all ${expenseForm.source === 'SHOP' ? 'bg-purple-50 border-purple-500 text-purple-700' : 'bg-white border-slate-200 text-slate-500'}`}
-                    >
-                       Shop item
-                    </button>
+                 <div className="grid grid-cols-2 gap-2">
+                    {sourceOptions.map(option => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        data-testid={`expense-source-${option.id.toLowerCase().replace('_', '-')}`}
+                        onClick={() => setExpenseForm({
+                          ...expenseForm,
+                          source: option.id,
+                          accountId: option.id === 'ACCOUNT' ? expenseForm.accountId : '',
+                          productId: option.id === 'SHOP' ? expenseForm.productId : '',
+                          quantity: option.id === 'SHOP' ? (expenseForm.quantity || '1') : '1',
+                        })}
+                        className={`min-h-[3rem] rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wider border transition-all ${
+                          expenseForm.source === option.id ? option.className : 'bg-white border-slate-200 text-slate-500'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
                  </div>
                  <p className="text-[9px] text-slate-400 mt-1 italic">
-                    {expenseForm.source === 'TILL' ? '* Deducted from this shift cash sales.' : (expenseForm.source === 'SHOP' ? '* Deducted from shop inventory.' : '* Direct payment by owner (Bank/M-Pesa).')}
+                    * {sourceHelp[expenseForm.source]}
                  </p>
               </div>
 
@@ -143,16 +162,13 @@ export default function ExpenseModal({ isOpen, onClose, expenseForm, setExpenseF
 
               {expenseForm.source === 'ACCOUNT' && (
                 <div className="animate-in slide-in-from-top-2">
-                   <label className="block text-xs font-bold text-slate-500  mb-1.5 ml-1">Select payment account</label>
+                   <label className="block text-xs font-bold text-slate-500  mb-1.5 ml-1">Select bank / M-Pesa account</label>
                    <SearchableSelect
                      value={expenseForm.accountId || ''}
                      onChange={(v) => setExpenseForm({ ...expenseForm, accountId: v })}
                      placeholder="Select account..."
-                     options={(financialAccounts || []).map(acc => ({
-                       value: acc.id,
-                       label: `${acc.name} (${acc.type})`,
-                       keywords: `${acc.name} ${acc.type}`,
-                     }))}
+                     emptyText="No bank or M-Pesa accounts found"
+                     options={accountOptions}
                      buttonClassName="bg-blue-50 border-blue-200 focus:border-blue-500"
                      searchInputClassName="bg-white"
                      dataTestId="expense-payment-account"

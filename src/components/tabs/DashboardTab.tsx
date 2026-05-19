@@ -114,6 +114,16 @@ function paymentAmount(record: any, method: 'CASH' | 'MPESA' | 'PDQ') {
     : 0;
 }
 
+function creditAmount(record: any) {
+  const paymentMethod = String(record?.paymentMethod || '').toUpperCase();
+  if (paymentMethod === 'CREDIT') return Number(record?.total || 0);
+  if (paymentMethod !== 'SPLIT') return String(record?.status || '').toUpperCase() === 'UNPAID' ? Number(record?.total || 0) : 0;
+  const split = splitDetails(record);
+  return String(split?.secondaryMethod || '').toUpperCase() === 'CREDIT'
+    ? Number(split?.secondaryAmount || 0)
+    : 0;
+}
+
 function recordInShift(record: any, since: number, until: number, shiftId?: string) {
   if (shiftId && record?.shiftId) return record.shiftId === shiftId;
   const ts = Number(record?.timestamp || record?.issueDate || 0);
@@ -131,6 +141,35 @@ function splitFundedRemittance(cashSales: number, expenses: number, supplierPaym
   return { totalExpenses, supplierPaymentsTotal, remittanceTotal };
 }
 
+const money = (value: unknown) => `Ksh ${(Number(value) || 0).toLocaleString()}`;
+
+type ClosureStats = {
+  txs: any[];
+  invoices: any[];
+  expenses: any[];
+  picks: any[];
+  supplierPayments: any[];
+  grossSales: number;
+  totalSales: number;
+  taxTotal: number;
+  cashSales: number;
+  mpesaSales: number;
+  pdqSales: number;
+  totalExpenses: number;
+  supplierPaymentsTotal: number;
+  remittanceTotal: number;
+  totalPicks: number;
+  expectedCash: number;
+  cashierVariance: number;
+};
+
+type ShiftClosePreview = {
+  since: number;
+  until: number;
+  shiftId: string;
+  stats: ClosureStats;
+};
+
 export default function DashboardTab({ setActiveTab, openExpenseModal }: DashboardTabProps) {
   const [trendView, setTrendView] = useState<'DAY' | 'WEEK'>('DAY');
   const chartRef = React.useRef<HTMLDivElement | null>(null);
@@ -140,6 +179,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const [cashPickAmount, setCashPickAmount] = useState('');
   const [isPickingCash, setIsPickingCash] = useState(false);
   const [isClosingShift, setIsClosingShift] = useState(false);
+  const [shiftClosePreview, setShiftClosePreview] = useState<ShiftClosePreview | null>(null);
   const [isClosingDay, setIsClosingDay] = useState(false);
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
@@ -249,6 +289,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   });
   const todaysTransactions = (branchTransactions || []).filter(t => (t.timestamp || 0) >= todayStart && t.status !== 'VOIDED' && t.status !== 'QUOTE');
   const todaysInvoices = (branchSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= todayStart && invoice.status !== 'CANCELLED');
+  const todaysCustomerPayments = (branchCustomerPayments || []).filter(payment => (payment.timestamp || 0) >= todayStart);
   const yesterdaysTransactions = (branchTransactions || []).filter(t => (t.timestamp || 0) >= yesterdayStart && (t.timestamp || 0) < todayStart && t.status !== 'VOIDED' && t.status !== 'QUOTE');
   const yesterdaysInvoices = (branchSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= yesterdayStart && (invoice.issueDate || 0) < todayStart && invoice.status !== 'CANCELLED');
   const todaysSalesCount = todaysTransactions.length + todaysInvoices.length;
@@ -259,6 +300,36 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     + yesterdaysInvoices.reduce((a, invoice) => a + Number(invoice.total || 0), 0);
   const todaysAverageSale = todaysSalesCount ? Math.round(totalRevenue / todaysSalesCount) : 0;
   const yesterdaysAverageSale = yesterdaysSalesCount ? Math.round(yesterdaysRevenue / yesterdaysSalesCount) : 0;
+  const customerPaymentTotal = (method: 'CASH' | 'MPESA' | 'PDQ') => todaysCustomerPayments
+    .filter(payment => String(payment.paymentMethod || '').toUpperCase() === method)
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const paymentBreakdown = [
+    {
+      label: 'Cash',
+      value: todaysTransactions.reduce((sum, tx) => sum + paymentAmount(tx, 'CASH'), 0) + customerPaymentTotal('CASH'),
+      icon: 'payments',
+      color: 'bg-emerald-600',
+    },
+    {
+      label: 'M-Pesa',
+      value: todaysTransactions.reduce((sum, tx) => sum + paymentAmount(tx, 'MPESA'), 0) + customerPaymentTotal('MPESA'),
+      icon: 'smartphone',
+      color: 'bg-green-600',
+    },
+    {
+      label: 'Credit',
+      value: todaysTransactions.reduce((sum, tx) => sum + creditAmount(tx), 0)
+        + todaysInvoices.reduce((sum, invoice) => sum + Number(invoice.balance ?? invoice.total ?? 0), 0),
+      icon: 'group',
+      color: 'bg-amber-500',
+    },
+    {
+      label: 'Swipe',
+      value: todaysTransactions.reduce((sum, tx) => sum + paymentAmount(tx, 'PDQ'), 0) + customerPaymentTotal('PDQ'),
+      icon: 'credit_card',
+      color: 'bg-indigo-600',
+    },
+  ];
   const salesTrendData = React.useMemo(() => {
     const txs = (branchTransactions || []).filter(t => t.status !== 'VOIDED' && t.status !== 'QUOTE');
     const invoices = (branchSalesInvoices || []).filter(invoice => invoice.status !== 'CANCELLED');
@@ -386,6 +457,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
     return {
       txs,
+      invoices,
+      expenses,
+      picks,
+      supplierPayments,
       grossSales,
       totalSales,
       taxTotal,
@@ -401,17 +476,26 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     };
   };
 
-  const handleCloseShift = async () => {
+  const handleCloseShift = () => {
     if (!activeBranchId || !activeBusinessId || !currentUser || isClosingShift) return;
     const since = Number(activeShift?.startTime || getTodayStartMs());
     const shiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser.id) || `shift_${activeBranchId}_${new Date().toISOString().slice(0, 10)}_${currentUser.id}`;
-    const stats = getClosureStats(since, Date.now(), shiftId);
-    if (stats.txs.length === 0 && !confirm('No sales found for this shift. Close it anyway?')) return;
+    const until = Date.now();
+    setShiftClosePreview({
+      since,
+      until,
+      shiftId,
+      stats: getClosureStats(since, until, shiftId),
+    });
+  };
 
+  const confirmCloseShift = async () => {
+    if (!activeBranchId || !activeBusinessId || !currentUser || isClosingShift || !shiftClosePreview) return;
+    const { since, shiftId, stats } = shiftClosePreview;
     setIsClosingShift(true);
     try {
       const now = Date.now();
-      await ClosingService.closeShift({
+      const result = await ClosingService.closeShift({
         shiftId,
         startTime: since,
         report: {
@@ -435,9 +519,23 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         branchId: activeBranchId,
         businessId: activeBusinessId,
       });
-      await Promise.allSettled([db.endOfDayReports.reload(), db.shifts.reload()]);
+      await Promise.allSettled([
+        db.endOfDayReports.reload(),
+        db.shifts.reload(),
+        db.transactions.reload(),
+        db.salesInvoices.reload(),
+        db.cashPicks.reload(),
+        db.expenses.reload(),
+        db.supplierPayments.reload(),
+        db.dailySummaries.reload(),
+      ]);
       setActiveShift(null);
-      success('Shift closed and shift report saved.');
+      setShiftClosePreview(null);
+      if (result.idempotent) {
+        warning('This shift was already closed. Reports and shift status have been refreshed.');
+      } else {
+        success('Shift closed and shift report saved.');
+      }
     } catch (err: any) {
       error(err.message || 'Failed to close shift.');
     } finally {
@@ -512,6 +610,24 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     { fn: handleCloseShift, label: 'Close shift', icon: 'assignment_turned_in', color: 'bg-blue-600', busy: isClosingShift },
     { fn: handleCloseDay, label: 'Close day', icon: 'event_available', color: 'bg-slate-900', busy: isClosingDay },
   ];
+
+  const shiftPreviewStats = shiftClosePreview?.stats;
+  const shiftPreviewSaleCount = shiftPreviewStats ? shiftPreviewStats.txs.length + shiftPreviewStats.invoices.length : 0;
+  const shiftPreviewVarianceClass = !shiftPreviewStats || shiftPreviewStats.cashierVariance === 0
+    ? 'bg-slate-50 text-slate-700 border-slate-100'
+    : shiftPreviewStats.cashierVariance > 0
+      ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+      : 'bg-rose-50 text-rose-700 border-rose-100';
+  const shiftPreviewRows = shiftPreviewStats ? [
+    { label: 'Total sales', value: money(shiftPreviewStats.totalSales), tone: 'text-slate-900' },
+    { label: 'Cash sales', value: money(shiftPreviewStats.cashSales), tone: 'text-emerald-700' },
+    { label: 'M-Pesa sales', value: money(shiftPreviewStats.mpesaSales), tone: 'text-green-700' },
+    { label: 'Swipe sales', value: money(shiftPreviewStats.pdqSales), tone: 'text-indigo-700' },
+    { label: 'Till expenses', value: money(shiftPreviewStats.totalExpenses), tone: 'text-rose-700' },
+    { label: 'Supplier till payments', value: money(shiftPreviewStats.supplierPaymentsTotal), tone: 'text-amber-700' },
+    { label: 'Cash picked', value: money(shiftPreviewStats.totalPicks), tone: 'text-slate-900' },
+    { label: 'Expected cash pick', value: money(shiftPreviewStats.expectedCash), tone: 'text-slate-900' },
+  ] : [];
 
   return (
     <div className="space-y-6 pb-24 animate-in fade-in">
@@ -646,7 +762,104 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         </div>
       )}
 
-      {/* KPI Grid — 2x2 */}
+      {/* Shift close review */}
+      {shiftClosePreview && shiftPreviewStats && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => !isClosingShift && setShiftClosePreview(null)} />
+          <div className="relative z-10 w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-t-[32px] sm:rounded-3xl bg-white shadow-2xl animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
+            <div className="p-6 sm:p-7">
+              <div className="flex items-start justify-between gap-4 mb-6">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Review shift close</h3>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">
+                    {new Date(shiftClosePreview.since).toLocaleString()} - {new Date(shiftClosePreview.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !isClosingShift && setShiftClosePreview(null)}
+                  disabled={isClosingShift}
+                  className="w-10 h-10 rounded-xl bg-slate-50 text-slate-500 font-black hover:bg-slate-100 disabled:opacity-50"
+                >
+                  x
+                </button>
+              </div>
+
+              <div className="rounded-3xl bg-slate-950 text-white p-5 mb-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Shift total</p>
+                    <p className="text-3xl font-black tabular-nums mt-1">{money(shiftPreviewStats.totalSales)}</p>
+                  </div>
+                  <span className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white">
+                    {shiftPreviewSaleCount} sale{shiftPreviewSaleCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-3 mt-5">
+                  <div className="rounded-2xl bg-white/10 p-3">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Receipts</p>
+                    <p className="text-lg font-black">{shiftPreviewStats.txs.length}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/10 p-3">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Invoices</p>
+                    <p className="text-lg font-black">{shiftPreviewStats.invoices.length}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/10 p-3">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tax</p>
+                    <p className="text-lg font-black tabular-nums">{money(shiftPreviewStats.taxTotal)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {shiftPreviewSaleCount === 0 && (
+                <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 mb-4">
+                  <p className="text-[11px] font-bold text-amber-800">No receipts or invoices were found for this shift. You can still close it after reviewing the breakdown.</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {shiftPreviewRows.map(row => (
+                  <div key={row.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{row.label}</p>
+                    <p className={`mt-1 text-lg font-black tabular-nums ${row.tone}`}>{row.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className={`mt-4 rounded-2xl border p-4 ${shiftPreviewVarianceClass}`}>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest">Cash variance</p>
+                    <p className="text-[11px] font-bold mt-1 opacity-80">Cash picked minus expected cash pick.</p>
+                  </div>
+                  <p className="text-xl font-black tabular-nums">{money(shiftPreviewStats.cashierVariance)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)] gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShiftClosePreview(null)}
+                  disabled={isClosingShift}
+                  className="rounded-2xl bg-slate-100 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmCloseShift}
+                  disabled={isClosingShift}
+                  className="rounded-2xl bg-blue-600 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-white shadow-indigo transition-all disabled:bg-blue-100 disabled:text-blue-500 disabled:shadow-none"
+                >
+                  {isClosingShift ? 'Closing...' : 'Close shift now'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* KPI grid */}
       <div className="grid grid-cols-2 gap-4">
         <StatCard
           label="Total sales"
@@ -679,6 +892,30 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           icon="inventory"
           color="bg-rose-600"
         />
+      </div>
+
+      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-sm font-black text-slate-900">Payments today</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cash, M-Pesa, credit, and swipe</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {paymentBreakdown.map(item => (
+            <div key={item.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <div className="flex items-center gap-3">
+                <span className={`w-9 h-9 rounded-xl ${item.color} text-white flex items-center justify-center shrink-0`}>
+                  <MaterialIcon name={item.icon} className="text-base" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{item.label}</p>
+                  <p className="text-sm font-black text-slate-900 tabular-nums truncate">Ksh {item.value.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Main content: Chart + Right Panel */}

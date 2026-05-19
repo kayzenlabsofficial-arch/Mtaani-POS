@@ -78,7 +78,7 @@ export default function MtaaniPOS() {
     description: '',
     amount: '',
     category: 'General',
-    source: 'TILL' as 'TILL' | 'ACCOUNT' | 'SHOP',
+    source: 'PETTY_CASH' as 'PETTY_CASH' | 'TILL' | 'ACCOUNT' | 'SHOP',
     accountId: '',
     financialAccountId: '',
     productId: '',
@@ -149,7 +149,7 @@ export default function MtaaniPOS() {
         details: `${autoApprove ? 'Auto-approved' : 'Created pending'} expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'General'})`,
       });
       setIsExpenseModalOpen(false);
-      setExpenseForm({ description: '', amount: '', category: 'General', source: 'TILL', accountId: '', financialAccountId: '', productId: '', quantity: '1' });
+      setExpenseForm({ description: '', amount: '', category: 'General', source: 'PETTY_CASH', accountId: '', financialAccountId: '', productId: '', quantity: '1' });
       success(autoApprove ? "Expense logged and approved." : "Expense logged successfully.");
     } catch (err: any) {
       error("Failed to log expense: " + err.message);

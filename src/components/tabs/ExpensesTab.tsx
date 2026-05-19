@@ -20,7 +20,7 @@ export default function ExpensesTab() {
   const [expenseSearch, setExpenseSearch] = useState("");
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'TILL' | 'ACCOUNT' | 'SHOP', accountId: '', productId: '', quantity: '1' });
+  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'PETTY_CASH' as 'PETTY_CASH' | 'TILL' | 'ACCOUNT' | 'SHOP', accountId: '', productId: '', quantity: '1' });
   const [isSaving, setIsSaving] = useState(false);
   
   const currentUser = useStore(state => state.currentUser);
@@ -57,6 +57,7 @@ export default function ExpensesTab() {
     since: todayStartMs,
   });
   const todayTillExpenses = drawer.tillExpenses;
+  const todayPettyCashExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'PETTY_CASH' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'ACCOUNT' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const actualCashDrawer = drawer.actualCashDrawer;
 
@@ -117,7 +118,7 @@ export default function ExpensesTab() {
           details: `${autoApprove ? 'Auto-approved' : 'Created pending'} expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'Uncategorized'})`,
         });
         setIsExpenseModalOpen(false);
-        setExpenseForm({ amount: '', category: '', description: '', source: 'TILL', accountId: '', productId: '', quantity: '1' });
+        setExpenseForm({ amount: '', category: '', description: '', source: 'PETTY_CASH', accountId: '', productId: '', quantity: '1' });
         success(autoApprove ? "Expense logged and approved." : "Expense logged successfully.");
       } catch (err: any) {
         error("Failed to log expense: " + err.message);
@@ -157,9 +158,10 @@ export default function ExpensesTab() {
   };
 
   const sourceBadge = (source?: string) => {
+    if (source === 'PETTY_CASH') return { label: 'Petty cash', className: 'bg-amber-50 text-amber-700 border-amber-100' };
     if (source === 'TILL') return { label: 'Till', className: 'bg-emerald-50 text-emerald-600 border-emerald-100' };
-    if (source === 'SHOP') return { label: 'Shop', className: 'bg-orange-50 text-orange-600 border-orange-100' };
-    return { label: 'Account', className: 'bg-indigo-50 text-indigo-600 border-indigo-100' };
+    if (source === 'SHOP') return { label: 'Stock', className: 'bg-orange-50 text-orange-600 border-orange-100' };
+    return { label: 'General', className: 'bg-indigo-50 text-indigo-600 border-indigo-100' };
   };
 
   const filteredExpenses = (allExpenses || [])
@@ -188,10 +190,12 @@ export default function ExpensesTab() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h2 className="text-xl font-black text-slate-900">Expenses</h2>
-          <div className="flex items-center gap-3 mt-1">
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            <span className="text-[10px] font-bold text-slate-500">Petty: Ksh {todayPettyCashExpenses.toLocaleString()}</span>
+            <span className="text-slate-300">·</span>
             <span className="text-[10px] font-bold text-slate-500">Till: Ksh {todayTillExpenses.toLocaleString()}</span>
             <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-slate-500">Account: Ksh {todayAccountExpenses.toLocaleString()}</span>
+            <span className="text-[10px] font-bold text-slate-500">General: Ksh {todayAccountExpenses.toLocaleString()}</span>
             <span className="text-slate-300">·</span>
             <span className="text-[10px] font-bold text-emerald-600">Drawer: Ksh {actualCashDrawer.toLocaleString()}</span>
           </div>
