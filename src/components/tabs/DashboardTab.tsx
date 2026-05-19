@@ -4,7 +4,7 @@ import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { canUseOwnerMode, getCashDrawerLimit, isOwnerCashSweepEnabled, isOwnerModeEnabled } from '../../utils/ownerMode';
+import { canUseOwnerMode, getCashDrawerLimit, isOwnerCashSweepEnabled, isOwnerModeEnabled, shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
 import { getCurrentShiftId } from '../../utils/shiftSession';
@@ -136,6 +136,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const chartRef = React.useRef<HTMLDivElement | null>(null);
   const [chartWidth, setChartWidth] = useState(0);
   const [isBankingExcess, setIsBankingExcess] = useState(false);
+  const [isCashPickModalOpen, setIsCashPickModalOpen] = useState(false);
+  const [cashPickAmount, setCashPickAmount] = useState('');
+  const [isPickingCash, setIsPickingCash] = useState(false);
   const [isClosingShift, setIsClosingShift] = useState(false);
   const [isClosingDay, setIsClosingDay] = useState(false);
   const activeBranchId = useStore(state => state.activeBranchId);
@@ -306,6 +309,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   }).actualCashDrawer);
   const sweepAmount = Math.max(0, actualCashDrawer - cashDrawerLimit);
   const shouldSweepCash = cashSweepActive && actualCashDrawer > cashDrawerLimit && sweepAmount > 0;
+  const cashPickValue = Number(cashPickAmount) || 0;
 
   const handleBankExcessCash = async () => {
     if (!activeBranchId || !activeBusinessId || !currentUser || !shouldSweepCash || isBankingExcess) return;
@@ -325,6 +329,36 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       error(err.message || 'Cash sweep failed.');
     } finally {
       setIsBankingExcess(false);
+    }
+  };
+
+  const handleCreateCashPick = async () => {
+    if (!activeBranchId || !activeBusinessId || !currentUser || isPickingCash) return;
+    if (cashPickValue <= 0) return warning('Enter the cash amount to pick.');
+    if (cashPickValue > actualCashDrawer) return error(`Only Ksh ${actualCashDrawer.toLocaleString()} is available in the drawer.`);
+
+    setIsPickingCash(true);
+    try {
+      const status = shouldAutoApproveOwnerAction(businessSettings, currentUser) ? 'APPROVED' : 'PENDING';
+      await CashService.createPick({
+        amount: cashPickValue,
+        status,
+        userName: currentUser.name,
+        shiftId: getCurrentShiftId(activeShift, activeBranchId, currentUser.id),
+        branchId: activeBranchId,
+        businessId: activeBusinessId,
+      });
+      await db.cashPicks.reload();
+      setCashPickAmount('');
+      setIsCashPickModalOpen(false);
+      success(status === 'APPROVED'
+        ? `Picked Ksh ${cashPickValue.toLocaleString()} from the drawer.`
+        : `Cash pick request for Ksh ${cashPickValue.toLocaleString()} sent for approval.`
+      );
+    } catch (err: any) {
+      error(err.message || 'Could not record cash pick.');
+    } finally {
+      setIsPickingCash(false);
     }
   };
 
@@ -471,6 +505,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     { id: 'REGISTER', label: 'New sale', icon: 'point_of_sale', color: 'bg-primary' },
     { id: 'REPORTS', label: 'Reports', icon: 'analytics', color: 'bg-violet-600' },
     { fn: openExpenseModal, label: 'Add expense', icon: 'payments', color: 'bg-rose-600' },
+    { fn: () => setIsCashPickModalOpen(true), label: 'Pick cash', icon: 'payments', color: 'bg-emerald-600' },
     { id: 'REFUNDS', label: 'Refund', icon: 'keyboard_return', color: 'bg-amber-500' },
     { id: 'CUSTOMERS', label: 'Customers', icon: 'group', color: 'bg-teal-600' },
     { id: 'INVENTORY', label: 'Inventory', icon: 'inventory_2', color: 'bg-indigo-600' },
@@ -534,6 +569,77 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 className={`flex-[1.4] px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${shouldSweepCash ? 'bg-emerald-600 text-white shadow-emerald press' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}
               >
                 {isBankingExcess ? 'Banking...' : shouldSweepCash ? `Bank Ksh ${sweepAmount.toLocaleString()}` : 'Cash ok'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isCashPickModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => !isPickingCash && setIsCashPickModalOpen(false)} />
+          <div className="relative z-10 w-full max-w-md rounded-t-[32px] sm:rounded-3xl bg-white shadow-2xl p-6 sm:p-7 animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div>
+                <h3 className="text-lg font-black text-slate-900">Pick cash</h3>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">Record cash removed from drawer</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isPickingCash && setIsCashPickModalOpen(false)}
+                className="w-10 h-10 rounded-xl bg-slate-50 text-slate-500 font-black hover:bg-slate-100"
+              >
+                x
+              </button>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 mb-5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Cash in drawer</p>
+              <p className="text-2xl font-black text-emerald-900 tabular-nums mt-1">Ksh {actualCashDrawer.toLocaleString()}</p>
+            </div>
+
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Amount to pick</label>
+            <div className="flex gap-3">
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={cashPickAmount}
+                onChange={event => setCashPickAmount(event.target.value)}
+                placeholder="0"
+                className="min-w-0 flex-1 rounded-2xl border-2 border-transparent bg-slate-50 px-5 py-4 text-sm font-black text-slate-900 outline-none focus:border-emerald-500"
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => setCashPickAmount(String(actualCashDrawer))}
+                disabled={actualCashDrawer <= 0}
+                className="rounded-2xl border border-slate-200 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-40"
+              >
+                All
+              </button>
+            </div>
+
+            {cashPickValue > actualCashDrawer && (
+              <p className="mt-2 text-[10px] font-bold text-rose-600">Amount is higher than the available drawer cash.</p>
+            )}
+
+            <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)] gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setIsCashPickModalOpen(false)}
+                disabled={isPickingCash}
+                className="rounded-2xl bg-slate-100 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateCashPick}
+                disabled={isPickingCash || cashPickValue <= 0 || cashPickValue > actualCashDrawer}
+                className="rounded-2xl bg-emerald-600 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-white shadow-emerald transition-all disabled:bg-emerald-100 disabled:text-emerald-500 disabled:shadow-none"
+              >
+                {isPickingCash ? 'Saving...' : 'Save cash pick'}
               </button>
             </div>
           </div>
