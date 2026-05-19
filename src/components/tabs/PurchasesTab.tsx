@@ -409,11 +409,11 @@ export default function PurchasesTab() {
                  )}
               </div>
 
-              <div className="shrink-0 bg-white flex gap-4 px-8 py-5 border-t border-slate-100 shadow-[0_-12px_24px_rgba(15,23,42,0.04)]">
-                 <button onClick={() => { setIsPOModalOpen(false); setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); }} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
+              <div className="shrink-0 bg-white grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)] gap-3 sm:gap-4 px-6 sm:px-8 py-5 border-t border-slate-100 shadow-[0_-12px_24px_rgba(15,23,42,0.04)]">
+                 <button onClick={() => { setIsPOModalOpen(false); setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); }} className="min-w-0 px-4 sm:px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
                    Cancel
                  </button>
-                 <button data-testid="purchase-save-order" onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0 || isSaving} className="flex-[2] grad-indigo text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-indigo press flex items-center justify-center gap-3">
+                 <button data-testid="purchase-save-order" onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0 || isSaving} className="min-w-0 bg-indigo-600 text-white px-4 sm:px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:bg-indigo-100 disabled:text-indigo-500 disabled:shadow-none disabled:cursor-not-allowed transition-all shadow-indigo press flex items-center justify-center gap-2 sm:gap-3 leading-tight">
                    {selectedPOToEdit ? <Save size={18}/> : <PackagePlus size={18}/>}
                    {isSaving ? 'Saving...' : selectedPOToEdit ? 'Save LPO' : 'Create LPO'}
                  </button>
@@ -495,11 +495,11 @@ export default function PurchasesTab() {
                  </div>
               </div>
 
-              <div className="shrink-0 bg-white flex gap-4 px-8 py-5 border-t border-slate-100 shadow-[0_-12px_24px_rgba(15,23,42,0.04)]">
-                 <button onClick={() => setIsReceivePOModalOpen(false)} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
+              <div className="shrink-0 bg-white grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)] gap-3 sm:gap-4 px-6 sm:px-8 py-5 border-t border-slate-100 shadow-[0_-12px_24px_rgba(15,23,42,0.04)]">
+                 <button onClick={() => setIsReceivePOModalOpen(false)} className="min-w-0 px-4 sm:px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
                    Cancel
                  </button>
-                 <button data-testid="purchase-confirm-arrival" onClick={handleReceivePO} disabled={!receiveInvoices[selectedPO.id] || isSaving} className="flex-[2] bg-emerald-600 text-white px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:opacity-40 transition-all shadow-emerald press flex items-center justify-center gap-3">
+                 <button data-testid="purchase-confirm-arrival" onClick={handleReceivePO} disabled={!receiveInvoices[selectedPO.id] || isSaving} className="min-w-0 bg-emerald-600 text-white px-4 sm:px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:bg-emerald-100 disabled:text-emerald-500 disabled:shadow-none disabled:cursor-not-allowed transition-all shadow-emerald press flex items-center justify-center gap-2 sm:gap-3 leading-tight">
                    {isSaving ? <Loader2 size={18} className="animate-spin" /> : <CheckSquare size={18}/>}
                    {isSaving ? 'Saving...' : 'Confirm goods received'}
                  </button>

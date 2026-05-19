@@ -243,12 +243,17 @@ button, a, input, select, textarea {
   .shadow-elevated{ box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
   .shadow-blue    { box-shadow: 0 8px 18px rgba(30, 64, 175, 0.24); }
   .shadow-green   { box-shadow: 0 8px 18px rgba(5, 150, 105, 0.22); }
+  .shadow-emerald { box-shadow: 0 8px 18px rgba(5, 150, 105, 0.22); }
+  .shadow-indigo  { box-shadow: 0 8px 18px rgba(79, 70, 229, 0.22); }
   .shadow-purple  { box-shadow: 0 8px 18px rgba(109, 40, 217, 0.2); }
   .shadow-orange  { box-shadow: 0 8px 18px rgba(217, 119, 6, 0.2); }
+  .shadow-rose    { box-shadow: 0 8px 18px rgba(225, 29, 72, 0.18); }
 
   /* ── Stat card gradients ───────────────────────────── */
   .grad-blue   { background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 55%, #1d4ed8 100%); }
   .grad-green  { background: linear-gradient(135deg, #059669 0%, #10b981 100%); }
+  .grad-emerald{ background: linear-gradient(135deg, #047857 0%, #059669 55%, #10b981 100%); }
+  .grad-indigo { background: linear-gradient(135deg, #3730a3 0%, #4f46e5 55%, #6366f1 100%); }
   .grad-purple { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 60%, #8b5cf6 100%); }
   .grad-orange { background: linear-gradient(135deg, #b45309 0%, #d97706 60%, #f59e0b 100%); }
   .grad-rose   { background: linear-gradient(135deg, #be123c 0%, #e11d48 60%, #f43f5e 100%); }

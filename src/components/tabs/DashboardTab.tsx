@@ -569,7 +569,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         <StatCard
           label="Low stock"
           value={lowStockItems.length}
-          sub="Items need restocking"
+          sub="Items almost out of stock"
           icon="inventory"
           color="bg-rose-600"
         />
@@ -654,7 +654,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 </div>
                 <div>
                   <h4 className="text-[11px] font-black text-rose-900">Low stock alert</h4>
-                  <p className="text-[9px] font-medium text-rose-600">{lowStockItems.length} items need restocking</p>
+                  <p className="text-[9px] font-medium text-rose-600">{lowStockItems.length} items almost out of stock</p>
                 </div>
               </div>
               <div className="space-y-2">

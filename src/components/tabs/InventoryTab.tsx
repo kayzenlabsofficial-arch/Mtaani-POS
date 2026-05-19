@@ -55,10 +55,12 @@ const CATEGORY_COLORS = [
 ];
 
 type SortColumn = 'name' | 'stock' | 'price' | 'expiry';
+type StockStatusFilter = 'ALL' | 'EXPIRY_RISK' | 'OUT_OF_STOCK' | 'ALMOST_OUT';
 
 export default function InventoryTab() {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [stockStatusFilter, setStockStatusFilter] = useState<StockStatusFilter>('ALL');
   const [sortBy, setSortBy] = useState<SortColumn>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
@@ -132,7 +134,16 @@ export default function InventoryTab() {
 
   const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
 
-  const sorted = [...displayProducts].sort((a, b) => {
+  const filteredProducts = displayProducts.filter(product => {
+    const stock = product.stockQuantity || 0;
+    const expiryStatus = getExpiryInfo(product).status;
+    if (stockStatusFilter === 'OUT_OF_STOCK') return stock <= 0;
+    if (stockStatusFilter === 'ALMOST_OUT') return stock > 0 && stock <= (product.reorderPoint || 5);
+    if (stockStatusFilter === 'EXPIRY_RISK') return expiryStatus === 'EXPIRED' || expiryStatus === 'TODAY' || expiryStatus === 'SOON';
+    return true;
+  });
+
+  const sorted = [...filteredProducts].sort((a, b) => {
     let res = 0;
     if (sortBy === 'name') res = a.name.localeCompare(b.name);
     else if (sortBy === 'stock') res = (a.stockQuantity || 0) - (b.stockQuantity || 0);
@@ -156,6 +167,13 @@ export default function InventoryTab() {
     return status === 'SOON' || status === 'TODAY';
   }).length || 0;
   const expired = displayProducts.filter(p => getExpiryInfo(p).status === 'EXPIRED').length || 0;
+  const expiryRisk = expired + expiringSoon;
+  const stockFilters: { id: StockStatusFilter; label: string; count: number }[] = [
+    { id: 'ALL', label: 'All items', count: displayProducts.length },
+    { id: 'EXPIRY_RISK', label: 'Close expiry', count: expiryRisk },
+    { id: 'OUT_OF_STOCK', label: 'Out of stock', count: outOfStock },
+    { id: 'ALMOST_OUT', label: 'Almost out', count: lowStock },
+  ];
 
   const toggleSort = (col: SortColumn) => {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -250,7 +268,7 @@ export default function InventoryTab() {
   const handleRestock = async () => {
     if (!selectedProduct || !activeBusinessId || !activeBranchId) return;
     const qty = Number(restockQty);
-    if (qty <= 0) return error('Enter a valid restock quantity.');
+    if (qty <= 0) return error('Enter a valid stock quantity.');
     const expiryDate = restockExpiryDate ? dateInputToExpiryMs(restockExpiryDate) : null;
     if (restockExpiryDate && !expiryDate) return error('Choose a valid expiry date.');
     try {
@@ -259,7 +277,7 @@ export default function InventoryTab() {
         quantity: qty,
         costPrice: restockCost ? Number(restockCost) || 0 : undefined,
         expiryDate: expiryDate || undefined,
-        reference: 'Manual restock',
+        reference: 'Manual stock adjustment',
         branchId: activeBranchId,
         businessId: activeBusinessId,
       });
@@ -279,7 +297,7 @@ export default function InventoryTab() {
       setIsRestocking(false);
       success('Stock updated.');
     } catch (err: any) {
-      error('Failed to restock: ' + err.message);
+      error('Failed to adjust stock: ' + err.message);
     }
   };
 
@@ -344,7 +362,7 @@ export default function InventoryTab() {
         {[
           { label: 'Total products', value: products?.length || 0, icon: 'inventory_2', color: 'bg-primary', unit: '' },
           { label: 'Stock value', value: `Ksh ${totalValue.toLocaleString()}`, icon: 'payments', color: 'bg-emerald-600', unit: '' },
-          { label: 'Low stock', value: lowStock, icon: 'warning', color: 'bg-amber-500', unit: 'items' },
+          { label: 'Almost out', value: lowStock, icon: 'warning', color: 'bg-amber-500', unit: 'items' },
           { label: 'Out of stock', value: outOfStock, icon: 'do_not_disturb_on', color: 'bg-rose-600', unit: 'items' },
           { label: 'Expiry watch', value: `${expired}/${expiringSoon}`, icon: 'calendar', color: expired ? 'bg-rose-600' : expiringSoon ? 'bg-amber-500' : 'bg-slate-700', unit: 'expired/soon' },
         ].map(kpi => (
@@ -360,7 +378,7 @@ export default function InventoryTab() {
         ))}
       </div>
 
-      {/* Toolbar: Search + Categories */}
+      {/* Toolbar: Search + Filters */}
       <div className="flex flex-col md:flex-row gap-3">
         <div className="relative group flex-1">
           <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors">
@@ -402,6 +420,26 @@ export default function InventoryTab() {
         </div>
       </div>
 
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+        {stockFilters.map(filter => (
+          <button
+            key={filter.id}
+            type="button"
+            onClick={() => setStockStatusFilter(filter.id)}
+            className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border flex-shrink-0 flex items-center gap-2 ${
+              stockStatusFilter === filter.id ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
+            }`}
+          >
+            <span>{filter.label}</span>
+            <span className={`min-w-5 h-5 px-1.5 rounded-lg flex items-center justify-center text-[9px] ${
+              stockStatusFilter === filter.id ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'
+            }`}>
+              {filter.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Table */}
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden flex-1 flex flex-col min-h-0">
 
@@ -431,6 +469,15 @@ export default function InventoryTab() {
                 <MaterialIcon name="inventory" className="text-slate-300" style={{ fontSize: '32px' }} />
               </div>
               <p className="text-sm font-bold text-slate-400">No products found</p>
+              {stockStatusFilter !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() => setStockStatusFilter('ALL')}
+                  className="mt-3 px-4 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest"
+                >
+                  Clear stock filter
+                </button>
+              )}
             </div>
           ) : sorted.map(product => {
             const stock = product.stockQuantity || 0;
@@ -528,7 +575,7 @@ export default function InventoryTab() {
         {sorted.length > 0 && (
           <div className="flex-shrink-0 px-6 py-3 border-t border-slate-50 bg-slate-50/50">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Showing {sorted.length} of {products?.length || 0} products
+              Showing {sorted.length} of {displayProducts.length} products
             </p>
           </div>
         )}
@@ -668,7 +715,7 @@ export default function InventoryTab() {
                 </button>
               ) : (
                 <button onClick={() => { setRestockExpiryDate(expiryMsToDateInput(selectedProduct.expiryDate)); setIsRestocking(true); }} className="py-3 bg-primary text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
-                  <MaterialIcon name="add" style={{ fontSize: '18px' }} /> Restock
+                  <MaterialIcon name="add" style={{ fontSize: '18px' }} /> Adjust stock
                 </button>
               )}
             </div>
@@ -681,14 +728,14 @@ export default function InventoryTab() {
           <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsRestocking(false)} />
           <div className="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 z-10">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-black text-slate-900">Restock item</h3>
+              <h3 className="text-lg font-black text-slate-900">Adjust stock</h3>
               <button onClick={() => setIsRestocking(false)} className="w-9 h-9 rounded-xl bg-slate-50 text-slate-400 hover:text-slate-700">
                 <MaterialIcon name="close" style={{ fontSize: '20px' }} />
               </button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Quantity received</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Quantity to add</label>
                 <input type="number" step="any" value={restockQty} onChange={e => setRestockQty(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="0" />
               </div>
               <div>
@@ -701,7 +748,7 @@ export default function InventoryTab() {
                 <p className="mt-1 text-[10px] font-bold text-slate-400">Leave blank if this batch does not expire.</p>
               </div>
               <button onClick={handleRestock} disabled={!restockQty || Number(restockQty) <= 0} className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50">
-                Update stock
+                Save stock adjustment
               </button>
             </div>
           </div>

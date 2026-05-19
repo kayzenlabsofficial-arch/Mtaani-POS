@@ -79,7 +79,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const auth = await authorizeRequest(request, env);
     if (!auth.ok) return auth.response;
     if (!auth.service && !STOCK_ROLES.has(auth.principal.role)) {
-      return json({ error: 'You are not allowed to restock inventory.' }, 403);
+      return json({ error: 'You are not allowed to adjust stock.' }, 403);
     }
 
     const body = await request.json().catch(() => null) as any;
@@ -92,7 +92,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const quantity = asNumber(body?.quantity);
-    if (quantity <= 0) throw new PolicyError('Enter a valid restock quantity.', 400);
+    if (quantity <= 0) throw new PolicyError('Enter a valid stock quantity.', 400);
     const hasCost = body?.costPrice !== undefined && body?.costPrice !== null && body?.costPrice !== '';
     const costPrice = hasCost ? roundMoney(asNumber(body.costPrice)) : null;
     if (costPrice !== null && costPrice < 0) throw new PolicyError('Cost price cannot be negative.', 400);
@@ -145,7 +145,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         'IN',
         quantity,
         now,
-        trimText(body?.reference, 160) || 'Manual restock',
+        trimText(body?.reference, 160) || 'Manual stock adjustment',
         branchId,
         businessId,
         body?.shiftId || null,
@@ -164,7 +164,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         'product',
         productId,
         'INFO',
-        `Restocked ${product.name} by ${quantity}.`,
+        `Adjusted stock for ${product.name} by ${quantity}.`,
         businessId,
         branchId,
         now,
@@ -180,6 +180,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     });
   } catch (err: any) {
     const status = err instanceof PolicyError ? err.status : 500;
-    return json({ error: err?.message || 'Could not restock inventory.' }, status);
+    return json({ error: err?.message || 'Could not adjust stock.' }, status);
   }
 };
