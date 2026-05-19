@@ -9,7 +9,7 @@ import { flushOutboxNow } from '../offline/offlineSync';
 import { getCurrentShiftId } from '../utils/shiftSession';
 
 export function useMtaaniPOS() {
-  const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'REPORTS' | 'ADMIN_PANEL'>('REGISTER');
+  const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'HR' | 'REPORTS' | 'ADMIN_PANEL'>('REGISTER');
   const activeTabRef = useRef(activeTab);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
@@ -154,7 +154,7 @@ export function useMtaaniPOS() {
       error("Only administrators can open admin controls.");
       return;
     }
-    if ((nextTab === 'REPORTS' || nextTab === 'SUPPLIERS') && role !== 'ADMIN' && role !== 'MANAGER') {
+    if ((nextTab === 'REPORTS' || nextTab === 'SUPPLIERS' || nextTab === 'HR') && role !== 'ADMIN' && role !== 'MANAGER') {
       error("You do not have permission to open that section.");
       return;
     }

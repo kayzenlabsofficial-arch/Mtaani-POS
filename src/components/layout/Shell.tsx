@@ -17,6 +17,7 @@ import {
   ShoppingCart,
   Store,
   Truck,
+  UserRound,
   Users,
 } from 'lucide-react';
 
@@ -37,6 +38,7 @@ const MaterialIcon = ({ name, className = "", style = {} }: { name: string, clas
       keyboard_return: RotateCcw,
       receipt_long: ReceiptText,
       local_shipping: Truck,
+      badge: UserRound,
       shopping_bag: ShoppingBag,
       analytics: BarChart3,
       settings: Settings,
@@ -217,11 +219,12 @@ export function MoreOptionsMenu({ onTabChange, onLogout, onClose, currentUser }:
   const management = [
     { id: 'SUPPLIERS', label: 'Suppliers', icon: 'local_shipping', color: 'bg-teal-500' },
     { id: 'PURCHASES', label: 'Purchases', icon: 'shopping_bag', color: 'bg-indigo-500' },
+    { id: 'HR', label: 'HR', icon: 'badge', color: 'bg-sky-600' },
     { id: 'REPORTS', label: 'Reports', icon: 'analytics', color: 'bg-emerald-500' },
     { id: 'ADMIN_PANEL', label: 'Admin', icon: 'settings', color: 'bg-slate-600' },
   ].filter(item => {
     if (item.id === 'ADMIN_PANEL') return isAdmin;
-    if (item.id === 'SUPPLIERS' || item.id === 'REPORTS') return isAdminOrManager;
+    if (item.id === 'SUPPLIERS' || item.id === 'REPORTS' || item.id === 'HR') return isAdminOrManager;
     return true;
   });
 

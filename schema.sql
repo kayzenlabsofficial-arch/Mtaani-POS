@@ -170,6 +170,73 @@ CREATE TABLE IF NOT EXISTS expenses (
     updated_at INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS hrStaff (
+    id TEXT PRIMARY KEY,
+    fullName TEXT NOT NULL,
+    phone TEXT,
+    email TEXT,
+    roleTitle TEXT NOT NULL,
+    department TEXT,
+    nationalId TEXT,
+    kraPin TEXT,
+    nhifNumber TEXT,
+    nssfNumber TEXT,
+    hireDate INTEGER,
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    baseSalary REAL DEFAULT 0,
+    payCycle TEXT DEFAULT 'MONTHLY',
+    emergencyContact TEXT,
+    notes TEXT,
+    branchId TEXT,
+    businessId TEXT,
+    updated_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS hrStaffDocuments (
+    id TEXT PRIMARY KEY,
+    staffId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    documentType TEXT NOT NULL,
+    documentNumber TEXT,
+    issueDate INTEGER,
+    expiryDate INTEGER,
+    fileName TEXT,
+    fileUrl TEXT,
+    notes TEXT,
+    branchId TEXT,
+    businessId TEXT,
+    updated_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS hrAttendance (
+    id TEXT PRIMARY KEY,
+    staffId TEXT NOT NULL,
+    date INTEGER NOT NULL,
+    checkIn TEXT,
+    checkOut TEXT,
+    status TEXT NOT NULL,
+    hoursWorked REAL,
+    notes TEXT,
+    branchId TEXT,
+    businessId TEXT,
+    updated_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS hrPayrollAdjustments (
+    id TEXT PRIMARY KEY,
+    staffId TEXT NOT NULL,
+    type TEXT NOT NULL,
+    label TEXT NOT NULL,
+    amount REAL NOT NULL,
+    effectiveDate INTEGER NOT NULL,
+    recurring INTEGER DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    notes TEXT,
+    branchId TEXT,
+    businessId TEXT,
+    updated_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -394,6 +461,10 @@ CREATE INDEX IF NOT EXISTS idx_stockmovements_product ON stockMovements(productI
 CREATE INDEX IF NOT EXISTS idx_salesInvoices_customer ON salesInvoices(customerId);
 CREATE INDEX IF NOT EXISTS idx_transactions_branch ON transactions(branchId);
 CREATE INDEX IF NOT EXISTS idx_shifts_branch ON shifts(branchId);
+CREATE INDEX IF NOT EXISTS idx_hrStaff_branch ON hrStaff(businessId, branchId, status);
+CREATE INDEX IF NOT EXISTS idx_hrStaffDocuments_staff ON hrStaffDocuments(businessId, branchId, staffId);
+CREATE INDEX IF NOT EXISTS idx_hrAttendance_staff_date ON hrAttendance(businessId, branchId, staffId, date);
+CREATE INDEX IF NOT EXISTS idx_hrPayrollAdjustments_staff_date ON hrPayrollAdjustments(businessId, branchId, staffId, effectiveDate);
 
 -- MIGRATION: Add branchId to existing tables (will fail if already present, which is fine in a script)
 -- sqlite doesn't have "IF NOT EXISTS" for ADD COLUMN, so we'll run these individually if needed

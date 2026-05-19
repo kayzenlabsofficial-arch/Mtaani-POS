@@ -360,6 +360,79 @@ export interface Expense {
   updated_at?: number;
 }
 
+export type HRStaffStatus = 'ACTIVE' | 'ON_LEAVE' | 'SUSPENDED' | 'EXITED';
+export type HRPayCycle = 'MONTHLY' | 'WEEKLY' | 'DAILY';
+export type HRAttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'HALF_DAY' | 'ON_LEAVE';
+export type HRPayrollType = 'SALARY' | 'BONUS' | 'DEDUCTION' | 'PENALTY';
+export type HRPayrollStatus = 'ACTIVE' | 'PAID' | 'CANCELLED';
+
+export interface HRStaff {
+  id: string;
+  fullName: string;
+  phone?: string;
+  email?: string;
+  roleTitle: string;
+  department?: string;
+  nationalId?: string;
+  kraPin?: string;
+  nhifNumber?: string;
+  nssfNumber?: string;
+  hireDate?: number;
+  status: HRStaffStatus;
+  baseSalary: number;
+  payCycle: HRPayCycle;
+  emergencyContact?: string;
+  notes?: string;
+  branchId: string;
+  businessId: string;
+  updated_at?: number;
+}
+
+export interface HRStaffDocument {
+  id: string;
+  staffId: string;
+  name: string;
+  documentType: string;
+  documentNumber?: string;
+  issueDate?: number;
+  expiryDate?: number;
+  fileName?: string;
+  fileUrl?: string;
+  notes?: string;
+  branchId: string;
+  businessId: string;
+  updated_at?: number;
+}
+
+export interface HRAttendance {
+  id: string;
+  staffId: string;
+  date: number;
+  checkIn?: string;
+  checkOut?: string;
+  status: HRAttendanceStatus;
+  hoursWorked?: number;
+  notes?: string;
+  branchId: string;
+  businessId: string;
+  updated_at?: number;
+}
+
+export interface HRPayrollAdjustment {
+  id: string;
+  staffId: string;
+  type: HRPayrollType;
+  label: string;
+  amount: number;
+  effectiveDate: number;
+  recurring: boolean | number;
+  status: HRPayrollStatus;
+  notes?: string;
+  branchId: string;
+  businessId: string;
+  updated_at?: number;
+}
+
 export interface FinancialAccount {
   id: string;
   name: string;
@@ -485,6 +558,10 @@ class MtaaniCloudDB {
   suppliers           = new CloudTable<Supplier>('suppliers');
   supplierPayments    = new CloudTable<SupplierPayment>('supplierPayments');
   expenses            = new CloudTable<Expense>('expenses');
+  hrStaff             = new CloudTable<HRStaff>('hrStaff');
+  hrStaffDocuments    = new CloudTable<HRStaffDocument>('hrStaffDocuments');
+  hrAttendance        = new CloudTable<HRAttendance>('hrAttendance');
+  hrPayrollAdjustments = new CloudTable<HRPayrollAdjustment>('hrPayrollAdjustments');
   settings            = new CloudTable<BusinessSettings>('settings');
   purchaseOrders      = new CloudTable<PurchaseOrder>('purchaseOrders');
   stockAdjustmentRequests = new CloudTable<StockAdjustmentRequest>('stockAdjustmentRequests');
@@ -522,6 +599,10 @@ class MtaaniCloudDB {
     this.suppliers.reset();
     this.supplierPayments.reset();
     this.expenses.reset();
+    this.hrStaff.reset();
+    this.hrStaffDocuments.reset();
+    this.hrAttendance.reset();
+    this.hrPayrollAdjustments.reset();
     this.purchaseOrders.reset();
     this.stockAdjustmentRequests.reset();
     this.shifts.reset();
@@ -589,6 +670,15 @@ class MtaaniCloudDB {
         () => this.financialAccounts.reload()
 
       );
+
+      if (state.currentUser?.role === 'ADMIN' || state.currentUser?.role === 'MANAGER') {
+        reloads.push(
+          () => this.hrStaff.reload(),
+          () => this.hrStaffDocuments.reload(),
+          () => this.hrAttendance.reload(),
+          () => this.hrPayrollAdjustments.reload(),
+        );
+      }
     }
 
     if (state.isSystemAdmin || state.currentUser?.role === 'ROOT') {

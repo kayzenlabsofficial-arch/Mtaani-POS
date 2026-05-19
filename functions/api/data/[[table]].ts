@@ -11,7 +11,8 @@ const ALLOWED_TABLES = new Set([
   'endOfDayReports', 'stockMovements', 'expenses', 'customers',
   'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries',
   'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories',
-  'branches', 'businesses', 'system', 'expenseAccounts', 'financialAccounts', 'productIngredients', 'loginAttempts', 'auditLogs'
+  'branches', 'businesses', 'system', 'expenseAccounts', 'financialAccounts', 'productIngredients', 'loginAttempts', 'auditLogs',
+  'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments'
 ]);
 
 // Global tables: shared across branches, isolated by businessId
@@ -23,6 +24,7 @@ const MANAGER_WRITE_TABLES = new Set([
   'products', 'productIngredients', 'serviceItems', 'suppliers',
   'purchaseOrders', 'supplierPayments', 'creditNotes', 'salesInvoices',
   'stockMovements', 'expenses',
+  'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments',
 ]);
 const CASHIER_WRITE_TABLES = new Set([
   'transactions', 'customers', 'customerPayments', 'shifts',
@@ -33,6 +35,13 @@ const MANAGER_DELETE_TABLES = new Set([
   'products', 'productIngredients', 'serviceItems', 'suppliers',
   'purchaseOrders', 'supplierPayments', 'creditNotes', 'salesInvoices',
   'customers', 'expenses', 'stockAdjustmentRequests',
+  'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments',
+]);
+const MANAGER_READ_TABLES = new Set([
+  'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments',
+]);
+const HR_TABLES = new Set([
+  'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments',
 ]);
 const COMMAND_ONLY_WRITE_TABLES = new Set([
   'businesses',
@@ -95,6 +104,14 @@ CREATE TABLE IF NOT EXISTS cashPicks (id TEXT PRIMARY KEY, amount REAL NOT NULL,
  CREATE TABLE IF NOT EXISTS endOfDayReports (id TEXT PRIMARY KEY, shiftId TEXT, timestamp INTEGER NOT NULL, openingFloat REAL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, cashSales REAL NOT NULL, mpesaSales REAL NOT NULL, pdqSales REAL, totalExpenses REAL NOT NULL, supplierPaymentsTotal REAL, remittanceTotal REAL, totalPicks REAL NOT NULL, totalRefunds REAL, expectedCash REAL NOT NULL, reportedCash REAL NOT NULL, difference REAL NOT NULL, cashierName TEXT NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, expiryDate INTEGER, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, amount REAL NOT NULL, category TEXT NOT NULL, description TEXT, timestamp INTEGER NOT NULL, userName TEXT, status TEXT NOT NULL, source TEXT, accountId TEXT, productId TEXT, quantity REAL, preparedBy TEXT, approvedBy TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS hrStaff (id TEXT PRIMARY KEY, fullName TEXT NOT NULL, phone TEXT, email TEXT, roleTitle TEXT NOT NULL, department TEXT, nationalId TEXT, kraPin TEXT, nhifNumber TEXT, nssfNumber TEXT, hireDate INTEGER, status TEXT NOT NULL DEFAULT 'ACTIVE', baseSalary REAL DEFAULT 0, payCycle TEXT DEFAULT 'MONTHLY', emergencyContact TEXT, notes TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS hrStaffDocuments (id TEXT PRIMARY KEY, staffId TEXT NOT NULL, name TEXT NOT NULL, documentType TEXT NOT NULL, documentNumber TEXT, issueDate INTEGER, expiryDate INTEGER, fileName TEXT, fileUrl TEXT, notes TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS hrAttendance (id TEXT PRIMARY KEY, staffId TEXT NOT NULL, date INTEGER NOT NULL, checkIn TEXT, checkOut TEXT, status TEXT NOT NULL, hoursWorked REAL, notes TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS hrPayrollAdjustments (id TEXT PRIMARY KEY, staffId TEXT NOT NULL, type TEXT NOT NULL, label TEXT NOT NULL, amount REAL NOT NULL, effectiveDate INTEGER NOT NULL, recurring INTEGER DEFAULT 0, status TEXT NOT NULL DEFAULT 'ACTIVE', notes TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE INDEX IF NOT EXISTS idx_hrStaff_branch ON hrStaff(businessId, branchId, status);
+CREATE INDEX IF NOT EXISTS idx_hrStaffDocuments_staff ON hrStaffDocuments(businessId, branchId, staffId);
+CREATE INDEX IF NOT EXISTS idx_hrAttendance_staff_date ON hrAttendance(businessId, branchId, staffId, date);
+CREATE INDEX IF NOT EXISTS idx_hrPayrollAdjustments_staff_date ON hrPayrollAdjustments(businessId, branchId, staffId, effectiveDate);
  CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, totalSpent REAL, balance REAL, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS customerPayments (id TEXT PRIMARY KEY, customerId TEXT NOT NULL, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, reference TEXT, allocations TEXT, timestamp INTEGER NOT NULL, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS serviceItems (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT, description TEXT, price REAL NOT NULL, taxCategory TEXT DEFAULT 'A', isActive INTEGER DEFAULT 1, businessId TEXT, updated_at INTEGER);
@@ -161,6 +178,26 @@ function canDeleteTable(role: string, table: string, service: boolean): boolean 
   if (service || isAdminLike(role)) return true;
   if (role === 'MANAGER') return MANAGER_DELETE_TABLES.has(table);
   return false;
+}
+
+function canReadTable(role: string, table: string, service: boolean): boolean {
+  if (service || isAdminLike(role)) return true;
+  if (MANAGER_READ_TABLES.has(table)) return role === 'MANAGER';
+  return true;
+}
+
+async function ensureHrSchema(db: D1Database): Promise<void> {
+  const statements = [
+    "CREATE TABLE IF NOT EXISTS hrStaff (id TEXT PRIMARY KEY, fullName TEXT NOT NULL, phone TEXT, email TEXT, roleTitle TEXT NOT NULL, department TEXT, nationalId TEXT, kraPin TEXT, nhifNumber TEXT, nssfNumber TEXT, hireDate INTEGER, status TEXT NOT NULL DEFAULT 'ACTIVE', baseSalary REAL DEFAULT 0, payCycle TEXT DEFAULT 'MONTHLY', emergencyContact TEXT, notes TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS hrStaffDocuments (id TEXT PRIMARY KEY, staffId TEXT NOT NULL, name TEXT NOT NULL, documentType TEXT NOT NULL, documentNumber TEXT, issueDate INTEGER, expiryDate INTEGER, fileName TEXT, fileUrl TEXT, notes TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS hrAttendance (id TEXT PRIMARY KEY, staffId TEXT NOT NULL, date INTEGER NOT NULL, checkIn TEXT, checkOut TEXT, status TEXT NOT NULL, hoursWorked REAL, notes TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS hrPayrollAdjustments (id TEXT PRIMARY KEY, staffId TEXT NOT NULL, type TEXT NOT NULL, label TEXT NOT NULL, amount REAL NOT NULL, effectiveDate INTEGER NOT NULL, recurring INTEGER DEFAULT 0, status TEXT NOT NULL DEFAULT 'ACTIVE', notes TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER)",
+    "CREATE INDEX IF NOT EXISTS idx_hrStaff_branch ON hrStaff(businessId, branchId, status)",
+    "CREATE INDEX IF NOT EXISTS idx_hrStaffDocuments_staff ON hrStaffDocuments(businessId, branchId, staffId)",
+    "CREATE INDEX IF NOT EXISTS idx_hrAttendance_staff_date ON hrAttendance(businessId, branchId, staffId, date)",
+    "CREATE INDEX IF NOT EXISTS idx_hrPayrollAdjustments_staff_date ON hrPayrollAdjustments(businessId, branchId, staffId, effectiveDate)",
+  ];
+  for (const statement of statements) await db.prepare(statement).run();
 }
 
 function asNumber(value: unknown, fallback = 0): number {
@@ -515,7 +552,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['mpesaCallbacks', 'utilizedCustomerName TEXT'],
           ['mpesaCallbacks', 'utilizedAt INTEGER'],
         ];
-        const allTables = ['users', 'products', 'productIngredients', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts', 'auditLogs'];
+        const allTables = ['users', 'products', 'productIngredients', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments', 'customers', 'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts', 'auditLogs'];
         for (const t of allTables) {
           try { await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN businessId TEXT`).run(); } catch (e) {}
         }
@@ -529,6 +566,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     // ── Table Allow-list check ───────────────────────────────────────────────
     if (!table || !ALLOWED_TABLES.has(table)) {
       return new Response(JSON.stringify({ error: 'Table not allowed' }), { status: 400, headers: jsonHeaders() });
+    }
+
+    if (!canReadTable(principal.role, table, service)) {
+      return new Response(JSON.stringify({ error: 'You are not allowed to open this data.' }), { status: 403, headers: jsonHeaders() });
+    }
+
+    if (HR_TABLES.has(table)) {
+      await ensureHrSchema(env.DB);
     }
 
     if (table === 'loginAttempts') {
@@ -852,7 +897,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       if (table === 'businesses') {
         if (principal.role !== 'ROOT' && !service) return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });
         // Cascade delete: remove ALL data for this business
-        const cascadeTables = ['users', 'products', 'productIngredients', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'customers', 'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
+        const cascadeTables = ['users', 'products', 'productIngredients', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments', 'customers', 'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
         const batch = cascadeTables.map(t => env.DB.prepare(`DELETE FROM ${t} WHERE businessId = ?`).bind(id));
         batch.push(env.DB.prepare(`DELETE FROM businesses WHERE id = ?`).bind(id));
         await env.DB.batch(batch);

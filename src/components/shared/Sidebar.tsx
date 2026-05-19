@@ -14,6 +14,7 @@ import {
   ShoppingCart,
   Store,
   Truck,
+  UserRound,
   Users,
 } from 'lucide-react';
 
@@ -72,6 +73,7 @@ const navGroups: Array<{
     id: 'system',
     label: 'Control',
     items: [
+      { id: 'HR', label: 'HR', icon: UserRound, desc: 'Staff and payroll', accent: 'text-sky-700 bg-sky-50 border-sky-100', adminOnly: true },
       { id: 'ADMIN_PANEL', label: 'Admin panel', icon: Settings, desc: 'Users and policy', accent: 'text-slate-800 bg-slate-100 border-slate-200', adminOnly: true },
     ],
   },

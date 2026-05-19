@@ -27,6 +27,7 @@ import SalesInvoicesTab from './components/tabs/SalesInvoicesTab';
 import SupplierPaymentsTab from './components/tabs/SupplierPaymentsTab';
 import DocumentsTab from './components/tabs/DocumentsTab';
 import ReportsTab from './components/tabs/ReportsTab';
+import HRTab from './components/tabs/HRTab';
 import AdminPanel from './components/tabs/AdminPanel';
 import AIAssistant from './components/ai/AIAssistant';
 import BillingBanner from './components/billing/BillingBanner';
@@ -213,6 +214,7 @@ export default function MtaaniPOS() {
             {activeTab === 'SUPPLIER_PAYMENTS' && <SupplierPaymentsTab financialAccounts={financialAccounts || []} />}
             {activeTab === 'REFUNDS' && <RefundsTab setActiveTab={navigateToTab} />}
             {activeTab === 'DOCUMENTS' && <DocumentsTab />}
+            {activeTab === 'HR' && <HRTab />}
             {activeTab === 'REPORTS' && <ReportsTab />}
             {activeTab === 'ADMIN_PANEL' && <AdminPanel updateServiceWorker={updateServiceWorker} needRefresh={needRefresh} />}
           </div>
