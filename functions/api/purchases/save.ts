@@ -153,16 +153,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     for (const raw of rawItems.slice(0, 100)) {
       const productId = trimText(raw?.productId, 160);
       const expectedQuantity = asNumber(raw?.expectedQuantity);
-      const unitCost = roundMoney(asNumber(raw?.unitCost));
-      if (!productId || expectedQuantity <= 0 || unitCost < 0) throw new PolicyError('Purchase order line items are invalid.', 400);
+      if (!productId || expectedQuantity <= 0) throw new PolicyError('Purchase order line items are invalid.', 400);
       const product = await env.DB.prepare(`
-        SELECT id, name, branchId
+        SELECT id, name, branchId, costPrice, sellingPrice
         FROM products
         WHERE id = ? AND businessId = ?
         LIMIT 1
       `).bind(productId, businessId).first<any>();
       if (!product) throw new PolicyError('Purchase order includes a product that was not found.', 404);
       if (product.branchId && product.branchId !== branchId) throw new PolicyError(`Product "${product.name}" belongs to another branch.`, 403);
+      const inventoryCost = asNumber(product.costPrice);
+      const unitCost = roundMoney(inventoryCost > 0 ? inventoryCost : asNumber(product.sellingPrice));
       items.push({
         productId,
         name: product.name,
