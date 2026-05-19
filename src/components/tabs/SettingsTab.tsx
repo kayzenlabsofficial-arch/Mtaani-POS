@@ -4,7 +4,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
-import { DEFAULT_CASH_DRAWER_LIMIT, DEFAULT_CASH_FLOAT_TARGET } from '../../utils/ownerMode';
+import { DEFAULT_CASH_DRAWER_LIMIT } from '../../utils/ownerMode';
 import { getBusinessSettings, settingsIdForBusiness } from '../../utils/settings';
 import {
   assignBrowserPrinter,
@@ -42,7 +42,6 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
     autoApproveOwnerActions: true,
     cashSweepEnabled: true,
     cashDrawerLimit: String(DEFAULT_CASH_DRAWER_LIMIT),
-    cashFloatTarget: String(DEFAULT_CASH_FLOAT_TARGET),
   });
   const [isUpdating, setIsUpdating] = useState(false);
   const [openSection, setOpenSection] = useState<'IDENTITY' | 'HARDWARE' | 'SYSTEM' | 'SECURITY'>('IDENTITY');
@@ -77,7 +76,6 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
           autoApproveOwnerActions: savedSettings.autoApproveOwnerActions !== 0,
           cashSweepEnabled: savedSettings.cashSweepEnabled !== 0,
           cashDrawerLimit: String(savedSettings.cashDrawerLimit ?? DEFAULT_CASH_DRAWER_LIMIT),
-          cashFloatTarget: String(savedSettings.cashFloatTarget ?? DEFAULT_CASH_FLOAT_TARGET),
         });
      }
   }, [savedSettings]);
@@ -231,7 +229,6 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
             autoApproveOwnerActions: ownerSettings.autoApproveOwnerActions ? 1 : 0,
             cashSweepEnabled: ownerSettings.cashSweepEnabled ? 1 : 0,
             cashDrawerLimit: Number(ownerSettings.cashDrawerLimit) || DEFAULT_CASH_DRAWER_LIMIT,
-            cashFloatTarget: Number(ownerSettings.cashFloatTarget) || DEFAULT_CASH_FLOAT_TARGET,
             businessId: activeBusinessId,
           },
         });
@@ -531,22 +528,13 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="pt-1">
                     <div>
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Drawer limit</label>
                       <input
                         type="number"
                         value={ownerSettings.cashDrawerLimit}
                         onChange={e => setOwnerSettings(prev => ({ ...prev, cashDrawerLimit: e.target.value }))}
-                        className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none shadow-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Keep float</label>
-                      <input
-                        type="number"
-                        value={ownerSettings.cashFloatTarget}
-                        onChange={e => setOwnerSettings(prev => ({ ...prev, cashFloatTarget: e.target.value }))}
                         className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 outline-none shadow-sm"
                       />
                     </div>

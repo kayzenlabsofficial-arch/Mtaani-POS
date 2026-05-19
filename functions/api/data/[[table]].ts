@@ -100,8 +100,8 @@ CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TE
 CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId);
 CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, total REAL NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, discountAmount REAL, discountReason TEXT, items TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, paymentMethod TEXT, amountTendered REAL, changeGiven REAL, mpesaReference TEXT, mpesaCode TEXT, mpesaCustomer TEXT, mpesaCheckoutRequestId TEXT, cashierId TEXT, cashierName TEXT, customerId TEXT, customerName TEXT, discount REAL, discountType TEXT, splitPayments TEXT, splitData TEXT, isSynced INTEGER, approvedBy TEXT, pendingRefundItems TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS cashPicks (id TEXT PRIMARY KEY, amount REAL NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, userName TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
- CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, startTime INTEGER NOT NULL, endTime INTEGER, openingFloat REAL, cashierName TEXT NOT NULL, status TEXT NOT NULL, branchId TEXT, lastSyncAt INTEGER, businessId TEXT, updated_at INTEGER);
- CREATE TABLE IF NOT EXISTS endOfDayReports (id TEXT PRIMARY KEY, shiftId TEXT, timestamp INTEGER NOT NULL, openingFloat REAL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, cashSales REAL NOT NULL, mpesaSales REAL NOT NULL, pdqSales REAL, totalExpenses REAL NOT NULL, supplierPaymentsTotal REAL, remittanceTotal REAL, totalPicks REAL NOT NULL, totalRefunds REAL, expectedCash REAL NOT NULL, reportedCash REAL NOT NULL, difference REAL NOT NULL, cashierName TEXT NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
+ CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, startTime INTEGER NOT NULL, endTime INTEGER, cashierName TEXT NOT NULL, status TEXT NOT NULL, branchId TEXT, lastSyncAt INTEGER, businessId TEXT, updated_at INTEGER);
+ CREATE TABLE IF NOT EXISTS endOfDayReports (id TEXT PRIMARY KEY, shiftId TEXT, timestamp INTEGER NOT NULL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, cashSales REAL NOT NULL, mpesaSales REAL NOT NULL, pdqSales REAL, totalExpenses REAL NOT NULL, supplierPaymentsTotal REAL, remittanceTotal REAL, totalPicks REAL NOT NULL, totalRefunds REAL, expectedCash REAL NOT NULL, reportedCash REAL NOT NULL, difference REAL NOT NULL, cashierName TEXT NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, expiryDate INTEGER, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, amount REAL NOT NULL, category TEXT NOT NULL, description TEXT, timestamp INTEGER NOT NULL, userName TEXT, status TEXT NOT NULL, source TEXT, accountId TEXT, productId TEXT, quantity REAL, preparedBy TEXT, approvedBy TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS hrStaff (id TEXT PRIMARY KEY, fullName TEXT NOT NULL, phone TEXT, email TEXT, roleTitle TEXT NOT NULL, department TEXT, nationalId TEXT, kraPin TEXT, nhifNumber TEXT, nssfNumber TEXT, hireDate INTEGER, status TEXT NOT NULL DEFAULT 'ACTIVE', baseSalary REAL DEFAULT 0, payCycle TEXT DEFAULT 'MONTHLY', emergencyContact TEXT, notes TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
@@ -123,7 +123,7 @@ CREATE INDEX IF NOT EXISTS idx_hrPayrollAdjustments_staff_date ON hrPayrollAdjus
  CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_branch_date ON dailySummaries(businessId, branchId, date);
  CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (id TEXT PRIMARY KEY, productId TEXT NOT NULL, productName TEXT, oldQty REAL, newQty REAL, requestedQuantity REAL, reason TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, preparedBy TEXT, approvedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS purchaseOrders (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, items TEXT NOT NULL, totalAmount REAL NOT NULL, status TEXT NOT NULL, approvalStatus TEXT NOT NULL, paymentStatus TEXT, paidAmount REAL, orderDate INTEGER NOT NULL, expectedDate INTEGER, receivedDate INTEGER, invoiceNumber TEXT, poNumber TEXT, preparedBy TEXT, approvedBy TEXT, receivedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
- CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, storeName TEXT NOT NULL, location TEXT, tillNumber TEXT, kraPin TEXT, receiptFooter TEXT, ownerModeEnabled INTEGER DEFAULT 0, autoApproveOwnerActions INTEGER DEFAULT 1, cashSweepEnabled INTEGER DEFAULT 1, cashDrawerLimit REAL DEFAULT 5000, cashFloatTarget REAL DEFAULT 1000, aiAssistantEnabled INTEGER DEFAULT 1, aiDailyRequestLimit INTEGER DEFAULT 20, businessId TEXT, updated_at INTEGER);
+ CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, storeName TEXT NOT NULL, location TEXT, tillNumber TEXT, kraPin TEXT, receiptFooter TEXT, ownerModeEnabled INTEGER DEFAULT 0, autoApproveOwnerActions INTEGER DEFAULT 1, cashSweepEnabled INTEGER DEFAULT 1, cashDrawerLimit REAL DEFAULT 5000, aiAssistantEnabled INTEGER DEFAULT 1, aiDailyRequestLimit INTEGER DEFAULT 20, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, iconName TEXT NOT NULL, color TEXT NOT NULL, businessId TEXT, branchId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, name TEXT NOT NULL, location TEXT NOT NULL, phone TEXT, tillNumber TEXT, kraPin TEXT, isActive INTEGER NOT NULL DEFAULT 1, businessId TEXT, mpesaConsumerKey TEXT, mpesaConsumerSecret TEXT, mpesaPasskey TEXT, mpesaEnv TEXT, mpesaType TEXT DEFAULT 'paybill', mpesaStoreNumber TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS expenseAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, businessId TEXT, updated_at INTEGER);
@@ -496,7 +496,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['customerPayments', 'allocations TEXT'],
           ['categories', 'branchId TEXT'],
           ['shifts',     'lastSyncAt INTEGER'],
-          ['shifts',     'openingFloat REAL'],
           ['businesses', 'isActive INTEGER DEFAULT 1'],
           ['stockAdjustmentRequests', 'preparedBy TEXT'],
           ['stockAdjustmentRequests', 'approvedBy TEXT'],
@@ -544,7 +543,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['settings', 'autoApproveOwnerActions INTEGER DEFAULT 1'],
           ['settings', 'cashSweepEnabled INTEGER DEFAULT 1'],
           ['settings', 'cashDrawerLimit REAL DEFAULT 5000'],
-          ['settings', 'cashFloatTarget REAL DEFAULT 1000'],
           ['settings', 'aiAssistantEnabled INTEGER DEFAULT 1'],
           ['settings', 'aiDailyRequestLimit INTEGER DEFAULT 20'],
           ['mpesaCallbacks', 'utilizedTransactionId TEXT'],
@@ -681,7 +679,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN autoApproveOwnerActions INTEGER DEFAULT 1').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashSweepEnabled INTEGER DEFAULT 1').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashDrawerLimit REAL DEFAULT 5000').run(); } catch (e) {}
-      try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN cashFloatTarget REAL DEFAULT 1000').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN aiAssistantEnabled INTEGER DEFAULT 1').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE settings ADD COLUMN aiDailyRequestLimit INTEGER DEFAULT 20').run(); } catch (e) {}
     }

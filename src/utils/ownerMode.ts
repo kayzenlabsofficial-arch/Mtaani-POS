@@ -1,7 +1,6 @@
 import type { BusinessSettings, User } from '../db';
 
 export const DEFAULT_CASH_DRAWER_LIMIT = 5000;
-export const DEFAULT_CASH_FLOAT_TARGET = 1000;
 
 function settingFlag(value: unknown, fallback = false): boolean {
   if (value === undefined || value === null) return fallback;
@@ -37,8 +36,4 @@ export function isOwnerCashSweepEnabled(settings: BusinessSettings | null | unde
 
 export function getCashDrawerLimit(settings: BusinessSettings | null | undefined): number {
   return settingNumber(settings?.cashDrawerLimit, DEFAULT_CASH_DRAWER_LIMIT);
-}
-
-export function getCashFloatTarget(settings: BusinessSettings | null | undefined): number {
-  return settingNumber(settings?.cashFloatTarget, DEFAULT_CASH_FLOAT_TARGET);
 }

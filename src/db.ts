@@ -463,7 +463,6 @@ export interface BusinessSettings {
   autoApproveOwnerActions?: number;
   cashSweepEnabled?: number;
   cashDrawerLimit?: number;
-  cashFloatTarget?: number;
   aiAssistantEnabled?: number;
   aiDailyRequestLimit?: number;
   businessId: string;

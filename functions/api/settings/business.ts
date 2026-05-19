@@ -48,7 +48,6 @@ async function ensureSchema(db: D1Database) {
       autoApproveOwnerActions INTEGER DEFAULT 1,
       cashSweepEnabled INTEGER DEFAULT 1,
       cashDrawerLimit REAL DEFAULT 5000,
-      cashFloatTarget REAL DEFAULT 1000,
       aiAssistantEnabled INTEGER DEFAULT 1,
       aiDailyRequestLimit INTEGER DEFAULT 20,
       businessId TEXT,
@@ -61,7 +60,6 @@ async function ensureSchema(db: D1Database) {
     ['autoApproveOwnerActions', 'INTEGER DEFAULT 1'],
     ['cashSweepEnabled', 'INTEGER DEFAULT 1'],
     ['cashDrawerLimit', 'REAL DEFAULT 5000'],
-    ['cashFloatTarget', 'REAL DEFAULT 1000'],
     ['aiAssistantEnabled', 'INTEGER DEFAULT 1'],
     ['aiDailyRequestLimit', 'INTEGER DEFAULT 20'],
     ['businessId', 'TEXT'],
@@ -109,7 +107,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       autoApproveOwnerActions: flag(settings.autoApproveOwnerActions, numberValue(fallback.autoApproveOwnerActions, 1)),
       cashSweepEnabled: flag(settings.cashSweepEnabled, numberValue(fallback.cashSweepEnabled, 1)),
       cashDrawerLimit: Math.max(0, numberValue(settings.cashDrawerLimit, numberValue(fallback.cashDrawerLimit, 5000))),
-      cashFloatTarget: Math.max(0, numberValue(settings.cashFloatTarget, numberValue(fallback.cashFloatTarget, 1000))),
       aiAssistantEnabled: canEditAi
         ? flag(settings.aiAssistantEnabled, numberValue(fallback.aiAssistantEnabled, 1))
         : numberValue(fallback.aiAssistantEnabled, 1),
@@ -123,10 +120,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB.prepare(`
       INSERT OR REPLACE INTO settings (
         id, storeName, location, tillNumber, kraPin, receiptFooter,
-        ownerModeEnabled, autoApproveOwnerActions, cashSweepEnabled, cashDrawerLimit, cashFloatTarget,
+        ownerModeEnabled, autoApproveOwnerActions, cashSweepEnabled, cashDrawerLimit,
         aiAssistantEnabled, aiDailyRequestLimit, businessId, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       saved.id,
       saved.storeName,
@@ -138,7 +135,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       saved.autoApproveOwnerActions,
       saved.cashSweepEnabled,
       saved.cashDrawerLimit,
-      saved.cashFloatTarget,
       saved.aiAssistantEnabled,
       saved.aiDailyRequestLimit,
       businessId,

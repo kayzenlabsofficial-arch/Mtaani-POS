@@ -42,7 +42,6 @@ function defaultBusinessSettings(business: Business): BusinessSettings {
     autoApproveOwnerActions: 1,
     cashSweepEnabled: 1,
     cashDrawerLimit: 5000,
-    cashFloatTarget: 1000,
     aiAssistantEnabled: 1,
     aiDailyRequestLimit: DEFAULT_AI_LIMIT,
     businessId: business.id,

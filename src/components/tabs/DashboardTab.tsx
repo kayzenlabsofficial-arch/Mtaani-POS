@@ -4,7 +4,7 @@ import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { canUseOwnerMode, getCashDrawerLimit, getCashFloatTarget, isOwnerCashSweepEnabled, isOwnerModeEnabled } from '../../utils/ownerMode';
+import { canUseOwnerMode, getCashDrawerLimit, isOwnerCashSweepEnabled, isOwnerModeEnabled } from '../../utils/ownerMode';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
 import { getCurrentShiftId } from '../../utils/shiftSession';
@@ -295,7 +295,6 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const ownerModeActive = canUseOwnerMode(currentUser) && isOwnerModeEnabled(businessSettings);
   const cashSweepActive = ownerModeActive && isOwnerCashSweepEnabled(businessSettings);
   const cashDrawerLimit = getCashDrawerLimit(businessSettings);
-  const cashFloatTarget = getCashFloatTarget(businessSettings);
 
   const actualCashDrawer = Math.max(0, calculateCashDrawer({
     transactions: branchTransactions || [],
@@ -305,7 +304,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     customerPayments: branchCustomerPayments || [],
     since: getTodayStartMs(),
   }).actualCashDrawer);
-  const sweepAmount = Math.max(0, actualCashDrawer - cashFloatTarget);
+  const sweepAmount = Math.max(0, actualCashDrawer - cashDrawerLimit);
   const shouldSweepCash = cashSweepActive && actualCashDrawer > cashDrawerLimit && sweepAmount > 0;
 
   const handleBankExcessCash = async () => {
@@ -321,7 +320,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         businessId: activeBusinessId,
       });
       await db.cashPicks.reload();
-      success(`Banked Ksh ${sweepAmount.toLocaleString()} and left Ksh ${cashFloatTarget.toLocaleString()} in drawer.`);
+      success(`Banked Ksh ${sweepAmount.toLocaleString()} from the drawer.`);
     } catch (err: any) {
       error(err.message || 'Cash sweep failed.');
     } finally {

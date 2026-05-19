@@ -102,7 +102,6 @@ CREATE TABLE IF NOT EXISTS shifts (
     id TEXT PRIMARY KEY,
     startTime INTEGER NOT NULL,
     endTime INTEGER,
-    openingFloat REAL,
     cashierName TEXT NOT NULL,
     status TEXT NOT NULL,
     branchId TEXT,
@@ -115,7 +114,6 @@ CREATE TABLE IF NOT EXISTS endOfDayReports (
     id TEXT PRIMARY KEY,
     shiftId TEXT,
     timestamp INTEGER NOT NULL,
-    openingFloat REAL,
     totalSales REAL NOT NULL,
     grossSales REAL NOT NULL,
     taxTotal REAL NOT NULL,
@@ -419,7 +417,6 @@ CREATE TABLE IF NOT EXISTS settings (
     autoApproveOwnerActions INTEGER DEFAULT 1,
     cashSweepEnabled INTEGER DEFAULT 1,
     cashDrawerLimit REAL DEFAULT 5000,
-    cashFloatTarget REAL DEFAULT 1000,
     aiAssistantEnabled INTEGER DEFAULT 1,
     aiDailyRequestLimit INTEGER DEFAULT 20,
     businessId TEXT,
@@ -509,7 +506,6 @@ CREATE INDEX IF NOT EXISTS idx_hrPayrollAdjustments_staff_date ON hrPayrollAdjus
 -- ALTER TABLE settings ADD COLUMN autoApproveOwnerActions INTEGER DEFAULT 1;
 -- ALTER TABLE settings ADD COLUMN cashSweepEnabled INTEGER DEFAULT 1;
 -- ALTER TABLE settings ADD COLUMN cashDrawerLimit REAL DEFAULT 5000;
--- ALTER TABLE settings ADD COLUMN cashFloatTarget REAL DEFAULT 1000;
 -- ALTER TABLE categories ADD COLUMN businessId TEXT;
 -- ALTER TABLE branches ADD COLUMN businessId TEXT;
 

@@ -20,13 +20,11 @@ function n(value: unknown, fallback = 0) { const x = Number(value); return Numbe
 function s(value: unknown, max = 160) { return String(value ?? '').trim().slice(0, max); }
 function nonNegative(value: unknown) { return Math.max(0, n(value)); }
 
-async function ensureCloseShiftSchema(db: D1Database) {
-  await db.prepare(`
+const END_OF_DAY_REPORTS_SCHEMA = `
     CREATE TABLE IF NOT EXISTS endOfDayReports (
       id TEXT PRIMARY KEY,
       shiftId TEXT,
       timestamp INTEGER NOT NULL,
-      openingFloat REAL,
       totalSales REAL NOT NULL DEFAULT 0,
       grossSales REAL NOT NULL DEFAULT 0,
       taxTotal REAL NOT NULL DEFAULT 0,
@@ -46,13 +44,13 @@ async function ensureCloseShiftSchema(db: D1Database) {
       businessId TEXT,
       updated_at INTEGER
     )
-  `).run();
-  await db.prepare(`
+`;
+
+const SHIFTS_SCHEMA = `
     CREATE TABLE IF NOT EXISTS shifts (
       id TEXT PRIMARY KEY,
       startTime INTEGER NOT NULL,
       endTime INTEGER,
-      openingFloat REAL,
       cashierName TEXT NOT NULL,
       status TEXT NOT NULL,
       branchId TEXT,
@@ -60,7 +58,77 @@ async function ensureCloseShiftSchema(db: D1Database) {
       businessId TEXT,
       updated_at INTEGER
     )
-  `).run();
+`;
+
+const END_OF_DAY_REPORT_COLUMNS = [
+  'id',
+  'shiftId',
+  'timestamp',
+  'totalSales',
+  'grossSales',
+  'taxTotal',
+  'cashSales',
+  'mpesaSales',
+  'pdqSales',
+  'totalExpenses',
+  'supplierPaymentsTotal',
+  'remittanceTotal',
+  'totalPicks',
+  'totalRefunds',
+  'expectedCash',
+  'reportedCash',
+  'difference',
+  'cashierName',
+  'branchId',
+  'businessId',
+  'updated_at',
+];
+
+const SHIFT_COLUMNS = [
+  'id',
+  'startTime',
+  'endTime',
+  'cashierName',
+  'status',
+  'branchId',
+  'lastSyncAt',
+  'businessId',
+  'updated_at',
+];
+
+async function getTableColumns(db: D1Database, table: string): Promise<string[]> {
+  const { results } = await db.prepare(`PRAGMA table_info(${table})`).all<any>();
+  return (results || []).map(row => String(row.name || '')).filter(Boolean);
+}
+
+function tempCreateSql(schema: string, table: string, tempTable: string) {
+  return schema.replace(`CREATE TABLE IF NOT EXISTS ${table}`, `CREATE TABLE ${tempTable}`);
+}
+
+async function removeLegacyOpeningFloat(db: D1Database, table: string, schema: string, columns: string[]) {
+  const existingColumns = await getTableColumns(db, table);
+  if (!existingColumns.includes('openingFloat')) return;
+
+  try {
+    await db.prepare(`ALTER TABLE ${table} DROP COLUMN openingFloat`).run();
+    return;
+  } catch {
+    // Some D1 deployments may not support DROP COLUMN; rebuild without the legacy field.
+  }
+
+  const tempTable = `${table}_without_float_${Date.now()}`;
+  const copyColumns = columns.filter(column => existingColumns.includes(column));
+  if (copyColumns.length === 0) return;
+  const columnList = copyColumns.join(', ');
+  await db.prepare(tempCreateSql(schema, table, tempTable)).run();
+  await db.prepare(`INSERT OR REPLACE INTO ${tempTable} (${columnList}) SELECT ${columnList} FROM ${table}`).run();
+  await db.prepare(`DROP TABLE ${table}`).run();
+  await db.prepare(`ALTER TABLE ${tempTable} RENAME TO ${table}`).run();
+}
+
+async function ensureCloseShiftSchema(db: D1Database) {
+  await db.prepare(END_OF_DAY_REPORTS_SCHEMA).run();
+  await db.prepare(SHIFTS_SCHEMA).run();
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS auditLogs (
       id TEXT PRIMARY KEY,
@@ -79,7 +147,6 @@ async function ensureCloseShiftSchema(db: D1Database) {
   `).run();
   for (const sql of [
     'ALTER TABLE endOfDayReports ADD COLUMN shiftId TEXT',
-    'ALTER TABLE endOfDayReports ADD COLUMN openingFloat REAL',
     'ALTER TABLE endOfDayReports ADD COLUMN totalRefunds REAL',
     'ALTER TABLE endOfDayReports ADD COLUMN pdqSales REAL',
     'ALTER TABLE endOfDayReports ADD COLUMN supplierPaymentsTotal REAL',
@@ -87,7 +154,6 @@ async function ensureCloseShiftSchema(db: D1Database) {
     'ALTER TABLE endOfDayReports ADD COLUMN branchId TEXT',
     'ALTER TABLE endOfDayReports ADD COLUMN businessId TEXT',
     'ALTER TABLE endOfDayReports ADD COLUMN updated_at INTEGER',
-    'ALTER TABLE shifts ADD COLUMN openingFloat REAL',
     'ALTER TABLE shifts ADD COLUMN lastSyncAt INTEGER',
     'ALTER TABLE shifts ADD COLUMN branchId TEXT',
     'ALTER TABLE shifts ADD COLUMN businessId TEXT',
@@ -95,6 +161,8 @@ async function ensureCloseShiftSchema(db: D1Database) {
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
+  await removeLegacyOpeningFloat(db, 'endOfDayReports', END_OF_DAY_REPORTS_SCHEMA, END_OF_DAY_REPORT_COLUMNS);
+  await removeLegacyOpeningFloat(db, 'shifts', SHIFTS_SCHEMA, SHIFT_COLUMNS);
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });

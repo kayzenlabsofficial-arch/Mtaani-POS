@@ -152,7 +152,6 @@ const settings = [
     autoApproveOwnerActions: 1,
     cashSweepEnabled: 1,
     cashDrawerLimit: 25000,
-    cashFloatTarget: 5000,
     aiAssistantEnabled: 1,
     aiDailyRequestLimit: 40,
     businessId: BUSINESS_ID,
@@ -734,7 +733,6 @@ for (const branch of branches) {
       id: `demo_shift_${branch.id}_${i}`,
       startTime: at(i, 8, 0),
       endTime: i === 0 ? null : at(i, 20, 30),
-      openingFloat: branch.id === MAIN_BRANCH_ID ? 5000 : 3500,
       cashierName: branch.id === MAIN_BRANCH_ID ? 'Main Cashier' : branch.id === 'demo_branch_cbd' ? 'CBD Cashier' : branch.id === 'demo_branch_estate' ? 'Estate Cashier' : 'Stock Controller',
       status: i === 0 ? 'OPEN' : 'CLOSED',
       branchId: branch.id,
@@ -758,13 +756,12 @@ for (const branch of branches) {
     const totalPicks = money(branchPicks.reduce((sum, pick) => sum + pick.amount, 0));
     const cashSales = money(branchTxs.filter(tx => tx.paymentMethod === 'CASH').reduce((sum, tx) => sum + tx.total, 0));
     const mpesaSales = money(branchTxs.filter(tx => tx.paymentMethod === 'MPESA').reduce((sum, tx) => sum + tx.total, 0));
-    const expectedCash = money(3500 + cashSales - totalExpenses - totalPicks);
-    const reportedCash = money(expectedCash + ((i % 3) - 1) * 120);
+    const expectedCash = money(Math.max(0, cashSales - totalExpenses));
+    const reportedCash = money(totalPicks + ((i % 3) - 1) * 120);
     endOfDayReports.push({
       id: `demo_eod_${branch.id}_${i}`,
       shiftId: `demo_shift_${branch.id}_${i}`,
       timestamp: at(i, 20, 40),
-      openingFloat: branch.id === MAIN_BRANCH_ID ? 5000 : 3500,
       totalSales,
       grossSales: totalSales,
       taxTotal,
@@ -931,7 +928,7 @@ const sql = [
   ]),
   insertRows('branches', ['id', 'name', 'location', 'phone', 'tillNumber', 'kraPin', 'isActive', 'businessId', 'mpesaConsumerKey', 'mpesaConsumerSecret', 'mpesaPasskey', 'mpesaEnv', 'mpesaType', 'mpesaStoreNumber', 'updated_at'], branches),
   insertRows('users', ['id', 'name', 'password', 'role', 'businessId', 'branchId', 'updated_at'], users),
-  insertRows('settings', ['id', 'storeName', 'location', 'tillNumber', 'kraPin', 'receiptFooter', 'ownerModeEnabled', 'autoApproveOwnerActions', 'cashSweepEnabled', 'cashDrawerLimit', 'cashFloatTarget', 'aiAssistantEnabled', 'aiDailyRequestLimit', 'businessId', 'updated_at'], settings),
+  insertRows('settings', ['id', 'storeName', 'location', 'tillNumber', 'kraPin', 'receiptFooter', 'ownerModeEnabled', 'autoApproveOwnerActions', 'cashSweepEnabled', 'cashDrawerLimit', 'aiAssistantEnabled', 'aiDailyRequestLimit', 'businessId', 'updated_at'], settings),
   insertRows('categories', ['id', 'name', 'iconName', 'color', 'businessId', 'branchId', 'updated_at'], categories),
   insertRows('products', ['id', 'name', 'category', 'sellingPrice', 'costPrice', 'taxCategory', 'stockQuantity', 'unit', 'barcode', 'imageUrl', 'reorderPoint', 'isBundle', 'components', 'businessId', 'branchId', 'updated_at'], products),
   insertRows('productIngredients', ['id', 'productId', 'ingredientProductId', 'quantity', 'businessId', 'updated_at'], productIngredients),
@@ -946,8 +943,8 @@ const sql = [
   insertRows('creditNotes', ['id', 'supplierId', 'amount', 'reference', 'timestamp', 'reason', 'status', 'allocatedTo', 'productId', 'quantity', 'branchId', 'businessId', 'shiftId', 'updated_at'], creditNotes),
   insertRows('expenses', ['id', 'amount', 'category', 'description', 'timestamp', 'userName', 'status', 'source', 'accountId', 'productId', 'quantity', 'preparedBy', 'approvedBy', 'shiftId', 'branchId', 'businessId', 'updated_at'], expenses),
   insertRows('cashPicks', ['id', 'amount', 'timestamp', 'status', 'userName', 'shiftId', 'branchId', 'businessId', 'updated_at'], cashPicks),
-  insertRows('shifts', ['id', 'startTime', 'endTime', 'openingFloat', 'cashierName', 'status', 'branchId', 'lastSyncAt', 'businessId', 'updated_at'], shifts),
-  insertRows('endOfDayReports', ['id', 'shiftId', 'timestamp', 'openingFloat', 'totalSales', 'grossSales', 'taxTotal', 'cashSales', 'mpesaSales', 'totalExpenses', 'totalPicks', 'totalRefunds', 'expectedCash', 'reportedCash', 'difference', 'cashierName', 'branchId', 'businessId', 'updated_at'], endOfDayReports),
+  insertRows('shifts', ['id', 'startTime', 'endTime', 'cashierName', 'status', 'branchId', 'lastSyncAt', 'businessId', 'updated_at'], shifts),
+  insertRows('endOfDayReports', ['id', 'shiftId', 'timestamp', 'totalSales', 'grossSales', 'taxTotal', 'cashSales', 'mpesaSales', 'totalExpenses', 'totalPicks', 'totalRefunds', 'expectedCash', 'reportedCash', 'difference', 'cashierName', 'branchId', 'businessId', 'updated_at'], endOfDayReports),
   insertRows('dailySummaries', ['id', 'date', 'shiftIds', 'totalSales', 'grossSales', 'taxTotal', 'totalExpenses', 'totalPicks', 'totalVariance', 'timestamp', 'branchId', 'businessId', 'updated_at'], dailySummaries),
   insertRows('stockMovements', ['id', 'productId', 'type', 'quantity', 'timestamp', 'reference', 'branchId', 'businessId', 'updated_at'], stockMovements),
   insertRows('stockAdjustmentRequests', ['id', 'productId', 'productName', 'oldQty', 'newQty', 'requestedQuantity', 'reason', 'timestamp', 'status', 'preparedBy', 'approvedBy', 'branchId', 'businessId', 'updated_at'], stockAdjustmentRequests),
