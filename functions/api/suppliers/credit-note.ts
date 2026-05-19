@@ -33,7 +33,41 @@ function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
 }
 
+function parseItems(value: unknown): Array<{ productId: string; quantity: number }> {
+  const raw = typeof value === 'string' ? (() => {
+    try { return JSON.parse(value); } catch { return []; }
+  })() : value;
+  if (!Array.isArray(raw)) return [];
+  const items = new Map<string, number>();
+  for (const item of raw) {
+    const productId = trimText((item as any)?.productId, 160);
+    const quantity = asNumber((item as any)?.quantity);
+    if (!productId || quantity <= 0) continue;
+    items.set(productId, roundMoney((items.get(productId) || 0) + quantity));
+  }
+  return Array.from(items.entries()).map(([productId, quantity]) => ({ productId, quantity }));
+}
+
 async function ensureSchema(db: D1Database) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS creditNotes (
+      id TEXT PRIMARY KEY,
+      supplierId TEXT NOT NULL,
+      amount REAL NOT NULL,
+      reference TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      reason TEXT,
+      status TEXT DEFAULT 'PENDING',
+      allocatedTo TEXT,
+      items TEXT,
+      productId TEXT,
+      quantity REAL,
+      branchId TEXT,
+      businessId TEXT,
+      shiftId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS stockMovements (
       id TEXT PRIMARY KEY,
@@ -64,6 +98,21 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+  for (const sql of [
+    'ALTER TABLE creditNotes ADD COLUMN status TEXT DEFAULT \'PENDING\'',
+    'ALTER TABLE creditNotes ADD COLUMN allocatedTo TEXT',
+    'ALTER TABLE creditNotes ADD COLUMN items TEXT',
+    'ALTER TABLE creditNotes ADD COLUMN productId TEXT',
+    'ALTER TABLE creditNotes ADD COLUMN quantity REAL',
+    'ALTER TABLE creditNotes ADD COLUMN branchId TEXT',
+    'ALTER TABLE creditNotes ADD COLUMN businessId TEXT',
+    'ALTER TABLE creditNotes ADD COLUMN shiftId TEXT',
+    'ALTER TABLE creditNotes ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
+  ]) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -97,30 +146,49 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!supplier) throw new PolicyError('Supplier was not found.', 404);
     if (supplier.branchId && supplier.branchId !== branchId) throw new PolicyError('Supplier belongs to another branch.', 403);
 
-    const amount = roundMoney(asNumber(body?.amount));
-    if (amount <= 0) throw new PolicyError('Credit note amount must be more than zero.', 400);
+    let itemInputs = parseItems(body?.items);
+    const legacyProductId = trimText(body?.productId, 160);
+    const legacyQuantity = asNumber(body?.quantity);
+    if (itemInputs.length === 0 && legacyProductId) {
+      itemInputs = [{ productId: legacyProductId, quantity: legacyQuantity }];
+    }
 
-    const productId = trimText(body?.productId, 160);
-    const quantity = asNumber(body?.quantity);
-    let product: any = null;
-    if (productId) {
-      if (quantity <= 0) throw new PolicyError('Return quantity must be greater than zero.', 400);
-      product = await env.DB.prepare(`
-        SELECT id, name, stockQuantity, branchId
+    const returnItems: Array<{ productId: string; name: string; quantity: number; unitCost: number; amount: number; unit?: string }> = [];
+    for (const item of itemInputs) {
+      if (item.quantity <= 0) throw new PolicyError('Return quantity must be greater than zero.', 400);
+      const product = await env.DB.prepare(`
+        SELECT id, name, stockQuantity, costPrice, sellingPrice, unit, branchId
         FROM products
         WHERE id = ? AND businessId = ?
         LIMIT 1
-      `).bind(productId, businessId).first<any>();
+      `).bind(item.productId, businessId).first<any>();
       if (!product) throw new PolicyError('Selected product was not found.', 404);
       if (product.branchId && product.branchId !== branchId) throw new PolicyError('Selected product belongs to another branch.', 403);
-      if (quantity > asNumber(product.stockQuantity) + 0.0001) {
-        throw new PolicyError(`Cannot return more than available stock (${asNumber(product.stockQuantity)}).`, 409);
+      if (item.quantity > asNumber(product.stockQuantity) + 0.0001) {
+        throw new PolicyError(`Cannot return more than available stock for ${product.name} (${asNumber(product.stockQuantity)}).`, 409);
       }
+      const costPrice = asNumber(product.costPrice);
+      const unitCost = roundMoney(costPrice > 0 ? costPrice : asNumber(product.sellingPrice));
+      if (unitCost <= 0) throw new PolicyError(`Set a cost price for ${product.name} before making a credit note.`, 400);
+      returnItems.push({
+        productId: product.id,
+        name: product.name,
+        quantity: item.quantity,
+        unitCost,
+        amount: roundMoney(item.quantity * unitCost),
+        unit: product.unit || 'pcs',
+      });
     }
+
+    const amount = returnItems.length > 0
+      ? roundMoney(returnItems.reduce((sum, item) => sum + item.amount, 0))
+      : roundMoney(asNumber(body?.amount));
+    if (amount <= 0) throw new PolicyError('Credit note amount must be more than zero.', 400);
 
     const now = Date.now();
     const creditNoteId = trimText(body?.creditNoteId, 160) || crypto.randomUUID();
     const reference = trimText(body?.reference, 160) || creditNoteId.split('-')[0].toUpperCase();
+    const primaryItem = returnItems[0] || null;
     const creditNote = {
       id: creditNoteId,
       supplierId,
@@ -129,8 +197,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       reason: trimText(body?.reason, 240) || null,
       status: 'PENDING',
       timestamp: now,
-      productId: product?.id || null,
-      quantity: product ? quantity : null,
+      items: returnItems,
+      productId: returnItems.length === 1 ? primaryItem?.productId : null,
+      quantity: returnItems.length === 1 ? primaryItem?.quantity : null,
       shiftId: body?.shiftId || null,
       branchId,
       businessId,
@@ -139,8 +208,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(`
-        INSERT INTO creditNotes (id, supplierId, amount, reference, timestamp, reason, status, allocatedTo, productId, quantity, branchId, businessId, shiftId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO creditNotes (id, supplierId, amount, reference, timestamp, reason, status, allocatedTo, items, productId, quantity, branchId, businessId, shiftId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         creditNote.id,
         creditNote.supplierId,
@@ -150,6 +219,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         creditNote.reason,
         creditNote.status,
         null,
+        returnItems.length ? JSON.stringify(returnItems) : null,
         creditNote.productId,
         creditNote.quantity,
         branchId,
@@ -159,20 +229,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       ),
     ];
 
-    if (product) {
+    for (const item of returnItems) {
       statements.push(
         env.DB.prepare(`UPDATE products SET stockQuantity = MAX(0, COALESCE(stockQuantity, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ?`)
-          .bind(quantity, now, product.id, businessId),
+          .bind(item.quantity, now, item.productId, businessId),
         env.DB.prepare(`
           INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
-          product.id,
+          item.productId,
           'OUT',
-          quantity,
+          item.quantity,
           now,
-          `Supplier Return: ${reference}`,
+          `Supplier Return: ${reference} - ${item.name}`,
           branchId,
           businessId,
           body?.shiftId || null,
@@ -194,7 +264,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         'creditNote',
         creditNote.id,
         'INFO',
-        `Recorded supplier credit note of Ksh ${amount.toLocaleString()} for ${supplier.company || supplier.name}.`,
+        `Recorded supplier credit note of Ksh ${amount.toLocaleString()} for ${supplier.company || supplier.name}${returnItems.length ? ` (${returnItems.length} product line${returnItems.length === 1 ? '' : 's'})` : ''}.`,
         businessId,
         branchId,
         now,
@@ -208,4 +278,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not record supplier credit note.' }, status);
   }
 };
-

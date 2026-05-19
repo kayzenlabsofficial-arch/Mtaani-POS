@@ -118,7 +118,7 @@ CREATE INDEX IF NOT EXISTS idx_hrPayrollAdjustments_staff_date ON hrPayrollAdjus
  CREATE TABLE IF NOT EXISTS salesInvoices (id TEXT PRIMARY KEY, invoiceNumber TEXT NOT NULL, customerId TEXT NOT NULL, customerName TEXT, customerPhone TEXT, customerEmail TEXT, items TEXT NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, total REAL NOT NULL, paidAmount REAL DEFAULT 0, balance REAL DEFAULT 0, status TEXT NOT NULL, issueDate INTEGER NOT NULL, dueDate INTEGER, notes TEXT, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT, phone TEXT, email TEXT, address TEXT, kraPin TEXT, balance REAL, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS supplierPayments (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, purchaseOrderId TEXT, purchaseOrderIds TEXT, creditNoteIds TEXT, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, timestamp INTEGER NOT NULL, reference TEXT, source TEXT, accountId TEXT, shiftId TEXT, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
- CREATE TABLE IF NOT EXISTS creditNotes (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, amount REAL NOT NULL, reference TEXT NOT NULL, timestamp INTEGER NOT NULL, reason TEXT, status TEXT DEFAULT 'PENDING', allocatedTo TEXT, productId TEXT, quantity REAL, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER);
+ CREATE TABLE IF NOT EXISTS creditNotes (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, amount REAL NOT NULL, reference TEXT NOT NULL, timestamp INTEGER NOT NULL, reason TEXT, status TEXT DEFAULT 'PENDING', allocatedTo TEXT, items TEXT, productId TEXT, quantity REAL, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS dailySummaries (id TEXT PRIMARY KEY, date INTEGER NOT NULL, shiftIds TEXT NOT NULL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, totalExpenses REAL NOT NULL, totalPicks REAL NOT NULL, totalVariance REAL NOT NULL, timestamp INTEGER NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_branch_date ON dailySummaries(businessId, branchId, date);
  CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (id TEXT PRIMARY KEY, productId TEXT NOT NULL, productName TEXT, oldQty REAL, newQty REAL, requestedQuantity REAL, reason TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, preparedBy TEXT, approvedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
@@ -520,6 +520,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['suppliers', 'kraPin TEXT'],
           ['creditNotes', "status TEXT DEFAULT 'PENDING'"],
           ['creditNotes', 'allocatedTo TEXT'],
+          ['creditNotes', 'items TEXT'],
           ['creditNotes', 'shiftId TEXT'],
           ['creditNotes', 'productId TEXT'],
           ['creditNotes', 'quantity REAL'],
@@ -687,6 +688,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       // Preserve stock-return details for supplier credits.
       try { await env.DB.prepare("ALTER TABLE creditNotes ADD COLUMN status TEXT DEFAULT 'PENDING'").run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE creditNotes ADD COLUMN allocatedTo TEXT').run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE creditNotes ADD COLUMN items TEXT').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE creditNotes ADD COLUMN shiftId TEXT').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE creditNotes ADD COLUMN productId TEXT').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE creditNotes ADD COLUMN quantity REAL').run(); } catch (e) {}

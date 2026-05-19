@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Truck, FileText, DollarSign, Plus, Calendar, ChevronRight, CheckCircle2, AlertCircle, Ban, Receipt, Printer, Edit, Loader2, Share2 } from 'lucide-react';
+import { X, Truck, FileText, DollarSign, Plus, Calendar, ChevronRight, CheckCircle2, AlertCircle, Ban, Receipt, Printer, Edit, Loader2, Share2, Trash2, Package } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
-import { db, type Supplier, type PurchaseOrder } from '../../db';
+import { db, type Product, type Supplier } from '../../db';
 import { useToast } from '../../context/ToastContext';
 import { shareDocument } from '../../utils/shareUtils';
 import { SearchableSelect } from '../shared/SearchableSelect';
@@ -13,12 +13,36 @@ interface SupplierLedgerModalProps {
   onEdit: (s: Supplier) => void;
   onPay: (s: Supplier) => void;
   shiftId?: string;
-  products?: any[];
+  products?: Product[];
 }
 
 const sentenceValue = (value: unknown, fallback = '') => {
   const text = String(value || fallback).replace(/_/g, ' ').toLowerCase();
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
+};
+
+const money = (value: number) => Math.round(Number(value) || 0).toLocaleString();
+const roundMoney = (value: number) => Math.round(value * 100) / 100;
+const productUnitCost = (product?: Product | null) => {
+  const cost = Number(product?.costPrice || 0);
+  return roundMoney(Math.max(0, cost > 0 ? cost : Number(product?.sellingPrice || 0)));
+};
+
+type CreditNoteReturnItem = {
+  productId: string;
+  name: string;
+  quantity: number;
+  unitCost: number;
+  amount: number;
+  unit?: string;
+  stockQuantity?: number;
+};
+
+const parseCreditNoteItems = (value: unknown): CreditNoteReturnItem[] => {
+  const raw = typeof value === 'string' ? (() => {
+    try { return JSON.parse(value); } catch { return []; }
+  })() : value;
+  return Array.isArray(raw) ? raw.filter(item => item?.productId) : [];
 };
 
 export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, shiftId, products }: SupplierLedgerModalProps) {
@@ -31,7 +55,8 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
   const [dateEnd, setDateEnd] = useState(todayInput);
   const [page, setPage] = useState(1);
   const pageSize = 50;
-  const [creditNoteForm, setCreditNoteForm] = useState({ amount: '', reference: '', reason: '', productId: '', quantity: '1' });
+  const [creditNoteForm, setCreditNoteForm] = useState({ reference: '', reason: '', productId: '', quantity: '1' });
+  const [creditNoteItems, setCreditNoteItems] = useState<CreditNoteReturnItem[]>([]);
   const { success, error } = useToast();
 
   const invoices = useLiveQuery(
@@ -79,34 +104,59 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
   const pagedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const pagedPayments = filteredPayments.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const pagedCreditNotes = filteredCreditNotes.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const inventoryProducts = products || [];
+  const selectedCreditProduct = inventoryProducts.find(product => product.id === creditNoteForm.productId);
+  const selectedCreditQuantity = Number(creditNoteForm.quantity) || 0;
+  const selectedCreditUnitCost = productUnitCost(selectedCreditProduct);
+  const selectedCreditAmount = roundMoney(selectedCreditQuantity * selectedCreditUnitCost);
+  const creditNoteTotal = roundMoney(creditNoteItems.reduce((sum, item) => sum + item.amount, 0));
+
+  const resetCreditNoteForm = () => {
+    setCreditNoteForm({ reference: '', reason: '', productId: '', quantity: '1' });
+    setCreditNoteItems([]);
+  };
+
+  const handleAddCreditNoteItem = () => {
+    if (!selectedCreditProduct) return error("Select a product first.");
+    if (selectedCreditQuantity <= 0) return error("Return quantity must be greater than zero.");
+    if (selectedCreditQuantity > Number(selectedCreditProduct.stockQuantity || 0)) {
+      return error(`Cannot return more than available stock (${selectedCreditProduct.stockQuantity || 0}).`);
+    }
+    if (selectedCreditUnitCost <= 0) return error(`Set a cost price for ${selectedCreditProduct.name} before making a credit note.`);
+    setCreditNoteItems(prev => {
+      const existing = prev.find(item => item.productId === selectedCreditProduct.id);
+      const existingQty = existing?.quantity || 0;
+      const combinedQty = roundMoney(existingQty + selectedCreditQuantity);
+      if (combinedQty > Number(selectedCreditProduct.stockQuantity || 0)) {
+        error(`Cannot return more than available stock (${selectedCreditProduct.stockQuantity || 0}).`);
+        return prev;
+      }
+      const nextItem: CreditNoteReturnItem = {
+        productId: selectedCreditProduct.id,
+        name: selectedCreditProduct.name,
+        quantity: combinedQty,
+        unitCost: selectedCreditUnitCost,
+        amount: roundMoney(combinedQty * selectedCreditUnitCost),
+        unit: selectedCreditProduct.unit || 'pcs',
+        stockQuantity: selectedCreditProduct.stockQuantity,
+      };
+      return existing
+        ? prev.map(item => item.productId === selectedCreditProduct.id ? nextItem : item)
+        : [...prev, nextItem];
+    });
+    setCreditNoteForm(prev => ({ ...prev, productId: '', quantity: '1' }));
+  };
 
   const handleAddCreditNote = async () => {
     try {
-      const amount = Number(creditNoteForm.amount);
-      if (amount <= 0) return;
-      const qty = Number(creditNoteForm.quantity) || 0;
-      if (creditNoteForm.productId && qty <= 0) {
-        error("Return quantity must be greater than zero.");
-        return;
-      }
-
-      const linkedProduct = creditNoteForm.productId ? await db.products.get(creditNoteForm.productId) : null;
-      if (creditNoteForm.productId && !linkedProduct) {
-        error("Selected product was not found.");
-        return;
-      }
-      if (linkedProduct && qty > (linkedProduct.stockQuantity || 0)) {
-        error(`Cannot return more than available stock (${linkedProduct.stockQuantity || 0}).`);
-        return;
-      }
-
+      if (creditNoteItems.length === 0) return error("Add at least one product to the credit note.");
+      if (creditNoteTotal <= 0) return error("Credit note amount must be more than zero.");
       await SupplierService.recordCreditNote({
         supplierId: supplier.id,
-        amount,
+        amount: creditNoteTotal,
         reference: creditNoteForm.reference,
         reason: creditNoteForm.reason,
-        productId: linkedProduct?.id,
-        quantity: linkedProduct ? qty : undefined,
+        items: creditNoteItems.map(item => ({ productId: item.productId, quantity: item.quantity })),
         shiftId,
         branchId: supplier.branchId,
         businessId: supplier.businessId,
@@ -120,9 +170,9 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
 
       success("Credit Note recorded as PENDING and stock adjusted.");
       setIsAddCreditNoteOpen(false);
-      setCreditNoteForm({ amount: '', reference: '', reason: '', productId: '', quantity: '1' });
-    } catch (err) {
-      error("Failed to record credit note.");
+      resetCreditNoteForm();
+    } catch (err: any) {
+      error(err?.message || "Failed to record credit note.");
     }
   };
 
@@ -294,7 +344,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                     <div className="space-y-4">
                         <div className="flex justify-between items-center no-print">
                             <h3 className="text-sm font-bold text-slate-600">Available credits</h3>
-                            <button data-testid="supplier-credit-open" onClick={() => setIsAddCreditNoteOpen(true)} className="flex items-center gap-1.5 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-all">
+                            <button data-testid="supplier-credit-open" onClick={() => { resetCreditNoteForm(); setIsAddCreditNoteOpen(true); }} className="flex items-center gap-1.5 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-all">
                                 <Plus size={14} /> New credit note
                             </button>
                         </div>
@@ -304,7 +354,14 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                 <p className="text-sm font-bold">No credit notes found.</p>
                             </div>
                         ) : (
-                            pagedCreditNotes.map(cn => (
+                            pagedCreditNotes.map(cn => {
+                              const noteItems = parseCreditNoteItems((cn as any).items);
+                              const itemSummary = noteItems.length
+                                ? noteItems.map(item => `${item.quantity} ${item.unit || 'pcs'} ${item.name || 'item'}`).join(', ')
+                                : cn.productId
+                                  ? `${cn.quantity || 0} pcs returned`
+                                  : '';
+                              return (
                                 <div key={cn.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between hover:border-slate-300 transition-all">
                                     <div className="flex items-center gap-4">
                                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${cn.status === 'ALLOCATED' ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600'}`}>
@@ -313,6 +370,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                         <div>
                                             <p className="text-sm font-black text-slate-900">{cn.reference || 'Credit note'}</p>
                                             <p className="text-[10px] font-bold text-slate-400 ">{new Date(cn.timestamp).toLocaleDateString()} • {cn.reason}</p>
+                                            {itemSummary && <p className="text-[10px] font-bold text-blue-500 mt-0.5 line-clamp-1">{itemSummary}</p>}
                                             <div className="flex items-center gap-2 mt-1">
                                                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md   border ${cn.status === 'ALLOCATED' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-orange-50 text-orange-700 border-orange-100'}`}>
                                                     {sentenceValue(cn.status, 'PENDING')}
@@ -334,7 +392,8 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                         )}
                                     </div>
                                 </div>
-                            ))
+                              );
+                            })
                         )}
                     </div>
                 )}
@@ -357,14 +416,73 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
       {/* Add Credit Note Form Over Modal */}
       {isAddCreditNoteOpen && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center p-0 sm:items-center sm:p-4">
-            <div className="absolute inset-0 bg-slate-900/40" onClick={() => setIsAddCreditNoteOpen(false)} />
-            <div className="bg-white w-full max-w-xs max-h-[92dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl shadow-elevated relative z-10 p-6 animate-in zoom-in-95">
-                <h3 className="text-lg font-black text-slate-900 mb-6 flex items-center gap-2"><div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center"><AlertCircle size={18}/></div> Create Credit</h3>
-                <div className="space-y-4 mb-6">
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">Credit amount</label>
-                        <input data-testid="supplier-credit-amount" type="number" value={creditNoteForm.amount} onChange={e => setCreditNoteForm({...creditNoteForm, amount: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-black" placeholder="Ksh 0.00" />
+            <div className="absolute inset-0 bg-slate-900/40" onClick={() => { setIsAddCreditNoteOpen(false); resetCreditNoteForm(); }} />
+            <div className="bg-white w-full max-w-lg max-h-[92dvh] overflow-hidden rounded-t-2xl sm:rounded-2xl shadow-elevated relative z-10 flex flex-col animate-in zoom-in-95">
+                <div className="p-6 pb-4 border-b border-slate-100">
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center"><AlertCircle size={18}/></div> Create Credit</h3>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Select returned products and pieces</p>
+                </div>
+                <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-5">
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 space-y-3">
+                        <label className="block text-xs font-semibold text-blue-700 ml-1">Product returned</label>
+                        <SearchableSelect
+                          value={creditNoteForm.productId}
+                          onChange={(v) => setCreditNoteForm({ ...creditNoteForm, productId: v })}
+                          placeholder="Select product..."
+                          options={inventoryProducts.map(p => ({
+                            value: p.id,
+                            label: `${p.name} (${p.stockQuantity} ${p.unit || 'pcs'} left)`,
+                            keywords: `${p.name} ${p.barcode || ''} ${p.category || ''}`,
+                            disabled: Number(p.stockQuantity || 0) <= 0,
+                          }))}
+                          size="sm"
+                          buttonClassName="bg-white border-blue-100 text-slate-900 focus:border-blue-500"
+                          searchInputClassName="bg-white"
+                          dataTestId="supplier-credit-product"
+                        />
+                        <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
+                            <div className="rounded-xl bg-white border border-blue-100 px-3 py-2">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Line amount</p>
+                                <p className="text-sm font-black text-blue-700">Ksh {money(selectedCreditAmount)}</p>
+                                {selectedCreditProduct && <p className="text-[9px] font-bold text-slate-400">Cost: Ksh {money(selectedCreditUnitCost)} each</p>}
+                            </div>
+                            <div>
+                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 ml-1">Pcs</label>
+                                <input data-testid="supplier-credit-quantity" type="number" min="0" step="any" value={creditNoteForm.quantity} onChange={e => setCreditNoteForm({...creditNoteForm, quantity: e.target.value})} className="w-full bg-white border border-blue-100 rounded-xl px-3 py-3 text-sm font-black text-center outline-none focus:border-blue-500" />
+                            </div>
+                        </div>
+                        <button data-testid="supplier-credit-add-product" onClick={handleAddCreditNoteItem} disabled={!creditNoteForm.productId || selectedCreditQuantity <= 0} className="w-full py-3 bg-blue-600 text-white font-black rounded-xl text-[10px] uppercase tracking-widest active:scale-95 transition-all disabled:opacity-50 shadow-blue flex items-center justify-center gap-2">
+                            <Plus size={14} /> Add product
+                        </button>
                     </div>
+
+                    {creditNoteItems.length > 0 && (
+                        <div className="space-y-2">
+                            <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Products in this credit</h4>
+                            {creditNoteItems.map(item => (
+                                <div key={item.productId} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
+                                    <div className="min-w-0 flex items-center gap-3">
+                                        <span className="w-9 h-9 rounded-xl bg-slate-50 text-slate-500 flex items-center justify-center shrink-0"><Package size={16} /></span>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-black text-slate-900 truncate">{item.name}</p>
+                                            <p className="text-[10px] font-bold text-slate-400">{item.quantity} {item.unit || 'pcs'} x Ksh {money(item.unitCost)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        <p className="text-sm font-black text-blue-700">Ksh {money(item.amount)}</p>
+                                        <button onClick={() => setCreditNoteItems(prev => prev.filter(row => row.productId !== item.productId))} className="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all">
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            <div className="flex items-center justify-between rounded-2xl bg-slate-950 px-4 py-4 text-white">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Credit total</span>
+                                <span className="text-xl font-black">Ksh {money(creditNoteTotal)}</span>
+                            </div>
+                        </div>
+                    )}
+
                     <div>
                         <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">Reference #</label>
                         <input data-testid="supplier-credit-reference" type="text" value={creditNoteForm.reference} onChange={e => setCreditNoteForm({...creditNoteForm, reference: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold" placeholder="CRN-XXX" />
@@ -373,35 +491,10 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                         <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">Reason for credit</label>
                         <textarea data-testid="supplier-credit-reason" value={creditNoteForm.reason} onChange={e => setCreditNoteForm({...creditNoteForm, reason: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium h-20" placeholder="e.g. Returned broken stock" />
                     </div>
-                    <div className="border-t border-slate-100 pt-4">
-                        <label className="block text-xs font-semibold text-blue-600 mb-2 ml-1">Link to inventory return (optional)</label>
-                        <div className="space-y-3">
-                           <SearchableSelect
-                             value={creditNoteForm.productId}
-                             onChange={(v) => setCreditNoteForm({ ...creditNoteForm, productId: v })}
-                             placeholder="No stock return..."
-                             options={(products || []).map(p => ({
-                               value: p.id,
-                               label: `${p.name} (${p.stockQuantity} ${p.unit} left)`,
-                               keywords: `${p.name} ${p.barcode || ''} ${p.category || ''}`,
-                             }))}
-                             size="sm"
-                             buttonClassName="bg-blue-50 border-blue-100 text-slate-900 focus:border-blue-500"
-                             searchInputClassName="bg-white"
-                             dataTestId="supplier-credit-product"
-                           />
-                           {creditNoteForm.productId && (
-                             <div className="flex items-center gap-2">
-                                <label className="text-xs font-semibold text-slate-600">Qty to return:</label>
-                                <input data-testid="supplier-credit-quantity" type="number" step="any" value={creditNoteForm.quantity} onChange={e => setCreditNoteForm({...creditNoteForm, quantity: e.target.value})} className="w-20 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-center" />
-                             </div>
-                           )}
-                        </div>
-                    </div>
                 </div>
-                <div className="flex gap-2">
-                    <button data-testid="supplier-credit-cancel" onClick={() => setIsAddCreditNoteOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs  ">Cancel</button>
-                    <button data-testid="supplier-credit-save" onClick={handleAddCreditNote} disabled={!creditNoteForm.amount} className="flex-[2] py-3 bg-blue-600 text-white font-bold rounded-xl text-xs active:scale-95 transition-all disabled:opacity-50 shadow-blue">Save credit note</button>
+                <div className="flex gap-2 p-6 border-t border-slate-100 bg-white">
+                    <button data-testid="supplier-credit-cancel" onClick={() => { setIsAddCreditNoteOpen(false); resetCreditNoteForm(); }} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs  ">Cancel</button>
+                    <button data-testid="supplier-credit-save" onClick={handleAddCreditNote} disabled={creditNoteItems.length === 0 || creditNoteTotal <= 0} className="flex-[2] py-3 bg-blue-600 text-white font-bold rounded-xl text-xs active:scale-95 transition-all disabled:opacity-50 shadow-blue">Save credit note</button>
                 </div>
             </div>
         </div>
@@ -409,4 +502,3 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
     </div>
   );
 }
-

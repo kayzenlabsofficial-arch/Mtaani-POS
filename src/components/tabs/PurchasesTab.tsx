@@ -297,10 +297,10 @@ export default function PurchasesTab() {
       {isPOModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pb-safe">
            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPOModalOpen(false)} />
-           <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[2.5rem] shadow-elevated relative z-10 flex flex-col p-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto no-scrollbar">
-              <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8 sm:hidden shrink-0" />
+           <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[2.5rem] shadow-elevated relative z-10 flex max-h-[92dvh] flex-col overflow-hidden animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300">
+              <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mt-4 mb-6 sm:hidden shrink-0" />
               
-              <div className="flex items-center gap-4 mb-8 shrink-0">
+              <div className="flex items-center gap-4 px-8 pb-6 shrink-0">
                  <div className="w-12 h-12 grad-indigo rounded-2xl flex items-center justify-center text-white shadow-indigo">
                    <ClipboardList size={24} />
                  </div>
@@ -310,7 +310,7 @@ export default function PurchasesTab() {
                  </div>
               </div>
 
-              <div className="space-y-6 mb-10">
+              <div className="flex-1 space-y-6 overflow-y-auto no-scrollbar px-8 pb-6">
                  <div>
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Select supplier</label>
                     <SearchableSelect
@@ -397,7 +397,7 @@ export default function PurchasesTab() {
                  )}
               </div>
 
-              <div className="sticky bottom-0 bg-white flex gap-4 mt-auto pt-6 pb-2 border-t border-slate-50">
+              <div className="shrink-0 bg-white flex gap-4 px-8 py-5 border-t border-slate-100 shadow-[0_-12px_24px_rgba(15,23,42,0.04)]">
                  <button onClick={() => { setIsPOModalOpen(false); setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); }} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
                    Cancel
                  </button>
@@ -414,10 +414,10 @@ export default function PurchasesTab() {
       {isReceivePOModalOpen && selectedPO && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pb-safe">
            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsReceivePOModalOpen(false)} />
-           <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[2.5rem] shadow-elevated relative z-10 flex flex-col p-8 animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto no-scrollbar">
-              <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8 sm:hidden shrink-0" />
+           <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[2.5rem] shadow-elevated relative z-10 flex max-h-[92dvh] flex-col overflow-hidden animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300">
+              <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mt-4 mb-6 sm:hidden shrink-0" />
               
-              <div className="flex items-center gap-4 mb-8 shrink-0">
+              <div className="flex items-center gap-4 px-8 pb-6 shrink-0">
                  <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center text-white shadow-emerald">
                    <PackagePlus size={24} />
                  </div>
@@ -427,7 +427,7 @@ export default function PurchasesTab() {
                  </div>
               </div>
 
-              <div className="space-y-6 mb-10">
+              <div className="flex-1 space-y-6 overflow-y-auto no-scrollbar px-8 pb-6">
                  <div>
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Supplier invoice number</label>
                     <input data-testid="purchase-receive-invoice" type="text" value={receiveInvoices[selectedPO.id] || ''} onChange={e => setReceiveInvoices({...receiveInvoices, [selectedPO.id]: e.target.value})} className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 focus:bg-white rounded-2xl px-6 py-4.5 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" placeholder="e.g. INV/2026/001" />
@@ -483,7 +483,7 @@ export default function PurchasesTab() {
                  </div>
               </div>
 
-              <div className="sticky bottom-0 bg-white flex gap-4 mt-auto pt-6 pb-2 border-t border-slate-50">
+              <div className="shrink-0 bg-white flex gap-4 px-8 py-5 border-t border-slate-100 shadow-[0_-12px_24px_rgba(15,23,42,0.04)]">
                  <button onClick={() => setIsReceivePOModalOpen(false)} className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
                    Cancel
                  </button>

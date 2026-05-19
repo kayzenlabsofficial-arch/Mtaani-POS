@@ -72,6 +72,7 @@ export const SupplierService = {
     amount: number;
     reference?: string;
     reason?: string;
+    items?: { productId: string; quantity: number }[];
     productId?: string;
     quantity?: number;
     shiftId?: string;
