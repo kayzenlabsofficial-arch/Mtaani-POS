@@ -362,7 +362,7 @@ export interface Expense {
 
 export type HRStaffStatus = 'ACTIVE' | 'ON_LEAVE' | 'SUSPENDED' | 'EXITED';
 export type HRPayCycle = 'MONTHLY' | 'WEEKLY' | 'DAILY';
-export type HRAttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'HALF_DAY' | 'ON_LEAVE';
+export type HRAttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'HALF_DAY' | 'ON_LEAVE' | 'OFF_DAY';
 export type HRPayrollType = 'SALARY' | 'BONUS' | 'DEDUCTION' | 'PENALTY';
 export type HRPayrollStatus = 'ACTIVE' | 'PAID' | 'CANCELLED';
 
