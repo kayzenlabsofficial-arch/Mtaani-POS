@@ -902,14 +902,19 @@ export default function ReportsTab() {
                </button>
              ))}
           </div>
-          {dateRange === 'MONTHLY' && (
+          <div className="relative w-full md:w-44">
+            <Calendar size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="month"
               value={selectedMonth}
-              onChange={event => setSelectedMonth(event.target.value)}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 md:w-44"
+              onFocus={() => setDateRange('MONTHLY')}
+              onChange={event => {
+                setSelectedMonth(event.target.value);
+                setDateRange('MONTHLY');
+              }}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
             />
-          )}
+          </div>
           {dateRange === 'CUSTOM' && (
             <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto md:items-center">
               <input
@@ -927,28 +932,6 @@ export default function ReportsTab() {
             </div>
           )}
           <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto md:items-center">
-            <div className="col-span-2 flex h-11 rounded-xl bg-slate-100 p-1 md:col-span-1 md:w-auto">
-              {[
-                { id: 'INDIVIDUAL', label: 'Individual', icon: FileText },
-                { id: 'COMPARISON', label: 'Compare', icon: BarChart3 },
-              ].map(option => {
-                const Icon = option.icon;
-                const active = profitLossExportMode === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setProfitLossExportMode(option.id as ProfitLossExportMode)}
-                    className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-[10px] font-black uppercase tracking-widest transition-all md:flex-none ${
-                      active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    <Icon size={14} />
-                    <span>{option.label}</span>
-                  </button>
-                );
-              })}
-            </div>
             <button
               type="button"
               onClick={() => setDeductTaxInPL(v => !v)}
