@@ -15,9 +15,47 @@ import { getBusinessSettings } from '../../utils/settings';
 import { belongsToActiveBranch } from '../../utils/branchScope';
 import { ExpenseService } from '../../services/expenses';
 
+type ExpenseDateRange = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL';
+type ExpenseSourceFilter = 'ALL' | 'TILL' | 'PETTY_CASH' | 'SHOP' | 'ACCOUNT';
+type ExpenseStatusFilter = 'ALL' | 'APPROVED' | 'PENDING' | 'REJECTED';
+
+function toDateInputValue(date: Date) {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 10);
+}
+
+function expenseDateBounds(range: ExpenseDateRange, startValue: string, endValue: string) {
+  const now = new Date();
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+
+  if (range === 'ALL') return { start: 0, end: end.getTime(), label: 'All time' };
+
+  if (range === 'CUSTOM') {
+    const start = new Date(`${startValue || toDateInputValue(now)}T00:00:00`);
+    const customEnd = new Date(`${endValue || startValue || toDateInputValue(now)}T23:59:59.999`);
+    return { start: start.getTime(), end: customEnd.getTime(), label: `${start.toLocaleDateString()} to ${customEnd.toLocaleDateString()}` };
+  }
+
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+
+  if (range === 'WEEK') start.setDate(start.getDate() - 6);
+  if (range === 'MONTH') start.setDate(1);
+
+  return { start: start.getTime(), end: end.getTime(), label: range === 'TODAY' ? 'Today' : range === 'WEEK' ? 'Last 7 days' : 'This month' };
+}
+
 
 export default function ExpensesTab() {
+  const todayInput = React.useMemo(() => toDateInputValue(new Date()), []);
   const [expenseSearch, setExpenseSearch] = useState("");
+  const [expenseDateRange, setExpenseDateRange] = useState<ExpenseDateRange>('MONTH');
+  const [expenseStartDate, setExpenseStartDate] = useState(todayInput);
+  const [expenseEndDate, setExpenseEndDate] = useState(todayInput);
+  const [expenseSourceFilter, setExpenseSourceFilter] = useState<ExpenseSourceFilter>('ALL');
+  const [expenseStatusFilter, setExpenseStatusFilter] = useState<ExpenseStatusFilter>('ALL');
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('ALL');
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'PETTY_CASH' | 'TILL' | 'ACCOUNT' | 'SHOP', accountId: '', productId: '', quantity: '1' });
@@ -181,13 +219,46 @@ export default function ExpensesTab() {
     return { label: 'General', className: 'bg-indigo-50 text-indigo-600 border-indigo-100' };
   };
 
+  const statusBadge = (status?: string) => {
+    const normalized = String(status || 'APPROVED').toUpperCase();
+    if (normalized === 'PENDING') return { label: 'Pending', className: 'bg-yellow-50 text-yellow-700 border-yellow-100' };
+    if (normalized === 'REJECTED') return { label: 'Rejected', className: 'bg-rose-50 text-rose-600 border-rose-100' };
+    return { label: 'Approved', className: 'bg-emerald-50 text-emerald-600 border-emerald-100' };
+  };
+
+  const expensePeriod = expenseDateBounds(expenseDateRange, expenseStartDate, expenseEndDate);
+  const expenseCategories = Array.from(new Set((allExpenses || []).map(e => String(e.category || 'General')))).sort((a, b) => a.localeCompare(b));
   const filteredExpenses = (allExpenses || [])
     .filter(e => {
-      const query = expenseSearch.toLowerCase();
-      return String(e.description || '').toLowerCase().includes(query)
-        || String(e.category || '').toLowerCase().includes(query);
+      const query = expenseSearch.trim().toLowerCase();
+      const timestamp = Number(e.timestamp) || 0;
+      const status = String(e.status || 'APPROVED').toUpperCase();
+      const source = String(e.source || 'ACCOUNT').toUpperCase();
+      const category = String(e.category || 'General');
+      const searchMatch = query.length === 0
+        || `${category} ${e.description || ''} ${e.userName || ''} ${source}`.toLowerCase().includes(query);
+      const dateMatch = timestamp >= expensePeriod.start && timestamp <= expensePeriod.end;
+      const sourceMatch = expenseSourceFilter === 'ALL' || source === expenseSourceFilter;
+      const statusMatch = expenseStatusFilter === 'ALL' || status === expenseStatusFilter;
+      const categoryMatch = expenseCategoryFilter === 'ALL' || category === expenseCategoryFilter;
+      return searchMatch && dateMatch && sourceMatch && statusMatch && categoryMatch;
     })
     .sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const filteredExpenseTotal = filteredExpenses.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
+  const hasExpenseFilters = expenseSearch.trim().length > 0
+    || expenseDateRange !== 'MONTH'
+    || expenseSourceFilter !== 'ALL'
+    || expenseStatusFilter !== 'ALL'
+    || expenseCategoryFilter !== 'ALL';
+  const clearExpenseFilters = () => {
+    setExpenseSearch('');
+    setExpenseDateRange('MONTH');
+    setExpenseStartDate(todayInput);
+    setExpenseEndDate(todayInput);
+    setExpenseSourceFilter('ALL');
+    setExpenseStatusFilter('ALL');
+    setExpenseCategoryFilter('ALL');
+  };
 
   if (!allExpenses || !allTransactions || !allCashPicks || !allSupplierPayments) {
       return (
@@ -252,13 +323,13 @@ export default function ExpensesTab() {
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="mb-6">
+      {/* Search and filters */}
+      <div className="mb-6 space-y-3">
         <div className="relative group">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={16} />
           <input
             type="text"
-            placeholder="Search by category or description..."
+            placeholder="Search by category, description, user, or source..."
             value={expenseSearch}
             onChange={(e) => setExpenseSearch(e.target.value)}
             className="w-full pl-10 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/15 focus:border-primary outline-none shadow-sm transition-all"
@@ -269,12 +340,109 @@ export default function ExpensesTab() {
             </button>
           )}
         </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                <SlidersHorizontal size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Filters</p>
+                <p className="truncate text-sm font-black text-slate-900">
+                  Ksh {filteredExpenseTotal.toLocaleString()} across {filteredExpenses.length} record{filteredExpenses.length === 1 ? '' : 's'}
+                </p>
+              </div>
+            </div>
+            <div className="no-scrollbar flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1">
+              {[
+                { id: 'TODAY', label: 'Today' },
+                { id: 'WEEK', label: 'Week' },
+                { id: 'MONTH', label: 'Month' },
+                { id: 'CUSTOM', label: 'Custom' },
+                { id: 'ALL', label: 'All' },
+              ].map(option => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setExpenseDateRange(option.id as ExpenseDateRange)}
+                  className={`h-9 flex-shrink-0 rounded-lg px-3 text-[11px] font-black transition-all ${
+                    expenseDateRange === option.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {expenseDateRange === 'CUSTOM' && (
+              <>
+                <input
+                  type="date"
+                  value={expenseStartDate}
+                  onChange={event => setExpenseStartDate(event.target.value)}
+                  className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                />
+                <input
+                  type="date"
+                  value={expenseEndDate}
+                  onChange={event => setExpenseEndDate(event.target.value)}
+                  className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                />
+              </>
+            )}
+            <select
+              value={expenseSourceFilter}
+              onChange={event => setExpenseSourceFilter(event.target.value as ExpenseSourceFilter)}
+              className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            >
+              <option value="ALL">All sources</option>
+              <option value="TILL">Till</option>
+              <option value="PETTY_CASH">Petty cash</option>
+              <option value="SHOP">Stock</option>
+              <option value="ACCOUNT">General account</option>
+            </select>
+            <select
+              value={expenseStatusFilter}
+              onChange={event => setExpenseStatusFilter(event.target.value as ExpenseStatusFilter)}
+              className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            >
+              <option value="ALL">All statuses</option>
+              <option value="APPROVED">Approved</option>
+              <option value="PENDING">Pending</option>
+              <option value="REJECTED">Rejected</option>
+            </select>
+            <select
+              value={expenseCategoryFilter}
+              onChange={event => setExpenseCategoryFilter(event.target.value)}
+              className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            >
+              <option value="ALL">All categories</option>
+              {expenseCategories.map(category => (
+                <option key={category} value={category}>{category}</option>
+              ))}
+            </select>
+            {hasExpenseFilters && (
+              <button
+                type="button"
+                onClick={clearExpenseFilters}
+                className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[11px] font-black uppercase tracking-widest text-slate-600 transition-all hover:bg-slate-100"
+              >
+                <X size={14} />
+                Clear filters
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Expense List */}
       <div className="space-y-3">
          {filteredExpenses.map(expense => {
            const source = sourceBadge(expense.source);
+           const status = statusBadge(expense.status);
            const amount = Number(expense.amount) || 0;
            const timestamp = Number(expense.timestamp) || Date.now();
            return (
@@ -301,6 +469,9 @@ export default function ExpensesTab() {
                       <div className="flex items-center justify-end gap-1.5 mt-2">
                          <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border ${source.className}`}>
                             {source.label}
+                         </span>
+                         <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border ${status.className}`}>
+                            {status.label}
                          </span>
                          {expense.userName && (
                            <span className="text-[8px] font-black text-slate-400 uppercase flex items-center gap-1">

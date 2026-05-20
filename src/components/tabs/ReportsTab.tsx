@@ -20,6 +20,7 @@ import { belongsToActiveBranch } from '../../utils/branchScope';
 import { getBusinessSettings } from '../../utils/settings';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
+const DAY_MS = 24 * 60 * 60 * 1000;
 const REPORTABLE_TRANSACTION_STATUSES = new Set(['PAID', 'UNPAID', 'PARTIAL_REFUND', 'PENDING_REFUND', 'REFUNDED']);
 type ReportDateRange = 'TODAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'MONTHLY' | 'CUSTOM' | 'ALL';
 type ProfitLossExportMode = 'INDIVIDUAL' | 'COMPARISON';
@@ -197,7 +198,6 @@ export default function ReportsTab() {
   const [customStart, setCustomStart] = useState(todayInput);
   const [customEnd, setCustomEnd] = useState(todayInput);
   const [deductTaxInPL, setDeductTaxInPL] = useState(true);
-  const [profitLossExportMode, setProfitLossExportMode] = useState<ProfitLossExportMode>('INDIVIDUAL');
   const [productDateRange, setProductDateRange] = useState<ReportDateRange>('MONTH');
   const [productSelectedMonth, setProductSelectedMonth] = useState(monthInput);
   const [productCustomStart, setProductCustomStart] = useState(todayInput);
@@ -212,8 +212,11 @@ export default function ReportsTab() {
   const productTopScrollRef = React.useRef<HTMLDivElement | null>(null);
   const productTableScrollRef = React.useRef<HTMLDivElement | null>(null);
   const [salesChartRef, salesChartSize] = useChartSize();
+  const [profitExpenseChartRef, profitExpenseChartSize] = useChartSize();
   const [expenseChartRef, expenseChartSize] = useChartSize();
   const [categoryChartRef, categoryChartSize] = useChartSize();
+  const [hourlyChartRef, hourlyChartSize] = useChartSize();
+  const [cashierChartRef, cashierChartSize] = useChartSize();
   
   const activeBranchId = useStore(state => state.activeBranchId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
@@ -551,6 +554,74 @@ export default function ReportsTab() {
   };
 
   const topCashiers = Object.entries(cashierPerf).map(([name, data]) => ({ name, ...data })).sort((a,b) => b.revenue - a.revenue);
+  const profitExpenseTrendData = (() => {
+    const chartEnd = endTime || Date.now();
+    const now = new Date(chartEnd);
+    const chartStart = startTime > 0
+      ? startTime
+      : new Date(now.getFullYear(), now.getMonth() - 11, 1).getTime();
+    const spanDays = Math.max(1, Math.ceil((chartEnd - chartStart + 1) / DAY_MS));
+    const useMonthlyBuckets = dateRange === 'ALL' || dateRange === 'QUARTER' || dateRange === 'MONTHLY' || spanDays > 45;
+
+    if (useMonthlyBuckets) {
+      const rows: Array<{ name: string; revenue: number; profit: number; expenses: number }> = [];
+      const cursor = new Date(chartStart);
+      cursor.setDate(1);
+      cursor.setHours(0, 0, 0, 0);
+
+      while (cursor.getTime() <= chartEnd && rows.length < 12) {
+        const start = new Date(cursor);
+        const end = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 23, 59, 59, 999);
+        const period = buildProfitLossPeriod({
+          start: Math.max(start.getTime(), chartStart),
+          end: Math.min(end.getTime(), chartEnd),
+          label: start.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+        });
+        rows.push({
+          name: period.label,
+          revenue: roundMoney(period.totalRevenue),
+          profit: roundMoney(period.netProfit),
+          expenses: roundMoney(period.expenses),
+        });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+
+      return rows;
+    }
+
+    const rows: Array<{ name: string; revenue: number; profit: number; expenses: number }> = [];
+    const cursor = new Date(chartStart);
+    cursor.setHours(0, 0, 0, 0);
+
+    while (cursor.getTime() <= chartEnd) {
+      const start = new Date(cursor);
+      const end = new Date(cursor);
+      end.setHours(23, 59, 59, 999);
+      const period = buildProfitLossPeriod({
+        start: Math.max(start.getTime(), chartStart),
+        end: Math.min(end.getTime(), chartEnd),
+        label: start.toLocaleDateString('en-US', { day: '2-digit', month: 'short' }),
+      });
+      rows.push({
+        name: period.label,
+        revenue: roundMoney(period.totalRevenue),
+        profit: roundMoney(period.netProfit),
+        expenses: roundMoney(period.expenses),
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return rows;
+  })();
+  const hourlySalesData = hourlySales.map(row => ({
+    name: `${String(row.hour).padStart(2, '0')}:00`,
+    revenue: roundMoney(row.revenue),
+  }));
+  const cashierChartData = topCashiers.slice(0, 6).map(row => ({
+    name: row.name,
+    revenue: roundMoney(row.revenue),
+    orders: row.orders,
+  }));
 
   const productPerformanceMap: Record<string, ProductPerformanceRow> = {};
   const ensureProductRow = (
@@ -668,10 +739,22 @@ export default function ReportsTab() {
   const selectedProductGroupSet = new Set(selectedProductGroups);
   const productSearchText = productSearch.trim().toLowerCase();
   const productGroupSearchText = productGroupSearch.trim().toLowerCase();
-  const productSelectionOptions = productPerformanceRows
-    .filter(row => `${row.name} ${row.group} ${row.source}`.toLowerCase().includes(productSearchText))
-    .slice(0, 160);
-  const productGroupOptions = productGroups.filter(group => group.toLowerCase().includes(productGroupSearchText));
+  const selectedProductRows = selectedProductIds
+    .map(id => productPerformanceRows.find(row => row.id === id))
+    .filter(Boolean) as ProductPerformanceRow[];
+  const selectedProductOptionIds = new Set(selectedProductRows.map(row => row.id));
+  const productSelectionMatches = productPerformanceRows
+    .filter(row => `${row.name} ${row.group} ${row.source}`.toLowerCase().includes(productSearchText));
+  const productSelectionOptions = [
+    ...selectedProductRows,
+    ...productSelectionMatches.filter(row => !selectedProductOptionIds.has(row.id)).slice(0, 160),
+  ];
+  const selectedCategoryOptions = selectedProductGroups.filter(group => productGroups.includes(group));
+  const productGroupOptions = [
+    ...selectedCategoryOptions,
+    ...productGroups
+      .filter(group => group.toLowerCase().includes(productGroupSearchText) && !selectedProductGroupSet.has(group)),
+  ];
   const visibleProductRows = productPerformanceRows.filter(row => {
     const productMatch = selectedProductSet.size === 0 || selectedProductSet.has(row.id);
     const groupMatch = selectedProductGroupSet.size === 0 || selectedProductGroupSet.has(row.group);
@@ -730,7 +813,7 @@ export default function ReportsTab() {
         businessName: businessSettings?.storeName,
         location: businessSettings?.location,
         productScope: selectedProductIds.length === 0 ? 'All items' : `${selectedProductIds.length} selected item${selectedProductIds.length === 1 ? '' : 's'}`,
-        groupScope: selectedProductGroups.length === 0 ? 'All groups' : `${selectedProductGroups.length} selected group${selectedProductGroups.length === 1 ? '' : 's'}`,
+        groupScope: selectedProductGroups.length === 0 ? 'All categories' : `${selectedProductGroups.length} selected categor${selectedProductGroups.length === 1 ? 'y' : 'ies'}`,
         rows: visibleProductRows,
         summary: {
           qty: productSummary.qty,
@@ -755,16 +838,11 @@ export default function ReportsTab() {
     setIsSharing(true);
     try {
       const { generateAndDownloadProfitLossReport } = await import('../../utils/shareUtils');
-      const previousBounds = profitLossExportMode === 'COMPARISON'
-        ? previousPeriodBounds({ start: startTime, end: endTime, label: periodLabel }, dateRange)
-        : null;
-      const periods = previousBounds
-        ? [buildProfitLossPeriod(previousBounds), currentProfitLossPeriod]
-        : [currentProfitLossPeriod];
-      const exportMode = periods.length > 1 ? profitLossExportMode : 'INDIVIDUAL';
+      const periods = [currentProfitLossPeriod];
+      const exportMode: ProfitLossExportMode = 'INDIVIDUAL';
       await generateAndDownloadProfitLossReport({
         title: `${exportMode}-${dateRange}-${new Date().toISOString().split('T')[0]}`,
-        periodLabel: periods.map(period => period.label).join(' vs '),
+        periodLabel: currentProfitLossPeriod.label,
         reportMode: exportMode,
         businessName: businessSettings?.storeName,
         location: businessSettings?.location,
