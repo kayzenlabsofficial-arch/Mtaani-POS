@@ -381,8 +381,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const ownerModeActive = canUseOwnerMode(currentUser) && isOwnerModeEnabled(businessSettings);
   const cashSweepActive = ownerModeActive && isOwnerCashSweepEnabled(businessSettings);
   const cashDrawerLimit = getCashDrawerLimit(businessSettings);
-  const currentShiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser?.id);
-  const currentShiftStart = getCurrentShiftStart(activeShift, getTodayStartMs());
+  const hasLocalOpenShift = activeShift?.status === 'OPEN';
+  const currentShiftId = hasLocalOpenShift || isCashier ? getCurrentShiftId(activeShift, activeBranchId, currentUser?.id) : undefined;
+  const currentShiftStart = hasLocalOpenShift || isCashier ? getCurrentShiftStart(activeShift, getTodayStartMs()) : getTodayStartMs();
 
   const drawerBreakdown = calculateCashDrawer({
     transactions: branchTransactions || [],
