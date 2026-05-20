@@ -36,6 +36,7 @@ async function ensureCloseDaySchema(db: D1Database) {
       taxTotal REAL NOT NULL DEFAULT 0,
       totalExpenses REAL NOT NULL DEFAULT 0,
       totalPicks REAL NOT NULL DEFAULT 0,
+      totalRefunds REAL,
       totalVariance REAL NOT NULL DEFAULT 0,
       timestamp INTEGER NOT NULL,
       branchId TEXT,
@@ -64,6 +65,7 @@ async function ensureCloseDaySchema(db: D1Database) {
     'ALTER TABLE dailySummaries ADD COLUMN taxTotal REAL',
     'ALTER TABLE dailySummaries ADD COLUMN totalExpenses REAL',
     'ALTER TABLE dailySummaries ADD COLUMN totalPicks REAL',
+    'ALTER TABLE dailySummaries ADD COLUMN totalRefunds REAL',
     'ALTER TABLE dailySummaries ADD COLUMN totalVariance REAL',
     'ALTER TABLE dailySummaries ADD COLUMN branchId TEXT',
     'ALTER TABLE dailySummaries ADD COLUMN businessId TEXT',
@@ -112,11 +114,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const taxTotal = nonNegative(summary.taxTotal);
     const totalExpenses = nonNegative(summary.totalExpenses);
     const totalPicks = nonNegative(summary.totalPicks);
+    const totalRefunds = nonNegative(summary.totalRefunds);
     const totalVariance = n(summary.totalVariance);
     await env.DB.prepare(`
-      INSERT INTO dailySummaries (id, date, shiftIds, totalSales, grossSales, taxTotal, totalExpenses, totalPicks, totalVariance, timestamp, branchId, businessId, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(id, summaryDate, JSON.stringify(Array.isArray(summary.shiftIds) ? summary.shiftIds : []), totalSales, grossSales, taxTotal, totalExpenses, totalPicks, totalVariance, now, branchId, businessId, now).run();
+      INSERT INTO dailySummaries (id, date, shiftIds, totalSales, grossSales, taxTotal, totalExpenses, totalPicks, totalRefunds, totalVariance, timestamp, branchId, businessId, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(id, summaryDate, JSON.stringify(Array.isArray(summary.shiftIds) ? summary.shiftIds : []), totalSales, grossSales, taxTotal, totalExpenses, totalPicks, totalRefunds, totalVariance, now, branchId, businessId, now).run();
     await env.DB.prepare(`
       INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -46,7 +46,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       idempotencyKey: body?.idempotencyKey,
     });
     if (prepared.statements.length) await env.DB.batch(prepared.statements);
-    return json({ success: true, transaction: prepared.transaction, idempotent: prepared.idempotent });
+    return json({ success: true, transaction: prepared.transaction, refund: prepared.refund, idempotent: prepared.idempotent });
   } catch (err: any) {
     const status = err instanceof PolicyError ? err.status : 500;
     return json({ error: err?.message || 'Could not approve refund.' }, status);

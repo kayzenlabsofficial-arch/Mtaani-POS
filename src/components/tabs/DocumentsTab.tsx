@@ -40,7 +40,7 @@ const parseRecordList = (value: unknown): string[] => {
 export default function DocumentsTab() {
   const [docSearch, setDocSearch] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
-  const [filterType, setFilterType] = useState<'ALL' | 'APPROVALS' | 'SALES' | 'EXPENSES' | 'SUPPLIER_PAYMENTS' | 'CREDIT_NOTES' | 'INVOICES' | 'SHIFTS' | 'DAILY' | 'MPESA'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'APPROVALS' | 'SALES' | 'REFUNDS' | 'EXPENSES' | 'SUPPLIER_PAYMENTS' | 'CREDIT_NOTES' | 'INVOICES' | 'SHIFTS' | 'DAILY' | 'MPESA'>('ALL');
   const todayInput = new Date().toISOString().split('T')[0];
   const [dateMode, setDateMode] = useState<'ALL' | 'CUSTOM'>('ALL');
   const [dateStart, setDateStart] = useState(todayInput);
@@ -58,6 +58,7 @@ export default function DocumentsTab() {
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
   const allTransactions = useLiveQuery(() => activeBusinessId && activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
+  const allRefunds = useLiveQuery(() => activeBusinessId && activeBranchId ? db.refunds.where('branchId').equals(activeBranchId).and(r => r.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
   const allExpenses = useLiveQuery(() => activeBusinessId && activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
   const allSupplierPayments = useLiveQuery(() => activeBusinessId && activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
   const allCreditNotes = useLiveQuery(() => activeBusinessId && activeBranchId ? db.creditNotes.where('branchId').equals(activeBranchId).and(cn => cn.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
@@ -69,6 +70,7 @@ export default function DocumentsTab() {
 
   const unifiedRecords: any[] = [
     ...(allTransactions || []).map(t => ({ ...t, recordType: 'SALE' as const })),
+    ...(allRefunds || []).map(r => ({ ...r, recordType: 'REFUND' as const, total: r.amount })),
     ...(allExpenses || []).map(e => ({ ...e, recordType: 'EXPENSE' as const, total: e.amount })),
     ...(allSupplierPayments || []).map(p => ({ ...p, recordType: 'SUPPLIER_PAYMENT' as const, total: p.amount })),
     ...(allCreditNotes || []).map(cn => ({ ...cn, recordType: 'CREDIT_NOTE' as const, total: cn.amount })),
@@ -98,7 +100,7 @@ export default function DocumentsTab() {
     })
   ].sort((a, b) => ((Number(b.timestamp) || 0) - (Number(a.timestamp) || 0)));
 
-  if (!allTransactions || !allExpenses || !allSupplierPayments || !allCreditNotes || !allSalesInvoices || !allPurchaseOrders || !allReports || !allDailySummaries) {
+  if (!allTransactions || !allRefunds || !allExpenses || !allSupplierPayments || !allCreditNotes || !allSalesInvoices || !allPurchaseOrders || !allReports || !allDailySummaries) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
            <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
@@ -146,6 +148,9 @@ export default function DocumentsTab() {
       r.reason,
       r.status,
       r.invoiceNumber,
+      r.receiptNumber,
+      r.originalTransactionId,
+      r.source,
       r.customerName,
       r.category,
       r.cashierName,
@@ -162,6 +167,7 @@ export default function DocumentsTab() {
     }
     if (filterType === 'ALL') return true;
     if (filterType === 'SALES' && r.recordType === 'SALE') return true;
+    if (filterType === 'REFUNDS' && r.recordType === 'REFUND') return true;
     if (filterType === 'EXPENSES' && r.recordType === 'EXPENSE') return true;
     if (filterType === 'SUPPLIER_PAYMENTS' && r.recordType === 'SUPPLIER_PAYMENT') return true;
     if (filterType === 'CREDIT_NOTES' && r.recordType === 'CREDIT_NOTE') return true;
@@ -268,6 +274,7 @@ export default function DocumentsTab() {
              { id: 'ALL', label: 'All documents' },
              { id: 'APPROVALS', label: 'Pending approvals' },
              { id: 'SALES', label: 'Sales receipts' },
+             { id: 'REFUNDS', label: 'Refunds' },
              { id: 'MPESA', label: 'M-Pesa payments' },
              { id: 'EXPENSES', label: 'Expenses' },
              { id: 'SUPPLIER_PAYMENTS', label: 'Supplier payments' },
@@ -468,6 +475,7 @@ export default function DocumentsTab() {
         <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
            {pagedDocs.map(r => {
              const isSale = r.recordType === 'SALE';
+             const isRefund = r.recordType === 'REFUND';
              const isExp = r.recordType === 'EXPENSE';
              const isPay = r.recordType === 'SUPPLIER_PAYMENT';
              const isCreditNote = r.recordType === 'CREDIT_NOTE';
@@ -484,6 +492,7 @@ export default function DocumentsTab() {
               >
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                   isSale ? 'bg-emerald-50 text-emerald-600' : 
+                  isRefund ? 'bg-rose-50 text-rose-600' :
                   isExp ? 'bg-orange-50 text-orange-600' : 
                   isPay ? 'bg-purple-50 text-purple-600' :
                   isCreditNote ? 'bg-blue-50 text-blue-600' :
@@ -492,7 +501,8 @@ export default function DocumentsTab() {
                   isDaily ? 'bg-indigo-600 text-white' :
                   'bg-blue-50 text-blue-600'
                 }`}>
-                   {isSale ? <Receipt size={18} /> : 
+                   {isSale ? <Receipt size={18} /> :
+                    isRefund ? <RotateCcw size={18} /> :
                     isExp ? <Wallet size={18} /> : 
                     isPay ? <Landmark size={18} /> :
                     isCreditNote ? <RotateCcw size={18} /> :
@@ -503,6 +513,7 @@ export default function DocumentsTab() {
                 <div className="flex-1 min-w-0">
                    <h4 className="text-sm font-black text-slate-900 truncate">
                      {isSale ? `Receipt #${shortId(r.id)}` :
+                      isRefund ? `Refund #${safeText(r.receiptNumber || shortId(r.originalTransactionId || r.id))}` :
                       isExp ? `Expense: ${safeText(r.category || 'General')}` :
                       isPay ? 'Supplier payment' :
                       isCreditNote ? `Credit note #${safeText(r.reference || shortId(r.id))}` :
@@ -514,18 +525,20 @@ export default function DocumentsTab() {
                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(recordTimestamp(r)).toLocaleDateString()}</span>
                       <span className="w-1 h-1 rounded-full bg-slate-200" />
-                      <span className="text-[10px] font-bold text-slate-400 truncate max-w-[120px]">{safeText(r.customerName || r.description || r.reference || 'Saved record')}</span>
+                      <span className="text-[10px] font-bold text-slate-400 truncate max-w-[120px]">{safeText(r.customerName || r.description || r.reference || r.source || 'Saved record')}</span>
                    </div>
                 </div>
                 <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter shrink-0 ${
                   isSale ? 'bg-slate-100 text-slate-600' : 
+                  isRefund ? 'bg-rose-50 text-rose-600' :
                   isExp ? 'bg-orange-50 text-orange-600' : 
                   isPay ? 'bg-purple-50 text-purple-600' :
                   isCreditNote ? 'bg-blue-50 text-blue-600' :
                   isSalesInvoice ? 'bg-blue-50 text-blue-600' :
                   'bg-blue-50 text-blue-600'
                 }`}>
-                  {isSale ? sentenceValue(r.status) : 
+                  {isSale ? sentenceValue(r.status) :
+                   isRefund ? sentenceValue(r.status, 'APPROVED') :
                    isSalesInvoice ? (r.status === 'SENT' ? 'Unpaid' : sentenceValue(r.status)) :
                    isCreditNote ? sentenceValue(r.status, 'PENDING') :
                    r.recordType === 'PURCHASE_ORDER' ? sentenceValue(r.paymentStatus, 'UNPAID') :

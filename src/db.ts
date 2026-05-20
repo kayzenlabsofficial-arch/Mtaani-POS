@@ -127,6 +127,25 @@ export interface Transaction {
   updated_at?: number;
 }
 
+export interface RefundDocument {
+  id: string;
+  originalTransactionId: string;
+  receiptNumber?: string;
+  amount: number;
+  cashAmount?: number;
+  paymentMethod?: 'CASH' | 'MPESA' | 'PDQ' | 'CREDIT' | 'SPLIT';
+  source?: 'TILL' | 'MPESA' | 'PDQ' | 'CREDIT' | 'MIXED';
+  items?: { productId: string; name?: string; quantity: number; amount?: number }[];
+  timestamp: number;
+  cashierName?: string;
+  approvedBy?: string;
+  status: 'APPROVED' | 'REJECTED' | 'PENDING';
+  branchId: string;
+  businessId: string;
+  shiftId?: string;
+  updated_at?: number;
+}
+
 export interface CashPick {
   id: string;
   amount: number;
@@ -186,6 +205,7 @@ export interface DailySummary {
   taxTotal: number;
   totalExpenses: number;
   totalPicks: number;
+  totalRefunds?: number;
   totalVariance: number;
   timestamp: number;
   branchId: string;
@@ -566,6 +586,7 @@ class MtaaniCloudDB {
   products            = new CloudTable<Product>('products');
   productIngredients  = new CloudTable<ProductIngredient>('productIngredients');
   transactions        = new CloudTable<Transaction>('transactions');
+  refunds             = new CloudTable<RefundDocument>('refunds');
   cashPicks           = new CloudTable<CashPick>('cashPicks');
   endOfDayReports     = new CloudTable<EndOfDayReport>('endOfDayReports');
   stockMovements      = new CloudTable<StockMovement>('stockMovements');
@@ -607,6 +628,7 @@ class MtaaniCloudDB {
     this.products.reset();
     this.productIngredients.reset();
     this.transactions.reset();
+    this.refunds.reset();
     this.cashPicks.reset();
     this.endOfDayReports.reset();
     this.stockMovements.reset();
@@ -668,6 +690,7 @@ class MtaaniCloudDB {
         () => this.products.reload(),
         () => this.productIngredients.reload(),
         () => this.transactions.reload(),
+        () => this.refunds.reload(),
         () => this.cashPicks.reload(),
         () => this.endOfDayReports.reload(),
         () => this.stockMovements.reload(),

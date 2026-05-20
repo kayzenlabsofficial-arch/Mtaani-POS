@@ -101,10 +101,30 @@ CREATE TABLE IF NOT EXISTS cashPicks (
     updated_at INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS refunds (
+    id TEXT PRIMARY KEY,
+    originalTransactionId TEXT NOT NULL,
+    receiptNumber TEXT,
+    amount REAL NOT NULL,
+    cashAmount REAL DEFAULT 0,
+    paymentMethod TEXT,
+    source TEXT,
+    items TEXT,
+    timestamp INTEGER NOT NULL,
+    cashierName TEXT,
+    approvedBy TEXT,
+    status TEXT NOT NULL DEFAULT 'APPROVED',
+    shiftId TEXT,
+    branchId TEXT,
+    businessId TEXT,
+    updated_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS shifts (
     id TEXT PRIMARY KEY,
     startTime INTEGER NOT NULL,
     endTime INTEGER,
+    cashierId TEXT,
     cashierName TEXT NOT NULL,
     status TEXT NOT NULL,
     branchId TEXT,
@@ -363,6 +383,7 @@ CREATE TABLE IF NOT EXISTS dailySummaries (
     taxTotal REAL NOT NULL,
     totalExpenses REAL NOT NULL,
     totalPicks REAL NOT NULL,
+    totalRefunds REAL,
     totalVariance REAL NOT NULL,
     timestamp INTEGER NOT NULL,
     branchId TEXT,

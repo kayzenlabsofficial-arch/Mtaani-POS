@@ -113,6 +113,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   if (!selectedRecord) return null;
 
   const isSale = selectedRecord.recordType === 'SALE';
+  const isRefund = selectedRecord.recordType === 'REFUND';
   const isExpense = selectedRecord.recordType === 'EXPENSE';
   const isPayment = selectedRecord.recordType === 'SUPPLIER_PAYMENT';
   const isCreditNote = selectedRecord.recordType === 'CREDIT_NOTE';
@@ -124,6 +125,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     { label: 'Cash Sale', key: 'cashSales' },
     { label: 'M-Pesa Sales', key: 'mpesaSales' },
     { label: 'PDQ Sales', key: 'pdqSales' },
+    { label: 'Refunds', key: 'totalRefunds', negative: true },
     { label: 'Remittance (Supplier payments + Expenses)', key: 'remittanceTotal', negative: true },
     { label: 'Cash Picked', key: 'totalPicks' },
     { label: 'Cashier Variance', key: 'difference', highlight: true },
@@ -162,6 +164,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
       .filter(([id, amount]) => id && amount > 0)
   );
   const creditNoteItems = parseList(selectedRecord.items);
+  const refundItems = parseList(selectedRecord.items);
 
   const runApprovalAction = async (action: (record: any) => Promise<void>) => {
     if (isApprovalActionRunning) return;
@@ -203,7 +206,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     if (!selectedRecord) return;
     setIsSharing(true);
     try {
-      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isCreditNote ? 'Credit-Note' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
+      const typeLabel = isSale ? 'Receipt' : isRefund ? 'Refund' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isCreditNote ? 'Credit-Note' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
       
       const recordWithDetails = withReceiptDetails(selectedRecord);
@@ -245,7 +248,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     if (!selectedRecord) return;
     setIsSavingPDF(true);
     try {
-      const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isCreditNote ? 'Credit-Note' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
+      const typeLabel = isSale ? 'Receipt' : isRefund ? 'Refund' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isCreditNote ? 'Credit-Note' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
 
       const recordWithDetails = withReceiptDetails(selectedRecord);
@@ -323,6 +326,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
               {/* Header */}
               <div className={`p-8 border-b flex flex-col items-center text-center ${
                  isSale ? 'bg-green-50/50 border-green-100' : 
+                 isRefund ? 'bg-rose-50/50 border-rose-100' :
                  isExpense ? 'bg-orange-50/50 border-orange-100' : 
                  isPayment ? 'bg-purple-50/50 border-purple-100' :
                  isCreditNote ? 'bg-blue-50/50 border-blue-100' :
@@ -330,6 +334,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
               } print:bg-white print:border-slate-300`}>
                   <div className={`w-14 h-14 rounded-3xl flex items-center justify-center mb-4 no-print ${
                      isSale ? 'bg-green-100 text-green-600' : 
+                     isRefund ? 'bg-rose-100 text-rose-600' :
                      isExpense ? 'bg-orange-100 text-orange-600' : 
                      isPayment ? 'bg-purple-100 text-purple-600' :
                      isCreditNote ? 'bg-blue-100 text-blue-600' :
@@ -338,10 +343,11 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                      isDailySummary ? 'bg-blue-600 text-white' :
                      'bg-blue-100 text-blue-600'
                   }`}>
-                     {isSale ? <ReceiptText size={28} /> : isExpense ? <Wallet size={28} /> : isPayment ? <DollarSign size={28} /> : isCreditNote ? <RotateCcw size={28} /> : isSalesInvoice ? <FileText size={28} /> : isReport ? <CalendarCheck size={28} /> : isDailySummary ? <PackagePlus size={28} /> : <ClipboardList size={28} />}
+                     {isSale ? <ReceiptText size={28} /> : isRefund ? <RotateCcw size={28} /> : isExpense ? <Wallet size={28} /> : isPayment ? <DollarSign size={28} /> : isCreditNote ? <RotateCcw size={28} /> : isSalesInvoice ? <FileText size={28} /> : isReport ? <CalendarCheck size={28} /> : isDailySummary ? <PackagePlus size={28} /> : <ClipboardList size={28} />}
                   </div>
                   <h2 className={`${isSale ? 'text-xl print:text-[12pt]' : 'text-2xl'} font-black text-slate-900 tracking-tight`}>
                      {isSale ? storeName : 
+                      isRefund ? 'Refund document' :
                       isExpense ? `Expense document` : 
                       isPayment ? 'Supplier payment note' :
                       isCreditNote ? 'Supplier credit note' :
@@ -359,7 +365,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                     </div>
                   )}
                   <p className="text-xs font-bold text-slate-500  tracking-[0.2em] mt-1">
-                      {isSale ? 'Receipt' : 'Reference'}: {isSale ? saleReference : (selectedRecord.reference || selectedRecord.invoiceNumber || (String(selectedRecord.id || '').startsWith('PO-') ? selectedRecord.id : String(selectedRecord.id || '').split('-')[0].toUpperCase()))}
+                      {isSale ? 'Receipt' : isRefund ? 'Original receipt' : 'Reference'}: {isSale ? saleReference : isRefund ? (selectedRecord.receiptNumber || String(selectedRecord.originalTransactionId || '').split('-')[0].toUpperCase()) : (selectedRecord.reference || selectedRecord.invoiceNumber || (String(selectedRecord.id || '').startsWith('PO-') ? selectedRecord.id : String(selectedRecord.id || '').split('-')[0].toUpperCase()))}
                   </p>
                   <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400 mt-2  ">
                      <Calendar size={12} /> {recordDate.toLocaleString('en-KE')}
@@ -369,7 +375,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                           <div className="w-5 h-5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400">
                              <User size={10} />
                           </div>
-                          <span className=" ">{isSale ? 'Cashier:' : 'Prepared by:'}</span>
+                          <span className=" ">{isSale ? 'Cashier:' : isRefund ? 'Processed by:' : 'Prepared by:'}</span>
                           <span className="text-blue-600 font-bold">{cashierName}</span>
                        </div>
 
@@ -426,11 +432,67 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                          {sentenceValue(selectedRecord.status, 'PENDING')}
                      </span>
                   )}
+                  {isRefund && (
+                     <span className="mt-4 text-[10px] font-black px-3 py-1 rounded-full no-print bg-rose-100 text-rose-700">
+                         {sentenceValue(selectedRecord.status, 'APPROVED')}
+                     </span>
+                  )}
               </div>
 
               {/* Content */}
               <div className={isSale ? "p-5 space-y-4 print:p-2 print:space-y-2" : "p-6 space-y-5"}>
                  
+                 {/* Refund Details */}
+                 {isRefund && (
+                    <div className="space-y-5">
+                       <div className="grid grid-cols-2 gap-3">
+                          {[
+                            { label: 'Original receipt', value: selectedRecord.receiptNumber || String(selectedRecord.originalTransactionId || '').split('-')[0].toUpperCase() },
+                            { label: 'Payment source', value: sentenceValue(selectedRecord.source || selectedRecord.paymentMethod, 'TILL') },
+                            { label: 'Shift', value: shiftNumber },
+                            { label: 'Approved by', value: selectedRecord.approvedBy || 'Admin' },
+                          ].map(item => (
+                            <div key={item.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{item.label}</p>
+                              <p className="mt-1 break-words text-sm font-black text-slate-900">{item.value}</p>
+                            </div>
+                          ))}
+                       </div>
+
+                       <div className="space-y-3">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Refunded items</p>
+                          {refundItems.length > 0 ? refundItems.map((item: any, idx: number) => (
+                            <div key={`${item.productId || idx}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white p-3 text-sm">
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate font-bold text-slate-900">{item.name || 'Returned item'}</p>
+                                <p className="text-[11px] font-medium text-slate-500">{Number(item.quantity || 0).toLocaleString()} units</p>
+                              </div>
+                              <span className="font-black tabular-nums text-rose-700">{moneyText(item.amount || 0)}</span>
+                            </div>
+                          )) : (
+                            <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 text-sm font-bold text-slate-500">
+                              Item details were not captured for this refund.
+                            </div>
+                          )}
+                       </div>
+
+                       <div className="border-t border-dashed border-slate-200 pt-4 space-y-2">
+                          <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                            <span>Original payment</span>
+                            <span>{paymentType(selectedRecord.paymentMethod)}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                            <span>Cash deducted from drawer</span>
+                            <span>{moneyText(selectedRecord.cashAmount || 0)}</span>
+                          </div>
+                          <div className="flex items-end justify-between pt-2">
+                            <span className="text-sm font-black text-slate-400">Refund total</span>
+                            <span className="text-2xl font-black text-rose-700">{moneyText(selectedRecord.amount || 0)}</span>
+                          </div>
+                       </div>
+                    </div>
+                 )}
+
                  {/* Sales Items */}
                  {isSale && (
                      <>

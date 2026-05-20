@@ -141,6 +141,13 @@ function splitFundedRemittance(cashSales: number, expenses: number, supplierPaym
   return { totalExpenses, supplierPaymentsTotal, remittanceTotal };
 }
 
+function cashRefundAmount(record: any) {
+  if (String(record?.status || 'APPROVED').toUpperCase() === 'REJECTED') return 0;
+  const source = String(record?.source || '').toUpperCase();
+  if (source === 'TILL' || source === 'MIXED') return Number(record?.cashAmount ?? record?.amount ?? 0);
+  return Number(record?.cashAmount || 0);
+}
+
 const money = (value: unknown) => `Ksh ${(Number(value) || 0).toLocaleString()}`;
 
 type ClosureStats = {
@@ -148,6 +155,7 @@ type ClosureStats = {
   invoices: any[];
   expenses: any[];
   picks: any[];
+  refunds: any[];
   supplierPayments: any[];
   grossSales: number;
   totalSales: number;
@@ -159,6 +167,8 @@ type ClosureStats = {
   supplierPaymentsTotal: number;
   remittanceTotal: number;
   totalPicks: number;
+  totalRefunds: number;
+  cashRefunds: number;
   expectedCash: number;
   cashierVariance: number;
 };
@@ -232,6 +242,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       : Promise.resolve([]),
     [activeBusinessId, activeBranchId], []
   );
+  const branchRefunds = useLiveQuery(
+    () => activeBusinessId && activeBranchId
+      ? db.refunds.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
+  );
   const branchSalesInvoices = useLiveQuery(
     () => activeBusinessId && activeBranchId
       ? db.salesInvoices.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
@@ -247,6 +263,18 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const branchCashPicks = useLiveQuery(
     () => activeBusinessId && activeBranchId
       ? db.cashPicks.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
+  );
+  const branchPurchaseOrders = useLiveQuery(
+    () => activeBusinessId && activeBranchId
+      ? db.purchaseOrders.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
+  );
+  const branchStockAdjustmentRequests = useLiveQuery(
+    () => activeBusinessId && activeBranchId
+      ? db.stockAdjustmentRequests.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
     [activeBusinessId, activeBranchId], []
   );
@@ -381,34 +409,70 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const ownerModeActive = canUseOwnerMode(currentUser) && isOwnerModeEnabled(businessSettings);
   const cashSweepActive = ownerModeActive && isOwnerCashSweepEnabled(businessSettings);
   const cashDrawerLimit = getCashDrawerLimit(businessSettings);
-  const hasLocalOpenShift = activeShift?.status === 'OPEN';
-  const currentShiftId = hasLocalOpenShift || isCashier ? getCurrentShiftId(activeShift, activeBranchId, currentUser?.id) : undefined;
-  const currentShiftStart = hasLocalOpenShift || isCashier ? getCurrentShiftStart(activeShift, getTodayStartMs()) : getTodayStartMs();
+  const shiftBelongsToCurrentUser = (shift: any) => {
+    if (!shift || !currentUser) return false;
+    const userId = String(currentUser.id || '').trim();
+    const userName = String(currentUser.name || '').trim().toLowerCase();
+    const cashierId = String(shift.cashierId || '').trim();
+    const cashierName = String(shift.cashierName || '').trim().toLowerCase();
+    return (userId && cashierId === userId)
+      || (userName && cashierName === userName)
+      || (userId && String(shift.id || '').includes(`_${userId}`));
+  };
+  const shiftInActiveScope = (shift: any) => (
+    shift
+    && String(shift.branchId || activeBranchId || '') === String(activeBranchId || '')
+    && String(shift.businessId || activeBusinessId || '') === String(activeBusinessId || '')
+  );
+  const localOpenShift = String(activeShift?.status || '').toUpperCase() === 'OPEN'
+    && shiftInActiveScope(activeShift)
+    && shiftBelongsToCurrentUser(activeShift)
+    ? activeShift
+    : null;
+  const sharedOwnOpenShift = (branchShifts || []).find(shift => String(shift.status || '').toUpperCase() === 'OPEN' && shiftBelongsToCurrentUser(shift));
+  const ownOpenShift = localOpenShift || sharedOwnOpenShift || null;
+  const canOperateOwnShift = !!ownOpenShift;
+  const currentShiftId = canOperateOwnShift ? getCurrentShiftId(ownOpenShift, activeBranchId, currentUser?.id) : undefined;
+  const currentShiftStart = canOperateOwnShift ? getCurrentShiftStart(ownOpenShift, getTodayStartMs()) : getTodayStartMs();
 
-  const drawerBreakdown = calculateCashDrawer({
+  const drawerBreakdown = canOperateOwnShift ? calculateCashDrawer({
     transactions: branchTransactions || [],
     expenses: branchExpenses || [],
     cashPicks: branchCashPicks || [],
+    refunds: branchRefunds || [],
     supplierPayments: branchSupplierPayments || [],
     customerPayments: branchCustomerPayments || [],
     since: currentShiftStart,
     shiftId: currentShiftId,
-  });
+  }) : {
+    cashSales: 0,
+    customerCashPayments: 0,
+    tillExpenses: 0,
+    cashPicks: 0,
+    cashRefunds: 0,
+    supplierTillPayments: 0,
+    actualCashDrawer: 0,
+  };
   const actualCashDrawer = Math.max(0, drawerBreakdown.actualCashDrawer);
-  const cashPickAvailable = calculateShiftCashFromSales({
+  const cashPickAvailable = canOperateOwnShift ? calculateShiftCashFromSales({
     transactions: branchTransactions || [],
     expenses: branchExpenses || [],
     cashPicks: branchCashPicks || [],
+    refunds: branchRefunds || [],
     supplierPayments: branchSupplierPayments || [],
     since: currentShiftStart,
     shiftId: currentShiftId,
-  }).availableCashSales;
+  }).availableCashSales : 0;
   const sweepAmount = Math.max(0, actualCashDrawer - cashDrawerLimit);
-  const shouldSweepCash = cashSweepActive && actualCashDrawer > cashDrawerLimit && sweepAmount > 0;
+  const shouldSweepCash = canOperateOwnShift && cashSweepActive && actualCashDrawer > cashDrawerLimit && sweepAmount > 0;
   const cashPickValue = Number(cashPickAmount) || 0;
 
   const handleBankExcessCash = async () => {
     if (!activeBranchId || !activeBusinessId || !currentUser || !shouldSweepCash || isBankingExcess) return;
+    if (!canOperateOwnShift || !currentShiftId) {
+      warning('Open your own shift before picking cash.');
+      return;
+    }
     setIsBankingExcess(true);
     try {
       await CashService.createPick({
@@ -431,6 +495,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
   const handleCreateCashPick = async () => {
     if (!activeBranchId || !activeBusinessId || !currentUser || isPickingCash) return;
+    if (!canOperateOwnShift || !currentShiftId) return warning('Open your own shift before picking cash.');
     if (cashPickValue <= 0) return warning('Enter the cash amount to pick.');
     if (cashPickValue > cashPickAvailable) {
       return error(canSeeSalesData
@@ -470,10 +535,13 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     const invoices = (branchSalesInvoices || []).filter(invoice => recordInShift(invoice, since, until, shiftId) && invoice.status !== 'CANCELLED');
     const expenses = (branchExpenses || []).filter(e => recordInShift(e, since, until, shiftId) && e.status !== 'REJECTED');
     const picks = (branchCashPicks || []).filter(p => recordInShift(p, since, until, shiftId) && p.status !== 'REJECTED');
+    const refunds = (branchRefunds || []).filter(r => recordInShift(r, since, until, shiftId) && String(r.status || 'APPROVED').toUpperCase() !== 'REJECTED');
     const supplierPayments = (branchSupplierPayments || []).filter(p => recordInShift(p, since, until, shiftId));
     const cashSales = txs.reduce((sum, tx) => sum + paymentAmount(tx, 'CASH'), 0);
     const mpesaSales = txs.reduce((sum, tx) => sum + paymentAmount(tx, 'MPESA'), 0);
     const pdqSales = txs.reduce((sum, tx) => sum + paymentAmount(tx, 'PDQ'), 0);
+    const totalRefunds = refunds.reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
+    const cashRefunds = refunds.reduce((sum, refund) => sum + cashRefundAmount(refund), 0);
     const grossSales = txs.reduce((sum, tx) => sum + Number(tx.subtotal ?? tx.total ?? 0), 0)
       + invoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || invoice.total || 0), 0);
     const totalSales = txs.reduce((sum, tx) => sum + Number(tx.total || 0), 0)
@@ -484,7 +552,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     const rawSupplierPaymentsTotal = supplierPayments.filter(p => p.source === 'TILL').reduce((sum, p) => sum + Number(p.amount || 0), 0);
     const { totalExpenses, supplierPaymentsTotal, remittanceTotal } = splitFundedRemittance(cashSales, rawTotalExpenses, rawSupplierPaymentsTotal);
     const totalPicks = picks.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-    const expectedCashPicked = Math.max(0, cashSales - remittanceTotal);
+    const expectedCashPicked = Math.max(0, cashSales - remittanceTotal - cashRefunds);
     const cashierVariance = totalPicks - expectedCashPicked;
 
     return {
@@ -492,6 +560,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       invoices,
       expenses,
       picks,
+      refunds,
       supplierPayments,
       grossSales,
       totalSales,
@@ -503,6 +572,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       supplierPaymentsTotal,
       remittanceTotal,
       totalPicks,
+      totalRefunds,
+      cashRefunds,
       expectedCash: expectedCashPicked,
       cashierVariance,
     };
@@ -529,6 +600,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         pdqSales: Number(report.pdqSales || 0),
         totalExpenses: Number(report.totalExpenses || 0),
         supplierPaymentsTotal: Number(report.supplierPaymentsTotal || 0),
+        totalRefunds: Number(report.totalRefunds || 0),
         totalPicks,
         expectedCash,
         actualCashDrawer: rowActualCash(expectedCash, totalPicks),
@@ -555,6 +627,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         pdqSales: stats.pdqSales,
         totalExpenses: stats.totalExpenses,
         supplierPaymentsTotal: stats.supplierPaymentsTotal,
+        totalRefunds: stats.totalRefunds,
         totalPicks: stats.totalPicks,
         expectedCash: stats.expectedCash,
         actualCashDrawer: rowActualCash(stats.expectedCash, stats.totalPicks),
@@ -581,6 +654,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       pdqSales: openShiftStats.pdqSales,
       totalExpenses: openShiftStats.totalExpenses,
       supplierPaymentsTotal: openShiftStats.supplierPaymentsTotal,
+      totalRefunds: openShiftStats.totalRefunds,
       totalPicks: openShiftStats.totalPicks,
       expectedCash: openShiftStats.expectedCash,
       actualCashDrawer: rowActualCash(openShiftStats.expectedCash, openShiftStats.totalPicks),
@@ -594,6 +668,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     pdqSales: totals.pdqSales + row.pdqSales,
     totalExpenses: totals.totalExpenses + row.totalExpenses,
     supplierPaymentsTotal: totals.supplierPaymentsTotal + row.supplierPaymentsTotal,
+    totalRefunds: totals.totalRefunds + row.totalRefunds,
     totalPicks: totals.totalPicks + row.totalPicks,
     expectedCash: totals.expectedCash + row.expectedCash,
     actualCashDrawer: totals.actualCashDrawer + row.actualCashDrawer,
@@ -605,37 +680,54 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     pdqSales: 0,
     totalExpenses: 0,
     supplierPaymentsTotal: 0,
+    totalRefunds: 0,
     totalPicks: 0,
     expectedCash: 0,
     actualCashDrawer: 0,
     difference: 0,
   });
 
+  const pendingShiftItems = (shiftId?: string, since = currentShiftStart, until = Date.now()) => {
+    if (!shiftId) return [];
+    const pending: string[] = [];
+    const isPendingShiftRecord = (record: any) => recordInShift(record, since, until, shiftId);
+    if ((branchExpenses || []).some(expense => isPendingShiftRecord(expense) && String(expense.status || '').toUpperCase() === 'PENDING')) pending.push('expenses');
+    if ((branchCashPicks || []).some(pick => isPendingShiftRecord(pick) && String(pick.status || '').toUpperCase() === 'PENDING')) pending.push('cash picks');
+    if ((branchTransactions || []).some(transaction => isPendingShiftRecord(transaction) && String(transaction.status || '').toUpperCase() === 'PENDING_REFUND')) pending.push('refund approvals');
+    if ((branchPurchaseOrders || []).some(order => isPendingShiftRecord(order) && String(order.approvalStatus || '').toUpperCase() === 'PENDING')) pending.push('purchase orders');
+    if ((branchStockAdjustmentRequests || []).some(request => isPendingShiftRecord(request) && String(request.status || '').toUpperCase() === 'PENDING')) pending.push('stock adjustments');
+    return pending;
+  };
+
   const handleCloseShift = () => {
     if (!activeBranchId || !activeBusinessId || !currentUser || isClosingShift) return;
+    if (!canOperateOwnShift || !currentShiftId || !ownOpenShift) {
+      warning('Open your own shift before closing it.');
+      return;
+    }
     const until = Date.now();
-    const baseSince = Number(activeShift?.startTime || getTodayStartMs());
-    const fallbackShiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser.id) || `shift_${activeBranchId}_${new Date().toISOString().slice(0, 10)}_${currentUser.id}`;
-    const latestClosedShift = !activeShift
-      ? [...(branchReports || [])]
-        .filter(report => Number(report.timestamp || 0) >= getTodayStartMs() && String(report.cashierName || '') === String(currentUser.name || ''))
-        .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))[0]
-      : null;
-    const recoveredAfterClosedShift = !!latestClosedShift && Number(latestClosedShift.timestamp || 0) >= baseSince;
-    const since = recoveredAfterClosedShift ? Number(latestClosedShift?.timestamp || baseSince) : baseSince;
-    const shiftId = recoveredAfterClosedShift ? createShiftSessionId(activeBranchId, currentUser.id, until) : fallbackShiftId;
+    const since = Number(ownOpenShift.startTime || getTodayStartMs());
+    const pending = pendingShiftItems(currentShiftId, since, until);
+    if (pending.length) {
+      warning(`Resolve pending ${pending.join(', ')} for this shift before closing.`);
+      return;
+    }
     setShiftClosePreview({
       since,
       until,
-      shiftId,
-      stats: getClosureStats(since, until, recoveredAfterClosedShift ? undefined : shiftId),
-      recoveredAfterClosedShift,
+      shiftId: currentShiftId,
+      stats: getClosureStats(since, until, currentShiftId),
     });
   };
 
   const confirmCloseShift = async () => {
     if (!activeBranchId || !activeBusinessId || !currentUser || isClosingShift || !shiftClosePreview) return;
     const { since, shiftId, stats } = shiftClosePreview;
+    const pending = pendingShiftItems(shiftId, since, Date.now());
+    if (pending.length) {
+      warning(`Resolve pending ${pending.join(', ')} for this shift before closing.`);
+      return;
+    }
     setIsClosingShift(true);
     try {
       const now = Date.now();
@@ -654,11 +746,11 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           supplierPaymentsTotal: stats.supplierPaymentsTotal,
           remittanceTotal: stats.remittanceTotal,
           totalPicks: stats.totalPicks,
-          totalRefunds: 0,
+          totalRefunds: stats.totalRefunds,
           expectedCash: stats.expectedCash,
           reportedCash: stats.totalPicks,
           difference: stats.cashierVariance,
-          cashierName: currentUser.name,
+          cashierName: ownOpenShift?.cashierName || currentUser.name,
         },
         branchId: activeBranchId,
         businessId: activeBusinessId,
@@ -680,6 +772,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         db.transactions.reload(),
         db.salesInvoices.reload(),
         db.cashPicks.reload(),
+        db.refunds.reload(),
         db.expenses.reload(),
         db.supplierPayments.reload(),
         db.dailySummaries.reload(),
@@ -715,14 +808,16 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       taxTotal: totals.taxTotal + Number(report.taxTotal || 0),
       totalExpenses: totals.totalExpenses + Number(report.totalExpenses || 0),
       totalPicks: totals.totalPicks + Number(report.totalPicks || 0),
+      totalRefunds: totals.totalRefunds + Number(report.totalRefunds || 0),
       totalVariance: totals.totalVariance + Number(report.difference || 0),
-    }), { totalSales: 0, grossSales: 0, taxTotal: 0, totalExpenses: 0, totalPicks: 0, totalVariance: 0 });
+    }), { totalSales: 0, grossSales: 0, taxTotal: 0, totalExpenses: 0, totalPicks: 0, totalRefunds: 0, totalVariance: 0 });
     const closeTotals = todaysReports.length ? closedShiftTotals : {
       totalSales: stats.totalSales,
       grossSales: stats.grossSales,
       taxTotal: stats.taxTotal,
       totalExpenses: stats.totalExpenses,
       totalPicks: stats.totalPicks,
+      totalRefunds: stats.totalRefunds,
       totalVariance: stats.cashierVariance,
     };
 
@@ -737,6 +832,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           taxTotal: closeTotals.taxTotal,
           totalExpenses: closeTotals.totalExpenses,
           totalPicks: closeTotals.totalPicks,
+          totalRefunds: closeTotals.totalRefunds,
           totalVariance: closeTotals.totalVariance,
         },
         branchId: activeBranchId,
@@ -781,6 +877,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     { label: 'Swipe sales', value: money(shiftPreviewStats.pdqSales), tone: 'text-indigo-700' },
     { label: 'Till expenses', value: money(shiftPreviewStats.totalExpenses), tone: 'text-rose-700' },
     { label: 'Supplier till payments', value: money(shiftPreviewStats.supplierPaymentsTotal), tone: 'text-amber-700' },
+    { label: 'Refunds', value: money(shiftPreviewStats.totalRefunds), tone: 'text-rose-700' },
+    { label: 'Till refunds', value: money(shiftPreviewStats.cashRefunds), tone: 'text-rose-700' },
     { label: 'Cash picked', value: money(shiftPreviewStats.totalPicks), tone: 'text-slate-900' },
     { label: 'Expected cash pick', value: money(shiftPreviewStats.expectedCash), tone: 'text-slate-900' },
   ] : [];
@@ -867,8 +965,13 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
             <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 mb-5">
               <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">{canSeeSalesData ? 'Available cash sales this shift' : 'Shift cash limit'}</p>
-              <p className="text-2xl font-black text-emerald-900 tabular-nums mt-1">{canSeeSalesData ? `Ksh ${cashPickAvailable.toLocaleString()}` : 'Protected'}</p>
+              <p className="text-2xl font-black text-emerald-900 tabular-nums mt-1">{canOperateOwnShift ? (canSeeSalesData ? `Ksh ${cashPickAvailable.toLocaleString()}` : 'Protected') : 'No open shift'}</p>
             </div>
+            {!canOperateOwnShift && (
+              <p className="mb-4 rounded-2xl border border-amber-100 bg-amber-50 p-3 text-[11px] font-bold text-amber-800">
+                Open your own shift before picking cash. Admins cannot pick money from a cashier shift.
+              </p>
+            )}
 
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Amount to pick</label>
             <div className="flex gap-3">
@@ -880,13 +983,14 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 onChange={event => setCashPickAmount(event.target.value)}
                 placeholder="0"
                 className="min-w-0 flex-1 rounded-2xl border-2 border-transparent bg-slate-50 px-5 py-4 text-sm font-black text-slate-900 outline-none focus:border-emerald-500"
+                disabled={!canOperateOwnShift}
                 autoFocus
               />
               {canSeeSalesData && (
                 <button
                   type="button"
                   onClick={() => setCashPickAmount(String(cashPickAvailable))}
-                  disabled={cashPickAvailable <= 0}
+                  disabled={!canOperateOwnShift || cashPickAvailable <= 0}
                   className="rounded-2xl border border-slate-200 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-40"
                 >
                   All
@@ -910,7 +1014,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
               <button
                 type="button"
                 onClick={handleCreateCashPick}
-                disabled={isPickingCash || cashPickValue <= 0 || cashPickValue > cashPickAvailable}
+                disabled={!canOperateOwnShift || isPickingCash || cashPickValue <= 0 || cashPickValue > cashPickAvailable}
                 className="rounded-2xl bg-emerald-600 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-white shadow-emerald transition-all disabled:bg-emerald-100 disabled:text-emerald-500 disabled:shadow-none"
               >
                 {isPickingCash ? 'Saving...' : 'Save cash pick'}
@@ -1051,6 +1155,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
             {[
               { label: 'Total sales', value: adminShiftTotals.totalSales, tone: 'text-slate-900' },
               { label: 'Cash sales', value: adminShiftTotals.cashSales, tone: 'text-emerald-700' },
+              { label: 'Refunds', value: adminShiftTotals.totalRefunds, tone: 'text-rose-700' },
               { label: 'Actual drawer', value: adminShiftTotals.actualCashDrawer, tone: 'text-blue-700' },
               { label: 'Variance', value: adminShiftTotals.difference, tone: adminShiftTotals.difference < 0 ? 'text-rose-700' : 'text-slate-900' },
             ].map(item => (
@@ -1062,7 +1167,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           </div>
         </div>
         <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-left text-xs">
+          <table className="min-w-[900px] text-left text-xs">
             <thead>
               <tr className="border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
                 <th className="py-2 pr-4">Shift</th>
@@ -1071,6 +1176,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 <th className="py-2 pr-4 text-right">Cash</th>
                 <th className="py-2 pr-4 text-right">M-Pesa</th>
                 <th className="py-2 pr-4 text-right">Till paid</th>
+                <th className="py-2 pr-4 text-right">Refunds</th>
                 <th className="py-2 pr-4 text-right">Picked</th>
                 <th className="py-2 text-right">Variance</th>
               </tr>
@@ -1087,13 +1193,14 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                   <td className="py-3 pr-4 text-right tabular-nums">{money(row.cashSales)}</td>
                   <td className="py-3 pr-4 text-right tabular-nums">{money(row.mpesaSales)}</td>
                   <td className="py-3 pr-4 text-right tabular-nums">{money(row.totalExpenses + row.supplierPaymentsTotal)}</td>
+                  <td className="py-3 pr-4 text-right tabular-nums text-rose-700">{money(row.totalRefunds)}</td>
                   <td className="py-3 pr-4 text-right tabular-nums">{money(row.totalPicks)}</td>
                   <td className={`py-3 text-right font-black tabular-nums ${row.difference < 0 ? 'text-rose-600' : 'text-slate-900'}`}>{money(row.difference)}</td>
                 </tr>
               ))}
               {adminShiftRows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-[11px] font-bold text-slate-400">No shift activity yet today.</td>
+                  <td colSpan={9} className="py-8 text-center text-[11px] font-bold text-slate-400">No shift activity yet today.</td>
                 </tr>
               )}
             </tbody>

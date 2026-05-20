@@ -35,6 +35,19 @@ async function ensureSchema(db: D1Database) {
     )
   `).run();
   await db.prepare(`
+    CREATE TABLE IF NOT EXISTS shifts (
+      id TEXT PRIMARY KEY,
+      startTime INTEGER NOT NULL,
+      endTime INTEGER,
+      cashierId TEXT,
+      cashierName TEXT NOT NULL,
+      status TEXT NOT NULL,
+      branchId TEXT,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
     CREATE TABLE IF NOT EXISTS financialAccounts (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -67,6 +80,10 @@ async function ensureSchema(db: D1Database) {
     'ALTER TABLE cashPicks ADD COLUMN shiftId TEXT',
     'ALTER TABLE cashPicks ADD COLUMN branchId TEXT',
     'ALTER TABLE cashPicks ADD COLUMN businessId TEXT',
+    'ALTER TABLE shifts ADD COLUMN cashierId TEXT',
+    'ALTER TABLE shifts ADD COLUMN branchId TEXT',
+    'ALTER TABLE shifts ADD COLUMN businessId TEXT',
+    'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
     'ALTER TABLE financialAccounts ADD COLUMN branchId TEXT',
     'ALTER TABLE financialAccounts ADD COLUMN accountNumber TEXT',
     'ALTER TABLE financialAccounts ADD COLUMN updated_at INTEGER',
@@ -100,6 +117,43 @@ function inShiftScope(row: any, since: number, shiftId?: string | null): boolean
   return asNumber(row?.timestamp || row?.issueDate) >= since;
 }
 
+function cashAmountFromRefund(row: any): number {
+  if (String(row?.status || 'APPROVED').toUpperCase() === 'REJECTED') return 0;
+  const source = String(row?.source || '').toUpperCase();
+  if (source === 'TILL' || source === 'MIXED') return asNumber(row?.cashAmount ?? row?.amount);
+  return asNumber(row?.cashAmount);
+}
+
+async function requireOwnOpenShift(
+  db: D1Database,
+  businessId: string,
+  branchId: string,
+  shiftId: string | null,
+  principal: any,
+  service: boolean,
+) {
+  if (!shiftId) throw new PolicyError('Open your own shift before picking cash.', 409);
+  const shift = await db.prepare(`
+    SELECT id, startTime, cashierId, cashierName, status
+    FROM shifts
+    WHERE id = ? AND businessId = ? AND branchId = ?
+    LIMIT 1
+  `).bind(shiftId, businessId, branchId).first<any>();
+  if (!shift) throw new PolicyError('Shift was not found.', 404);
+  if (String(shift.status || '').toUpperCase() !== 'OPEN') throw new PolicyError('Only open shifts can pick cash.', 409);
+  if (!service) {
+    const userId = String(principal?.userId || '').trim();
+    const userName = String(principal?.userName || '').trim().toLowerCase();
+    const cashierId = String(shift.cashierId || '').trim();
+    const cashierName = String(shift.cashierName || '').trim().toLowerCase();
+    const ownsShift = (userId && cashierId === userId)
+      || (userName && cashierName === userName)
+      || (userId && String(shift.id || '').includes(`_${userId}`));
+    if (!ownsShift) throw new PolicyError('You can only pick cash from your own shift.', 403);
+  }
+  return shift;
+}
+
 async function resolveShiftStart(db: D1Database, businessId: string, branchId: string, shiftId?: string | null, fallback?: unknown): Promise<number> {
   const inputStart = asNumber(fallback);
   if (inputStart > 0) return inputStart;
@@ -116,12 +170,14 @@ async function resolveShiftStart(db: D1Database, businessId: string, branchId: s
 }
 
 async function availableCashForPick(db: D1Database, businessId: string, branchId: string, since: number, shiftId?: string | null): Promise<number> {
-  const [transactions, expenses, picks, supplierPayments] = await Promise.all([
+  const [transactions, expenses, picks, refunds, supplierPayments] = await Promise.all([
     db.prepare(`SELECT total, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND branchId = ? AND timestamp >= ?`)
       .bind(businessId, branchId, since).all<any>().catch(() => ({ results: [] })),
     db.prepare(`SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND branchId = ? AND timestamp >= ?`)
       .bind(businessId, branchId, since).all<any>().catch(() => ({ results: [] })),
     db.prepare(`SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND branchId = ? AND timestamp >= ?`)
+      .bind(businessId, branchId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND branchId = ? AND timestamp >= ?`)
       .bind(businessId, branchId, since).all<any>().catch(() => ({ results: [] })),
     db.prepare(`SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND branchId = ? AND timestamp >= ?`)
       .bind(businessId, branchId, since).all<any>().catch(() => ({ results: [] })),
@@ -129,12 +185,14 @@ async function availableCashForPick(db: D1Database, businessId: string, branchId
   const txRows = (transactions.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.status || '').toUpperCase() === 'PAID');
   const expenseRows = (expenses.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL' && String(row.status || '').toUpperCase() !== 'REJECTED');
   const pickRows = (picks.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED');
+  const refundRows = (refunds.results || []).filter(row => inShiftScope(row, since, shiftId));
   const supplierRows = (supplierPayments.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL');
   const cashSales = txRows.reduce((sum, row) => sum + cashAmountFromTransaction(row), 0);
   const tillExpenses = expenseRows.reduce((sum, row) => sum + asNumber(row.amount), 0);
   const picked = pickRows.reduce((sum, row) => sum + asNumber(row.amount), 0);
+  const cashRefunds = refundRows.reduce((sum, row) => sum + cashAmountFromRefund(row), 0);
   const supplierTillPayments = supplierRows.reduce((sum, row) => sum + asNumber(row.amount), 0);
-  return Math.max(0, Math.round((cashSales - tillExpenses - picked - supplierTillPayments) * 100) / 100);
+  return Math.max(0, Math.round((cashSales - tillExpenses - picked - supplierTillPayments - cashRefunds) * 100) / 100);
 }
 
 async function ensurePickedCashAccount(db: D1Database, businessId: string, branchId: string, requestedAccountId?: unknown): Promise<any> {
@@ -184,7 +242,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const status = String(body?.status || 'PENDING').toUpperCase() === 'APPROVED' && (auth.service || APPROVER_ROLES.has(auth.principal.role)) ? 'APPROVED' : 'PENDING';
       const id = trimText(body?.cashPickId, 160) || crypto.randomUUID();
       const shiftId = trimText(body?.shiftId, 160) || null;
-      const shiftStart = await resolveShiftStart(env.DB, businessId, branchId, shiftId, body?.shiftStart);
+      const shift = await requireOwnOpenShift(env.DB, businessId, branchId, shiftId, auth.principal, auth.service);
+      const shiftStart = await resolveShiftStart(env.DB, businessId, branchId, shiftId, body?.shiftStart || shift.startTime);
       const availableCash = await availableCashForPick(env.DB, businessId, branchId, shiftStart, shiftId);
       if (amount > availableCash + 0.01) throw new PolicyError(`Cash pick exceeds cash sales available in this shift. Available: Ksh ${availableCash.toLocaleString()}.`, 409);
       const pickedAccount = status === 'APPROVED' ? await ensurePickedCashAccount(env.DB, businessId, branchId, body?.accountId) : null;

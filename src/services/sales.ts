@@ -4,6 +4,7 @@ import { apiRequest } from './apiClient';
 export type CheckoutResponse = {
   success: boolean;
   transaction: Transaction;
+  refund?: any;
   idempotent?: boolean;
 };
 

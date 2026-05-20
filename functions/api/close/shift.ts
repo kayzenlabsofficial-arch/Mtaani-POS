@@ -51,6 +51,7 @@ const SHIFTS_SCHEMA = `
       id TEXT PRIMARY KEY,
       startTime INTEGER NOT NULL,
       endTime INTEGER,
+      cashierId TEXT,
       cashierName TEXT NOT NULL,
       status TEXT NOT NULL,
       branchId TEXT,
@@ -88,6 +89,7 @@ const SHIFT_COLUMNS = [
   'id',
   'startTime',
   'endTime',
+  'cashierId',
   'cashierName',
   'status',
   'branchId',
@@ -155,6 +157,7 @@ async function ensureCloseShiftSchema(db: D1Database) {
     'ALTER TABLE endOfDayReports ADD COLUMN businessId TEXT',
     'ALTER TABLE endOfDayReports ADD COLUMN updated_at INTEGER',
     'ALTER TABLE shifts ADD COLUMN lastSyncAt INTEGER',
+    'ALTER TABLE shifts ADD COLUMN cashierId TEXT',
     'ALTER TABLE shifts ADD COLUMN branchId TEXT',
     'ALTER TABLE shifts ADD COLUMN businessId TEXT',
     'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
@@ -163,6 +166,47 @@ async function ensureCloseShiftSchema(db: D1Database) {
   }
   await removeLegacyOpeningFloat(db, 'endOfDayReports', END_OF_DAY_REPORTS_SCHEMA, END_OF_DAY_REPORT_COLUMNS);
   await removeLegacyOpeningFloat(db, 'shifts', SHIFTS_SCHEMA, SHIFT_COLUMNS);
+}
+
+async function pendingCount(db: D1Database, label: string, sql: string, binds: unknown[]): Promise<string | null> {
+  const row = await db.prepare(sql).bind(...binds).first<any>().catch(() => null);
+  return n(row?.count) > 0 ? label : null;
+}
+
+async function pendingShiftApprovals(db: D1Database, businessId: string, branchId: string, shiftId: string, startTime: number, until: number) {
+  const checks = await Promise.all([
+    pendingCount(
+      db,
+      'expenses',
+      `SELECT COUNT(*) AS count FROM expenses WHERE businessId = ? AND branchId = ? AND status = 'PENDING' AND (shiftId = ? OR (COALESCE(shiftId, '') = '' AND timestamp >= ? AND timestamp <= ?))`,
+      [businessId, branchId, shiftId, startTime, until],
+    ),
+    pendingCount(
+      db,
+      'cash picks',
+      `SELECT COUNT(*) AS count FROM cashPicks WHERE businessId = ? AND branchId = ? AND status = 'PENDING' AND (shiftId = ? OR (COALESCE(shiftId, '') = '' AND timestamp >= ? AND timestamp <= ?))`,
+      [businessId, branchId, shiftId, startTime, until],
+    ),
+    pendingCount(
+      db,
+      'refund approvals',
+      `SELECT COUNT(*) AS count FROM transactions WHERE businessId = ? AND branchId = ? AND status = 'PENDING_REFUND' AND (shiftId = ? OR (COALESCE(shiftId, '') = '' AND timestamp >= ? AND timestamp <= ?))`,
+      [businessId, branchId, shiftId, startTime, until],
+    ),
+    pendingCount(
+      db,
+      'purchase orders',
+      `SELECT COUNT(*) AS count FROM purchaseOrders WHERE businessId = ? AND branchId = ? AND approvalStatus = 'PENDING' AND orderDate >= ? AND orderDate <= ?`,
+      [businessId, branchId, startTime, until],
+    ),
+    pendingCount(
+      db,
+      'stock adjustments',
+      `SELECT COUNT(*) AS count FROM stockAdjustmentRequests WHERE businessId = ? AND branchId = ? AND status = 'PENDING' AND timestamp >= ? AND timestamp <= ?`,
+      [businessId, branchId, startTime, until],
+    ),
+  ]);
+  return checks.filter(Boolean) as string[];
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -187,6 +231,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       LIMIT 1
     `).bind(businessId, branchId, shiftId).first<any>();
     if (existing) return json({ success: true, reportId: existing.id, shiftId: existing.shiftId || shiftId, idempotent: true });
+
+    const startTime = n(body?.startTime || report.startTime || now);
+    const pending = await pendingShiftApprovals(env.DB, businessId, branchId, shiftId, startTime, now);
+    if (pending.length) {
+      throw new PolicyError(`Resolve pending ${pending.join(', ')} for this shift before closing it.`, 409);
+    }
 
     const reportId = s(body?.reportId, 160) || `eod_${businessId}_${branchId}_${shiftId}`;
     const cashierName = s(report.cashierName || body?.cashierName || auth.principal.userName, 120) || 'Staff';
@@ -214,16 +264,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(reportId, shiftId, now, totalSales, grossSales, taxTotal, cashSales, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, expectedCash, reportedCash, difference, cashierName, branchId, businessId, now),
       env.DB.prepare(`
-        INSERT INTO shifts (id, startTime, endTime, cashierName, status, branchId, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO shifts (id, startTime, endTime, cashierId, cashierName, status, branchId, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           endTime = excluded.endTime,
+          cashierId = COALESCE(excluded.cashierId, shifts.cashierId),
           cashierName = excluded.cashierName,
           status = excluded.status,
           branchId = excluded.branchId,
           businessId = excluded.businessId,
           updated_at = excluded.updated_at
-      `).bind(shiftId, n(body?.startTime || report.startTime || now), now, cashierName, 'CLOSED', branchId, businessId, now),
+      `).bind(shiftId, startTime, now, auth.principal.userId || null, cashierName, 'CLOSED', branchId, businessId, now),
       env.DB.prepare(`
         INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -7,7 +7,7 @@ interface Env {
 }
 
 const ALLOWED_TABLES = new Set([
-  'users', 'products', 'transactions', 'cashPicks', 'shifts',
+  'users', 'products', 'transactions', 'refunds', 'cashPicks', 'shifts',
   'endOfDayReports', 'stockMovements', 'expenses', 'customers',
   'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries',
   'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories',
@@ -63,6 +63,7 @@ const COMMAND_ONLY_WRITE_TABLES = new Set([
   'expenses',
   'financialAccounts',
   'cashPicks',
+  'refunds',
   'shifts',
   'endOfDayReports',
   'dailySummaries',
@@ -99,8 +100,9 @@ CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, ca
 CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId);
 CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, total REAL NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, discountAmount REAL, discountReason TEXT, items TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, paymentMethod TEXT, amountTendered REAL, changeGiven REAL, mpesaReference TEXT, mpesaCode TEXT, mpesaCustomer TEXT, mpesaCheckoutRequestId TEXT, cashierId TEXT, cashierName TEXT, customerId TEXT, customerName TEXT, discount REAL, discountType TEXT, splitPayments TEXT, splitData TEXT, isSynced INTEGER, approvedBy TEXT, pendingRefundItems TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS refunds (id TEXT PRIMARY KEY, originalTransactionId TEXT NOT NULL, receiptNumber TEXT, amount REAL NOT NULL, cashAmount REAL DEFAULT 0, paymentMethod TEXT, source TEXT, items TEXT, timestamp INTEGER NOT NULL, cashierName TEXT, approvedBy TEXT, status TEXT NOT NULL DEFAULT 'APPROVED', shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS cashPicks (id TEXT PRIMARY KEY, amount REAL NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, userName TEXT, accountId TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
- CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, startTime INTEGER NOT NULL, endTime INTEGER, cashierName TEXT NOT NULL, status TEXT NOT NULL, branchId TEXT, lastSyncAt INTEGER, businessId TEXT, updated_at INTEGER);
+ CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, startTime INTEGER NOT NULL, endTime INTEGER, cashierId TEXT, cashierName TEXT NOT NULL, status TEXT NOT NULL, branchId TEXT, lastSyncAt INTEGER, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS endOfDayReports (id TEXT PRIMARY KEY, shiftId TEXT, timestamp INTEGER NOT NULL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, cashSales REAL NOT NULL, mpesaSales REAL NOT NULL, pdqSales REAL, totalExpenses REAL NOT NULL, supplierPaymentsTotal REAL, remittanceTotal REAL, totalPicks REAL NOT NULL, totalRefunds REAL, expectedCash REAL NOT NULL, reportedCash REAL NOT NULL, difference REAL NOT NULL, cashierName TEXT NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, expiryDate INTEGER, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, amount REAL NOT NULL, category TEXT NOT NULL, description TEXT, timestamp INTEGER NOT NULL, userName TEXT, status TEXT NOT NULL, source TEXT, accountId TEXT, productId TEXT, quantity REAL, preparedBy TEXT, approvedBy TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
@@ -119,7 +121,7 @@ CREATE INDEX IF NOT EXISTS idx_hrPayrollAdjustments_staff_date ON hrPayrollAdjus
  CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT, phone TEXT, email TEXT, address TEXT, kraPin TEXT, balance REAL, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS supplierPayments (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, purchaseOrderId TEXT, purchaseOrderIds TEXT, invoiceAllocations TEXT, creditNoteIds TEXT, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, timestamp INTEGER NOT NULL, reference TEXT, source TEXT, accountId TEXT, shiftId TEXT, preparedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS creditNotes (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, amount REAL NOT NULL, reference TEXT NOT NULL, timestamp INTEGER NOT NULL, reason TEXT, status TEXT DEFAULT 'PENDING', allocatedTo TEXT, items TEXT, productId TEXT, quantity REAL, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER);
- CREATE TABLE IF NOT EXISTS dailySummaries (id TEXT PRIMARY KEY, date INTEGER NOT NULL, shiftIds TEXT NOT NULL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, totalExpenses REAL NOT NULL, totalPicks REAL NOT NULL, totalVariance REAL NOT NULL, timestamp INTEGER NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
+ CREATE TABLE IF NOT EXISTS dailySummaries (id TEXT PRIMARY KEY, date INTEGER NOT NULL, shiftIds TEXT NOT NULL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, totalExpenses REAL NOT NULL, totalPicks REAL NOT NULL, totalRefunds REAL, totalVariance REAL NOT NULL, timestamp INTEGER NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_branch_date ON dailySummaries(businessId, branchId, date);
  CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (id TEXT PRIMARY KEY, productId TEXT NOT NULL, productName TEXT, oldQty REAL, newQty REAL, requestedQuantity REAL, reason TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, preparedBy TEXT, approvedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS purchaseOrders (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, items TEXT NOT NULL, totalAmount REAL NOT NULL, status TEXT NOT NULL, approvalStatus TEXT NOT NULL, paymentStatus TEXT, paidAmount REAL, orderDate INTEGER NOT NULL, expectedDate INTEGER, receivedDate INTEGER, invoiceNumber TEXT, poNumber TEXT, preparedBy TEXT, approvedBy TEXT, receivedBy TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
@@ -495,8 +497,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['transactions', 'splitPayments TEXT'],
           ['transactions', 'splitData TEXT'],
           ['transactions', 'isSynced INTEGER'],
+          ['refunds', 'receiptNumber TEXT'],
+          ['refunds', 'cashAmount REAL DEFAULT 0'],
+          ['refunds', 'paymentMethod TEXT'],
+          ['refunds', 'source TEXT'],
+          ['refunds', 'items TEXT'],
+          ['refunds', 'cashierName TEXT'],
+          ['refunds', 'approvedBy TEXT'],
+          ['refunds', "status TEXT DEFAULT 'APPROVED'"],
+          ['refunds', 'shiftId TEXT'],
+          ['refunds', 'updated_at INTEGER'],
           ['customerPayments', 'allocations TEXT'],
           ['categories', 'branchId TEXT'],
+          ['shifts',     'cashierId TEXT'],
           ['shifts',     'lastSyncAt INTEGER'],
           ['businesses', 'isActive INTEGER DEFAULT 1'],
           ['stockAdjustmentRequests', 'preparedBy TEXT'],
@@ -536,6 +549,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['endOfDayReports', 'pdqSales REAL'],
           ['endOfDayReports', 'supplierPaymentsTotal REAL'],
           ['endOfDayReports', 'remittanceTotal REAL'],
+          ['dailySummaries', 'totalRefunds REAL'],
           ['financialAccounts', 'accountNumber TEXT'],
           ['branches', 'mpesaConsumerKey TEXT'],
           ['branches', 'mpesaConsumerSecret TEXT'],
@@ -555,7 +569,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['mpesaCallbacks', 'utilizedCustomerName TEXT'],
           ['mpesaCallbacks', 'utilizedAt INTEGER'],
         ];
-        const allTables = ['users', 'products', 'productIngredients', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments', 'customers', 'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts', 'auditLogs'];
+        const allTables = ['users', 'products', 'productIngredients', 'transactions', 'refunds', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments', 'customers', 'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts', 'auditLogs'];
         for (const t of allTables) {
           try { await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN businessId TEXT`).run(); } catch (e) {}
         }
@@ -909,7 +923,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       if (table === 'businesses') {
         if (principal.role !== 'ROOT' && !service) return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });
         // Cascade delete: remove ALL data for this business
-        const cascadeTables = ['users', 'products', 'productIngredients', 'transactions', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments', 'customers', 'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
+        const cascadeTables = ['users', 'products', 'productIngredients', 'transactions', 'refunds', 'cashPicks', 'shifts', 'endOfDayReports', 'stockMovements', 'expenses', 'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments', 'customers', 'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments', 'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders', 'settings', 'categories', 'branches', 'financialAccounts'];
         const batch = cascadeTables.map(t => env.DB.prepare(`DELETE FROM ${t} WHERE businessId = ?`).bind(id));
         batch.push(env.DB.prepare(`DELETE FROM businesses WHERE id = ?`).bind(id));
         await env.DB.batch(batch);

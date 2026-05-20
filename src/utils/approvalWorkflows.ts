@@ -131,6 +131,7 @@ export async function approveRefundTransaction(
   });
   await Promise.allSettled([
     db.transactions.reload(),
+    db.refunds.reload(),
     db.financialAccounts.reload(),
     db.products.reload(),
     db.stockMovements.reload(),

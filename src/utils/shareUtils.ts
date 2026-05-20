@@ -619,6 +619,37 @@ function buildCreditNotePDF(r: any, supplier?: any, bizName?: string, location?:
   return doc.output('blob');
 }
 
+function buildRefundPDF(r: any, bizName?: string, location?: string): Blob {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const ref = safeStr(r.receiptNumber || r.originalTransactionId || r.id, 'REF').toUpperCase();
+  let y = banner(doc, 'Refund Document', ref, new Date(r.timestamp || Date.now()).toLocaleString('en-KE'), bizName, location);
+  y = hLine(doc, y);
+
+  y = kvRow(doc, 'Original Receipt', safeStr(r.receiptNumber || r.originalTransactionId), y);
+  y = kvRow(doc, 'Refund ID', safeStr(r.id), y);
+  y = kvRow(doc, 'Payment Source', safeStr(r.source || r.paymentMethod || 'TILL'), y);
+  y = kvRow(doc, 'Processed By', safeStr(r.cashierName || r.approvedBy || 'Staff'), y);
+  y = kvRow(doc, 'Approved By', safeStr(r.approvedBy || 'Admin'), y);
+  if (r.shiftId) y = kvRow(doc, 'Shift ID', safeStr(r.shiftId), y);
+  y += 4;
+
+  const items = parseList(r.items);
+  const rows = items.length > 0
+    ? items.map((item: any) => [
+        safeStr(item.name || item.productId || 'Refunded item'),
+        String(safe(item.quantity)),
+        ksh(item.amount),
+      ])
+    : [['Refunded sale items', '-', ksh(r.amount)]];
+
+  y = table(doc, ['Refunded Item', 'Qty', 'Amount'], [104, 28, 50], rows, y);
+  y = kvRow(doc, 'Cash Deducted From Drawer', ksh(r.cashAmount), y, red);
+  y = bigTotal(doc, 'Refund Total', ksh(r.amount), y + 2, red);
+
+  footer(doc);
+  return doc.output('blob');
+}
+
 type CloseReportRow = {
   label: string;
   value?: number | string | null;
@@ -775,6 +806,7 @@ function drawCloseDayShiftSummary(doc: jsPDF, y: number, shiftReports: any[]): n
     { label: 'Cash Sale', key: 'cashSales' },
     { label: 'M-Pesa Sales', key: 'mpesaSales' },
     { label: 'PDQ Sales', key: 'pdqSales' },
+    { label: 'Refunds', key: 'totalRefunds', deduct: true },
     { label: 'Remittance', key: 'remittanceTotal', deduct: true },
     { label: 'Cash Picked', key: 'totalPicks' },
     { label: 'Cashier Variance', key: 'difference', highlight: true },
@@ -928,6 +960,7 @@ function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'
   const rows: CloseReportRow[] = isDaily
     ? [
         { label: 'Total Sales', value: totalSales, kind: 'highlight' },
+        { label: 'Refunds', value: refunds, format: 'deduct' },
         { label: 'Remittance (Supplier payments + Expenses)', value: expenses, format: 'deduct' },
         { label: 'Cash Picked', value: banked },
         { label: 'Cashier Variance', value: diff, kind: 'highlight' },
@@ -939,6 +972,7 @@ function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'
         { label: 'Cash Sale', value: cashSales },
         { label: 'M-Pesa Sales', value: mpesaSales },
         { label: 'PDQ Sales', value: pdqSales },
+        { label: 'Refunds', value: refunds, format: 'deduct' },
         { label: 'Remittance (Supplier payments + Expenses)', value: remittanceTotal, format: 'deduct' },
         { label: 'Cash Picked', value: banked },
         { label: 'Cashier Variance', value: diff, kind: 'highlight' },
@@ -1099,6 +1133,7 @@ function download(blob: Blob, filename: string) {
 function buildPDF(record: any, supplier?: any, bizName?: string, location?: string): Blob {
   switch (record?.recordType) {
     case 'SALE':             return buildReceipt(record, bizName, location);
+    case 'REFUND':           return buildRefundPDF(record, bizName, location);
     case 'EXPENSE':          return buildReceipt(record, bizName, location); // fallback or buildExpense with location
     case 'SALES_INVOICE':    return buildSalesInvoicePDF(record, bizName, location);
     case 'PURCHASE_ORDER':   return buildPO(record, supplier, bizName);

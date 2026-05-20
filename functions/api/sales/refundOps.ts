@@ -128,6 +128,26 @@ export async function ensureRefundSchema(db: D1Database) {
     )
   `).run();
   await db.prepare(`
+    CREATE TABLE IF NOT EXISTS refunds (
+      id TEXT PRIMARY KEY,
+      originalTransactionId TEXT NOT NULL,
+      receiptNumber TEXT,
+      amount REAL NOT NULL,
+      cashAmount REAL DEFAULT 0,
+      paymentMethod TEXT,
+      source TEXT,
+      items TEXT,
+      timestamp INTEGER NOT NULL,
+      cashierName TEXT,
+      approvedBy TEXT,
+      status TEXT NOT NULL DEFAULT 'APPROVED',
+      shiftId TEXT,
+      branchId TEXT,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
     CREATE TABLE IF NOT EXISTS idempotencyKeys (
       id TEXT PRIMARY KEY,
       businessId TEXT NOT NULL,
@@ -191,7 +211,20 @@ export async function ensureRefundSchema(db: D1Database) {
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
     'ALTER TABLE financialAccounts ADD COLUMN branchId TEXT',
+    'ALTER TABLE financialAccounts ADD COLUMN accountNumber TEXT',
     'ALTER TABLE financialAccounts ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE refunds ADD COLUMN cashAmount REAL DEFAULT 0',
+    'ALTER TABLE refunds ADD COLUMN receiptNumber TEXT',
+    'ALTER TABLE refunds ADD COLUMN paymentMethod TEXT',
+    'ALTER TABLE refunds ADD COLUMN source TEXT',
+    'ALTER TABLE refunds ADD COLUMN items TEXT',
+    'ALTER TABLE refunds ADD COLUMN cashierName TEXT',
+    'ALTER TABLE refunds ADD COLUMN approvedBy TEXT',
+    "ALTER TABLE refunds ADD COLUMN status TEXT DEFAULT 'APPROVED'",
+    'ALTER TABLE refunds ADD COLUMN shiftId TEXT',
+    'ALTER TABLE refunds ADD COLUMN branchId TEXT',
+    'ALTER TABLE refunds ADD COLUMN businessId TEXT',
+    'ALTER TABLE refunds ADD COLUMN updated_at INTEGER',
     'ALTER TABLE idempotencyKeys ADD COLUMN transactionId TEXT',
     'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, branchId, idempotencyKey)',
     'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_transaction ON idempotencyKeys(businessId, branchId, transactionId)',
@@ -246,6 +279,39 @@ function refundAmountFor(transaction: any, lines: RefundLine[]) {
     return sum + (asNumber(item?.snapshotPrice) * line.quantity);
   }, 0);
   return roundMoney(Math.min(asNumber(transaction.total), amount || asNumber(transaction.total)));
+}
+
+function cashPaidAmount(transaction: any): number {
+  const method = String(transaction?.paymentMethod || '').toUpperCase();
+  if (method === 'CASH') return asNumber(transaction.total);
+  if (method !== 'SPLIT') return 0;
+  const split = typeof transaction.splitPayments === 'string'
+    ? (() => { try { return JSON.parse(transaction.splitPayments); } catch { return {}; } })()
+    : (transaction.splitPayments || transaction.splitData || {});
+  return asNumber(split.cashAmount);
+}
+
+function refundSourceFor(transaction: any, cashAmount: number, refundAmount: number) {
+  const method = String(transaction?.paymentMethod || 'CASH').toUpperCase();
+  if (cashAmount > 0 && cashAmount < refundAmount) return 'MIXED';
+  if (cashAmount >= refundAmount && refundAmount > 0) return 'TILL';
+  if (method === 'MPESA') return 'MPESA';
+  if (method === 'PDQ') return 'PDQ';
+  if (method === 'CREDIT') return 'CREDIT';
+  return method === 'SPLIT' ? 'MIXED' : 'TILL';
+}
+
+function refundDocumentItems(transaction: any, lines: RefundLine[]) {
+  const txItems = asArray(transaction.items);
+  return lines.map(line => {
+    const item = txItems.find(row => row.productId === line.productId) || {};
+    return {
+      productId: line.productId,
+      name: trimText(item.name || line.productId, 160),
+      quantity: line.quantity,
+      amount: roundMoney(asNumber(item.snapshotPrice) * line.quantity),
+    };
+  });
 }
 
 function normalizeRefundLines(lines: RefundLine[]): RefundLine[] {
@@ -461,7 +527,7 @@ export async function prepareRefundApproval(db: D1Database, args: {
     args.idempotencyKey,
   );
   if (idempotentTransaction) {
-    return { transaction: idempotentTransaction, statements: [], idempotent: true };
+    return { transaction: idempotentTransaction, refund: null, statements: [], idempotent: true };
   }
 
   const tx = await loadTransaction(db, args.businessId, args.branchId, args.transactionId);
@@ -475,6 +541,10 @@ export async function prepareRefundApproval(db: D1Database, args: {
   const lines = refundLinesFor(tx, args.itemsToReturn);
   if (lines.length === 0) throw new PolicyError('No refundable items selected.', 400);
   const refundAmount = refundAmountFor(tx, lines);
+  const originalCashPaid = cashPaidAmount(tx);
+  const proportionalCashRefund = asNumber(tx.total) > 0 ? refundAmount * (originalCashPaid / asNumber(tx.total)) : 0;
+  const cashRefundAmount = roundMoney(Math.min(refundAmount, Math.max(0, proportionalCashRefund)));
+  const refundSource = refundSourceFor(tx, cashRefundAmount, refundAmount);
   const statements: D1PreparedStatement[] = [];
   const now = Date.now();
   const idemStatement = idempotencyStatement(db, {
@@ -486,18 +556,22 @@ export async function prepareRefundApproval(db: D1Database, args: {
   });
   if (idemStatement) statements.push(idemStatement);
 
-  if (String(tx.paymentMethod || '').toUpperCase() === 'CASH') {
+  if (cashRefundAmount > 0) {
     const cashAccount = await db.prepare(`
       SELECT id, balance
       FROM financialAccounts
-      WHERE businessId = ? AND branchId = ? AND type = 'CASH'
+      WHERE businessId = ?
+        AND branchId = ?
+        AND type = 'CASH'
+        AND COALESCE(accountNumber, '') <> 'PICKED-CASH'
+        AND id NOT LIKE 'picked_cash_%'
       LIMIT 1
     `).bind(args.businessId, args.branchId).first<any>();
     if (cashAccount) {
-      if (asNumber(cashAccount.balance) < refundAmount) throw new PolicyError('Insufficient cash account balance for this refund.', 409);
+      if (asNumber(cashAccount.balance) < cashRefundAmount) throw new PolicyError('Insufficient cash account balance for this refund.', 409);
       statements.push(
         db.prepare(`UPDATE financialAccounts SET balance = balance - ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-          .bind(refundAmount, now, cashAccount.id, args.businessId)
+          .bind(cashRefundAmount, now, cashAccount.id, args.businessId)
       );
     }
   }
@@ -555,6 +629,26 @@ export async function prepareRefundApproval(db: D1Database, args: {
   tx.pendingRefundItems = undefined;
   tx.approvedBy = trimText(args.approvedBy || args.principal.userName, 120);
   tx.updated_at = now;
+  const refundId = `refund_${tx.id}_${now}`;
+  const receiptNumber = trimText(tx.receiptNumber || tx.invoiceNumber || tx.id, 160);
+  const refundDocument = {
+    id: refundId,
+    originalTransactionId: tx.id,
+    receiptNumber,
+    amount: refundAmount,
+    cashAmount: cashRefundAmount,
+    paymentMethod: String(tx.paymentMethod || 'CASH').toUpperCase(),
+    source: refundSource,
+    items: refundDocumentItems(tx, lines),
+    timestamp: now,
+    cashierName: args.principal.userName || null,
+    approvedBy: tx.approvedBy,
+    status: 'APPROVED',
+    shiftId: tx.shiftId || null,
+    branchId: args.branchId,
+    businessId: args.businessId,
+    updated_at: now,
+  };
 
   statements.push(
     db.prepare(`
@@ -563,6 +657,29 @@ export async function prepareRefundApproval(db: D1Database, args: {
       WHERE id = ? AND businessId = ? AND branchId = ?
     `).bind(tx.status, JSON.stringify(updatedItems), tx.approvedBy, now, tx.id, args.businessId, args.branchId)
   );
+  statements.push(
+    db.prepare(`
+      INSERT INTO refunds (id, originalTransactionId, receiptNumber, amount, cashAmount, paymentMethod, source, items, timestamp, cashierName, approvedBy, status, shiftId, branchId, businessId, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      refundDocument.id,
+      refundDocument.originalTransactionId,
+      refundDocument.receiptNumber,
+      refundDocument.amount,
+      refundDocument.cashAmount,
+      refundDocument.paymentMethod,
+      refundDocument.source,
+      JSON.stringify(refundDocument.items),
+      refundDocument.timestamp,
+      refundDocument.cashierName,
+      refundDocument.approvedBy,
+      refundDocument.status,
+      refundDocument.shiftId,
+      refundDocument.branchId,
+      refundDocument.businessId,
+      refundDocument.updated_at,
+    )
+  );
   statements.push(auditStatement(db, {
     principal: args.principal,
     businessId: args.businessId,
@@ -570,8 +687,8 @@ export async function prepareRefundApproval(db: D1Database, args: {
     transactionId: tx.id,
     action: 'sale.refund.approve',
     severity: 'INFO',
-    details: `Refund approved for Ksh ${refundAmount.toLocaleString()}.`,
+    details: `Refund approved for Ksh ${refundAmount.toLocaleString()} against receipt ${receiptNumber}.`,
   }));
 
-  return { transaction: tx, statements, idempotent: false };
+  return { transaction: tx, refund: refundDocument, statements, idempotent: false };
 }
