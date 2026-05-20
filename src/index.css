@@ -79,6 +79,35 @@ button, a, input, select, textarea {
   -webkit-tap-highlight-color: transparent;
 }
 
+button[aria-busy="true"],
+button[data-busy="true"] {
+  cursor: wait;
+  pointer-events: none;
+}
+
+button[aria-busy="true"]::before,
+button[data-busy="true"]::before {
+  content: "";
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 0.45rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  vertical-align: -0.12em;
+  animation: button-busy-spin 0.75s linear infinite;
+}
+
+button[aria-busy="true"]:has(.animate-spin)::before,
+button[data-busy="true"]:has(.animate-spin)::before {
+  display: none;
+}
+
+@keyframes button-busy-spin {
+  to { transform: rotate(360deg); }
+}
+
 .material-symbols-outlined {
   width: 1em;
   height: 1em;

@@ -150,6 +150,17 @@ export default function PurchasesTab() {
       const invoiceNumber = receiveInvoices[selectedPO.id];
       if (!invoiceNumber) return error("Invoice number is required");
       if (!activeBusinessId || !activeBranchId) return error("Business and branch are required.");
+      const underCostLine = selectedPO.items.find(item => {
+          const product = allProducts?.find(p => p.id === item.productId);
+          const unitCost = Number(receiveUnitCosts[item.productId] ?? item.unitCost) || 0;
+          const enteredSell = Number(receiveSellingPrices[item.productId]) || 0;
+          const sellingPrice = enteredSell > 0 ? enteredSell : Number(product?.sellingPrice || 0);
+          const hasDiscount = String((product as any)?.discountType || '').toUpperCase() !== 'NONE' && Number((product as any)?.discountValue || 0) > 0;
+          return unitCost > 0 && sellingPrice < unitCost && !hasDiscount;
+      });
+      if (underCostLine) {
+          return error(`Selling price for ${underCostLine.name} cannot be below buying price unless the product has a discount.`);
+      }
 
       setIsSaving(true);
       try {
@@ -422,7 +433,7 @@ export default function PurchasesTab() {
                  <button onClick={() => { setIsPOModalOpen(false); setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); }} className="min-w-0 px-4 sm:px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
                    Cancel
                  </button>
-                 <button data-testid="purchase-save-order" onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0 || isSaving} className="min-w-0 bg-indigo-600 text-white px-4 sm:px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:bg-indigo-100 disabled:text-indigo-500 disabled:shadow-none disabled:cursor-not-allowed transition-all shadow-indigo press flex items-center justify-center gap-2 sm:gap-3 leading-tight">
+                 <button data-testid="purchase-save-order" onClick={handleSavePO} disabled={!poForm.supplierId || poItems.length === 0 || isSaving} aria-busy={isSaving} data-busy={isSaving ? 'true' : undefined} className="min-w-0 bg-indigo-600 text-white px-4 sm:px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:bg-indigo-100 disabled:text-indigo-500 disabled:shadow-none disabled:cursor-not-allowed transition-all shadow-indigo press flex items-center justify-center gap-2 sm:gap-3 leading-tight">
                    {selectedPOToEdit ? <Save size={18}/> : <PackagePlus size={18}/>}
                    {isSaving ? 'Saving...' : selectedPOToEdit ? 'Save LPO' : 'Create LPO'}
                  </button>
@@ -508,7 +519,7 @@ export default function PurchasesTab() {
                  <button onClick={() => setIsReceivePOModalOpen(false)} className="min-w-0 px-4 sm:px-8 py-5 bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all press">
                    Cancel
                  </button>
-                 <button data-testid="purchase-confirm-arrival" onClick={handleReceivePO} disabled={!receiveInvoices[selectedPO.id] || isSaving} className="min-w-0 bg-emerald-600 text-white px-4 sm:px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:bg-emerald-100 disabled:text-emerald-500 disabled:shadow-none disabled:cursor-not-allowed transition-all shadow-emerald press flex items-center justify-center gap-2 sm:gap-3 leading-tight">
+                 <button data-testid="purchase-confirm-arrival" onClick={handleReceivePO} disabled={!receiveInvoices[selectedPO.id] || isSaving} aria-busy={isSaving} data-busy={isSaving ? 'true' : undefined} className="min-w-0 bg-emerald-600 text-white px-4 sm:px-8 py-5 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl disabled:bg-emerald-100 disabled:text-emerald-500 disabled:shadow-none disabled:cursor-not-allowed transition-all shadow-emerald press flex items-center justify-center gap-2 sm:gap-3 leading-tight">
                    {isSaving ? <Loader2 size={18} className="animate-spin" /> : <CheckSquare size={18}/>}
                    {isSaving ? 'Saving...' : 'Confirm goods received'}
                  </button>

@@ -49,16 +49,18 @@ export async function settleSupplierPayment({
   }
 
   if (payment.source === 'TILL' && cashAmount > 0) {
-    const [transactions, expenses, cashPicks, supplierPayments] = await Promise.all([
+    const [transactions, expenses, cashPicks, refunds, supplierPayments] = await Promise.all([
       db.transactions.where('branchId').equals(activeBranchId).toArray(),
       db.expenses.where('branchId').equals(activeBranchId).toArray(),
       db.cashPicks.where('branchId').equals(activeBranchId).toArray(),
+      db.refunds.where('branchId').equals(activeBranchId).toArray(),
       db.supplierPayments.where('branchId').equals(activeBranchId).toArray(),
     ]);
     const drawer = calculateShiftCashFromSales({
       transactions,
       expenses,
       cashPicks,
+      refunds,
       supplierPayments,
       shiftId,
       since: shiftStart || getTodayStartMs(),

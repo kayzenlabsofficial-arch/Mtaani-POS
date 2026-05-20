@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, ArrowDown, ArrowUp, Banknote, Ban, CalendarClock, ChevronsUpDown, Pencil, Package, Plus, Search, TriangleAlert, Utensils, X } from 'lucide-react';
+import { Activity, ArrowDown, ArrowUp, Banknote, Ban, CalendarClock, ChevronsUpDown, Loader2, Pencil, Package, Plus, Search, TriangleAlert, Utensils, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Product } from '../../db';
 import { useStore } from '../../store';
@@ -13,6 +13,7 @@ import { StockService } from '../../services/stock';
 import { ProductService } from '../../services/products';
 import { dateInputToExpiryMs, expiryBadgeClass, expiryMsToDateInput, formatExpiryDate, getExpiryInfo } from '../../utils/expiry';
 import { normaliseDiscountType, productDiscountLabel, productSalePrice } from '../../utils/productPricing';
+import { normaliseSupplierIds } from '../../utils/supplierProducts';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -68,6 +69,8 @@ export default function InventoryTab() {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isRestocking, setIsRestocking] = useState(false);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [isSavingRestock, setIsSavingRestock] = useState(false);
   const [restockQty, setRestockQty] = useState('');
   const [restockCost, setRestockCost] = useState('');
   const [productForm, setProductForm] = useState({
@@ -84,7 +87,8 @@ export default function InventoryTab() {
     taxCategory: 'A' as 'A' | 'C' | 'E',
     expiryTracking: false,
     expiryDate: '',
-    isBundle: false
+    isBundle: false,
+    supplierIds: [] as string[],
   });
   const [ingredientRows, setIngredientRows] = useState<{ ingredientProductId: string; quantity: string }[]>([]);
   const scrollRef = useHorizontalScroll();
@@ -118,6 +122,12 @@ export default function InventoryTab() {
   const categories = useLiveQuery(
     () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveBranch(c, activeBranchId)).toArray() : Promise.resolve([]),
     [activeBusinessId, activeBranchId], []
+  );
+
+  const suppliers = useLiveQuery(
+    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
+    []
   );
 
   const selectedMovements = useLiveQuery(
@@ -198,7 +208,8 @@ export default function InventoryTab() {
       taxCategory: product?.taxCategory || 'A',
       expiryTracking: Boolean((product as any)?.expiryTracking || (product as any)?.expiryDate),
       expiryDate: expiryMsToDateInput((product as any)?.expiryDate),
-      isBundle: isBundleProduct(product)
+      isBundle: isBundleProduct(product),
+      supplierIds: normaliseSupplierIds(product),
     });
     const savedIngredients = getProductIngredients(product, productIngredients || []);
     setIngredientRows(savedIngredients.map(row => ({
@@ -209,7 +220,11 @@ export default function InventoryTab() {
   };
 
   const handleSaveProduct = async () => {
-    if (!activeBusinessId || !activeBranchId || !productForm.name.trim()) return;
+    if (!activeBusinessId || !activeBranchId || !productForm.name.trim() || isSavingProduct) return;
+    if (sellingBelowCostBlocked) {
+      error('Selling price cannot be below buying price unless you set a product discount.');
+      return;
+    }
     const cleanIngredients = ingredientRows
       .map(row => ({ ingredientProductId: row.ingredientProductId, quantity: Number(row.quantity) || 0 }))
       .filter(row => row.ingredientProductId && row.quantity > 0);
@@ -240,6 +255,7 @@ export default function InventoryTab() {
       unit: productForm.unit.trim() || 'pcs',
       barcode: productForm.barcode.trim() || `SKU-${Date.now()}`,
       reorderPoint: Number(productForm.reorderPoint) || 5,
+      supplierIds: productForm.supplierIds,
       expiryTracking: productForm.expiryTracking ? 1 : 0,
       expiryDate,
       isBundle: productForm.isBundle ? 1 : 0,
@@ -249,6 +265,7 @@ export default function InventoryTab() {
       branchId: activeBranchId,
       businessId: activeBusinessId
     };
+    setIsSavingProduct(true);
     try {
       const productId = editingProduct?.id || crypto.randomUUID();
       const result = await ProductService.save({
@@ -268,13 +285,16 @@ export default function InventoryTab() {
       setIngredientRows([]);
     } catch (err: any) {
       error('Failed to save product: ' + err.message);
+    } finally {
+      setIsSavingProduct(false);
     }
   };
 
   const handleRestock = async () => {
-    if (!selectedProduct || !activeBusinessId || !activeBranchId) return;
+    if (!selectedProduct || !activeBusinessId || !activeBranchId || isSavingRestock) return;
     const qty = Number(restockQty);
     if (qty <= 0) return error('Enter a valid stock quantity.');
+    setIsSavingRestock(true);
     try {
       const result = await StockService.restock({
         productId: selectedProduct.id,
@@ -299,6 +319,8 @@ export default function InventoryTab() {
       success('Stock updated.');
     } catch (err: any) {
       error('Failed to adjust stock: ' + err.message);
+    } finally {
+      setIsSavingRestock(false);
     }
   };
 
@@ -333,6 +355,29 @@ export default function InventoryTab() {
       label: `${p.name} (${p.stockQuantity || 0} ${p.unit || 'pcs'} left)`,
       keywords: `${p.name} ${p.barcode || ''} ${p.category || ''}`,
     }));
+  const supplierOptions = (suppliers || []).map(supplier => ({
+    value: supplier.id,
+    label: `${supplier.company || supplier.name} (${supplier.name || 'Supplier'})`,
+    keywords: `${supplier.company || ''} ${supplier.name || ''} ${supplier.phone || ''}`,
+    disabled: productForm.supplierIds.includes(supplier.id),
+  }));
+  const selectedFormSuppliers = (suppliers || []).filter(supplier => productForm.supplierIds.includes(supplier.id));
+  const supplierNamesForProduct = (product: Product | any) => {
+    const ids = normaliseSupplierIds(product);
+    return ids
+      .map(id => (suppliers || []).find(supplier => supplier.id === id)?.company || (suppliers || []).find(supplier => supplier.id === id)?.name || id)
+      .filter(Boolean);
+  };
+  const formSellingPrice = Number(productForm.sellingPrice) || 0;
+  const formCostPrice = Number(productForm.costPrice) || 0;
+  const formHasDiscount = productForm.discountType !== 'NONE' && (Number(productForm.discountValue) || 0) > 0;
+  const sellingBelowCostBlocked = formCostPrice > 0 && formSellingPrice > 0 && formSellingPrice < formCostPrice && !formHasDiscount;
+  const discountedSalePrice = productSalePrice({
+    sellingPrice: formSellingPrice,
+    discountType: productForm.discountType,
+    discountValue: Number(productForm.discountValue) || 0,
+  } as Product);
+  const discountedBelowCost = formCostPrice > 0 && formHasDiscount && discountedSalePrice < formCostPrice;
 
   const SortIcon = ({ col }: { col: SortColumn }) =>
     sortBy === col ? (
@@ -631,6 +676,7 @@ export default function InventoryTab() {
                 { label: isBundleProduct(selectedProduct) ? 'Available from ingredients' : 'Stock qty', value: `${selectedProduct.stockQuantity || 0} ${selectedProduct.unit || 'pcs'}` },
                 { label: 'Reorder point', value: selectedProduct.reorderPoint || 5 },
                 { label: 'Expiry', value: getExpiryInfo(selectedProduct).tracking ? getExpiryInfo(selectedProduct).dateLabel : 'Not tracked' },
+                { label: 'Suppliers', value: supplierNamesForProduct(selectedProduct).join(', ') || 'Not assigned' },
                 { label: 'Barcode', value: selectedProduct.barcode || '---' },
               ].map(row => (
                 <div key={row.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
@@ -752,8 +798,14 @@ export default function InventoryTab() {
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Latest unit cost</label>
                 <input type="number" step="any" value={restockCost} onChange={e => setRestockCost(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="Optional" />
               </div>
-              <button onClick={handleRestock} disabled={!restockQty || Number(restockQty) <= 0} className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50">
-                Save stock adjustment
+              <button
+                onClick={handleRestock}
+                disabled={!restockQty || Number(restockQty) <= 0 || isSavingRestock}
+                aria-busy={isSavingRestock}
+                data-busy={isSavingRestock ? 'true' : undefined}
+                className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50"
+              >
+                {isSavingRestock ? 'Saving...' : 'Save stock adjustment'}
               </button>
             </div>
           </div>
@@ -785,6 +837,38 @@ export default function InventoryTab() {
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Barcode</label>
                 <input value={productForm.barcode} onChange={e => setProductForm({ ...productForm, barcode: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="Auto if blank" />
+              </div>
+              <div className="sm:col-span-2 rounded-2xl border-2 border-slate-100 bg-slate-50 p-4">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Suppliers</label>
+                <SearchableSelect
+                  value=""
+                  onChange={(supplierId) => {
+                    if (!supplierId || productForm.supplierIds.includes(supplierId)) return;
+                    setProductForm({ ...productForm, supplierIds: [...productForm.supplierIds, supplierId] });
+                  }}
+                  placeholder={(suppliers || []).length ? 'Add supplier for this product...' : 'Add suppliers first...'}
+                  options={supplierOptions}
+                  disabled={(suppliers || []).length === 0}
+                  buttonClassName="bg-white border-transparent"
+                  searchInputClassName="bg-white"
+                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {selectedFormSuppliers.length > 0 ? selectedFormSuppliers.map(supplier => (
+                    <span key={supplier.id} className="inline-flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700">
+                      {supplier.company || supplier.name}
+                      <button
+                        type="button"
+                        onClick={() => setProductForm({ ...productForm, supplierIds: productForm.supplierIds.filter(id => id !== supplier.id) })}
+                        className="flex h-5 w-5 items-center justify-center rounded-lg bg-white text-blue-400 hover:text-rose-500"
+                        aria-label={`Remove ${supplier.company || supplier.name}`}
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  )) : (
+                    <span className="text-[10px] font-bold text-slate-400">No supplier assigned yet. Receiving stock will also link suppliers automatically.</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Selling price</label>
@@ -819,6 +903,17 @@ export default function InventoryTab() {
                   placeholder={productForm.discountType === 'PERCENT' ? '0 - 100' : '0'}
                 />
               </div>
+              {(sellingBelowCostBlocked || discountedBelowCost) && (
+                <div className={`sm:col-span-2 rounded-2xl border px-4 py-3 text-[11px] font-bold ${
+                  sellingBelowCostBlocked
+                    ? 'border-rose-100 bg-rose-50 text-rose-700'
+                    : 'border-amber-100 bg-amber-50 text-amber-800'
+                }`}>
+                  {sellingBelowCostBlocked
+                    ? 'Selling price is below buying price. Set the selling price above cost or add a product discount.'
+                    : `Discounted register price will be Ksh ${discountedSalePrice.toLocaleString()}, below the buying price.`}
+                </div>
+              )}
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{editingProduct ? 'Current stock' : 'Opening stock'}</label>
                 {productForm.isBundle ? (
@@ -954,9 +1049,15 @@ export default function InventoryTab() {
               )}
             </div>
             <div className="flex gap-3 mt-6 pt-4 border-t border-slate-100">
-              <button onClick={() => setIsProductModalOpen(false)} className="flex-1 py-3.5 bg-slate-100 text-slate-500 rounded-xl text-xs font-black uppercase tracking-widest">Cancel</button>
-              <button onClick={handleSaveProduct} disabled={!productForm.name.trim() || !productForm.sellingPrice} className="flex-[2] py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50">
-                {editingProduct ? 'Save changes' : 'Create product'}
+              <button onClick={() => setIsProductModalOpen(false)} disabled={isSavingProduct} className="flex-1 py-3.5 bg-slate-100 text-slate-500 rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50">Cancel</button>
+              <button
+                onClick={handleSaveProduct}
+                disabled={!productForm.name.trim() || !productForm.sellingPrice || sellingBelowCostBlocked || isSavingProduct}
+                aria-busy={isSavingProduct}
+                data-busy={isSavingProduct ? 'true' : undefined}
+                className="flex-[2] py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50"
+              >
+                {isSavingProduct ? 'Saving...' : editingProduct ? 'Save changes' : 'Create product'}
               </button>
             </div>
           </div>

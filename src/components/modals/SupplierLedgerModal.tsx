@@ -255,9 +255,11 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                            <button onClick={() => onEdit(supplier)} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black   flex items-center gap-1 hover:bg-slate-200 transition-all shrink-0">
                               <Edit size={12} /> Edit supplier
                            </button>
-                           <button 
+                          <button 
                             onClick={handlePrintStatement} 
                             disabled={isSharing}
+                            aria-busy={isSharing}
+                            data-busy={isSharing ? 'true' : undefined}
                             className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black   flex items-center gap-1 hover:bg-slate-200 transition-all disabled:opacity-50 shrink-0"
                            >
                               {isSharing ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />}
@@ -433,6 +435,8 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                                     <button
                                                         onClick={() => handleDeleteCreditNote(cn)}
                                                         disabled={deletingCreditNoteId === cn.id}
+                                                        aria-busy={deletingCreditNoteId === cn.id}
+                                                        data-busy={deletingCreditNoteId === cn.id ? 'true' : undefined}
                                                         className="w-7 h-7 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all disabled:opacity-50"
                                                         title="Delete credit note"
                                                     >
@@ -547,7 +551,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                 </div>
                 <div className="flex gap-2 p-6 border-t border-slate-100 bg-white">
                     <button data-testid="supplier-credit-cancel" onClick={() => { setIsAddCreditNoteOpen(false); resetCreditNoteForm(); }} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs  ">Cancel</button>
-                    <button data-testid="supplier-credit-save" onClick={handleAddCreditNote} disabled={creditNoteItems.length === 0 || creditNoteTotal <= 0 || isSavingCreditNote} className="flex-[2] py-3 bg-blue-600 text-white font-bold rounded-xl text-xs active:scale-95 transition-all disabled:opacity-50 shadow-blue flex items-center justify-center gap-2">
+                    <button data-testid="supplier-credit-save" onClick={handleAddCreditNote} disabled={creditNoteItems.length === 0 || creditNoteTotal <= 0 || isSavingCreditNote} aria-busy={isSavingCreditNote} data-busy={isSavingCreditNote ? 'true' : undefined} className="flex-[2] py-3 bg-blue-600 text-white font-bold rounded-xl text-xs active:scale-95 transition-all disabled:opacity-50 shadow-blue flex items-center justify-center gap-2">
                         {isSavingCreditNote && <Loader2 size={14} className="animate-spin" />}
                         {isSavingCreditNote ? 'Saving...' : 'Save credit note'}
                     </button>

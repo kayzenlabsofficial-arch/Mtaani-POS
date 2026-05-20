@@ -86,6 +86,40 @@ export default function MtaaniPOS() {
   });
   const [isSavingExpense, setIsSavingExpense] = useState(false);
 
+  React.useEffect(() => {
+    const busyText = /\b(saving|loading|working|printing|exporting|generating|waiting|sending|syncing|processing|logging)\b/i;
+    const updateBusyButtons = () => {
+      document.querySelectorAll<HTMLButtonElement>('button').forEach(button => {
+        const autoBusy = button.dataset.autoBusy === 'true';
+        const inferredBusy = button.disabled && busyText.test(button.textContent || '');
+        const manuallyBusy = !autoBusy && (button.dataset.busy === 'true' || button.getAttribute('aria-busy') === 'true');
+
+        if (autoBusy && !inferredBusy) {
+          delete button.dataset.autoBusy;
+          if (button.dataset.busy === 'true') delete button.dataset.busy;
+          if (button.getAttribute('aria-busy') === 'true') button.removeAttribute('aria-busy');
+          return;
+        }
+        if (manuallyBusy || autoBusy || !inferredBusy) return;
+
+        button.dataset.autoBusy = 'true';
+        button.dataset.busy = 'true';
+        button.setAttribute('aria-busy', 'true');
+      });
+    };
+
+    updateBusyButtons();
+    const observer = new MutationObserver(updateBusyButtons);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['disabled', 'data-busy', 'aria-busy'],
+    });
+    return () => observer.disconnect();
+  }, []);
+
   const expenseAccounts = useLiveQuery(() => activeBusinessId ? db.expenseAccounts.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
   const financialAccounts = useLiveQuery(() => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
   const products = useLiveQuery(
@@ -95,12 +129,14 @@ export default function MtaaniPOS() {
   const transactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
   const expenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
   const cashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
+  const refunds = useLiveQuery(() => activeBranchId ? db.refunds.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
   const supplierPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
   const currentShiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser?.id);
   const shiftCashAvailable = calculateShiftCashFromSales({
     transactions: transactions || [],
     expenses: expenses || [],
     cashPicks: cashPicks || [],
+    refunds: refunds || [],
     supplierPayments: supplierPayments || [],
     since: getCurrentShiftStart(activeShift, getTodayStartMs()),
     shiftId: currentShiftId,

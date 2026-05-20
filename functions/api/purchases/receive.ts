@@ -51,6 +51,16 @@ function parseItems(value: unknown): any[] {
   }
 }
 
+function parseSupplierIds(value: unknown): string[] {
+  const parsed = typeof value === 'string'
+    ? (() => {
+        try { return JSON.parse(value); } catch { return value.split(','); }
+      })()
+    : value;
+  const ids = Array.isArray(parsed) ? parsed : [];
+  return Array.from(new Set(ids.map(id => String(id || '').trim()).filter(Boolean)));
+}
+
 async function ensureSchema(db: D1Database) {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS stockMovements (
@@ -83,6 +93,7 @@ async function ensureSchema(db: D1Database) {
     )
   `).run();
   try { await db.prepare('ALTER TABLE purchaseOrders ADD COLUMN receivedBy TEXT').run(); } catch {}
+  try { await db.prepare('ALTER TABLE products ADD COLUMN supplierIds TEXT').run(); } catch {}
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -171,7 +182,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
       const productId = String(item.productId || '').trim();
       const product = await env.DB.prepare(`
-        SELECT id, name, stockQuantity, sellingPrice, branchId
+        SELECT id, name, stockQuantity, sellingPrice, supplierIds, discountType, discountValue, branchId
         FROM products
         WHERE id = ? AND businessId = ?
         LIMIT 1
@@ -183,6 +194,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const nextSellingPrice = submitted?.sellingPrice && submitted.sellingPrice > 0
         ? submitted.sellingPrice
         : asNumber(product.sellingPrice);
+      const hasDiscount = String(product.discountType || '').toUpperCase() !== 'NONE' && asNumber(product.discountValue) > 0;
+      if (roundMoney(asNumber(item.unitCost)) > 0 && nextSellingPrice < roundMoney(asNumber(item.unitCost)) && !hasDiscount) {
+        throw new PolicyError(`Selling price for "${product.name}" cannot be below buying price unless the product has a discount.`, 400);
+      }
+      const nextSupplierIds = Array.from(new Set([...parseSupplierIds(product.supplierIds), po.supplierId]));
 
       statements.push(
         env.DB.prepare(`
@@ -190,9 +206,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           SET stockQuantity = COALESCE(stockQuantity, 0) + ?,
               costPrice = ?,
               sellingPrice = ?,
+              supplierIds = ?,
               updated_at = ?
           WHERE id = ? AND businessId = ?
-        `).bind(quantity, roundMoney(asNumber(item.unitCost)), nextSellingPrice, now, productId, businessId),
+        `).bind(quantity, roundMoney(asNumber(item.unitCost)), nextSellingPrice, JSON.stringify(nextSupplierIds), now, productId, businessId),
         env.DB.prepare(`
           INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -1,5 +1,20 @@
 import type { Product, PurchaseOrder } from '../db';
 
+export function normaliseSupplierIds(product: Pick<Product, 'supplierIds'> & { supplierId?: string } | any): string[] {
+  const raw = product?.supplierIds;
+  const parsed = typeof raw === 'string'
+    ? (() => {
+        try { return JSON.parse(raw); } catch { return raw.split(','); }
+      })()
+    : raw;
+  const ids = Array.isArray(parsed) ? parsed : [];
+  const legacyId = String(product?.supplierId || '').trim();
+  return Array.from(new Set([
+    ...ids.map(id => String(id || '').trim()).filter(Boolean),
+    ...(legacyId ? [legacyId] : []),
+  ]));
+}
+
 function purchaseItems(order: PurchaseOrder | any): any[] {
   if (Array.isArray(order?.items)) return order.items;
   if (typeof order?.items === 'string') {
@@ -39,6 +54,10 @@ export function productsForSupplier(
 ): Product[] {
   const allProducts = products || [];
   const knownIds = suppliedProductIdsFromOrders(purchaseOrders, supplierId);
-  if (!supplierId || knownIds.size === 0) return allProducts;
-  return allProducts.filter(product => knownIds.has(product.id));
+  if (!supplierId) return allProducts;
+
+  const explicitlyLinked = allProducts.filter(product => normaliseSupplierIds(product).includes(supplierId));
+  if (knownIds.size === 0 && explicitlyLinked.length === 0) return allProducts;
+
+  return allProducts.filter(product => knownIds.has(product.id) || normaliseSupplierIds(product).includes(supplierId));
 }

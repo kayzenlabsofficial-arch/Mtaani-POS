@@ -508,6 +508,11 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                                                  {item.quantity} units @ Ksh {item.snapshotPrice.toLocaleString()} 
                                                  {alreadyReturned > 0 && <span className="text-orange-600 ml-1">({alreadyReturned} returned)</span>}
                                              </p>
+                                             {Number(item.discountAmount || 0) > 0 && (
+                                                <p className="text-[10px] font-black text-rose-500">
+                                                  Discount: -Ksh {(Number(item.discountAmount || 0) * Number(item.quantity || 0)).toLocaleString()}
+                                                </p>
+                                             )}
                                          </div>
                                          {isReturnMode ? (
                                              <div className="flex items-center gap-2 bg-slate-50 rounded-lg p-1 border border-slate-200">
@@ -534,7 +539,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                                   </div>
                                   {selectedRecord.discountAmount > 0 && (
                                      <div className="flex justify-between text-xs font-bold text-orange-600  tracking-tight">
-                                         <span>Discount</span>
+                                         <span>Total discount</span>
                                          <span>-Ksh {selectedRecord.discountAmount.toLocaleString()}</span>
                                      </div>
                                   )}
@@ -945,6 +950,13 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                                </div>
                                <div className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm">
                                   <div className="flex gap-3 items-center">
+                                     <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center"><RotateCcw size={20}/></div>
+                                     <span className="text-sm font-bold text-slate-700">Refunds</span>
+                                  </div>
+                                  <span className="text-sm font-black text-rose-600">- {moneyText(selectedRecord.totalRefunds)}</span>
+                               </div>
+                               <div className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm">
+                                  <div className="flex gap-3 items-center">
                                      <div className="w-10 h-10 bg-green-50 text-green-600 rounded-xl flex items-center justify-center"><Banknote size={20}/></div>
                                      <span className="text-sm font-bold text-slate-700">Cash picked</span>
                                   </div>
@@ -1000,6 +1012,8 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                 <button
                   onClick={() => runApprovalAction(onApprove)}
                   disabled={isApprovalActionRunning}
+                  aria-busy={isApprovalActionRunning}
+                  data-busy={isApprovalActionRunning ? 'true' : undefined}
                   className="flex-1 py-3.5 bg-green-600 text-white font-black text-xs   rounded-xl transition-colors active:bg-green-700 flex items-center justify-center gap-2 shadow-lg shadow-green-600/20"
                 >
                   {isApprovalActionRunning ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
@@ -1008,6 +1022,8 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                 <button
                   onClick={() => runApprovalAction(onReject)}
                   disabled={isApprovalActionRunning}
+                  aria-busy={isApprovalActionRunning}
+                  data-busy={isApprovalActionRunning ? 'true' : undefined}
                   className="flex-1 py-3.5 bg-red-600 text-white font-black text-xs   rounded-xl transition-colors active:bg-red-700 flex items-center justify-center gap-2 shadow-lg shadow-red-600/20"
                 >
                   <AlertTriangle size={16} /> Reject
@@ -1019,6 +1035,8 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
             <button
               onClick={handleShare}
               disabled={isSharing || isSavingPDF}
+              aria-busy={isSharing}
+              data-busy={isSharing ? 'true' : undefined}
               className="w-full py-3.5 bg-slate-900 text-white font-bold text-[10px]   rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all disabled:opacity-50"
             >
               {isSharing ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
@@ -1030,6 +1048,8 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                 <button
                   onClick={isSale ? handleHardwarePrint : handleBrowserPrint}
                   disabled={isSharing || isSavingPDF || (isSale && isHardwarePrinting)}
+                  aria-busy={isHardwarePrinting}
+                  data-busy={isHardwarePrinting ? 'true' : undefined}
                   className="flex-1 py-3 bg-indigo-600 text-white font-bold text-[10px]   rounded-xl flex items-center justify-center gap-2 transition-colors active:bg-indigo-700 disabled:opacity-50"
                 >
                   {isHardwarePrinting ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
@@ -1040,6 +1060,8 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
               <button
                 onClick={handleSavePDF}
                 disabled={isSharing || isSavingPDF}
+                aria-busy={isSavingPDF}
+                data-busy={isSavingPDF ? 'true' : undefined}
                 className="flex-1 py-3 bg-white border border-slate-200 text-slate-700 font-bold text-[10px]   rounded-xl flex items-center justify-center gap-2 transition-colors active:bg-slate-100 disabled:opacity-50"
               >
                 {isSavingPDF ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}

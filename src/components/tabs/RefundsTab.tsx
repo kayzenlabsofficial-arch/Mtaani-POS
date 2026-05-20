@@ -54,9 +54,16 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
     [activeBusinessId, activeBranchId],
     [],
   );
+  const allRefunds = useLiveQuery(
+    () => activeBusinessId && activeBranchId
+      ? db.refunds.where('branchId').equals(activeBranchId).and(r => r.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId],
+    [],
+  );
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   
-  if (!allTransactions) {
+  if (!allTransactions || !allRefunds) {
     return (
         <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
             <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
@@ -68,10 +75,24 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   }
 
   const sortedTransactions = [...(allTransactions || [])].sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
-  const refundedTransactions = sortedTransactions.filter(t => 
+  const query = refundSearch.toLowerCase();
+  const refundedTransactionIds = new Set((allRefunds || []).map(refund => String(refund.originalTransactionId || '')));
+  const refundDocuments = [...(allRefunds || [])]
+    .filter(refund => [
+      refund.id,
+      refund.receiptNumber,
+      refund.originalTransactionId,
+      refund.cashierName,
+      refund.source,
+    ].some(value => String(value || '').toLowerCase().includes(query)))
+    .map(refund => ({ ...refund, recordType: 'REFUND' as const, refundedAmount: Number(refund.amount || 0), total: Number(refund.amount || 0) }));
+  const legacyRefundedTransactions = sortedTransactions.filter(t => 
     (t.status === 'REFUNDED' || t.status === 'PARTIAL_REFUND') && 
-    (String(t.id || '').toLowerCase().includes(refundSearch.toLowerCase()) || (t.cashierName?.toLowerCase().includes(refundSearch.toLowerCase())))
+    !refundedTransactionIds.has(String(t.id || '')) &&
+    (String(t.id || '').toLowerCase().includes(query) || (t.cashierName?.toLowerCase().includes(query)))
   ).map(t => ({ ...t, recordType: 'SALE' as const, refundedAmount: refundedAmountFor(t) }));
+  const refundedTransactions = [...refundDocuments, ...legacyRefundedTransactions]
+    .sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
 
   const totalRefundedValue = refundedTransactions.reduce((sum, t) => sum + (t.refundedAmount || 0), 0);
   const pendingRequests = sortedTransactions.filter(t => t.status === 'PENDING_REFUND').length;
@@ -161,34 +182,40 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
          {refundedTransactions.length > 0 ? (
            <div className="divide-y divide-slate-100">
-             {refundedTransactions.map(t => (
+             {refundedTransactions.map(t => {
+               const row = t as any;
+               const isRefundDoc = row.recordType === 'REFUND';
+               const receiptRef = isRefundDoc
+                 ? String(row.receiptNumber || row.originalTransactionId || row.id || '').split('-')[0].toUpperCase()
+                 : String(row.id || '').split('-')[0].toUpperCase();
+               return (
                <button
-                 key={t.id}
+                 key={row.id}
                  type="button"
-                 onClick={() => setSelectedRecord(t)}
+                 onClick={() => setSelectedRecord(row)}
                  className="w-full text-left px-3 sm:px-5 py-3 flex items-center gap-3 hover:bg-orange-50/40 transition-colors group"
                >
                  <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 shrink-0">
                    <RotateCcw size={18} />
                  </div>
                  <div className="min-w-0 flex-1">
-                   <h4 className="text-sm font-black text-slate-900 truncate">Receipt #{t.id.split('-')[0].toUpperCase()}</h4>
+                   <h4 className="text-sm font-black text-slate-900 truncate">{isRefundDoc ? 'Refund' : 'Receipt'} #{receiptRef}</h4>
                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(t.timestamp).toLocaleDateString()}</span>
+                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(row.timestamp).toLocaleDateString()}</span>
                      <span className="w-1 h-1 rounded-full bg-slate-200" />
-                     <span className="text-[10px] font-bold text-slate-400 truncate">Cashier: {t.cashierName || 'System'}</span>
+                     <span className="text-[10px] font-bold text-slate-400 truncate">{isRefundDoc ? `Source: ${row.source || 'TILL'}` : `Cashier: ${row.cashierName || 'System'}`}</span>
                    </div>
                  </div>
-                 <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter shrink-0 ${t.status === 'REFUNDED' ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>
-                   {t.status === 'REFUNDED' ? 'Refunded' : t.status === 'PARTIAL_REFUND' ? 'Part refund' : t.status}
+                 <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter shrink-0 ${row.status === 'REFUNDED' ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>
+                   {row.status === 'REFUNDED' ? 'Refunded' : row.status === 'PARTIAL_REFUND' ? 'Part refund' : row.status}
                  </span>
                  <div className="text-right shrink-0 min-w-[100px]">
                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Refunded</p>
-                   <p className="text-sm font-black text-orange-600 leading-none tabular-nums">Ksh {t.refundedAmount.toLocaleString()}</p>
+                   <p className="text-sm font-black text-orange-600 leading-none tabular-nums">Ksh {Number(row.refundedAmount || 0).toLocaleString()}</p>
                  </div>
                  <ChevronRight size={18} className="text-slate-300 group-hover:text-orange-500 transition-colors shrink-0" />
                </button>
-             ))}
+             );})}
            </div>
          ) : (
            <div className="py-20 text-center flex flex-col items-center">

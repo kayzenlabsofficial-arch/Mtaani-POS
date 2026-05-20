@@ -889,7 +889,6 @@ export default function ReportsTab() {
                { id: 'WEEK', label: 'Week' },
                { id: 'MONTH', label: 'Month' },
                { id: 'QUARTER', label: 'Quarter' },
-               { id: 'MONTHLY', label: 'Monthly' },
                { id: 'CUSTOM', label: 'Custom' },
                { id: 'ALL', label: 'All' }
              ].map(range => (
@@ -912,7 +911,9 @@ export default function ReportsTab() {
                 setSelectedMonth(event.target.value);
                 setDateRange('MONTHLY');
               }}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              className={`h-11 w-full rounded-xl border bg-white pl-9 pr-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 ${
+                dateRange === 'MONTHLY' ? 'border-primary ring-2 ring-primary/15' : 'border-slate-200'
+              }`}
             />
           </div>
           {dateRange === 'CUSTOM' && (
@@ -946,7 +947,7 @@ export default function ReportsTab() {
               <Scale size={15} />
               VAT {deductTaxInPL ? 'On' : 'Off'}
             </button>
-            <button onClick={handleExportProfitLoss} disabled={isSharing} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 active:scale-[0.98] disabled:opacity-50 md:px-4">
+            <button onClick={handleExportProfitLoss} disabled={isSharing} aria-busy={isSharing} data-busy={isSharing ? 'true' : undefined} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 active:scale-[0.98] disabled:opacity-50 md:px-4">
                {isSharing ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                <span>{isSharing ? 'Exporting...' : 'Export P&L'}</span>
             </button>
@@ -965,31 +966,28 @@ export default function ReportsTab() {
         </div>
 
         <section className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-8 border-2 border-slate-100 shadow-sm">
-          <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="font-bold text-slate-900 text-lg flex items-center gap-3">
               <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center"> <Scale size={20} /> </div>
               Profit vs expenses
             </h3>
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{periodLabel}</span>
+            <div className="flex flex-wrap items-center gap-2 text-[10px] font-black">
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">Net profit Ksh {netProfit.toLocaleString()}</span>
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">Expenses Ksh {totalExpenseAmount.toLocaleString()}</span>
+              <span className="text-slate-400">{periodLabel}</span>
+            </div>
           </div>
           <div ref={profitExpenseChartRef} className="h-[340px] w-full min-w-0">
             {profitExpenseChartSize.width > 0 && profitExpenseChartSize.height > 0 && (
-              <ComposedChart width={profitExpenseChartSize.width} height={profitExpenseChartSize.height} data={profitExpenseTrendData}>
-                <defs>
-                  <linearGradient id="profitLineGlow" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <BarChart width={profitExpenseChartSize.width} height={profitExpenseChartSize.height} data={profitExpenseTrendData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f7" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 900}} dy={10} />
                 <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 900}} tickFormatter={(v) => `Ksh ${Math.abs(Number(v)) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : v}`} />
-                <Tooltip contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', fontWeight: 900 }} />
+                <Tooltip formatter={(value: any) => `Ksh ${Number(value || 0).toLocaleString()}`} contentStyle={{ borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 12px 20px -12px rgba(15,23,42,0.35)', fontWeight: 900 }} />
                 <Legend wrapperStyle={{ fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }} />
-                <Bar dataKey="expenses" name="Expenses" barSize={24} fill="#f59e0b" radius={[8, 8, 0, 0]} />
-                <Area type="monotone" dataKey="profit" name="Net profit" stroke="#10b981" strokeWidth={4} fill="url(#profitLineGlow)" />
-                <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#6366f1" strokeWidth={3} dot={false} />
-              </ComposedChart>
+                <Bar dataKey="profit" name="Net profit" fill="#10b981" radius={[8, 8, 0, 0]} maxBarSize={34} />
+                <Bar dataKey="expenses" name="Expenses" fill="#f59e0b" radius={[8, 8, 0, 0]} maxBarSize={34} />
+              </BarChart>
             )}
           </div>
         </section>
@@ -1167,7 +1165,6 @@ export default function ReportsTab() {
                     { id: 'WEEK', label: 'Week' },
                     { id: 'MONTH', label: 'Month' },
                     { id: 'QUARTER', label: 'Quarter' },
-                    { id: 'MONTHLY', label: 'Monthly' },
                     { id: 'CUSTOM', label: 'Custom' },
                     { id: 'ALL', label: 'All' }
                   ].map(range => (
@@ -1192,7 +1189,9 @@ export default function ReportsTab() {
                       setProductSelectedMonth(e.target.value);
                       setProductDateRange('MONTHLY');
                     }}
-                    className="h-10 w-full rounded-xl border border-white/10 bg-white/10 pl-9 pr-4 text-sm font-black text-white outline-none focus:border-indigo-400"
+                    className={`h-10 w-full rounded-xl border bg-white/10 pl-9 pr-4 text-sm font-black text-white outline-none focus:border-indigo-400 ${
+                      productDateRange === 'MONTHLY' ? 'border-indigo-400 ring-2 ring-indigo-400/20' : 'border-white/10'
+                    }`}
                   />
                 </div>
                 {productDateRange === 'CUSTOM' && (
@@ -1215,6 +1214,8 @@ export default function ReportsTab() {
                   type="button"
                   onClick={handleExportProductPerformance}
                   disabled={isExportingProducts || visibleProductRows.length === 0}
+                  aria-busy={isExportingProducts}
+                  data-busy={isExportingProducts ? 'true' : undefined}
                   className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white px-4 text-[11px] font-black uppercase tracking-widest text-slate-950 transition-all hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 xl:w-auto"
                 >
                   {isExportingProducts ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}

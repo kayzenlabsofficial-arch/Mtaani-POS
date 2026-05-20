@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS products (
     barcode TEXT NOT NULL,
     imageUrl TEXT,
     reorderPoint REAL,
+    supplierIds TEXT,
     expiryTracking INTEGER DEFAULT 0,
     expiryDate INTEGER,
     isBundle INTEGER DEFAULT 0,

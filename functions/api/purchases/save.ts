@@ -41,6 +41,16 @@ function settingFlag(value: unknown, fallback = false) {
   return fallback;
 }
 
+function parseSupplierIds(value: unknown): string[] {
+  const parsed = typeof value === 'string'
+    ? (() => {
+        try { return JSON.parse(value); } catch { return value.split(','); }
+      })()
+    : value;
+  const ids = Array.isArray(parsed) ? parsed : [];
+  return Array.from(new Set(ids.map(id => String(id || '').trim()).filter(Boolean)));
+}
+
 async function ensureSchema(db: D1Database) {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS purchaseOrders (
@@ -99,6 +109,7 @@ async function ensureSchema(db: D1Database) {
   for (const column of purchaseColumns) {
     try { await db.prepare(`ALTER TABLE purchaseOrders ADD COLUMN ${column}`).run(); } catch {}
   }
+  try { await db.prepare('ALTER TABLE products ADD COLUMN supplierIds TEXT').run(); } catch {}
 }
 
 async function nextPoNumber(db: D1Database, businessId: string, branchId: string) {
@@ -155,13 +166,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const expectedQuantity = asNumber(raw?.expectedQuantity);
       if (!productId || expectedQuantity <= 0) throw new PolicyError('Purchase order line items are invalid.', 400);
       const product = await env.DB.prepare(`
-        SELECT id, name, branchId, costPrice, sellingPrice
+        SELECT id, name, branchId, costPrice, sellingPrice, supplierIds
         FROM products
         WHERE id = ? AND businessId = ?
         LIMIT 1
       `).bind(productId, businessId).first<any>();
       if (!product) throw new PolicyError('Purchase order includes a product that was not found.', 404);
       if (product.branchId && product.branchId !== branchId) throw new PolicyError(`Product "${product.name}" belongs to another branch.`, 403);
+      const linkedSuppliers = parseSupplierIds(product.supplierIds);
+      if (linkedSuppliers.length > 0 && !linkedSuppliers.includes(supplierId)) {
+        throw new PolicyError(`Product "${product.name}" is not linked to this supplier.`, 400);
+      }
       const inventoryCost = asNumber(product.costPrice);
       const unitCost = roundMoney(inventoryCost > 0 ? inventoryCost : asNumber(product.sellingPrice));
       items.push({

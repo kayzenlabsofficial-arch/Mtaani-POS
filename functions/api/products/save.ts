@@ -37,6 +37,20 @@ function isTruthy(value: unknown) {
   return value === true || value === 1 || value === '1' || String(value).toLowerCase() === 'true';
 }
 
+function parseSupplierIds(value: unknown, legacyValue?: unknown): string[] {
+  const parsed = typeof value === 'string'
+    ? (() => {
+        try { return JSON.parse(value); } catch { return value.split(','); }
+      })()
+    : value;
+  const ids = Array.isArray(parsed) ? parsed : [];
+  const legacyId = trimText(legacyValue, 160);
+  return Array.from(new Set([
+    ...ids.map(id => trimText(id, 160)).filter(Boolean),
+    ...(legacyId ? [legacyId] : []),
+  ])).slice(0, 50);
+}
+
 async function ensureSchema(db: D1Database) {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS products (
@@ -53,6 +67,7 @@ async function ensureSchema(db: D1Database) {
       barcode TEXT NOT NULL,
       imageUrl TEXT,
       reorderPoint REAL,
+      supplierIds TEXT,
       expiryTracking INTEGER DEFAULT 0,
       expiryDate INTEGER,
       isBundle INTEGER DEFAULT 0,
@@ -112,6 +127,7 @@ async function ensureSchema(db: D1Database) {
     'unit TEXT',
     'imageUrl TEXT',
     'reorderPoint REAL',
+    'supplierIds TEXT',
     'expiryTracking INTEGER DEFAULT 0',
     'expiryDate INTEGER',
     'isBundle INTEGER DEFAULT 0',
@@ -192,6 +208,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (ingredientProduct.branchId && ingredientProduct.branchId !== branchId) throw new PolicyError('A selected ingredient belongs to another branch.', 403);
     }
 
+    const supplierIds = parseSupplierIds(productInput.supplierIds, productInput.supplierId);
+    for (const supplierId of supplierIds) {
+      const supplier = await env.DB.prepare(`
+        SELECT id, branchId
+        FROM suppliers
+        WHERE id = ? AND businessId = ?
+        LIMIT 1
+      `).bind(supplierId, businessId).first<any>();
+      if (!supplier) throw new PolicyError('A selected supplier was not found.', 404);
+      if (supplier.branchId && supplier.branchId !== branchId) throw new PolicyError('A selected supplier belongs to another branch.', 403);
+    }
+
     const now = Date.now();
     const expiryTracking = isTruthy(productInput.expiryTracking);
     const expiryDate = expiryTracking && productInput.expiryDate !== undefined && productInput.expiryDate !== null && productInput.expiryDate !== ''
@@ -211,6 +239,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       unit: trimText(productInput.unit, 24) || 'pcs',
       barcode: trimText(productInput.barcode, 80) || `SKU-${Date.now()}`,
       reorderPoint: Math.max(0, asNumber(productInput.reorderPoint, 5)),
+      supplierIds,
       expiryTracking: expiryTracking ? 1 : 0,
       expiryDate,
       isBundle: isBundle ? 1 : 0,
@@ -220,10 +249,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       updated_at: now,
     };
 
+    const hasDiscount = product.discountType !== 'NONE' && product.discountValue > 0;
+    if (product.costPrice > 0 && product.sellingPrice < product.costPrice && !hasDiscount) {
+      throw new PolicyError('Selling price cannot be below buying price unless the product has a discount.', 400);
+    }
+
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(`
-        INSERT OR REPLACE INTO products (id, name, category, sellingPrice, costPrice, discountType, discountValue, taxCategory, stockQuantity, unit, barcode, reorderPoint, expiryTracking, expiryDate, isBundle, components, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO products (id, name, category, sellingPrice, costPrice, discountType, discountValue, taxCategory, stockQuantity, unit, barcode, reorderPoint, supplierIds, expiryTracking, expiryDate, isBundle, components, businessId, branchId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         product.id,
         product.name,
@@ -237,6 +271,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         product.unit,
         product.barcode,
         product.reorderPoint,
+        JSON.stringify(product.supplierIds),
         product.expiryTracking,
         product.expiryDate,
         product.isBundle,

@@ -55,6 +55,8 @@ export interface Product {
   unit?: string; // e.g. 'pcs', 'm', 'kg', 'tot'
   barcode: string;
   reorderPoint?: number; // Minimum stock before alarm triggers
+  supplierIds?: string[] | string;
+  supplierId?: string;
   imageUrl?: string;
   expiryTracking?: boolean | number | string;
   expiryDate?: number;

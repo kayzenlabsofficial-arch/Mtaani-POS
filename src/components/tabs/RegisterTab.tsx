@@ -303,6 +303,7 @@ function SalePanel({
     { id: 'REVIEW', label: 'Review' },
   ] as const;
   const normaliseMpesaCode = (value: string) => value.replace(/\s+/g, '').trim().toUpperCase();
+  const mpesaIsWaiting = mpesaState === 'PUSHING' || mpesaState === 'POLLING';
 
   const baseOptions = (): CheckoutOptions => ({
     subtotal,
@@ -395,9 +396,10 @@ function SalePanel({
       window.clearInterval(mpesaIntervalRef.current);
     }
     let attempts = 0;
+    const maxAttempts = 48;
     mpesaIntervalRef.current = window.setInterval(async () => {
       attempts++;
-      if (attempts > 36) {
+      if (attempts > maxAttempts) {
         window.clearInterval(mpesaIntervalRef.current!);
         mpesaIntervalRef.current = null;
         setMpesaState('FAILED');
@@ -406,7 +408,9 @@ function SalePanel({
       }
 
       const res = await MpesaService.checkStatus(requestId);
-      if (res.found && res.resultCode === 0) {
+      const resultCode = Number(res.resultCode);
+      const isPending = !Number.isFinite(resultCode) || resultCode === 999 || String(res.resultDesc || '').toUpperCase() === 'PENDING';
+      if (res.found && resultCode === 0) {
         window.clearInterval(mpesaIntervalRef.current!);
         mpesaIntervalRef.current = null;
         const receipt = res.receiptNumber || requestId;
@@ -433,7 +437,7 @@ function SalePanel({
           mpesaCustomer: res.phoneNumber,
         });
         success(`M-Pesa confirmed: ${receipt}`);
-      } else if (res.found && res.resultCode !== 0) {
+      } else if (res.found && !isPending) {
         window.clearInterval(mpesaIntervalRef.current!);
         mpesaIntervalRef.current = null;
         setMpesaState('FAILED');
@@ -451,7 +455,7 @@ function SalePanel({
     const res = await MpesaService.triggerStkPush(mpesaPhone.trim(), total, `SALE-${Date.now()}`, activeBusinessId, activeBranchId);
     if (res.success && res.checkoutRequestId) {
       setMpesaState('POLLING');
-      success('M-Pesa request sent. Waiting up to 3 minutes for payment.');
+      success('M-Pesa request sent. Waiting up to 4 minutes for payment.');
       pollMpesaAndComplete(res.checkoutRequestId);
     } else {
       setMpesaState('FAILED');
@@ -643,7 +647,7 @@ function SalePanel({
             </div>
             <div className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400">
               <p>{itemCount.toLocaleString()} item{itemCount === 1 ? '' : 's'}</p>
-              {discountAmount > 0 && <p className="mt-1 text-rose-300">Discount Ksh {discountAmount.toLocaleString()}</p>}
+              {discountAmount > 0 && <p className="mt-1 text-rose-300">Total discount Ksh {discountAmount.toLocaleString()}</p>}
             </div>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -726,11 +730,13 @@ function SalePanel({
               <button
                 type="button"
                 onClick={sendMpesaPrompt}
-                disabled={mpesaState === 'PUSHING' || mpesaState === 'POLLING' || isCheckingOut}
+                disabled={mpesaIsWaiting || isCheckingOut}
+                aria-busy={mpesaIsWaiting}
+                data-busy={mpesaIsWaiting ? 'true' : undefined}
                 data-testid="mpesa-prompt"
                 className="h-11 rounded-xl bg-emerald-600 px-4 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
               >
-                {mpesaState === 'PUSHING' || mpesaState === 'POLLING' ? 'Waiting' : 'Send STK'}
+                {mpesaIsWaiting ? 'Waiting' : 'Send STK'}
               </button>
             </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -745,6 +751,8 @@ function SalePanel({
                 type="button"
                 onClick={() => verifyMpesaCode(mpesaRef, total)}
                 disabled={isVerifyingMpesa || !mpesaRef.trim()}
+                aria-busy={isVerifyingMpesa}
+                data-busy={isVerifyingMpesa ? 'true' : undefined}
                 className="flex h-11 items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 text-[10px] font-black uppercase tracking-widest text-blue-700 disabled:opacity-50"
               >
                 {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
@@ -851,6 +859,8 @@ function SalePanel({
                         type="button"
                         onClick={() => verifyMpesaCode(splitSecondaryRef, splitSecondaryAmount)}
                         disabled={isVerifyingMpesa || !splitSecondaryRef.trim()}
+                        aria-busy={isVerifyingMpesa}
+                        data-busy={isVerifyingMpesa ? 'true' : undefined}
                         className="flex h-11 items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 text-[10px] font-black uppercase tracking-widest text-blue-700 disabled:opacity-50"
                       >
                         {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
@@ -867,6 +877,8 @@ function SalePanel({
         <button
           onClick={submitCheckout}
           disabled={!canCompleteSale}
+          aria-busy={checkoutBusy}
+          data-busy={checkoutBusy ? 'true' : undefined}
           data-testid="complete-sale"
           className="flex min-h-[3.25rem] w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-4 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -929,7 +941,7 @@ function SalePanel({
             <span className="block text-sm font-black text-slate-900 tabular-nums truncate">Ksh {subtotal.toLocaleString()}</span>
           </div>
           <div className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 min-w-0">
-            <span className="block text-[9px] font-black text-rose-500 uppercase tracking-widest">Discount</span>
+            <span className="block text-[9px] font-black text-rose-500 uppercase tracking-widest">Total discount</span>
             <span className="block text-sm font-black text-rose-700 tabular-nums truncate">Ksh {discountAmount.toLocaleString()}</span>
           </div>
           <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 min-w-0">
@@ -1061,6 +1073,8 @@ function SalePanel({
               type="button"
               onClick={() => void goToReview()}
               disabled={cart.length === 0 || isVerifyingMpesa}
+              aria-busy={isVerifyingMpesa}
+              data-busy={isVerifyingMpesa ? 'true' : undefined}
               className="h-12 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
             >
               Review sale <ArrowRight size={15} />
@@ -1080,6 +1094,8 @@ function SalePanel({
             <button
               onClick={submitCheckout}
               disabled={cart.length === 0 || isCheckingOut}
+              aria-busy={isCheckingOut}
+              data-busy={isCheckingOut ? 'true' : undefined}
               data-testid="complete-sale"
               className="h-12 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
@@ -1120,7 +1136,7 @@ function SalePanel({
                   <p className="mt-1 truncate text-sm font-black text-slate-900">Ksh {subtotal.toLocaleString()}</p>
                 </div>
                 <div className="rounded-2xl border border-rose-100 bg-rose-50 px-3 py-3">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Discount</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Total discount</p>
                   <p className="mt-1 truncate text-sm font-black text-rose-700">Ksh {discountAmount.toLocaleString()}</p>
                 </div>
                 <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-3">
@@ -1168,11 +1184,13 @@ function SalePanel({
                       <button
                         type="button"
                         onClick={sendMpesaPrompt}
-                        disabled={mpesaState === 'PUSHING' || mpesaState === 'POLLING' || isCheckingOut}
+                        disabled={mpesaIsWaiting || isCheckingOut}
+                        aria-busy={mpesaIsWaiting}
+                        data-busy={mpesaIsWaiting ? 'true' : undefined}
                         data-testid="mpesa-prompt"
                         className="h-12 rounded-2xl bg-emerald-600 px-5 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
                       >
-                        {mpesaState === 'PUSHING' || mpesaState === 'POLLING' ? 'Waiting' : 'Send request'}
+                        {mpesaIsWaiting ? 'Waiting' : 'Send request'}
                       </button>
                     </div>
                   </div>
@@ -1191,6 +1209,8 @@ function SalePanel({
                         type="button"
                         onClick={() => verifyMpesaCode(mpesaRef, total)}
                         disabled={isVerifyingMpesa || !mpesaRef.trim()}
+                        aria-busy={isVerifyingMpesa}
+                        data-busy={isVerifyingMpesa ? 'true' : undefined}
                         className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-5 text-[10px] font-black uppercase tracking-widest text-blue-700 disabled:opacity-50"
                       >
                         {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
@@ -1315,6 +1335,8 @@ function SalePanel({
                           type="button"
                           onClick={() => verifyMpesaCode(splitSecondaryRef, splitSecondaryAmount)}
                           disabled={isVerifyingMpesa || !splitSecondaryRef.trim()}
+                          aria-busy={isVerifyingMpesa}
+                          data-busy={isVerifyingMpesa ? 'true' : undefined}
                           className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-5 text-[10px] font-black uppercase tracking-widest text-blue-700 disabled:opacity-50"
                         >
                           {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
@@ -1339,6 +1361,8 @@ function SalePanel({
                 type="button"
                 onClick={() => void continueFromPaymentWindow()}
                 disabled={isVerifyingMpesa}
+                aria-busy={isVerifyingMpesa}
+                data-busy={isVerifyingMpesa ? 'true' : undefined}
                 className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-primary px-5 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
               >
                 {isVerifyingMpesa ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />}
@@ -1724,6 +1748,8 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
             onPointerDown={openMobileCheckout}
             onTouchStart={openMobileCheckout}
             disabled={isCheckingOut}
+            aria-busy={isCheckingOut}
+            data-busy={isCheckingOut ? 'true' : undefined}
             data-testid="mobile-checkout"
             className="px-4 py-3 bg-primary rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
           >

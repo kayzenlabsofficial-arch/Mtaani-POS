@@ -84,6 +84,7 @@ export default function ExpensesTab() {
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   const allTransactions = useLiveQuery(() => activeBusinessId && activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
   const allCashPicks = useLiveQuery(() => activeBusinessId && activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
+  const allRefunds = useLiveQuery(() => activeBusinessId && activeBranchId ? db.refunds.where('branchId').equals(activeBranchId).and(r => r.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
   const allSupplierPayments = useLiveQuery(() => activeBusinessId && activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
   
   const todayStartMs = getTodayStartMs();
@@ -91,6 +92,7 @@ export default function ExpensesTab() {
     transactions: allTransactions || [],
     expenses: allExpenses || [],
     cashPicks: allCashPicks || [],
+    refunds: allRefunds || [],
     supplierPayments: allSupplierPayments || [],
     since: todayStartMs,
   });

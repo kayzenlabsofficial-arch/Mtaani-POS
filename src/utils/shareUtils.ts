@@ -304,7 +304,10 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
   
   // Dynamic height calculation
   const items = Array.isArray(r.items) ? r.items : [];
-  const itemH = items.length * 8;
+  const itemH = items.reduce((height: number, item: any) => {
+    const nameLines = Math.max(1, Math.ceil(safeStr(item?.name).length / 32));
+    return height + (nameLines * 4) + 4 + (safe(item?.discountAmount) > 0 ? 4 : 0);
+  }, 0);
   const totalH = 65 + itemH + 55; // estimated
   const createdAt = new Date(r.timestamp || r.issueDate || Date.now());
   const ref = safeStr(r.receiptNumber || r.invoiceNumber || (r.id || '').split('-')[0], 'SALE').toUpperCase();
@@ -380,6 +383,7 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
     const qty = safe(item.quantity);
     const price = safe(item.snapshotPrice);
     const total = qty * price;
+    const lineDiscount = safe(item.discountAmount) * qty;
     
     // Name (wrapped if too long)
     const name = safeStr(item.name);
@@ -390,6 +394,14 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
     doc.text(ksh(total), TW - TM, y, { align: 'right' });
     
     y += lines.length * 4 + 1;
+    if (lineDiscount > 0) {
+      doc.setFontSize(6.5);
+      st(doc, red);
+      doc.text(`Discount: -${ksh(lineDiscount)}`, TM, y);
+      doc.setFontSize(7);
+      st(doc, slate900);
+      y += 4;
+    }
   });
   
   y += 2;
@@ -407,7 +419,7 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
   };
   
   row('Subtotal', ksh(r.subtotal));
-  if (safe(r.discountAmount) > 0) row('Discount', `-${ksh(r.discountAmount)}`);
+  if (safe(r.discountAmount) > 0) row('Total discount', `-${ksh(r.discountAmount)}`);
   row('VAT (16%)', ksh(r.tax));
   y += 2;
   row('TOTAL', ksh(r.total), true);
