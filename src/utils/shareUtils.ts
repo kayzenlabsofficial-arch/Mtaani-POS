@@ -305,7 +305,16 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
   // Dynamic height calculation
   const items = Array.isArray(r.items) ? r.items : [];
   const itemH = items.length * 8;
-  const totalH = 45 + itemH + 50; // estimated
+  const totalH = 65 + itemH + 55; // estimated
+  const createdAt = new Date(r.timestamp || r.issueDate || Date.now());
+  const ref = safeStr(r.receiptNumber || r.invoiceNumber || (r.id || '').split('-')[0], 'SALE').toUpperCase();
+  const address = safeStr(r.businessAddress || location, location);
+  const cashier = safeStr(r.cashierName || r.preparedBy || r.userName, 'Staff');
+  const paymentMethod = safeStr(r.paymentMethod, 'CASH').toUpperCase();
+  const paymentLabel = paymentMethod === 'MPESA' ? 'M-Pesa' : paymentMethod === 'PDQ' ? 'Card' : paymentMethod === 'SPLIT' ? 'Split' : paymentMethod === 'CREDIT' ? 'Credit' : 'Cash';
+  const shiftNumber = r.shiftId ? safeStr(r.shiftId).replace(/^shift_/, '').slice(-16).toUpperCase() : 'N/A';
+  const tillNumber = safeStr(r.tillNumber, 'N/A');
+  const receiptFooter = safeStr(r.receiptFooter, 'Thank you for shopping with us!');
   
   const doc = new jsPDF({ unit: 'mm', format: [TW, totalH] });
   let y = 8;
@@ -320,10 +329,10 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   st(doc, slate600);
-  doc.text(location, TW / 2, y, { align: 'center' });
+  doc.text(address, TW / 2, y, { align: 'center' });
   y += 4;
-  doc.text(`Cashier: ${safeStr(r.cashierName)} | Branch: ${branchLabel(r)}`, TW / 2, y, { align: 'center' });
-  y += 8;
+  doc.text(`Branch: ${branchLabel(r)}`, TW / 2, y, { align: 'center' });
+  y += 6;
   
   // Info
   doc.setFont('helvetica', 'bold');
@@ -335,12 +344,17 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   st(doc, slate400);
-  const ref = safeStr(r.invoiceNumber || (r.id || '').split('-')[0], 'SALE').toUpperCase();
-  doc.text(`REF: ${ref}`, TM, y);
-  doc.text(new Date(r.timestamp).toLocaleString('en-KE'), TW - TM, y, { align: 'right' });
+  doc.text(`Receipt: ${ref}`, TM, y);
+  doc.text(createdAt.toLocaleDateString('en-KE'), TW - TM, y, { align: 'right' });
   y += 5;
-  doc.text(`Status: ${safeStr(r.status, 'PAID')}`, TM, y);
-  doc.text(`Method: ${safeStr(r.paymentMethod, 'CASH')}`, TW - TM, y, { align: 'right' });
+  doc.text(`Time: ${createdAt.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}`, TM, y);
+  doc.text(`Payment: ${paymentLabel}`, TW - TM, y, { align: 'right' });
+  y += 5;
+  doc.text(`Cashier: ${cashier}`, TM, y);
+  doc.text(`Till: ${tillNumber}`, TW - TM, y, { align: 'right' });
+  y += 5;
+  doc.text(`Shift: ${shiftNumber}`, TM, y);
+  doc.text(`Status: ${safeStr(r.status, 'PAID')}`, TW - TM, y, { align: 'right' });
   y += 5;
   
   sd(doc, slate900);
@@ -420,9 +434,10 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
   }
 
   // M-Pesa Specifics
-  if (r.mpesaCode) {
+  const mpesaReceiptCode = r.mpesaCode || r.mpesaReference || r.paymentReference;
+  if (mpesaReceiptCode) {
     st(doc, slate600);
-    row('M-Pesa Code', r.mpesaCode);
+    row('M-Pesa Code', mpesaReceiptCode);
   }
   if (r.mpesaCustomer) {
     st(doc, slate600);
@@ -442,8 +457,9 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(7);
   st(doc, slate400);
-  doc.text('Thank you for shopping with us!', TW / 2, y, { align: 'center' });
-  y += 4;
+  const footerLines = doc.splitTextToSize(receiptFooter, CW);
+  doc.text(footerLines, TW / 2, y, { align: 'center' });
+  y += footerLines.length * 4;
   doc.text('Keep this receipt for returns', TW / 2, y, { align: 'center' });
   
   return doc.output('blob');

@@ -168,6 +168,7 @@ export interface Shift {
   id: string;
   startTime: number;
   endTime?: number;
+  cashierId?: string;
   cashierName: string;
   status: 'OPEN' | 'CLOSED';
   branchId: string;

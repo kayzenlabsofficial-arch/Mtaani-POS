@@ -131,6 +131,30 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
     { label: 'VAT', key: 'taxTotal', total: true },
   ];
   const dailyShiftReports = parseList(selectedRecord.shiftReports);
+  const recordTimestamp = Number(selectedRecord.issueDate || selectedRecord.orderDate || selectedRecord.timestamp || Date.now());
+  const recordDate = new Date(recordTimestamp);
+  const saleReference = String(selectedRecord.receiptNumber || selectedRecord.invoiceNumber || selectedRecord.reference || selectedRecord.id || 'SALE').split('-')[0].toUpperCase();
+  const branchName = activeRecordBranch?.name || selectedRecord.branchName || 'Main branch';
+  const businessAddress = selectedRecord.businessAddress || activeRecordBranch?.location || storeLocation;
+  const tillNumber = selectedRecord.tillNumber || activeRecordBranch?.tillNumber || businessSettings?.tillNumber || 'N/A';
+  const receiptFooter = selectedRecord.receiptFooter || businessSettings?.receiptFooter || 'Thank you for shopping!';
+  const cashierName = selectedRecord.cashierName || selectedRecord.preparedBy || selectedRecord.userName || 'Staff';
+  const shiftNumber = selectedRecord.shiftId ? String(selectedRecord.shiftId).replace(/^shift_/, '').slice(-16).toUpperCase() : 'N/A';
+  const paymentType = (method: unknown) => {
+    const value = String(method || 'CASH').toUpperCase();
+    if (value === 'MPESA') return 'M-Pesa';
+    if (value === 'PDQ') return 'Card';
+    if (value === 'SPLIT') return 'Split';
+    if (value === 'CREDIT') return 'Credit';
+    return 'Cash';
+  };
+  const withReceiptDetails = (record: any) => ({
+    ...record,
+    branchName: activeRecordBranch?.name || record.branchName,
+    tillNumber: record.tillNumber || activeRecordBranch?.tillNumber || businessSettings?.tillNumber,
+    businessAddress: record.businessAddress || activeRecordBranch?.location || storeLocation,
+    receiptFooter: record.receiptFooter || receiptFooter,
+  });
   const supplierInvoiceAllocations = parseList(selectedRecord.invoiceAllocations);
   const supplierInvoiceAllocationAmount = new Map(
     supplierInvoiceAllocations
@@ -182,7 +206,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
       const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isCreditNote ? 'Credit-Note' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
       
-      const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
+      const recordWithDetails = withReceiptDetails(selectedRecord);
       if (isPayment) {
         const invoiceAllocations = parseList(selectedRecord.invoiceAllocations);
         const allocationAmountById = new Map(invoiceAllocations.map((allocation: any) => [String(allocation.purchaseOrderId || '').trim(), Number(allocation.amount || 0)] as const));
@@ -224,7 +248,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
       const typeLabel = isSale ? 'Receipt' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isCreditNote ? 'Credit-Note' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
       const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
 
-      const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
+      const recordWithDetails = withReceiptDetails(selectedRecord);
       if (isPayment) {
         const invoiceAllocations = parseList(selectedRecord.invoiceAllocations);
         const allocationAmountById = new Map(invoiceAllocations.map((allocation: any) => [String(allocation.purchaseOrderId || '').trim(), Number(allocation.amount || 0)] as const));
@@ -269,7 +293,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
         return;
       }
 
-      const recordWithDetails = { ...selectedRecord, branchName: activeRecordBranch?.name || selectedRecord.branchName };
+      const recordWithDetails = withReceiptDetails(selectedRecord);
       const result = await printReceiptViaAssignedPrinter(recordWithDetails, {
         storeName,
         location: storeLocation,
@@ -289,13 +313,13 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
 
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center ${isSale ? 'p-0 sm:p-4' : 'p-4'}`}>
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setSelectedRecord(null)} />
-      <div className="bg-white w-full max-w-2xl h-full sm:h-[90vh] sm:rounded-2xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
+      <div className={`bg-white w-full ${isSale ? 'max-w-5xl h-full sm:h-[94vh]' : 'max-w-2xl h-full sm:h-[90vh]'} sm:rounded-2xl shadow-elevated relative z-10 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300`}>
          
          {/* Scrollable Content Area */}
-         <div className="flex-1 overflow-y-auto custom-scrollbar">
-            <div id="printable-content" className={isSale ? "print-receipt-80mm" : "print-document-a4"}>
+         <div className={`flex-1 overflow-y-auto custom-scrollbar ${isSale ? 'bg-slate-100' : ''}`}>
+            <div id="printable-content" className={isSale ? "print-receipt-80mm mx-auto my-4 w-full max-w-[380px] bg-white shadow-xl ring-1 ring-slate-200 sm:my-8 print:my-0 print:shadow-none print:ring-0" : "print-document-a4"}>
               {/* Header */}
               <div className={`p-8 border-b flex flex-col items-center text-center ${
                  isSale ? 'bg-green-50/50 border-green-100' : 
@@ -316,8 +340,8 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                   }`}>
                      {isSale ? <ReceiptText size={28} /> : isExpense ? <Wallet size={28} /> : isPayment ? <DollarSign size={28} /> : isCreditNote ? <RotateCcw size={28} /> : isSalesInvoice ? <FileText size={28} /> : isReport ? <CalendarCheck size={28} /> : isDailySummary ? <PackagePlus size={28} /> : <ClipboardList size={28} />}
                   </div>
-                  <h2 className="text-2xl font-black text-slate-900 tracking-tight ">
-                     {isSale ? `Sales receipt` : 
+                  <h2 className={`${isSale ? 'text-xl print:text-[12pt]' : 'text-2xl'} font-black text-slate-900 tracking-tight`}>
+                     {isSale ? storeName : 
                       isExpense ? `Expense document` : 
                       isPayment ? 'Supplier payment note' :
                       isCreditNote ? 'Supplier credit note' :
@@ -328,19 +352,25 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                       isPO ? 'Local purchase order' :
                       `Purchase document`}
                   </h2>
+                  {isSale && (
+                    <div className="mt-1 space-y-0.5 text-[11px] font-bold text-slate-600 print:text-[8pt]">
+                      <p>{businessAddress}</p>
+                      <p>{branchName}</p>
+                    </div>
+                  )}
                   <p className="text-xs font-bold text-slate-500  tracking-[0.2em] mt-1">
-                      Reference: {selectedRecord.reference || selectedRecord.invoiceNumber || (String(selectedRecord.id || '').startsWith('PO-') ? selectedRecord.id : String(selectedRecord.id || '').split('-')[0].toUpperCase())}
+                      {isSale ? 'Receipt' : 'Reference'}: {isSale ? saleReference : (selectedRecord.reference || selectedRecord.invoiceNumber || (String(selectedRecord.id || '').startsWith('PO-') ? selectedRecord.id : String(selectedRecord.id || '').split('-')[0].toUpperCase()))}
                   </p>
                   <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400 mt-2  ">
-                     <Calendar size={12} /> {new Date(selectedRecord.issueDate || selectedRecord.orderDate || selectedRecord.timestamp || Date.now()).toLocaleString('en-KE')}
+                     <Calendar size={12} /> {recordDate.toLocaleString('en-KE')}
                   </div>
                   <div className="flex flex-col items-center gap-2 mt-4 bg-slate-50/50 p-3 rounded-2xl border border-slate-100/50 min-w-[200px]">
                       <div className="text-[10px] font-black text-slate-600 flex items-center gap-2">
                           <div className="w-5 h-5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400">
                              <User size={10} />
                           </div>
-                          <span className=" ">Prepared by:</span>
-                          <span className="text-blue-600 font-bold">{selectedRecord.preparedBy || selectedRecord.cashierName || selectedRecord.userName || 'Staff'}</span>
+                          <span className=" ">{isSale ? 'Cashier:' : 'Prepared by:'}</span>
+                          <span className="text-blue-600 font-bold">{cashierName}</span>
                        </div>
 
                      {(isPO || isExpense || selectedRecord.recordType === 'STOCK_ADJUSTMENT') && (
@@ -350,9 +380,26 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                             </div>
                             <span className=" ">Approved by:</span>
                             <span className={selectedRecord.approvedBy ? "text-blue-600 font-bold" : "text-slate-400 italic"}>{selectedRecord.approvedBy || 'Pending admin'}</span>
-                         </div>
+                        </div>
                      )}
                   </div>
+                  {isSale && (
+                    <div className="mt-3 grid w-full max-w-sm grid-cols-2 gap-2 text-left print:max-w-none print:gap-1">
+                      {[
+                        { label: 'Date', value: recordDate.toLocaleDateString('en-KE') },
+                        { label: 'Time', value: recordDate.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' }) },
+                        { label: 'Payment', value: paymentType(selectedRecord.paymentMethod) },
+                        { label: 'Till', value: tillNumber },
+                        { label: 'Shift', value: shiftNumber },
+                        { label: 'Receipt', value: saleReference },
+                      ].map(item => (
+                        <div key={item.label} className="rounded-xl border border-slate-100 bg-white px-2 py-1.5 print:border-0 print:p-0">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 print:text-[6pt]">{item.label}</p>
+                          <p className="mt-0.5 break-words text-[10px] font-black text-slate-800 print:text-[7pt]">{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {isSale && (
                      <span className={`mt-4 text-[10px] font-black px-3 py-1 rounded-full   no-print ${
                          selectedRecord.status === 'PAID' ? 'bg-green-100 text-green-700' : 
@@ -382,7 +429,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
               </div>
 
               {/* Content */}
-              <div className="p-6 space-y-5">
+              <div className={isSale ? "p-5 space-y-4 print:p-2 print:space-y-2" : "p-6 space-y-5"}>
                  
                  {/* Sales Items */}
                  {isSale && (
@@ -392,7 +439,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                                  const alreadyReturned = item.returnedQuantity || 0;
                                  const availableToReturn = item.quantity - alreadyReturned;
                                  return (
-                                     <div key={idx} className="flex justify-between items-center text-sm">
+                                     <div key={idx} className="flex justify-between items-center gap-3 text-sm print:text-[8pt]">
                                          <div className="flex-1">
                                              <p className="font-bold text-slate-900">{item.name}</p>
                                              <p className="text-[11px] text-slate-500 font-medium">
@@ -407,7 +454,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                                                  <button onClick={() => updateReturnQty(item.productId, 1, availableToReturn)} className="p-1 hover:bg-slate-200 rounded text-slate-600"><Plus size={12} /></button>
                                              </div>
                                          ) : (
-                                             <span className="font-black text-slate-900">Ksh {(item.quantity * item.snapshotPrice).toLocaleString()}</span>
+                                             <span className="shrink-0 font-black text-slate-900">Ksh {(item.quantity * item.snapshotPrice).toLocaleString()}</span>
                                          )}
                                      </div>
                                  );
@@ -415,6 +462,10 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                          </div>
                          {!isReturnMode && (
                              <div className="pt-4 border-t border-dashed border-slate-200 space-y-2">
+                                  <div className="flex justify-between text-xs font-bold text-slate-500  tracking-tight">
+                                     <span>Payment</span>
+                                     <span>{paymentType(selectedRecord.paymentMethod)}</span>
+                                  </div>
                                   <div className="flex justify-between text-xs font-bold text-slate-500  tracking-tight">
                                      <span>Subtotal</span>
                                      <span>Ksh {selectedRecord.subtotal.toLocaleString()}</span>
@@ -433,6 +484,12 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                                      <span className="text-sm font-black text-slate-400  ">{selectedRecord.debtBalance !== undefined ? 'Sale total' : 'Total paid'}</span>
                                      <span className="text-2xl font-black text-slate-900">Ksh {(selectedRecord.total || 0).toLocaleString()}</span>
                                   </div>
+                                  {selectedRecord.amountTendered && (
+                                     <div className="flex justify-between text-xs font-bold text-slate-500  tracking-tight">
+                                        <span>Cash received</span>
+                                        <span>Ksh {(selectedRecord.amountTendered || 0).toLocaleString()}</span>
+                                     </div>
+                                  )}
                                   {selectedRecord.debtBalance !== undefined && (
                                     <div className="grid grid-cols-2 gap-2 pt-2">
                                       <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
@@ -451,6 +508,10 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                                          <span className="text-lg font-black italic">Ksh {(selectedRecord.amountTendered - selectedRecord.total).toLocaleString()}</span>
                                      </div>
                                   )}
+                                  <div className="border-t border-dashed border-slate-200 pt-4 text-center text-[11px] font-bold text-slate-500 print:pt-2 print:text-[7pt]">
+                                    <p>{receiptFooter}</p>
+                                    <p className="mt-1">Keep this receipt for returns</p>
+                                  </div>
                              </div>
                          )}
                      </>

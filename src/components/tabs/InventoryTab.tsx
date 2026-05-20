@@ -592,16 +592,16 @@ export default function InventoryTab() {
 
       {/* Product detail slide-over */}
       {selectedProduct && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-end">
+        <div className="fixed inset-0 z-50 flex items-end justify-end md:items-stretch md:justify-center">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setSelectedProduct(null)} />
-          <div className="relative bg-white w-full md:w-96 md:h-full md:max-h-full h-auto max-h-[85vh] rounded-t-3xl md:rounded-none shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom md:slide-in-from-right duration-300">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 flex-shrink-0">
+          <div className="relative bg-white w-full md:w-full md:h-full md:max-h-full h-auto max-h-[85vh] rounded-t-3xl md:rounded-none shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom md:slide-in-from-right duration-300">
+            <div className="flex items-center justify-between px-6 py-5 md:px-8 border-b border-slate-100 flex-shrink-0">
               <h3 className="text-base font-black text-slate-900">Product Details</h3>
               <button onClick={() => setSelectedProduct(null)} className="w-9 h-9 rounded-xl hover:bg-slate-100 flex items-center justify-center transition-colors">
                 <MaterialIcon name="close" style={{ fontSize: '20px' }} />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-5">
+            <div className="flex-1 overflow-y-auto no-scrollbar p-6 md:mx-auto md:w-full md:max-w-[1440px] md:p-8 space-y-5">
               {/* Icon + name */}
               <div className="flex items-start gap-4">
                 <div className={`w-16 h-16 ${colorFor(selectedProduct.name)} rounded-2xl flex items-center justify-center flex-shrink-0`}>
@@ -622,6 +622,7 @@ export default function InventoryTab() {
               </div>
 
               {/* Details grid */}
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {[
                 { label: 'Selling price', value: `Ksh ${selectedProduct.sellingPrice?.toLocaleString()}` },
                 { label: 'Register price', value: `Ksh ${productSalePrice(selectedProduct).toLocaleString()}` },
@@ -632,13 +633,14 @@ export default function InventoryTab() {
                 { label: 'Expiry', value: getExpiryInfo(selectedProduct).tracking ? getExpiryInfo(selectedProduct).dateLabel : 'Not tracked' },
                 { label: 'Barcode', value: selectedProduct.barcode || '---' },
               ].map(row => (
-                <div key={row.label} className="flex justify-between items-center py-3 border-b border-slate-50">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{row.label}</span>
-                  <span className="text-[13px] font-black text-slate-900">{row.value}</span>
+                <div key={row.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">{row.label}</span>
+                  <span className="mt-2 block break-words text-sm font-black text-slate-900">{row.value}</span>
                 </div>
               ))}
+              </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="grid grid-cols-2 gap-3 pt-2 md:grid-cols-4">
                 {[
                   { label: 'Units sold', value: soldUnits.toLocaleString(), color: 'text-blue-600' },
                   { label: 'Revenue', value: `Ksh ${revenue.toLocaleString()}`, color: 'text-emerald-600' },
@@ -711,19 +713,21 @@ export default function InventoryTab() {
               </div>
             </div>
 
-            <div className="flex-shrink-0 p-6 border-t border-slate-100 grid grid-cols-2 gap-3">
-              <button onClick={() => openProductModal(selectedProduct)} className="py-3 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
-                <MaterialIcon name="edit" style={{ fontSize: '18px' }} /> Edit
-              </button>
-              {isBundleProduct(selectedProduct) ? (
-                <button onClick={() => openProductModal(selectedProduct)} className="py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald/20 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
-                  <MaterialIcon name="restaurant" style={{ fontSize: '18px' }} /> Ingredients
+            <div className="flex-shrink-0 border-t border-slate-100">
+              <div className="mx-auto grid w-full max-w-[1440px] grid-cols-2 gap-3 p-6 md:px-8">
+                <button onClick={() => openProductModal(selectedProduct)} className="py-3 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
+                  <MaterialIcon name="edit" style={{ fontSize: '18px' }} /> Edit
                 </button>
-              ) : (
-                <button onClick={() => setIsRestocking(true)} className="py-3 bg-primary text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
-                  <MaterialIcon name="add" style={{ fontSize: '18px' }} /> Adjust stock
-                </button>
-              )}
+                {isBundleProduct(selectedProduct) ? (
+                  <button onClick={() => openProductModal(selectedProduct)} className="py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald/20 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
+                    <MaterialIcon name="restaurant" style={{ fontSize: '18px' }} /> Ingredients
+                  </button>
+                ) : (
+                  <button onClick={() => setIsRestocking(true)} className="py-3 bg-primary text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+                    <MaterialIcon name="add" style={{ fontSize: '18px' }} /> Adjust stock
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

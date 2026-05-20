@@ -353,6 +353,16 @@ button, a, input, select, textarea {
 }
 
 /* ── Print engine (80mm & A4) ─────────────────────────── */
+@page receipt80 {
+  size: 80mm auto;
+  margin: 0;
+}
+
+@page documentA4 {
+  size: A4;
+  margin: 10mm;
+}
+
 @media print {
   body {
     background: white !important;
@@ -381,16 +391,32 @@ button, a, input, select, textarea {
   }
 
   .print-receipt-80mm {
+    page: receipt80;
     width: 80mm !important;
     max-width: 80mm !important;
+    min-width: 80mm !important;
     font-size: 10pt !important;
-    margin: 0 auto !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: 0 !important;
   }
 
   .print-document-a4 {
+    page: documentA4;
     width: 210mm !important;
     margin: 0 auto !important;
     font-size: 11pt !important;
+  }
+
+  #printable-content.print-receipt-80mm {
+    width: 80mm !important;
+    max-width: 80mm !important;
+    min-width: 80mm !important;
+    margin: 0 !important;
+  }
+
+  #printable-content.print-document-a4 {
+    width: 210mm !important;
   }
 
   * {

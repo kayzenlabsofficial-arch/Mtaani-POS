@@ -257,7 +257,6 @@ function SalePanel({
   const [checkoutStep, setCheckoutStep] = useState<'ITEMS' | 'PAYMENT' | 'REVIEW'>('ITEMS');
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT'>('CASH');
   const [paymentWindow, setPaymentWindow] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT' | null>(null);
-  const [showAdvancedCheckout, setShowAdvancedCheckout] = useState(false);
   const [cashTendered, setCashTendered] = useState('');
   const [mpesaRef, setMpesaRef] = useState('');
   const [mpesaPhone, setMpesaPhone] = useState('');
@@ -319,7 +318,6 @@ function SalePanel({
     if (result) {
       setPaymentMode('CASH');
       setPaymentWindow(null);
-      setShowAdvancedCheckout(false);
       setCashTendered('');
       setMpesaRef('');
       setMpesaPhone('');
@@ -472,7 +470,11 @@ function SalePanel({
       }
 
       if (paymentMode === 'CASH') {
-        const paid = cashTendered ? tendered : total;
+        if (!cashTendered.trim()) {
+          warning('Enter the cash amount received before completing a cash sale.');
+          return;
+        }
+        const paid = tendered;
         if (paid < total) {
           warning('Amount received must cover the sale total.');
           return;
@@ -544,9 +546,15 @@ function SalePanel({
       warning('Choose a registered customer before putting any amount on credit.');
       return false;
     }
-    if (paymentMode === 'CASH' && cashTendered && tendered < total) {
-      warning('Amount received must cover the sale total.');
-      return false;
+    if (paymentMode === 'CASH') {
+      if (!cashTendered.trim()) {
+        warning('Enter the cash amount received before completing a cash sale.');
+        return false;
+      }
+      if (tendered < total) {
+        warning('Amount received must cover the sale total.');
+        return false;
+      }
     }
     if (paymentMode === 'MPESA') {
       const verified = await ensureMpesaUsable(mpesaRef, total);
@@ -574,8 +582,11 @@ function SalePanel({
   const selectedPaymentOption = paymentOptions.find(option => option.id === paymentWindow) || paymentOptions.find(option => option.id === paymentMode) || paymentOptions[0];
   const SelectedPaymentIcon = selectedPaymentOption.icon;
   const paymentLabel = (method: string) => method === 'MPESA' ? 'M-Pesa' : method === 'PDQ' ? 'Card' : method;
-  const mainPaymentOptions = paymentOptions.filter(option => option.id === 'CASH' || option.id === 'MPESA' || option.id === 'PDQ');
+  const mainPaymentOptions = paymentOptions;
   const checkoutBusy = isCheckingOut || isVerifyingMpesa || mpesaState === 'PUSHING' || mpesaState === 'POLLING';
+  const cashTenderedEntered = cashTendered.trim().length > 0;
+  const cashPaymentReady = paymentMode !== 'CASH' || (cashTenderedEntered && tendered >= total);
+  const canCompleteSale = cart.length > 0 && !checkoutBusy && cashPaymentReady;
   const completeSaleLabel = paymentMode === 'CASH'
     ? 'Complete cash sale'
     : paymentMode === 'MPESA'
@@ -647,7 +658,7 @@ function SalePanel({
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
           {mainPaymentOptions.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -692,11 +703,11 @@ function SalePanel({
                 Exact
               </button>
             </div>
-            {(cashTendered || tendered > total) && (
+            {(!cashTenderedEntered || cashTendered || tendered > total) && (
               <div className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
                 tendered >= total ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
               }`}>
-                {tendered >= total ? `Change: Ksh ${changeDue.toLocaleString()}` : `Short by Ksh ${(total - tendered).toLocaleString()}`}
+                {!cashTenderedEntered ? 'Enter cash received to enable sale' : tendered >= total ? `Change: Ksh ${changeDue.toLocaleString()}` : `Short by Ksh ${(total - tendered).toLocaleString()}`}
               </div>
             )}
           </div>
@@ -766,36 +777,8 @@ function SalePanel({
           </label>
         )}
 
-        <button
-          type="button"
-          onClick={() => setShowAdvancedCheckout(value => !value)}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50"
-        >
-          {showAdvancedCheckout ? 'Hide options' : 'More options'}
-          <ArrowRight size={14} className={`transition-transform ${showAdvancedCheckout ? 'rotate-90' : ''}`} />
-        </button>
-
-        {showAdvancedCheckout && (
+        {(paymentMode === 'CREDIT' || paymentMode === 'SPLIT') && (
           <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-3">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setPaymentMode('SPLIT')}
-                data-testid="payment-split"
-                className={`h-11 rounded-xl border text-[10px] font-black uppercase tracking-widest ${paymentMode === 'SPLIT' ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-600'}`}
-              >
-                Split
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentMode('CREDIT')}
-                data-testid="payment-credit"
-                className={`h-11 rounded-xl border text-[10px] font-black uppercase tracking-widest ${paymentMode === 'CREDIT' ? 'border-amber-500 bg-amber-500 text-white' : 'border-slate-200 bg-white text-slate-600'}`}
-              >
-                Credit
-              </button>
-            </div>
-
             {paymentMode === 'CREDIT' && (
               <div className="space-y-2">
                 <select
@@ -883,7 +866,7 @@ function SalePanel({
 
         <button
           onClick={submitCheckout}
-          disabled={cart.length === 0 || checkoutBusy}
+          disabled={!canCompleteSale}
           data-testid="complete-sale"
           className="flex min-h-[3.25rem] w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-4 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -1410,6 +1393,11 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
     [activeBusinessId],
     null
   );
+  const activeBranch = useLiveQuery(
+    () => activeBranchId ? db.branches.get(activeBranchId) : Promise.resolve(undefined),
+    [activeBranchId],
+    undefined
+  );
 
   const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
   const scannerProducts = enrichProductsWithBundleStock(scannerProductsRaw || [], productIngredients || []);
@@ -1482,7 +1470,14 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
       const result = await handleCheckout(status, method, options?.mpesaRef || options?.pdqRef || options?.paymentReference, options?.customerName, options);
       if (result) {
         setIsMobileCheckoutOpen(false);
-        const receipt = { ...result, recordType: 'SALE' as const };
+        const receipt = {
+          ...result,
+          recordType: 'SALE' as const,
+          branchName: activeBranch?.name || result.branchName,
+          tillNumber: activeBranch?.tillNumber || businessSettings?.tillNumber || result.tillNumber,
+          businessAddress: activeBranch?.location || businessSettings?.location || result.businessAddress,
+          receiptFooter: businessSettings?.receiptFooter || result.receiptFooter,
+        };
         setLastReceipt(receipt);
         void maybeAutoPrintReceipt(receipt);
       }

@@ -575,15 +575,25 @@ function escposBytes(text: string, options: { cut?: boolean; drawerPulse?: boole
 export function buildEscPosReceipt(record: any, storeName = 'Mtaani POS', location = 'Nairobi, Kenya') {
   const items = Array.isArray(record?.items) ? record.items : [];
   const ref = cleanText(record?.invoiceNumber || String(record?.id || '').split('-')[0]).toUpperCase() || 'SALE';
+  const createdAt = new Date(record?.timestamp || record?.issueDate || Date.now());
+  const paymentMethod = cleanText(record?.paymentMethod || 'CASH').toUpperCase();
+  const paymentLabel = paymentMethod === 'MPESA' ? 'M-Pesa' : paymentMethod === 'PDQ' ? 'Card' : paymentMethod === 'SPLIT' ? 'Split' : paymentMethod === 'CREDIT' ? 'Credit' : 'Cash';
+  const shiftNumber = record?.shiftId ? cleanText(record.shiftId).replace(/^shift_/, '').slice(-16).toUpperCase() : 'N/A';
+  const tillNumber = cleanText(record?.tillNumber || 'N/A');
+  const address = cleanText(record?.businessAddress || location);
+  const receiptFooter = cleanText(record?.receiptFooter || 'Thank you for shopping');
   const rows: string[] = [
     center(storeName.toUpperCase()),
-    center(location),
+    center(address),
     center(`Branch: ${record?.branchName || 'Main'}`),
-    center(`Cashier: ${record?.cashierName || record?.preparedBy || 'Staff'}`),
     line(),
-    leftRight('SALES RECEIPT', ref),
-    leftRight('Date', new Date(record?.timestamp || Date.now()).toLocaleString('en-KE')),
-    leftRight('Payment', record?.paymentMethod || 'CASH'),
+    leftRight('Receipt', ref),
+    leftRight('Date', createdAt.toLocaleDateString('en-KE')),
+    leftRight('Time', createdAt.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })),
+    leftRight('Payment', paymentLabel),
+    leftRight('Cashier', record?.cashierName || record?.preparedBy || 'Staff'),
+    leftRight('Shift', shiftNumber),
+    leftRight('Till', tillNumber),
     line(),
   ];
 
@@ -611,10 +621,10 @@ export function buildEscPosReceipt(record: any, storeName = 'Mtaani POS', locati
     if (change > 0) rows.push(leftRight('Change', money(change)));
   }
 
-  const mpesaRef = record?.mpesaCode || record?.mpesaReference;
+  const mpesaRef = record?.mpesaCode || record?.mpesaReference || record?.paymentReference;
   if (mpesaRef) rows.push(leftRight('M-Pesa', mpesaRef));
   rows.push(line());
-  rows.push(center('Thank you for shopping'));
+  rows.push(center(receiptFooter));
   rows.push(center('Keep this receipt for returns'));
   return `${rows.join('\n')}\n`;
 }

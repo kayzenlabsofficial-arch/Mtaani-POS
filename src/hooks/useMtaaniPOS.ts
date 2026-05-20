@@ -9,6 +9,14 @@ import { flushOutboxNow } from '../offline/offlineSync';
 import { getCurrentShiftId } from '../utils/shiftSession';
 import { calculateCartTotals, productUnitDiscount } from '../utils/productPricing';
 
+const createOpenShiftId = (branchId: string, userId: string, timestamp = Date.now()) =>
+  `shift_${branchId}_${new Date(timestamp).toISOString().slice(0, 10)}_${userId}_${timestamp}`;
+
+const shiftBelongsToUser = (shift: any, user: any) => {
+  const shiftId = String(shift?.id || '');
+  return shift?.cashierName === user?.name || (user?.id && shiftId.includes(`_${user.id}_`));
+};
+
 export function useMtaaniPOS() {
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'HR' | 'REPORTS' | 'ADMIN_PANEL'>('REGISTER');
   const activeTabRef = useRef(activeTab);
@@ -48,6 +56,49 @@ export function useMtaaniPOS() {
   const [loginError, setLoginError] = useState("");
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const ensuredShiftKeyRef = useRef<string | null>(null);
+
+  const ensureCashierOpenShift = async (user: any, businessId?: string | null, branchId?: string | null) => {
+    if (!user || user.role !== 'CASHIER' || !businessId || !branchId) return null;
+
+    const openShifts = await db.shifts
+      .where('branchId')
+      .equals(branchId)
+      .and(shift => shift.businessId === businessId && shift.status === 'OPEN' && shiftBelongsToUser(shift, user))
+      .toArray();
+    const existingShift = openShifts.sort((a, b) => Number(b.startTime || 0) - Number(a.startTime || 0))[0];
+    if (existingShift) {
+      return { ...existingShift, cashierId: user.id };
+    }
+
+    const now = Date.now();
+    const shift = {
+      id: createOpenShiftId(branchId, user.id, now),
+      startTime: now,
+      cashierId: user.id,
+      cashierName: user.name || 'Cashier',
+      status: 'OPEN' as const,
+      branchId,
+      businessId,
+      lastSyncAt: now,
+      updated_at: now,
+    };
+    await db.shifts.add(shift as any);
+    await db.shifts.reload().catch(() => {});
+    return shift;
+  };
+
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== 'CASHIER' || !activeBusinessId || !activeBranchId) return;
+    const key = `${activeBusinessId}:${activeBranchId}:${currentUser.id}`;
+    if (ensuredShiftKeyRef.current === key) return;
+    ensuredShiftKeyRef.current = key;
+    ensureCashierOpenShift(currentUser, activeBusinessId, activeBranchId)
+      .then(shift => {
+        if (shift) setActiveShift(shift);
+      })
+      .catch((err) => console.warn('Could not prepare cashier shift', err));
+  }, [currentUser?.id, currentUser?.role, currentUser?.name, activeBusinessId, activeBranchId]);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -131,6 +182,11 @@ export function useMtaaniPOS() {
       }
       await new Promise(r => setTimeout(r, 0));
       login(authData.user, authData.token || null);
+      const loginShift = await ensureCashierOpenShift(authData.user, authData.businessId, authData.branchId).catch((err) => {
+        console.warn('Could not prepare cashier shift', err);
+        return null;
+      });
+      if (loginShift) setActiveShift(loginShift);
       setPassword('');
       success(`Welcome back, ${authData.user?.name || 'there'}!`);
     } catch (err: any) {
@@ -297,7 +353,11 @@ export function useMtaaniPOS() {
       const paymentReference = mpesaRef || checkoutData.mpesaRef || checkoutData.pdqRef || checkoutData.paymentReference;
       const mpesaPaymentCode = method === 'MPESA' || splitPayments?.secondaryMethod === 'MPESA' ? paymentReference : undefined;
       const transactionId = crypto.randomUUID();
-      const shiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser!.id);
+      const checkoutShift = currentUser?.role === 'CASHIER'
+        ? await ensureCashierOpenShift(currentUser, activeBusinessId, activeBranchId).catch(() => activeShift)
+        : activeShift;
+      if (checkoutShift && checkoutShift.id !== activeShift?.id) setActiveShift(checkoutShift);
+      const shiftId = getCurrentShiftId(checkoutShift || activeShift, activeBranchId, currentUser!.id);
       const newTransaction: Transaction = {
         id: transactionId,
         items: cart.map(item => ({

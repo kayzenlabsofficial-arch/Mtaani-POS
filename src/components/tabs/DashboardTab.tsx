@@ -268,6 +268,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       : Promise.resolve([]),
     [activeBusinessId, activeBranchId], []
   );
+  const branchShifts = useLiveQuery(
+    () => activeBusinessId && activeBranchId
+      ? db.shifts.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeBranchId], []
+  );
   const branchDailySummaries = useLiveQuery(
     () => activeBusinessId && activeBranchId
       ? db.dailySummaries.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
@@ -501,32 +507,66 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     };
   };
 
+  const rowActualCash = (expectedCash: number, totalPicks: number) => Math.max(0, expectedCash - totalPicks);
   const closedShiftRows = (branchReports || [])
     .filter(report => Number(report.timestamp || 0) >= todayStart)
     .sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0))
-    .map((report, index) => ({
-      id: report.id,
-      shiftId: report.shiftId || report.id,
-      label: `Shift ${index + 1}`,
-      status: 'Closed',
-      cashierName: report.cashierName || 'Staff',
-      startTime: undefined as number | undefined,
-      endTime: Number(report.timestamp || 0),
-      totalSales: Number(report.totalSales || 0),
-      cashSales: Number(report.cashSales || 0),
-      mpesaSales: Number(report.mpesaSales || 0),
-      pdqSales: Number(report.pdqSales || 0),
-      totalExpenses: Number(report.totalExpenses || 0),
-      supplierPaymentsTotal: Number(report.supplierPaymentsTotal || 0),
-      totalPicks: Number(report.totalPicks || 0),
-      expectedCash: Number(report.expectedCash || 0),
-      difference: Number(report.difference || 0),
-    }));
+    .map((report, index) => {
+      const totalPicks = Number(report.totalPicks || 0);
+      const expectedCash = Number(report.expectedCash || 0);
+      return {
+        id: report.id,
+        shiftId: report.shiftId || report.id,
+        label: `Shift ${index + 1}`,
+        status: 'Closed',
+        cashierName: report.cashierName || 'Staff',
+        startTime: undefined as number | undefined,
+        endTime: Number(report.timestamp || 0),
+        totalSales: Number(report.totalSales || 0),
+        cashSales: Number(report.cashSales || 0),
+        mpesaSales: Number(report.mpesaSales || 0),
+        pdqSales: Number(report.pdqSales || 0),
+        totalExpenses: Number(report.totalExpenses || 0),
+        supplierPaymentsTotal: Number(report.supplierPaymentsTotal || 0),
+        totalPicks,
+        expectedCash,
+        actualCashDrawer: rowActualCash(expectedCash, totalPicks),
+        difference: Number(report.difference || 0),
+      };
+    });
+  const closedShiftIds = new Set(closedShiftRows.map(row => row.shiftId));
+  const sharedOpenShiftRows = (branchShifts || [])
+    .filter(shift => shift.status === 'OPEN' && !closedShiftIds.has(shift.id))
+    .sort((a, b) => Number(a.startTime || 0) - Number(b.startTime || 0))
+    .map((shift, index) => {
+      const stats = getClosureStats(Number(shift.startTime || todayStart), Date.now(), shift.id);
+      return {
+        id: shift.id,
+        shiftId: shift.id,
+        label: `Open ${index + 1}`,
+        status: 'Open',
+        cashierName: shift.cashierName || 'Staff',
+        startTime: Number(shift.startTime || todayStart),
+        endTime: undefined as number | undefined,
+        totalSales: stats.totalSales,
+        cashSales: stats.cashSales,
+        mpesaSales: stats.mpesaSales,
+        pdqSales: stats.pdqSales,
+        totalExpenses: stats.totalExpenses,
+        supplierPaymentsTotal: stats.supplierPaymentsTotal,
+        totalPicks: stats.totalPicks,
+        expectedCash: stats.expectedCash,
+        actualCashDrawer: rowActualCash(stats.expectedCash, stats.totalPicks),
+        difference: stats.cashierVariance,
+      };
+    });
   const openShiftStats = currentShiftId ? getClosureStats(currentShiftStart, Date.now(), currentShiftId) : null;
   const hasClosedCurrentShift = currentShiftId && closedShiftRows.some(row => row.shiftId === currentShiftId);
+  const hasSharedCurrentShift = currentShiftId && sharedOpenShiftRows.some(row => row.shiftId === currentShiftId);
   const adminShiftRows = [
     ...closedShiftRows,
-    ...(openShiftStats && !hasClosedCurrentShift ? [{
+    ...sharedOpenShiftRows,
+    ...(openShiftStats && !hasClosedCurrentShift && !hasSharedCurrentShift ? [{
       id: currentShiftId || 'current-shift',
       shiftId: currentShiftId || 'current-shift',
       label: 'Current shift',
@@ -542,6 +582,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       supplierPaymentsTotal: openShiftStats.supplierPaymentsTotal,
       totalPicks: openShiftStats.totalPicks,
       expectedCash: openShiftStats.expectedCash,
+      actualCashDrawer: rowActualCash(openShiftStats.expectedCash, openShiftStats.totalPicks),
       difference: openShiftStats.cashierVariance,
     }] : []),
   ];
@@ -554,6 +595,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     supplierPaymentsTotal: totals.supplierPaymentsTotal + row.supplierPaymentsTotal,
     totalPicks: totals.totalPicks + row.totalPicks,
     expectedCash: totals.expectedCash + row.expectedCash,
+    actualCashDrawer: totals.actualCashDrawer + row.actualCashDrawer,
     difference: totals.difference + row.difference,
   }), {
     totalSales: 0,
@@ -564,6 +606,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     supplierPaymentsTotal: 0,
     totalPicks: 0,
     expectedCash: 0,
+    actualCashDrawer: 0,
     difference: 0,
   });
 
@@ -1001,13 +1044,13 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Admin shift control</p>
             <h3 className="mt-1 text-base font-black text-slate-900">All shifts today</h3>
-            <p className="mt-1 text-[11px] font-bold text-slate-500">Closed shifts plus the current open shift.</p>
+            <p className="mt-1 text-[11px] font-bold text-slate-500">Closed shifts plus every cashier open shift.</p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:min-w-[560px]">
             {[
               { label: 'Total sales', value: adminShiftTotals.totalSales, tone: 'text-slate-900' },
               { label: 'Cash sales', value: adminShiftTotals.cashSales, tone: 'text-emerald-700' },
-              { label: 'Actual drawer', value: actualCashDrawer, tone: 'text-blue-700' },
+              { label: 'Actual drawer', value: adminShiftTotals.actualCashDrawer, tone: 'text-blue-700' },
               { label: 'Variance', value: adminShiftTotals.difference, tone: adminShiftTotals.difference < 0 ? 'text-rose-700' : 'text-slate-900' },
             ].map(item => (
               <div key={item.label} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">

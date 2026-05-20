@@ -4,7 +4,7 @@ import {
   Landmark, Scale, Calendar, ChevronRight, ArrowUpRight, 
   ArrowDownRight, CreditCard, Share2, Loader2, TrendingUp,
   Target, Info, Search, Box, PieChart as PieIcon, Layers,
-  Users, Clock, ShoppingBag, ShieldAlert, Download, FileText, ChevronDown
+  Users, Clock, ShoppingBag, ShieldAlert, Download, FileText, ChevronDown, X
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
@@ -964,6 +964,36 @@ export default function ReportsTab() {
           <StatCard title="Expense share" value={((totalExpenseAmount / (totalRevenue || 1)) * 100)} unit="%" icon={<Activity size={24}/>} color="amber" subtitle="Expenses compared to sales" />
         </div>
 
+        <section className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-8 border-2 border-slate-100 shadow-sm">
+          <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="font-bold text-slate-900 text-lg flex items-center gap-3">
+              <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center"> <Scale size={20} /> </div>
+              Profit vs expenses
+            </h3>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{periodLabel}</span>
+          </div>
+          <div ref={profitExpenseChartRef} className="h-[340px] w-full min-w-0">
+            {profitExpenseChartSize.width > 0 && profitExpenseChartSize.height > 0 && (
+              <ComposedChart width={profitExpenseChartSize.width} height={profitExpenseChartSize.height} data={profitExpenseTrendData}>
+                <defs>
+                  <linearGradient id="profitLineGlow" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 900}} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 900}} tickFormatter={(v) => `Ksh ${Math.abs(Number(v)) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : v}`} />
+                <Tooltip contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', fontWeight: 900 }} />
+                <Legend wrapperStyle={{ fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }} />
+                <Bar dataKey="expenses" name="Expenses" barSize={24} fill="#f59e0b" radius={[8, 8, 0, 0]} />
+                <Area type="monotone" dataKey="profit" name="Net profit" stroke="#10b981" strokeWidth={4} fill="url(#profitLineGlow)" />
+                <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#6366f1" strokeWidth={3} dot={false} />
+              </ComposedChart>
+            )}
+          </div>
+        </section>
+
         {/* Primary Analytical Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white rounded-[2.5rem] p-8 border-2 border-slate-100 shadow-sm relative overflow-hidden group">
@@ -1070,6 +1100,52 @@ export default function ReportsTab() {
           </section>
         </div>
 
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <section className="bg-white rounded-[2.5rem] p-8 border-2 border-slate-100 shadow-sm">
+            <h3 className="font-bold text-slate-900 text-lg flex items-center gap-3 mb-8">
+              <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center"> <Clock size={20} /> </div>
+              Sales by hour
+            </h3>
+            <div ref={hourlyChartRef} className="h-[300px] w-full min-w-0">
+              {hourlyChartSize.width > 0 && hourlyChartSize.height > 0 && (
+                <BarChart width={hourlyChartSize.width} height={hourlyChartSize.height} data={hourlySalesData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" interval={2} axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 900}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 900}} tickFormatter={(v) => `Ksh ${Number(v) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : v}`} />
+                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: 900 }} />
+                  <Bar dataKey="revenue" name="Revenue" fill="#2563eb" radius={[8, 8, 0, 0]} barSize={18} />
+                </BarChart>
+              )}
+            </div>
+          </section>
+
+          <section className="bg-white rounded-[2.5rem] p-8 border-2 border-slate-100 shadow-sm">
+            <h3 className="font-bold text-slate-900 text-lg flex items-center gap-3 mb-8">
+              <div className="w-10 h-10 bg-violet-100 text-violet-600 rounded-xl flex items-center justify-center"> <Users size={20} /> </div>
+              Cashier sales
+            </h3>
+            <div ref={cashierChartRef} className="h-[300px] w-full min-w-0">
+              {cashierChartSize.width > 0 && cashierChartSize.height > 0 && (
+                <BarChart width={cashierChartSize.width} height={cashierChartSize.height} data={cashierChartData} layout="vertical" margin={{ left: 12, right: 20 }}>
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 900}} width={100} />
+                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: 900 }} />
+                  <Bar dataKey="revenue" name="Revenue" fill="#7c3aed" radius={[0, 8, 8, 0]} barSize={22} />
+                </BarChart>
+              )}
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              {cashierChartData.slice(0, 2).map(row => (
+                <div key={row.name} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                  <p className="truncate text-[10px] font-black uppercase tracking-widest text-slate-400">{row.name}</p>
+                  <p className="mt-1 text-sm font-black text-slate-900">Ksh {row.revenue.toLocaleString()}</p>
+                  <p className="text-[10px] font-bold text-slate-500">{row.orders} order{row.orders === 1 ? '' : 's'}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
         {/* Product Performance Sheet */}
         <section className="bg-slate-950 rounded-[2rem] sm:rounded-[3rem] p-4 sm:p-6 lg:p-8 text-white shadow-elevated overflow-hidden">
           <div className="flex flex-col gap-6">
@@ -1106,14 +1182,19 @@ export default function ReportsTab() {
                     </button>
                   ))}
                 </div>
-                {productDateRange === 'MONTHLY' && (
+                <div className="relative w-full xl:w-52">
+                  <Calendar size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input
                     type="month"
                     value={productSelectedMonth}
-                    onChange={e => setProductSelectedMonth(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-white/10 bg-white/10 px-4 text-sm font-black text-white outline-none focus:border-indigo-400 xl:w-52"
+                    onFocus={() => setProductDateRange('MONTHLY')}
+                    onChange={e => {
+                      setProductSelectedMonth(e.target.value);
+                      setProductDateRange('MONTHLY');
+                    }}
+                    className="h-10 w-full rounded-xl border border-white/10 bg-white/10 pl-9 pr-4 text-sm font-black text-white outline-none focus:border-indigo-400"
                   />
-                )}
+                </div>
                 {productDateRange === 'CUSTOM' && (
                   <div className="flex w-full flex-col gap-2 sm:flex-row xl:w-auto">
                     <input
@@ -1168,6 +1249,21 @@ export default function ReportsTab() {
                     className="min-w-0 flex-1 bg-transparent text-sm font-bold text-white outline-none placeholder:text-slate-600"
                   />
                 </div>
+                {selectedProductRows.length > 0 && (
+                  <div className="mt-3 flex max-h-24 flex-wrap gap-2 overflow-y-auto rounded-xl border border-indigo-400/30 bg-indigo-500/10 p-2">
+                    {selectedProductRows.map(row => (
+                      <button
+                        key={row.id}
+                        type="button"
+                        onClick={() => toggleProductSelection(row.id)}
+                        className="flex max-w-full items-center gap-2 rounded-lg bg-white px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-950"
+                      >
+                        <span className="truncate">{row.name}</span>
+                        <X size={12} />
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-3 max-h-44 space-y-1 overflow-y-auto pr-1">
                   {productSelectionOptions.map(row => (
                     <label key={row.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold text-slate-300 transition-colors hover:bg-white/10">
@@ -1191,7 +1287,7 @@ export default function ReportsTab() {
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <Layers size={16} className="text-emerald-300" />
-                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">Groups</p>
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">Categories</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button onClick={() => setSelectedProductGroups([])} className="h-8 rounded-lg bg-white px-3 text-[10px] font-black uppercase tracking-wider text-slate-950">All</button>
@@ -1208,10 +1304,25 @@ export default function ReportsTab() {
                   <input
                     value={productGroupSearch}
                     onChange={e => setProductGroupSearch(e.target.value)}
-                    placeholder="Search groups"
+                    placeholder="Search categories"
                     className="min-w-0 flex-1 bg-transparent text-sm font-bold text-white outline-none placeholder:text-slate-600"
                   />
                 </div>
+                {selectedProductGroups.length > 0 && (
+                  <div className="mt-3 flex max-h-24 flex-wrap gap-2 overflow-y-auto rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-2">
+                    {selectedProductGroups.map(group => (
+                      <button
+                        key={group}
+                        type="button"
+                        onClick={() => toggleProductGroupSelection(group)}
+                        className="flex max-w-full items-center gap-2 rounded-lg bg-white px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-950"
+                      >
+                        <span className="truncate">{group}</span>
+                        <X size={12} />
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-3 max-h-44 space-y-1 overflow-y-auto pr-1">
                   {productGroupOptions.map(group => (
                     <label key={group} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold text-slate-300 transition-colors hover:bg-white/10">
@@ -1226,7 +1337,7 @@ export default function ReportsTab() {
                   ))}
                 </div>
                 <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  {selectedProductGroups.length === 0 ? 'All groups selected' : `${selectedProductGroups.length} selected`}
+                  {selectedProductGroups.length === 0 ? 'All categories selected' : `${selectedProductGroups.length} selected`}
                 </p>
               </div>
 
@@ -1299,7 +1410,7 @@ export default function ReportsTab() {
                     <tr>
                       <th className="border border-slate-300 px-3 py-3">#</th>
                       <th className="border border-slate-300 px-3 py-3">Product</th>
-                      <th className="border border-slate-300 px-3 py-3">Group</th>
+                      <th className="border border-slate-300 px-3 py-3">Category</th>
                       <th className="border border-slate-300 px-3 py-3 text-right">Qty sold</th>
                       <th className="border border-slate-300 px-3 py-3 text-right">Sales</th>
                       <th className="border border-slate-300 px-3 py-3 text-right">VAT</th>
