@@ -34,6 +34,7 @@ type CustomerPaymentLike = {
   amount?: number;
   timestamp?: number;
   paymentMethod?: string;
+  shiftId?: string;
 };
 
 export function getTodayStartMs(now = new Date()): number {
@@ -62,6 +63,7 @@ export function calculateCashDrawer({
   supplierPayments = [],
   customerPayments = [],
   since = getTodayStartMs(),
+  shiftId,
 }: {
   transactions?: TransactionLike[];
   expenses?: ExpenseLike[];
@@ -69,6 +71,7 @@ export function calculateCashDrawer({
   supplierPayments?: SupplierPaymentLike[];
   customerPayments?: CustomerPaymentLike[];
   since?: number;
+  shiftId?: string;
 }): {
   cashSales: number;
   customerCashPayments: number;
@@ -78,23 +81,23 @@ export function calculateCashDrawer({
   actualCashDrawer: number;
 } {
   const cashSales = transactions
-    .filter(t => (t.timestamp || 0) >= since && t.status === 'PAID')
+    .filter(t => recordInShiftCashScope(t, since, shiftId) && t.status === 'PAID')
     .reduce((sum, t) => sum + cashAmountFromTransaction(t), 0);
 
   const tillExpenses = expenses
-    .filter(e => (e.timestamp || 0) >= since && e.source === 'TILL' && e.status !== 'REJECTED')
+    .filter(e => recordInShiftCashScope(e, since, shiftId) && e.source === 'TILL' && e.status !== 'REJECTED')
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
   const picked = cashPicks
-    .filter(p => (p.timestamp || 0) >= since && p.status !== 'REJECTED')
+    .filter(p => recordInShiftCashScope(p, since, shiftId) && p.status !== 'REJECTED')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   const supplierTillPayments = supplierPayments
-    .filter(p => (p.timestamp || 0) >= since && p.source === 'TILL')
+    .filter(p => recordInShiftCashScope(p, since, shiftId) && p.source === 'TILL')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   const customerCashPayments = customerPayments
-    .filter(p => (p.timestamp || 0) >= since && p.paymentMethod === 'CASH')
+    .filter(p => recordInShiftCashScope(p, since, shiftId) && p.paymentMethod === 'CASH')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   return {

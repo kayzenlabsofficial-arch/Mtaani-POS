@@ -5,7 +5,9 @@ export const CashService = {
     amount: number;
     status?: 'PENDING' | 'APPROVED';
     userName?: string;
+    accountId?: string;
     shiftId?: string;
+    shiftStart?: number;
     businessId: string;
     branchId: string;
   }) {

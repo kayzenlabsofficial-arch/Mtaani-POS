@@ -13,6 +13,7 @@ import { getAssignedHardware, getHardwareProfile, printReceiptViaAssignedPrinter
 import { getBusinessSettings } from '../../utils/settings';
 import { belongsToActiveBranch } from '../../utils/branchScope';
 import { expiryBadgeClass, getExpiryInfo } from '../../utils/expiry';
+import { calculateCartTotals, productDiscountLabel, productSalePrice, productUnitDiscount } from '../../utils/productPricing';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -59,6 +60,8 @@ function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
   const isOut = stock <= 0;
   const isLow = !isOut && stock <= (product.reorderPoint || 5);
   const expiry = getExpiryInfo(product);
+  const salePrice = productSalePrice(product);
+  const discountLabel = productDiscountLabel(product);
   const initials = product.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
   const color = colorFor(product.name);
 
@@ -109,8 +112,11 @@ function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
           </div>
           <div className="text-right">
             <p className="text-[13px] sm:text-base font-black text-slate-900 tabular-nums whitespace-nowrap">
-              Ksh {product.sellingPrice?.toLocaleString()}
+              Ksh {salePrice.toLocaleString()}
             </p>
+            {discountLabel && (
+              <p className="hidden sm:block text-[9px] font-black uppercase text-rose-500">{discountLabel}</p>
+            )}
             <p className={`text-[9px] font-black uppercase sm:hidden ${isOut ? 'text-rose-500' : isLow ? 'text-amber-600' : 'text-emerald-600'}`}>
               {isOut ? 'Out' : `${stock} left`}
             </p>
@@ -139,7 +145,9 @@ interface CartLineItemProps {
 function CartLineItem({ item, onRemove, onDecrease, onIncrease, onQuantityChange, compact = false }: CartLineItemProps) {
   const quantity = Number(item.cartQuantity) || 0;
   const unitPrice = Number(item.sellingPrice) || 0;
-  const lineTotal = unitPrice * quantity;
+  const unitDiscount = productUnitDiscount(item);
+  const unitSalePrice = productSalePrice(item);
+  const lineTotal = unitSalePrice * quantity;
   const initials = item.name.split(' ').map((word: string) => word[0]).join('').slice(0, 2).toUpperCase();
 
   return (
@@ -152,7 +160,8 @@ function CartLineItem({ item, onRemove, onDecrease, onIncrease, onQuantityChange
           <div className="stable-row-copy">
             <p className={`${compact ? 'text-[13px]' : 'text-sm sm:text-base'} stable-title-2 font-black leading-tight text-slate-900`}>{item.name}</p>
             <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              <span className="flex-shrink-0">Ksh {unitPrice.toLocaleString()} each</span>
+              <span className="flex-shrink-0">Ksh {unitSalePrice.toLocaleString()} each</span>
+              {unitDiscount > 0 && <span className="flex-shrink-0 text-rose-500">was Ksh {unitPrice.toLocaleString()}</span>}
               {item.unit && <span className="flex-shrink-0">{item.unit}</span>}
             </div>
           </div>
@@ -210,7 +219,7 @@ type CheckoutOptions = {
   subtotal?: number;
   total?: number;
   discountAmount?: number;
-  discountType?: 'FIXED' | 'PERCENT';
+  discountType?: 'FIXED' | 'PERCENT' | 'PRODUCT';
   amountTendered?: number;
   changeGiven?: number;
   mpesaRef?: string;
@@ -249,8 +258,6 @@ function SalePanel({
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT'>('CASH');
   const [paymentWindow, setPaymentWindow] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT' | null>(null);
   const [showAdvancedCheckout, setShowAdvancedCheckout] = useState(false);
-  const [discountType, setDiscountType] = useState<'FIXED' | 'PERCENT'>('FIXED');
-  const [discountValue, setDiscountValue] = useState('');
   const [cashTendered, setCashTendered] = useState('');
   const [mpesaRef, setMpesaRef] = useState('');
   const [mpesaPhone, setMpesaPhone] = useState('');
@@ -272,16 +279,12 @@ function SalePanel({
     []
   );
 
-  const subtotal = cart.reduce((sum, item) => sum + ((Number(item.sellingPrice) || 0) * (Number(item.cartQuantity) || 0)), 0);
+  const { subtotal, discountAmount, total } = calculateCartTotals(cart);
+  const discountType = 'PRODUCT' as const;
+  const discountValue = '';
+  const setDiscountType = (_value: 'FIXED' | 'PERCENT') => {};
+  const setDiscountValue = (_value: string) => {};
   const itemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
-  const rawDiscount = Number(discountValue) || 0;
-  const discountAmount = Math.min(
-    subtotal,
-    discountType === 'PERCENT'
-      ? subtotal * Math.min(Math.max(rawDiscount, 0), 100) / 100
-      : Math.max(rawDiscount, 0)
-  );
-  const total = Math.max(0, subtotal - discountAmount);
   const tendered = Number(cashTendered) || 0;
   const changeDue = Math.max(0, tendered - total);
   const splitCashAmount = Math.min(Math.max(Number(splitCash) || 0, 0), total);
@@ -306,7 +309,7 @@ function SalePanel({
     subtotal,
     total,
     discountAmount,
-    discountType,
+    discountType: 'PRODUCT',
     customerId: selectedCustomer?.id,
     customerName: selectedCustomer?.name,
   });
@@ -317,7 +320,6 @@ function SalePanel({
       setPaymentMode('CASH');
       setPaymentWindow(null);
       setShowAdvancedCheckout(false);
-      setDiscountValue('');
       setCashTendered('');
       setMpesaRef('');
       setMpesaPhone('');
@@ -775,29 +777,6 @@ function SalePanel({
 
         {showAdvancedCheckout && (
           <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-3">
-            <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-2">
-              <label className="relative min-w-0">
-                <Percent className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="number"
-                  min="0"
-                  value={discountValue}
-                  onChange={(event) => setDiscountValue(event.target.value)}
-                  placeholder="Discount"
-                  data-testid="checkout-discount"
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                />
-              </label>
-              <select
-                value={discountType}
-                onChange={(event) => setDiscountType(event.target.value as 'FIXED' | 'PERCENT')}
-                className="h-11 rounded-xl border border-slate-200 bg-white px-2 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-              >
-                <option value="FIXED">Ksh</option>
-                <option value="PERCENT">%</option>
-              </select>
-            </div>
-
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -1516,7 +1495,7 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
     }
   };
 
-  const saleTotal = cart.reduce((sum, item) => sum + ((Number(item.sellingPrice) || 0) * (Number(item.cartQuantity) || 0)), 0);
+  const saleTotal = calculateCartTotals(cart).total;
   const saleItemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
   const selectedProductCount = cart.length;
   const selectedProductLabel = selectedProductCount === 1 ? 'product selected for sale' : 'products selected for sale';

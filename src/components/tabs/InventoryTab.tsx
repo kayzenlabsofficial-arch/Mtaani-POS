@@ -12,6 +12,7 @@ import { belongsToActiveBranch } from '../../utils/branchScope';
 import { StockService } from '../../services/stock';
 import { ProductService } from '../../services/products';
 import { dateInputToExpiryMs, expiryBadgeClass, expiryMsToDateInput, formatExpiryDate, getExpiryInfo } from '../../utils/expiry';
+import { normaliseDiscountType, productDiscountLabel, productSalePrice } from '../../utils/productPricing';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -74,6 +75,8 @@ export default function InventoryTab() {
     category: 'General',
     sellingPrice: '',
     costPrice: '',
+    discountType: 'NONE' as 'NONE' | 'FIXED' | 'PERCENT',
+    discountValue: '',
     stockQuantity: '',
     unit: 'pcs',
     barcode: '',
@@ -186,6 +189,8 @@ export default function InventoryTab() {
       category: product?.category || selectedCategory || 'General',
       sellingPrice: product?.sellingPrice ? String(product.sellingPrice) : '',
       costPrice: (product as any)?.costPrice ? String((product as any).costPrice) : '',
+      discountType: normaliseDiscountType((product as any)?.discountType),
+      discountValue: (product as any)?.discountValue ? String((product as any).discountValue) : '',
       stockQuantity: product?.stockQuantity !== undefined ? String(product.stockQuantity) : '0',
       unit: product?.unit || 'pcs',
       barcode: product?.barcode || '',
@@ -228,6 +233,8 @@ export default function InventoryTab() {
       category: productForm.category.trim() || 'General',
       sellingPrice: Number(productForm.sellingPrice) || 0,
       costPrice: Number(productForm.costPrice) || 0,
+      discountType: productForm.discountType,
+      discountValue: productForm.discountType === 'NONE' ? 0 : Number(productForm.discountValue) || 0,
       taxCategory: productForm.taxCategory,
       stockQuantity: productForm.isBundle ? 0 : Number(productForm.stockQuantity) || 0,
       unit: productForm.unit.trim() || 'pcs',
@@ -555,7 +562,10 @@ export default function InventoryTab() {
 
                 {/* Price */}
                 <div className="text-right stable-actions">
-                  <p className="text-[13px] font-black text-slate-900 tabular-nums whitespace-nowrap">Ksh {product.sellingPrice?.toLocaleString()}</p>
+                  <p className="text-[13px] font-black text-slate-900 tabular-nums whitespace-nowrap">Ksh {productSalePrice(product).toLocaleString()}</p>
+                  {productDiscountLabel(product) && (
+                    <p className="hidden sm:block text-[9px] font-black text-rose-500 whitespace-nowrap">{productDiscountLabel(product)}</p>
+                  )}
                   {product.costPrice && (
                     <p className="hidden sm:block text-[9px] font-medium text-slate-400 whitespace-nowrap">Cost: Ksh {product.costPrice.toLocaleString()}</p>
                   )}
@@ -614,6 +624,8 @@ export default function InventoryTab() {
               {/* Details grid */}
               {[
                 { label: 'Selling price', value: `Ksh ${selectedProduct.sellingPrice?.toLocaleString()}` },
+                { label: 'Register price', value: `Ksh ${productSalePrice(selectedProduct).toLocaleString()}` },
+                { label: 'Discount', value: productDiscountLabel(selectedProduct) || 'None' },
                 { label: 'Cost price', value: selectedProduct.costPrice ? `Ksh ${selectedProduct.costPrice.toLocaleString()}` : '—' },
                 { label: isBundleProduct(selectedProduct) ? 'Available from ingredients' : 'Stock qty', value: `${selectedProduct.stockQuantity || 0} ${selectedProduct.unit || 'pcs'}` },
                 { label: 'Reorder point', value: selectedProduct.reorderPoint || 5 },
@@ -777,6 +789,31 @@ export default function InventoryTab() {
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Cost price</label>
                 <input type="number" value={productForm.costPrice} onChange={e => setProductForm({ ...productForm, costPrice: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Register discount</label>
+                <select
+                  value={productForm.discountType}
+                  onChange={e => setProductForm({ ...productForm, discountType: e.target.value as any, discountValue: e.target.value === 'NONE' ? '' : productForm.discountValue })}
+                  className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none"
+                >
+                  <option value="NONE">No discount</option>
+                  <option value="FIXED">Ksh off</option>
+                  <option value="PERCENT">Percent off</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Discount value</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={productForm.discountValue}
+                  disabled={productForm.discountType === 'NONE'}
+                  onChange={e => setProductForm({ ...productForm, discountValue: e.target.value })}
+                  className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none disabled:text-slate-400"
+                  placeholder={productForm.discountType === 'PERCENT' ? '0 - 100' : '0'}
+                />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{editingProduct ? 'Current stock' : 'Opening stock'}</label>

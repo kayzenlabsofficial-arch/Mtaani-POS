@@ -45,6 +45,8 @@ async function ensureSchema(db: D1Database) {
       category TEXT NOT NULL,
       sellingPrice REAL NOT NULL,
       costPrice REAL,
+      discountType TEXT DEFAULT 'NONE',
+      discountValue REAL DEFAULT 0,
       taxCategory TEXT NOT NULL,
       stockQuantity REAL NOT NULL,
       unit TEXT,
@@ -104,6 +106,8 @@ async function ensureSchema(db: D1Database) {
 
   const productColumns = [
     'costPrice REAL',
+    "discountType TEXT DEFAULT 'NONE'",
+    'discountValue REAL DEFAULT 0',
     "taxCategory TEXT DEFAULT 'A'",
     'unit TEXT',
     'imageUrl TEXT',
@@ -200,6 +204,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       category: trimText(productInput.category, 120) || 'General',
       sellingPrice: roundMoney(Math.max(0, asNumber(productInput.sellingPrice))),
       costPrice: roundMoney(Math.max(0, asNumber(productInput.costPrice))),
+      discountType: ['FIXED', 'PERCENT'].includes(String(productInput.discountType || '').toUpperCase()) ? String(productInput.discountType).toUpperCase() : 'NONE',
+      discountValue: roundMoney(Math.max(0, asNumber(productInput.discountValue))),
       taxCategory: ['A', 'C', 'E'].includes(String(productInput.taxCategory || '').toUpperCase()) ? String(productInput.taxCategory).toUpperCase() : 'A',
       stockQuantity: isBundle ? 0 : existing ? asNumber(existing.stockQuantity) : Math.max(0, asNumber(productInput.stockQuantity)),
       unit: trimText(productInput.unit, 24) || 'pcs',
@@ -216,14 +222,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(`
-        INSERT OR REPLACE INTO products (id, name, category, sellingPrice, costPrice, taxCategory, stockQuantity, unit, barcode, reorderPoint, expiryTracking, expiryDate, isBundle, components, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO products (id, name, category, sellingPrice, costPrice, discountType, discountValue, taxCategory, stockQuantity, unit, barcode, reorderPoint, expiryTracking, expiryDate, isBundle, components, businessId, branchId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         product.id,
         product.name,
         product.category,
         product.sellingPrice,
         product.costPrice,
+        product.discountType,
+        product.discountValue,
         product.taxCategory,
         product.stockQuantity,
         product.unit,

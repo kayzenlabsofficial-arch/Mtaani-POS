@@ -6,8 +6,8 @@ import { useToast } from '../../context/ToastContext';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { canUseOwnerMode, getCashDrawerLimit, isOwnerCashSweepEnabled, isOwnerModeEnabled, shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
-import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
-import { getCurrentShiftId } from '../../utils/shiftSession';
+import { calculateCashDrawer, calculateShiftCashFromSales, getTodayStartMs } from '../../utils/cashDrawer';
+import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSession';
 import { getBusinessSettings } from '../../utils/settings';
 import { belongsToActiveBranch } from '../../utils/branchScope';
 import { CashService, ClosingService } from '../../services/operations';
@@ -191,6 +191,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const activeShift = useStore(state => state.activeShift);
   const setActiveShift = useStore(state => state.setActiveShift);
   const { success, error, warning } = useToast();
+  const isCashier = currentUser?.role === 'CASHIER';
+  const canSeeSalesData = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER' || currentUser?.role === 'ROOT';
 
   React.useEffect(() => {
     const element = chartRef.current;
@@ -373,15 +375,27 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const ownerModeActive = canUseOwnerMode(currentUser) && isOwnerModeEnabled(businessSettings);
   const cashSweepActive = ownerModeActive && isOwnerCashSweepEnabled(businessSettings);
   const cashDrawerLimit = getCashDrawerLimit(businessSettings);
+  const currentShiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser?.id);
+  const currentShiftStart = getCurrentShiftStart(activeShift, getTodayStartMs());
 
-  const actualCashDrawer = Math.max(0, calculateCashDrawer({
+  const drawerBreakdown = calculateCashDrawer({
     transactions: branchTransactions || [],
     expenses: branchExpenses || [],
     cashPicks: branchCashPicks || [],
     supplierPayments: branchSupplierPayments || [],
     customerPayments: branchCustomerPayments || [],
-    since: getTodayStartMs(),
-  }).actualCashDrawer);
+    since: currentShiftStart,
+    shiftId: currentShiftId,
+  });
+  const actualCashDrawer = Math.max(0, drawerBreakdown.actualCashDrawer);
+  const cashPickAvailable = calculateShiftCashFromSales({
+    transactions: branchTransactions || [],
+    expenses: branchExpenses || [],
+    cashPicks: branchCashPicks || [],
+    supplierPayments: branchSupplierPayments || [],
+    since: currentShiftStart,
+    shiftId: currentShiftId,
+  }).availableCashSales;
   const sweepAmount = Math.max(0, actualCashDrawer - cashDrawerLimit);
   const shouldSweepCash = cashSweepActive && actualCashDrawer > cashDrawerLimit && sweepAmount > 0;
   const cashPickValue = Number(cashPickAmount) || 0;
@@ -394,7 +408,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         amount: sweepAmount,
         status: 'APPROVED',
         userName: currentUser.name,
-        shiftId: getCurrentShiftId(activeShift, activeBranchId, currentUser.id),
+        shiftId: currentShiftId,
+        shiftStart: currentShiftStart,
         branchId: activeBranchId,
         businessId: activeBusinessId,
       });
@@ -410,7 +425,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const handleCreateCashPick = async () => {
     if (!activeBranchId || !activeBusinessId || !currentUser || isPickingCash) return;
     if (cashPickValue <= 0) return warning('Enter the cash amount to pick.');
-    if (cashPickValue > actualCashDrawer) return error(`Only Ksh ${actualCashDrawer.toLocaleString()} is available in the drawer.`);
+    if (cashPickValue > cashPickAvailable) {
+      return error(canSeeSalesData
+        ? `Only Ksh ${cashPickAvailable.toLocaleString()} cash sales are available in this shift.`
+        : 'Cash pick amount is above the shift limit.'
+      );
+    }
 
     setIsPickingCash(true);
     try {
@@ -419,7 +439,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         amount: cashPickValue,
         status,
         userName: currentUser.name,
-        shiftId: getCurrentShiftId(activeShift, activeBranchId, currentUser.id),
+        shiftId: currentShiftId,
+        shiftStart: currentShiftStart,
         branchId: activeBranchId,
         businessId: activeBusinessId,
       });
@@ -431,7 +452,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         : `Cash pick request for Ksh ${cashPickValue.toLocaleString()} sent for approval.`
       );
     } catch (err: any) {
-      error(err.message || 'Could not record cash pick.');
+      error(isCashier ? 'Could not record cash pick. Check the amount and try again.' : (err.message || 'Could not record cash pick.'));
     } finally {
       setIsPickingCash(false);
     }
@@ -479,6 +500,72 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       cashierVariance,
     };
   };
+
+  const closedShiftRows = (branchReports || [])
+    .filter(report => Number(report.timestamp || 0) >= todayStart)
+    .sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0))
+    .map((report, index) => ({
+      id: report.id,
+      shiftId: report.shiftId || report.id,
+      label: `Shift ${index + 1}`,
+      status: 'Closed',
+      cashierName: report.cashierName || 'Staff',
+      startTime: undefined as number | undefined,
+      endTime: Number(report.timestamp || 0),
+      totalSales: Number(report.totalSales || 0),
+      cashSales: Number(report.cashSales || 0),
+      mpesaSales: Number(report.mpesaSales || 0),
+      pdqSales: Number(report.pdqSales || 0),
+      totalExpenses: Number(report.totalExpenses || 0),
+      supplierPaymentsTotal: Number(report.supplierPaymentsTotal || 0),
+      totalPicks: Number(report.totalPicks || 0),
+      expectedCash: Number(report.expectedCash || 0),
+      difference: Number(report.difference || 0),
+    }));
+  const openShiftStats = currentShiftId ? getClosureStats(currentShiftStart, Date.now(), currentShiftId) : null;
+  const hasClosedCurrentShift = currentShiftId && closedShiftRows.some(row => row.shiftId === currentShiftId);
+  const adminShiftRows = [
+    ...closedShiftRows,
+    ...(openShiftStats && !hasClosedCurrentShift ? [{
+      id: currentShiftId || 'current-shift',
+      shiftId: currentShiftId || 'current-shift',
+      label: 'Current shift',
+      status: 'Open',
+      cashierName: activeShift?.cashierName || currentUser?.name || 'Staff',
+      startTime: currentShiftStart,
+      endTime: undefined as number | undefined,
+      totalSales: openShiftStats.totalSales,
+      cashSales: openShiftStats.cashSales,
+      mpesaSales: openShiftStats.mpesaSales,
+      pdqSales: openShiftStats.pdqSales,
+      totalExpenses: openShiftStats.totalExpenses,
+      supplierPaymentsTotal: openShiftStats.supplierPaymentsTotal,
+      totalPicks: openShiftStats.totalPicks,
+      expectedCash: openShiftStats.expectedCash,
+      difference: openShiftStats.cashierVariance,
+    }] : []),
+  ];
+  const adminShiftTotals = adminShiftRows.reduce((totals, row) => ({
+    totalSales: totals.totalSales + row.totalSales,
+    cashSales: totals.cashSales + row.cashSales,
+    mpesaSales: totals.mpesaSales + row.mpesaSales,
+    pdqSales: totals.pdqSales + row.pdqSales,
+    totalExpenses: totals.totalExpenses + row.totalExpenses,
+    supplierPaymentsTotal: totals.supplierPaymentsTotal + row.supplierPaymentsTotal,
+    totalPicks: totals.totalPicks + row.totalPicks,
+    expectedCash: totals.expectedCash + row.expectedCash,
+    difference: totals.difference + row.difference,
+  }), {
+    totalSales: 0,
+    cashSales: 0,
+    mpesaSales: 0,
+    pdqSales: 0,
+    totalExpenses: 0,
+    supplierPaymentsTotal: 0,
+    totalPicks: 0,
+    expectedCash: 0,
+    difference: 0,
+  });
 
   const handleCloseShift = () => {
     if (!activeBranchId || !activeBusinessId || !currentUser || isClosingShift) return;
@@ -626,14 +713,14 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
   const quickActions = [
     { id: 'REGISTER', label: 'New sale', icon: 'point_of_sale', color: 'bg-primary' },
-    { id: 'REPORTS', label: 'Reports', icon: 'analytics', color: 'bg-violet-600' },
-    { fn: openExpenseModal, label: 'Add expense', icon: 'payments', color: 'bg-rose-600' },
+    ...(canSeeSalesData ? [{ id: 'REPORTS', label: 'Reports', icon: 'analytics', color: 'bg-violet-600' }] : []),
+    ...(!isCashier ? [{ fn: openExpenseModal, label: 'Add expense', icon: 'payments', color: 'bg-rose-600' }] : []),
     { fn: () => setIsCashPickModalOpen(true), label: 'Pick cash', icon: 'payments', color: 'bg-emerald-600' },
     { id: 'REFUNDS', label: 'Refund', icon: 'keyboard_return', color: 'bg-amber-500' },
-    { id: 'CUSTOMERS', label: 'Customers', icon: 'group', color: 'bg-teal-600' },
+    ...(!isCashier ? [{ id: 'CUSTOMERS', label: 'Customers', icon: 'group', color: 'bg-teal-600' }] : []),
     { id: 'INVENTORY', label: 'Inventory', icon: 'inventory_2', color: 'bg-indigo-600' },
     { fn: handleCloseShift, label: 'Close shift', icon: 'assignment_turned_in', color: 'bg-blue-600', busy: isClosingShift },
-    { fn: handleCloseDay, label: 'Close day', icon: 'event_available', color: 'bg-slate-900', busy: isClosingDay },
+    ...(canSeeSalesData ? [{ fn: handleCloseDay, label: 'Close day', icon: 'event_available', color: 'bg-slate-900', busy: isClosingDay }] : []),
   ];
 
   const shiftPreviewStats = shiftClosePreview?.stats;
@@ -643,7 +730,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     : shiftPreviewStats.cashierVariance > 0
       ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
       : 'bg-rose-50 text-rose-700 border-rose-100';
-  const shiftPreviewRows = shiftPreviewStats ? [
+  const shiftPreviewRows = shiftPreviewStats && canSeeSalesData ? [
     { label: 'Total sales', value: money(shiftPreviewStats.totalSales), tone: 'text-slate-900' },
     { label: 'Cash sales', value: money(shiftPreviewStats.cashSales), tone: 'text-emerald-700' },
     { label: 'M-Pesa sales', value: money(shiftPreviewStats.mpesaSales), tone: 'text-green-700' },
@@ -735,8 +822,8 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
             </div>
 
             <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 mb-5">
-              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Cash in drawer</p>
-              <p className="text-2xl font-black text-emerald-900 tabular-nums mt-1">Ksh {actualCashDrawer.toLocaleString()}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">{canSeeSalesData ? 'Available cash sales this shift' : 'Shift cash limit'}</p>
+              <p className="text-2xl font-black text-emerald-900 tabular-nums mt-1">{canSeeSalesData ? `Ksh ${cashPickAvailable.toLocaleString()}` : 'Protected'}</p>
             </div>
 
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Amount to pick</label>
@@ -751,18 +838,20 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 className="min-w-0 flex-1 rounded-2xl border-2 border-transparent bg-slate-50 px-5 py-4 text-sm font-black text-slate-900 outline-none focus:border-emerald-500"
                 autoFocus
               />
-              <button
-                type="button"
-                onClick={() => setCashPickAmount(String(actualCashDrawer))}
-                disabled={actualCashDrawer <= 0}
-                className="rounded-2xl border border-slate-200 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-40"
-              >
-                All
-              </button>
+              {canSeeSalesData && (
+                <button
+                  type="button"
+                  onClick={() => setCashPickAmount(String(cashPickAvailable))}
+                  disabled={cashPickAvailable <= 0}
+                  className="rounded-2xl border border-slate-200 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-40"
+                >
+                  All
+                </button>
+              )}
             </div>
 
-            {cashPickValue > actualCashDrawer && (
-              <p className="mt-2 text-[10px] font-bold text-rose-600">Amount is higher than the available drawer cash.</p>
+            {cashPickValue > cashPickAvailable && (
+              <p className="mt-2 text-[10px] font-bold text-rose-600">Amount is higher than this shift's available cash sales.</p>
             )}
 
             <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)] gap-3 mt-6">
@@ -777,7 +866,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
               <button
                 type="button"
                 onClick={handleCreateCashPick}
-                disabled={isPickingCash || cashPickValue <= 0 || cashPickValue > actualCashDrawer}
+                disabled={isPickingCash || cashPickValue <= 0 || cashPickValue > cashPickAvailable}
                 className="rounded-2xl bg-emerald-600 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-white shadow-emerald transition-all disabled:bg-emerald-100 disabled:text-emerald-500 disabled:shadow-none"
               >
                 {isPickingCash ? 'Saving...' : 'Save cash pick'}
@@ -810,33 +899,40 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 </button>
               </div>
 
-              <div className="rounded-3xl bg-slate-950 text-white p-5 mb-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Shift total</p>
-                    <p className="text-3xl font-black tabular-nums mt-1">{money(shiftPreviewStats.totalSales)}</p>
+              {canSeeSalesData ? (
+                <div className="rounded-3xl bg-slate-950 text-white p-5 mb-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Shift total</p>
+                      <p className="text-3xl font-black tabular-nums mt-1">{money(shiftPreviewStats.totalSales)}</p>
+                    </div>
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white">
+                      {shiftPreviewSaleCount} sale{shiftPreviewSaleCount === 1 ? '' : 's'}
+                    </span>
                   </div>
-                  <span className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white">
-                    {shiftPreviewSaleCount} sale{shiftPreviewSaleCount === 1 ? '' : 's'}
-                  </span>
+                  <div className="grid grid-cols-3 gap-3 mt-5">
+                    <div className="rounded-2xl bg-white/10 p-3">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Receipts</p>
+                      <p className="text-lg font-black">{shiftPreviewStats.txs.length}</p>
+                    </div>
+                    <div className="rounded-2xl bg-white/10 p-3">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Invoices</p>
+                      <p className="text-lg font-black">{shiftPreviewStats.invoices.length}</p>
+                    </div>
+                    <div className="rounded-2xl bg-white/10 p-3">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tax</p>
+                      <p className="text-lg font-black tabular-nums">{money(shiftPreviewStats.taxTotal)}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-3 gap-3 mt-5">
-                  <div className="rounded-2xl bg-white/10 p-3">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Receipts</p>
-                    <p className="text-lg font-black">{shiftPreviewStats.txs.length}</p>
-                  </div>
-                  <div className="rounded-2xl bg-white/10 p-3">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Invoices</p>
-                    <p className="text-lg font-black">{shiftPreviewStats.invoices.length}</p>
-                  </div>
-                  <div className="rounded-2xl bg-white/10 p-3">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tax</p>
-                    <p className="text-lg font-black tabular-nums">{money(shiftPreviewStats.taxTotal)}</p>
-                  </div>
+              ) : (
+                <div className="rounded-3xl bg-slate-950 text-white p-5 mb-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Locked shift report</p>
+                  <p className="mt-2 text-sm font-bold text-white">The system will save this shift using calculated totals. The report cannot be edited after closing.</p>
                 </div>
-              </div>
+              )}
 
-              {shiftPreviewSaleCount === 0 && (
+              {canSeeSalesData && shiftPreviewSaleCount === 0 && (
                 <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 mb-4">
                   <p className="text-[11px] font-bold text-amber-800">No receipts or invoices were found for this shift. You can still close it after reviewing the breakdown.</p>
                 </div>
@@ -857,7 +953,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                 ))}
               </div>
 
-              <div className={`mt-4 rounded-2xl border p-4 ${shiftPreviewVarianceClass}`}>
+              {canSeeSalesData && <div className={`mt-4 rounded-2xl border p-4 ${shiftPreviewVarianceClass}`}>
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest">Cash variance</p>
@@ -865,7 +961,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
                   </div>
                   <p className="text-xl font-black tabular-nums">{money(shiftPreviewStats.cashierVariance)}</p>
                 </div>
-              </div>
+              </div>}
 
               <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)] gap-3 mt-6">
                 <button
@@ -889,6 +985,77 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           </div>
         </div>
       )}
+
+      {!canSeeSalesData && (
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Cashier dashboard</p>
+          <h3 className="mt-1 text-base font-black text-blue-950">Sales totals are locked for admin review.</h3>
+          <p className="mt-2 text-xs font-bold text-blue-800">Use the actions below to pick cash, close the shift, or return to the register.</p>
+        </div>
+      )}
+
+      {canSeeSalesData && (
+      <>
+      <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Admin shift control</p>
+            <h3 className="mt-1 text-base font-black text-slate-900">All shifts today</h3>
+            <p className="mt-1 text-[11px] font-bold text-slate-500">Closed shifts plus the current open shift.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:min-w-[560px]">
+            {[
+              { label: 'Total sales', value: adminShiftTotals.totalSales, tone: 'text-slate-900' },
+              { label: 'Cash sales', value: adminShiftTotals.cashSales, tone: 'text-emerald-700' },
+              { label: 'Actual drawer', value: actualCashDrawer, tone: 'text-blue-700' },
+              { label: 'Variance', value: adminShiftTotals.difference, tone: adminShiftTotals.difference < 0 ? 'text-rose-700' : 'text-slate-900' },
+            ].map(item => (
+              <div key={item.label} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{item.label}</p>
+                <p className={`mt-1 text-sm font-black tabular-nums ${item.tone}`}>{money(item.value)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                <th className="py-2 pr-4">Shift</th>
+                <th className="py-2 pr-4">Cashier</th>
+                <th className="py-2 pr-4 text-right">Total</th>
+                <th className="py-2 pr-4 text-right">Cash</th>
+                <th className="py-2 pr-4 text-right">M-Pesa</th>
+                <th className="py-2 pr-4 text-right">Till paid</th>
+                <th className="py-2 pr-4 text-right">Picked</th>
+                <th className="py-2 text-right">Variance</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {adminShiftRows.map(row => (
+                <tr key={row.id} className="font-bold text-slate-700">
+                  <td className="py-3 pr-4">
+                    <span className="block text-slate-900">{row.label}</span>
+                    <span className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${row.status === 'Open' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{row.status}</span>
+                  </td>
+                  <td className="py-3 pr-4">{row.cashierName}</td>
+                  <td className="py-3 pr-4 text-right tabular-nums">{money(row.totalSales)}</td>
+                  <td className="py-3 pr-4 text-right tabular-nums">{money(row.cashSales)}</td>
+                  <td className="py-3 pr-4 text-right tabular-nums">{money(row.mpesaSales)}</td>
+                  <td className="py-3 pr-4 text-right tabular-nums">{money(row.totalExpenses + row.supplierPaymentsTotal)}</td>
+                  <td className="py-3 pr-4 text-right tabular-nums">{money(row.totalPicks)}</td>
+                  <td className={`py-3 text-right font-black tabular-nums ${row.difference < 0 ? 'text-rose-600' : 'text-slate-900'}`}>{money(row.difference)}</td>
+                </tr>
+              ))}
+              {adminShiftRows.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-[11px] font-bold text-slate-400">No shift activity yet today.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* KPI grid */}
       <div className="grid grid-cols-2 gap-4">
@@ -948,12 +1115,14 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           ))}
         </div>
       </div>
+      </>
+      )}
 
       {/* Main content: Chart + Right Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
         {/* Chart */}
-        <div className="lg:col-span-8 bg-white border border-slate-100 rounded-2xl p-6">
+        {canSeeSalesData && <div className="lg:col-span-8 bg-white border border-slate-100 rounded-2xl p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-base font-black text-slate-900">Sales performance</h3>
@@ -994,10 +1163,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
               <div className="h-full w-full rounded-xl bg-slate-50" />
             )}
           </div>
-        </div>
+        </div>}
 
         {/* Right panel */}
-        <div className="lg:col-span-4 space-y-4">
+        <div className={`${canSeeSalesData ? 'lg:col-span-4' : 'lg:col-span-12'} space-y-4`}>
           
           {/* Quick Actions */}
           <div className="bg-white border border-slate-100 rounded-2xl p-5">
@@ -1050,7 +1219,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       </div>
 
       {/* Recent Transactions */}
-      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+      {canSeeSalesData && <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="text-sm font-black text-slate-900">Recent transactions</h3>
           <button onClick={() => setActiveTab('DOCUMENTS')} className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">View all</button>
@@ -1085,7 +1254,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
     </div>
   );

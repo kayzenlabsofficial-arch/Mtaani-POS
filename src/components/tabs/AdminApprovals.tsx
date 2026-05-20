@@ -165,7 +165,7 @@ export default function AdminApprovals() {
     if (!activeBranchId || !activeBusinessId) return;
     try {
       await CashService.approvePick({ cashPickId: id, businessId: activeBusinessId, branchId: activeBranchId });
-      await db.cashPicks.reload();
+      await Promise.allSettled([db.cashPicks.reload(), db.financialAccounts.reload()]);
       success("Cash deposit confirmed.");
     } catch (err: any) {
       error(err.message || "Cash deposit confirmation failed.");
@@ -367,4 +367,3 @@ export default function AdminApprovals() {
     </div>
   );
 }
-

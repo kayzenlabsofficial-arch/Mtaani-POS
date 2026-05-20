@@ -16,6 +16,8 @@ type ProductRow = {
   category?: string;
   sellingPrice?: number;
   costPrice?: number;
+  discountType?: string;
+  discountValue?: number;
   taxCategory?: string;
   unit?: string;
   isBundle?: number | boolean | string;
@@ -72,6 +74,16 @@ function roundMoney(value: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function productUnitDiscount(product: ProductRow): number {
+  const price = Math.max(0, asNumber(product.sellingPrice));
+  const value = Math.max(0, asNumber(product.discountValue));
+  const type = String(product.discountType || '').toUpperCase();
+  if (price <= 0 || value <= 0) return 0;
+  if (type === 'PERCENT') return roundMoney(Math.min(price, price * Math.min(value, 100) / 100));
+  if (type === 'FIXED') return roundMoney(Math.min(price, value));
+  return 0;
 }
 
 function trimText(value: unknown, max = 160): string | undefined {
@@ -297,6 +309,7 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
         quantity,
         snapshotPrice: roundMoney(asNumber(product.sellingPrice)),
         snapshotCost: roundMoney(asNumber(product.costPrice)),
+        discountAmount: productUnitDiscount(product),
         category: product.category || 'General',
         taxCategory: product.taxCategory || 'A',
         unit: product.unit || undefined,
@@ -312,7 +325,7 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
       return sum + lineTotal;
     }, 0));
     
-    const discountAmount = roundMoney(clamp(asNumber(tx.discountAmount ?? tx.discount), 0, subtotal));
+    const discountAmount = roundMoney(clamp(normalizedItems.reduce((sum, item) => sum + (asNumber((item as any).discountAmount) * item.quantity), 0), 0, subtotal));
     const discountRatio = subtotal > 0 ? (discountAmount / subtotal) : 0;
     const tax = roundMoney(calculatedTax * (1 - discountRatio));
     const total = roundMoney(Math.max(0, subtotal - discountAmount));

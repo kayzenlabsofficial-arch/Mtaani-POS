@@ -48,6 +48,8 @@ export interface Product {
   category: string;
   sellingPrice: number;
   costPrice?: number;
+  discountType?: 'NONE' | 'FIXED' | 'PERCENT' | string;
+  discountValue?: number;
   taxCategory: 'A' | 'C' | 'E';
   stockQuantity: number; // Changed to allow decimals
   unit?: string; // e.g. 'pcs', 'm', 'kg', 'tot'
@@ -77,6 +79,7 @@ export interface TransactionItem {
   name: string;
   snapshotPrice: number;
   snapshotCost?: number;
+  discountAmount?: number;
   quantity: number; // Changed to allow decimals
   unit?: string;
   category?: string;
@@ -130,6 +133,7 @@ export interface CashPick {
   timestamp: number;
   status: 'PENDING' | 'APPROVED';
   userName?: string;
+  accountId?: string;
   branchId: string;
   businessId: string;
   shiftId?: string; // Link to the specific shift session

@@ -78,7 +78,7 @@ export default function MtaaniPOS() {
     description: '',
     amount: '',
     category: 'General',
-    source: 'PETTY_CASH' as 'PETTY_CASH' | 'TILL' | 'ACCOUNT' | 'SHOP',
+    source: 'TILL' as 'PETTY_CASH' | 'TILL' | 'ACCOUNT' | 'SHOP',
     accountId: '',
     financialAccountId: '',
     productId: '',
@@ -108,13 +108,19 @@ export default function MtaaniPOS() {
 
   const handleSaveExpense = async () => {
     if (isSavingExpense) return;
-    const amount = Number(expenseForm.amount);
     if (!currentUser || !activeBusinessId || !activeBranchId) return;
+    const stockExpenseProduct = products?.find(product => product.id === expenseForm.productId);
+    const stockExpenseQty = Number(expenseForm.quantity || 0);
+    const amount = expenseForm.source === 'SHOP'
+      ? Math.round(((Number(stockExpenseProduct?.costPrice) || 0) * stockExpenseQty) * 100) / 100
+      : Number(expenseForm.amount);
     if (amount <= 0) return error("Invalid amount.");
     if (!canPerform(currentUser, 'expense.create')) return error("You do not have permission to create expenses.");
     if (expenseForm.source === 'TILL' && amount > shiftCashAvailable) return error("Insufficient cash sales in this shift.");
     if (expenseForm.source === 'ACCOUNT' && !expenseForm.accountId) return error("Select the account paying this expense.");
     if (expenseForm.source === 'SHOP' && !expenseForm.productId) return error("Select the stock item being expensed.");
+    if (expenseForm.source === 'SHOP' && (!stockExpenseProduct || (Number(stockExpenseProduct.costPrice) || 0) <= 0)) return error("Set the product cost price before expensing stock.");
+    if (expenseForm.source === 'SHOP' && stockExpenseQty > (Number(stockExpenseProduct?.stockQuantity) || 0)) return error("Stock expense quantity exceeds available stock.");
 
     setIsSavingExpense(true);
     try {
@@ -149,7 +155,7 @@ export default function MtaaniPOS() {
         details: `${autoApprove ? 'Auto-approved' : 'Created pending'} expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'General'})`,
       });
       setIsExpenseModalOpen(false);
-      setExpenseForm({ description: '', amount: '', category: 'General', source: 'PETTY_CASH', accountId: '', financialAccountId: '', productId: '', quantity: '1' });
+      setExpenseForm({ description: '', amount: '', category: 'General', source: 'TILL', accountId: '', financialAccountId: '', productId: '', quantity: '1' });
       success(autoApprove ? "Expense logged and approved." : "Expense logged successfully.");
     } catch (err: any) {
       error("Failed to log expense: " + err.message);

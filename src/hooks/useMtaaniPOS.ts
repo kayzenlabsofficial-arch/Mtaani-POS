@@ -7,6 +7,7 @@ import { getProductIngredients, isBundleProduct } from '../utils/bundleInventory
 import { SalesService } from '../services/sales';
 import { flushOutboxNow } from '../offline/offlineSync';
 import { getCurrentShiftId } from '../utils/shiftSession';
+import { calculateCartTotals, productUnitDiscount } from '../utils/productPricing';
 
 export function useMtaaniPOS() {
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'HR' | 'REPORTS' | 'ADMIN_PANEL'>('REGISTER');
@@ -29,7 +30,7 @@ export function useMtaaniPOS() {
   } = useStore();
 
   const { success, error } = useToast();
-  const currentSaleTotal = cart.reduce((sum, item) => sum + ((item.sellingPrice || 0) * (item.cartQuantity || 0)), 0);
+  const currentSaleTotal = calculateCartTotals(cart).total;
   const discountValue = 0;
   const discountType = 'FIXED';
   const setDiscountValue = (_value: number) => {};
@@ -284,9 +285,10 @@ export function useMtaaniPOS() {
       }
 
       const checkoutData = splitData || {};
-      const subtotal = Number(checkoutData.subtotal ?? currentSaleTotal) || 0;
-      const discountAmount = Math.min(subtotal, Math.max(Number(checkoutData.discountAmount) || 0, 0));
-      const finalTotal = Math.max(0, Number(checkoutData.total ?? (subtotal - discountAmount)) || 0);
+      const cartTotals = calculateCartTotals(cart);
+      const subtotal = cartTotals.subtotal;
+      const discountAmount = cartTotals.discountAmount;
+      const finalTotal = cartTotals.total;
       const splitPayments = checkoutData.splitPayments;
       const amountTendered = checkoutData.amountTendered !== undefined ? Number(checkoutData.amountTendered) : undefined;
       const changeGiven = checkoutData.changeGiven !== undefined ? Number(checkoutData.changeGiven) : undefined;
@@ -304,7 +306,8 @@ export function useMtaaniPOS() {
           quantity: item.cartQuantity,
           snapshotPrice: item.sellingPrice,
           snapshotCost: item.costPrice || 0,
-          category: item.category
+          category: item.category,
+          discountAmount: productUnitDiscount(item),
         })),
         subtotal,
         tax: 0,
@@ -328,7 +331,7 @@ export function useMtaaniPOS() {
         customerId: effectiveCustomerId,
         customerName: effectiveCustomerName,
         discount: discountAmount,
-        discountType: checkoutData.discountType || discountType,
+        discountType: discountAmount > 0 ? 'PRODUCT' : discountType,
         isSynced: 0,
         updated_at: Date.now(),
         splitData: Object.keys(checkoutData).length ? checkoutData : undefined

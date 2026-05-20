@@ -95,11 +95,11 @@ function secureJsonHeaders() {
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS businesses (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, isActive INTEGER DEFAULT 1, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL, businessId TEXT, branchId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, sellingPrice REAL NOT NULL, costPrice REAL, taxCategory TEXT NOT NULL, stockQuantity REAL NOT NULL, unit TEXT, barcode TEXT NOT NULL, imageUrl TEXT, reorderPoint REAL, expiryTracking INTEGER DEFAULT 0, expiryDate INTEGER, isBundle INTEGER DEFAULT 0, components TEXT, businessId TEXT, branchId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, sellingPrice REAL NOT NULL, costPrice REAL, discountType TEXT DEFAULT 'NONE', discountValue REAL DEFAULT 0, taxCategory TEXT NOT NULL, stockQuantity REAL NOT NULL, unit TEXT, barcode TEXT NOT NULL, imageUrl TEXT, reorderPoint REAL, expiryTracking INTEGER DEFAULT 0, expiryDate INTEGER, isBundle INTEGER DEFAULT 0, components TEXT, businessId TEXT, branchId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId);
 CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, total REAL NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, discountAmount REAL, discountReason TEXT, items TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, paymentMethod TEXT, amountTendered REAL, changeGiven REAL, mpesaReference TEXT, mpesaCode TEXT, mpesaCustomer TEXT, mpesaCheckoutRequestId TEXT, cashierId TEXT, cashierName TEXT, customerId TEXT, customerName TEXT, discount REAL, discountType TEXT, splitPayments TEXT, splitData TEXT, isSynced INTEGER, approvedBy TEXT, pendingRefundItems TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS cashPicks (id TEXT PRIMARY KEY, amount REAL NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, userName TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS cashPicks (id TEXT PRIMARY KEY, amount REAL NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, userName TEXT, accountId TEXT, shiftId TEXT, branchId TEXT, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, startTime INTEGER NOT NULL, endTime INTEGER, cashierName TEXT NOT NULL, status TEXT NOT NULL, branchId TEXT, lastSyncAt INTEGER, businessId TEXT, updated_at INTEGER);
  CREATE TABLE IF NOT EXISTS endOfDayReports (id TEXT PRIMARY KEY, shiftId TEXT, timestamp INTEGER NOT NULL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, cashSales REAL NOT NULL, mpesaSales REAL NOT NULL, pdqSales REAL, totalExpenses REAL NOT NULL, supplierPaymentsTotal REAL, remittanceTotal REAL, totalPicks REAL NOT NULL, totalRefunds REAL, expectedCash REAL NOT NULL, reportedCash REAL NOT NULL, difference REAL NOT NULL, cashierName TEXT NOT NULL, branchId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, expiryDate INTEGER, updated_at INTEGER);
@@ -471,6 +471,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['products',   'unit TEXT'],
           ['products',   'branchId TEXT'],
           ['products',   'costPrice REAL'],
+          ['products',   "discountType TEXT DEFAULT 'NONE'"],
+          ['products',   'discountValue REAL DEFAULT 0'],
           ['products',   "taxCategory TEXT DEFAULT 'A'"],
           ['products',   'reorderPoint REAL'],
           ['products',   'expiryTracking INTEGER DEFAULT 0'],
@@ -500,6 +502,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           ['stockAdjustmentRequests', 'preparedBy TEXT'],
           ['stockAdjustmentRequests', 'approvedBy TEXT'],
           ['users',      'branchId TEXT'],
+          ['cashPicks',  'accountId TEXT'],
           ['cashPicks',  'shiftId TEXT'],
           ['stockMovements', 'shiftId TEXT'],
           ['stockMovements', 'expiryDate INTEGER'],
@@ -628,6 +631,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN branchId TEXT').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN unit TEXT').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN costPrice REAL').run(); } catch (e) {}
+      try { await env.DB.prepare("ALTER TABLE products ADD COLUMN discountType TEXT DEFAULT 'NONE'").run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN discountValue REAL DEFAULT 0').run(); } catch (e) {}
       try { await env.DB.prepare("ALTER TABLE products ADD COLUMN taxCategory TEXT DEFAULT 'A'").run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN expiryTracking INTEGER DEFAULT 0').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN expiryDate INTEGER').run(); } catch (e) {}
@@ -657,6 +662,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN unit TEXT').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN branchId TEXT').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN costPrice REAL').run(); } catch (e) {}
+      try { await env.DB.prepare("ALTER TABLE products ADD COLUMN discountType TEXT DEFAULT 'NONE'").run(); } catch (e) {}
+      try { await env.DB.prepare('ALTER TABLE products ADD COLUMN discountValue REAL DEFAULT 0').run(); } catch (e) {}
       try { await env.DB.prepare("ALTER TABLE products ADD COLUMN taxCategory TEXT DEFAULT 'A'").run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN reorderPoint REAL').run(); } catch (e) {}
       try { await env.DB.prepare('ALTER TABLE products ADD COLUMN expiryTracking INTEGER DEFAULT 0').run(); } catch (e) {}
