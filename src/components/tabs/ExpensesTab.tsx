@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Plus, FileMinus, Trash2, Wallet, Calendar, User, ChevronRight, X, SlidersHorizontal, TrendingDown, BookOpen, CreditCard, ChevronDown, PieChart, Activity } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
-import { db } from '../../db';
+import { db, type Product } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import ExpenseModal from '../modals/ExpenseModal';
@@ -20,7 +20,7 @@ export default function ExpensesTab() {
   const [expenseSearch, setExpenseSearch] = useState("");
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'PETTY_CASH' as 'PETTY_CASH' | 'TILL' | 'ACCOUNT' | 'SHOP', accountId: '', productId: '', quantity: '1' });
+  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'PETTY_CASH' | 'TILL' | 'ACCOUNT' | 'SHOP', accountId: '', productId: '', quantity: '1' });
   const [isSaving, setIsSaving] = useState(false);
   
   const currentUser = useStore(state => state.currentUser);
@@ -58,12 +58,21 @@ export default function ExpensesTab() {
   });
   const todayTillExpenses = drawer.tillExpenses;
   const todayPettyCashExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'PETTY_CASH' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const todayStockExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'SHOP' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'ACCOUNT' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const actualCashDrawer = drawer.actualCashDrawer;
 
+  const productCost = (product?: Product) => Number(product?.costPrice || 0);
+  const stockExpenseAmount = () => {
+    if (expenseForm.source !== 'SHOP') return Number(expenseForm.amount);
+    const product = (products || []).find(p => p.id === expenseForm.productId);
+    const quantity = Number(expenseForm.quantity || 0);
+    return Math.round(productCost(product) * quantity * 100) / 100;
+  };
+
   const handleSaveExpense = async () => {
       if (isSaving) return;
-      const amount = Number(expenseForm.amount);
+      const amount = stockExpenseAmount();
       if (amount <= 0) {
           error("Invalid amount.");
           return;
@@ -80,6 +89,14 @@ export default function ExpensesTab() {
           error("Select the stock item being expensed.");
           return;
       }
+      if (expenseForm.source === 'SHOP') {
+          const product = (products || []).find(p => p.id === expenseForm.productId);
+          const quantity = Number(expenseForm.quantity || 0);
+          if (!product) return error("Selected stock item was not found.");
+          if (quantity <= 0) return error("Enter a valid stock quantity.");
+          if (productCost(product) <= 0) return error(`Set a cost price for ${product.name} before expensing it from stock.`);
+          if (quantity > Number(product.stockQuantity || 0)) return error(`Insufficient stock for ${product.name}.`);
+      }
       if (!currentUser) return;
       if (!canPerform(currentUser, 'expense.create')) {
           error("You do not have permission to create expenses.");
@@ -92,7 +109,7 @@ export default function ExpensesTab() {
         const expenseRecord = {
            id: crypto.randomUUID(),
            amount,
-           category: expenseForm.category,
+           category: expenseForm.source === 'SHOP' ? (expenseForm.category || 'Stock') : expenseForm.category,
            description: expenseForm.description,
            timestamp: Date.now(),
            userName: currentUser.name,
@@ -118,7 +135,7 @@ export default function ExpensesTab() {
           details: `${autoApprove ? 'Auto-approved' : 'Created pending'} expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'Uncategorized'})`,
         });
         setIsExpenseModalOpen(false);
-        setExpenseForm({ amount: '', category: '', description: '', source: 'PETTY_CASH', accountId: '', productId: '', quantity: '1' });
+        setExpenseForm({ amount: '', category: '', description: '', source: 'TILL', accountId: '', productId: '', quantity: '1' });
         success(autoApprove ? "Expense logged and approved." : "Expense logged successfully.");
       } catch (err: any) {
         error("Failed to log expense: " + err.message);
@@ -190,13 +207,30 @@ export default function ExpensesTab() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h2 className="text-xl font-black text-slate-900">Expenses</h2>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            <span className="text-[10px] font-bold text-slate-500">Petty: Ksh {todayPettyCashExpenses.toLocaleString()}</span>
+          <div className="hidden">
+            {todayPettyCashExpenses > 0 && <span className="text-[10px] font-bold text-slate-500">Petty: Ksh {todayPettyCashExpenses.toLocaleString()}</span>}
             <span className="text-slate-300">·</span>
             <span className="text-[10px] font-bold text-slate-500">Till: Ksh {todayTillExpenses.toLocaleString()}</span>
             <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-slate-500">Stock: Ksh {todayStockExpenses.toLocaleString()}</span>
+            {todayPettyCashExpenses > 0 && <span className="text-slate-300">Â·</span>}
             <span className="text-[10px] font-bold text-slate-500">General: Ksh {todayAccountExpenses.toLocaleString()}</span>
             <span className="text-slate-300">·</span>
+            <span className="text-[10px] font-bold text-emerald-600">Drawer: Ksh {actualCashDrawer.toLocaleString()}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            {todayPettyCashExpenses > 0 && (
+              <>
+                <span className="text-[10px] font-bold text-slate-500">Petty: Ksh {todayPettyCashExpenses.toLocaleString()}</span>
+                <span className="text-slate-300">/</span>
+              </>
+            )}
+            <span className="text-[10px] font-bold text-slate-500">Till: Ksh {todayTillExpenses.toLocaleString()}</span>
+            <span className="text-slate-300">/</span>
+            <span className="text-[10px] font-bold text-slate-500">Stock: Ksh {todayStockExpenses.toLocaleString()}</span>
+            <span className="text-slate-300">/</span>
+            <span className="text-[10px] font-bold text-slate-500">General: Ksh {todayAccountExpenses.toLocaleString()}</span>
+            <span className="text-slate-300">/</span>
             <span className="text-[10px] font-bold text-emerald-600">Drawer: Ksh {actualCashDrawer.toLocaleString()}</span>
           </div>
         </div>

@@ -205,7 +205,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
         {/* Header */}
         <div className="p-5 pb-0 flex justify-between items-center">
           <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
-            <DollarSign className="text-green-600" size={18} /> Clear supplier balance
+            <DollarSign className="text-green-600" size={18} /> Pay supplier balance
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
             <X size={18} />
@@ -333,7 +333,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
             <div className="grid grid-cols-1 gap-4 pt-1">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5 ml-1">
-                  {hasAllocationSelection ? 'Cash to pay after credits' : 'Amount to clear'}
+                  {hasAllocationSelection ? 'Cash to pay after credits' : 'Amount to pay'}
                 </label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-3 text-slate-400 font-black text-xs">Ksh</span>
@@ -388,7 +388,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5 ml-1">Clear from</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 ml-1">Pay from</label>
                 <div className="flex gap-2">
                    <button 
                     type="button"

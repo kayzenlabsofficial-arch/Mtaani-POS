@@ -63,6 +63,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const [isSharing, setIsSharing] = useState(false);
   const [isSavingPDF, setIsSavingPDF] = useState(false);
   const [isHardwarePrinting, setIsHardwarePrinting] = useState(false);
+  const [isApprovalActionRunning, setIsApprovalActionRunning] = useState(false);
 
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
@@ -137,6 +138,17 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
       .filter(([id, amount]) => id && amount > 0)
   );
   const creditNoteItems = parseList(selectedRecord.items);
+
+  const runApprovalAction = async (action: (record: any) => Promise<void>) => {
+    if (isApprovalActionRunning) return;
+    setIsApprovalActionRunning(true);
+    try {
+      await action(selectedRecord);
+      setSelectedRecord(null);
+    } finally {
+      setIsApprovalActionRunning(false);
+    }
+  };
 
   const updateReturnQty = (productId: string, delta: number, max: number) => {
      const current = returnQuantities[productId] || 0;
@@ -863,13 +875,16 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
             ) && (
               <div className="flex gap-2">
                 <button
-                  onClick={async () => { await onApprove(selectedRecord); setSelectedRecord(null); }}
+                  onClick={() => runApprovalAction(onApprove)}
+                  disabled={isApprovalActionRunning}
                   className="flex-1 py-3.5 bg-green-600 text-white font-black text-xs   rounded-xl transition-colors active:bg-green-700 flex items-center justify-center gap-2 shadow-lg shadow-green-600/20"
                 >
-                  <CheckCircle2 size={16} /> Approve
+                  {isApprovalActionRunning ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                  {isApprovalActionRunning ? 'Working...' : 'Approve'}
                 </button>
                 <button
-                  onClick={async () => { await onReject(selectedRecord); setSelectedRecord(null); }}
+                  onClick={() => runApprovalAction(onReject)}
+                  disabled={isApprovalActionRunning}
                   className="flex-1 py-3.5 bg-red-600 text-white font-black text-xs   rounded-xl transition-colors active:bg-red-700 flex items-center justify-center gap-2 shadow-lg shadow-red-600/20"
                 >
                   <AlertTriangle size={16} /> Reject

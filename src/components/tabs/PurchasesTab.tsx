@@ -8,6 +8,8 @@ import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { belongsToActiveBranch } from '../../utils/branchScope';
 import { PurchaseService } from '../../services/purchases';
+import { productsForSupplier } from '../../utils/supplierProducts';
+import { reloadBestEffort } from '../../utils/reloads';
 
 const inventoryOrderPrice = (product?: Product | null) => {
   const costPrice = Number(product?.costPrice || 0);
@@ -49,6 +51,7 @@ export default function PurchasesTab() {
     [activeBusinessId, activeBranchId],
     []
   );
+  const supplierProducts = productsForSupplier(allProducts || [], allPurchaseOrders || [], poForm.supplierId);
   const filteredPurchases = allPurchaseOrders.filter(po => 
       (po.invoiceNumber || '').toLowerCase().includes(purchaseSearch.toLowerCase()) || 
       (allSuppliers.find(s => s.id === po.supplierId)?.company || '').toLowerCase().includes(purchaseSearch.toLowerCase()) ||
@@ -72,6 +75,7 @@ export default function PurchasesTab() {
   };
 
   const handleSelectPoProduct = (product: Product) => {
+     if (!poForm.supplierId) return error("Select a supplier first.");
      setPoItemInput({ ...poItemInput, search: product.name, productId: product.id, name: product.name, cost: String(inventoryOrderPrice(product)) }); 
   };
 
@@ -93,7 +97,7 @@ export default function PurchasesTab() {
           branchId: activeBranchId,
           businessId: activeBusinessId,
         });
-        await db.purchaseOrders.reload();
+        await reloadBestEffort([() => db.purchaseOrders.reload()]);
         setSelectedPOToEdit(null);
         setIsPOModalOpen(false);
         setPoForm({ supplierId: '' });
@@ -174,11 +178,11 @@ export default function PurchasesTab() {
             })),
         });
 
-        await Promise.allSettled([
-            db.purchaseOrders.reload(),
-            db.products.reload(),
-            db.stockMovements.reload(),
-            db.suppliers.reload(),
+        await reloadBestEffort([
+            () => db.purchaseOrders.reload(),
+            () => db.products.reload(),
+            () => db.stockMovements.reload(),
+            () => db.suppliers.reload(),
         ]);
 
         setIsReceivePOModalOpen(false);
@@ -327,7 +331,11 @@ export default function PurchasesTab() {
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Select supplier</label>
                     <SearchableSelect
                       value={poForm.supplierId}
-                      onChange={(v) => setPoForm({ supplierId: v })}
+                      onChange={(v) => {
+                        setPoForm({ supplierId: v });
+                        setPoItems([]);
+                        setPoItemInput({ search: '', productId: '', name: '', qty: '', cost: '' });
+                      }}
                       placeholder="Select a supplier..."
                       options={(allSuppliers || []).map(s => ({
                         value: s.id,
@@ -347,14 +355,15 @@ export default function PurchasesTab() {
                            value={poItemInput.search} 
                            onChange={e => setPoItemInput({...poItemInput, search: e.target.value, productId: ''})} 
                            data-testid="purchase-product-search"
-                           placeholder="Search product by name or barcode..." 
+                           placeholder={poForm.supplierId ? "Search product by name or barcode..." : "Select supplier first..."} 
+                           disabled={!poForm.supplierId}
                            className="w-full bg-white border-2 border-transparent focus:border-indigo-500 rounded-2xl pl-12 pr-4 py-4 text-sm font-black text-slate-900 outline-none transition-all shadow-sm" 
                        />
                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={18} />
                        
                        {poItemInput.search && !poItemInput.productId && (
                           <div className="absolute top-full left-0 right-0 z-10 bg-white border-2 border-slate-100 rounded-2xl shadow-xl mt-2 max-h-60 overflow-y-auto no-scrollbar animate-in slide-in-from-top-2">
-                             {allProducts?.filter(p => p.name.toLowerCase().includes(poItemInput.search.toLowerCase()) || p.barcode.includes(poItemInput.search)).slice(0, 5).map(p => (
+                             {supplierProducts.filter(p => p.name.toLowerCase().includes(poItemInput.search.toLowerCase()) || String(p.barcode || '').includes(poItemInput.search)).slice(0, 5).map(p => (
                                 <div key={p.id} data-testid={`purchase-product-option-${p.id}`} onClick={() => handleSelectPoProduct(p)} className="px-5 py-4 text-sm font-bold text-slate-700 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center justify-between">
                                    <span>{p.name}</span>
                                    <span className="text-[10px] text-slate-400 font-mono">Ksh {inventoryOrderPrice(p).toLocaleString()}</span>

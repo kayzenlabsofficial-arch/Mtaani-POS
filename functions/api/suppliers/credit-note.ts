@@ -7,6 +7,7 @@ interface Env {
 }
 
 const SUPPLIER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
+const CREDIT_NOTE_DELETE_ROLES = new Set(['ROOT', 'ADMIN']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -122,20 +123,109 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!env.DB) return json({ error: 'DB binding missing' }, 500);
     const auth = await authorizeRequest(request, env);
     if (!auth.ok) return auth.response;
-    if (!auth.service && !SUPPLIER_ROLES.has(auth.principal.role)) {
+
+    const body = await request.json().catch(() => null) as any;
+    const action = String(body?.action || 'CREATE').trim().toUpperCase();
+    if (action === 'DELETE') {
+      if (!auth.service && !CREDIT_NOTE_DELETE_ROLES.has(auth.principal.role)) {
+        return json({ error: 'Only an admin can delete supplier credit notes.' }, 403);
+      }
+    } else if (!auth.service && !SUPPLIER_ROLES.has(auth.principal.role)) {
       return json({ error: 'You are not allowed to record supplier credit notes.' }, 403);
     }
 
-    const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
     const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const supplierId = String(body?.supplierId || '').trim();
-    if (!businessId || !branchId || !supplierId) return json({ error: 'Business, branch and supplier are required.' }, 400);
+    if (!businessId || !branchId) return json({ error: 'Business and branch are required.' }, 400);
+    if (action !== 'DELETE' && !supplierId) return json({ error: 'Supplier is required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
     await ensureSchema(env.DB);
+
+    if (action === 'DELETE') {
+      const creditNoteId = trimText(body?.creditNoteId || body?.id, 160);
+      if (!creditNoteId) return json({ error: 'Credit note is required.' }, 400);
+
+      const existing = await env.DB.prepare(`
+        SELECT *
+        FROM creditNotes
+        WHERE id = ? AND businessId = ? AND branchId = ?
+        LIMIT 1
+      `).bind(creditNoteId, businessId, branchId).first<any>();
+      if (!existing) throw new PolicyError('Credit note was not found.', 404);
+      if (existing.status === 'ALLOCATED') {
+        throw new PolicyError('Allocated credit notes cannot be deleted because they already affected supplier payments.', 409);
+      }
+
+      let returnItems = parseItems(existing.items);
+      const legacyProductId = trimText(existing.productId, 160);
+      const legacyQuantity = asNumber(existing.quantity);
+      if (returnItems.length === 0 && legacyProductId && legacyQuantity > 0) {
+        returnItems = [{ productId: legacyProductId, quantity: legacyQuantity }];
+      }
+
+      const now = Date.now();
+      const statements: D1PreparedStatement[] = [];
+      for (const item of returnItems) {
+        const product = await env.DB.prepare(`
+          SELECT id, name, branchId
+          FROM products
+          WHERE id = ? AND businessId = ?
+          LIMIT 1
+        `).bind(item.productId, businessId).first<any>();
+        if (!product) continue;
+        if (product.branchId && product.branchId !== branchId) {
+          throw new PolicyError(`Product "${product.name}" belongs to another branch.`, 403);
+        }
+        statements.push(
+          env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ?`)
+            .bind(item.quantity, now, item.productId, businessId),
+          env.DB.prepare(`
+            INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).bind(
+            crypto.randomUUID(),
+            item.productId,
+            'IN',
+            item.quantity,
+            now,
+            `Reversed credit note: ${existing.reference || creditNoteId} - ${product.name}`,
+            branchId,
+            businessId,
+            existing.shiftId || null,
+            now,
+          )
+        );
+      }
+
+      statements.push(
+        env.DB.prepare(`DELETE FROM creditNotes WHERE id = ? AND businessId = ? AND branchId = ?`)
+          .bind(creditNoteId, businessId, branchId),
+        env.DB.prepare(`
+          INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          now,
+          auth.principal.userId || null,
+          auth.principal.userName || null,
+          'supplier.creditNote.delete',
+          'creditNote',
+          creditNoteId,
+          'WARN',
+          `Deleted supplier credit note ${existing.reference || creditNoteId} and restored ${returnItems.length} product line${returnItems.length === 1 ? '' : 's'}.`,
+          businessId,
+          branchId,
+          now,
+        )
+      );
+
+      await env.DB.batch(statements);
+      return json({ success: true, creditNoteId });
+    }
 
     const supplier = await env.DB.prepare(`
       SELECT id, name, company, branchId

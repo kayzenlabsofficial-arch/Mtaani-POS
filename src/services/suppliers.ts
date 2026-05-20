@@ -87,4 +87,17 @@ export const SupplierService = {
       branchId: input.branchId,
     });
   },
+
+  deleteCreditNote(input: {
+    creditNoteId: string;
+    businessId: string;
+    branchId: string;
+  }) {
+    return apiRequest<{ success: boolean; creditNoteId: string }>('/api/suppliers/credit-note', {
+      method: 'POST',
+      body: { action: 'DELETE', ...input },
+      businessId: input.businessId,
+      branchId: input.branchId,
+    });
+  },
 };

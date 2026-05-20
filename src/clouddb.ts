@@ -27,6 +27,7 @@ function emitChange() {
 // circular dependency: clouddb → store → db → clouddb.
 
 const API = '/api/data';
+const DATA_FETCH_TIMEOUT_MS = 20000;
 
 const OFFLINE_CACHE_TABLES = new Set<OfflineCacheTable>([
   'products',
@@ -113,6 +114,8 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
     let res: Response | null = null;
     let networkError: any = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = globalThis.setTimeout(() => controller.abort(), DATA_FETCH_TIMEOUT_MS);
       try {
         res = await fetch(url, {
           method,
@@ -120,6 +123,7 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
           credentials: 'same-origin',
       // CRITICAL: Bypass service worker & browser cache — always fetch fresh from D1
           cache: 'no-store',
+          signal: controller.signal,
           ...(body !== undefined && { body: JSON.stringify(body) }),
         });
         break;
@@ -130,6 +134,8 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
           continue;
         }
         throw err;
+      } finally {
+        globalThis.clearTimeout(timeout);
       }
     }
     if (!res) throw networkError || new Error('Request failed.');

@@ -19,7 +19,10 @@ type ApiRequestOptions = Omit<RequestInit, 'body' | 'headers'> & {
   businessId?: string | null;
   branchId?: string | null;
   requireOnline?: boolean;
+  requestTimeoutMs?: number;
 };
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
 function isBodyInit(body: unknown): body is BodyInit {
   return (
@@ -46,35 +49,57 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     throw new ApiError('Offline: this action requires internet connection.');
   }
 
+  const {
+    body: requestBody,
+    headers: optionHeaders,
+    businessId: optionBusinessId,
+    branchId: optionBranchId,
+    requireOnline: _requireOnline,
+    requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    ...requestOptions
+  } = options;
   const state = useStore.getState();
   const apiKey = await getApiKey();
   const headers: Record<string, string> = {
-    ...(options.headers || {}),
+    ...(optionHeaders || {}),
   };
 
   if (apiKey) headers['X-API-Key'] = apiKey;
-  const businessId = options.businessId ?? state.activeBusinessId;
-  const branchId = options.branchId ?? state.activeBranchId;
+  const businessId = optionBusinessId ?? state.activeBusinessId;
+  const branchId = optionBranchId ?? state.activeBranchId;
   if (businessId) headers['X-Business-ID'] = businessId;
   if (branchId) headers['X-Branch-ID'] = branchId;
 
   let body: BodyInit | undefined;
-  if (options.body !== undefined) {
-    if (isBodyInit(options.body)) {
-      body = options.body;
+  if (requestBody !== undefined) {
+    if (isBodyInit(requestBody)) {
+      body = requestBody;
     } else {
       headers['Content-Type'] = headers['Content-Type'] || 'application/json';
-      body = JSON.stringify(options.body);
+      body = JSON.stringify(requestBody);
     }
   }
 
-  const res = await fetch(path, {
-    ...options,
-    body,
-    headers,
-    credentials: options.credentials || 'same-origin',
-    cache: options.cache || 'no-store',
-  });
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), requestTimeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      ...requestOptions,
+      body,
+      headers,
+      credentials: requestOptions.credentials || 'same-origin',
+      cache: requestOptions.cache || 'no-store',
+      signal: requestOptions.signal || controller.signal,
+    });
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new ApiError('Request timed out. Please check the connection and try again.', 408);
+    }
+    throw err;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
   const data = await parseResponse(res);
 
   if (!res.ok) {
@@ -88,4 +113,3 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
   return data as T;
 }
-

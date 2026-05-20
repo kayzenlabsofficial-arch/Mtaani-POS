@@ -226,7 +226,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
                      }}
                      className="px-3 py-2 rounded-xl bg-slate-50 text-slate-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-95 font-bold text-xs whitespace-nowrap border border-slate-100 shrink-0"
                    >
-                     Clear
+                     Pay
                    </button>
                    <ChevronRight size={18} className="hidden sm:block text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
                  </div>

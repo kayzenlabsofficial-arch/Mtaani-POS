@@ -1,6 +1,7 @@
 import { db, type Expense, type Transaction } from '../db';
 import { ExpenseService } from '../services/expenses';
 import { SalesService } from '../services/sales';
+import { reloadBestEffort } from './reloads';
 
 interface ApprovalContext {
   approvedBy: string;
@@ -34,21 +35,21 @@ export async function applyApprovedExpenseEffects(expense: Expense, context: App
     branchId: context.activeBranchId,
     approvedBy: context.approvedBy,
   });
-  await Promise.allSettled([
-    db.expenses.reload(),
-    db.financialAccounts.reload(),
-    db.products.reload(),
-    db.stockMovements.reload(),
+  await reloadBestEffort([
+    () => db.expenses.reload(),
+    () => db.financialAccounts.reload(),
+    () => db.products.reload(),
+    () => db.stockMovements.reload(),
   ]);
 }
 
 export async function submitExpenseRecord(expense: Expense | any): Promise<void> {
   await ExpenseService.submit(expense);
-  await Promise.allSettled([
-    db.expenses.reload(),
-    db.financialAccounts.reload(),
-    db.products.reload(),
-    db.stockMovements.reload(),
+  await reloadBestEffort([
+    () => db.expenses.reload(),
+    () => db.financialAccounts.reload(),
+    () => db.products.reload(),
+    () => db.stockMovements.reload(),
   ]);
 }
 
@@ -59,11 +60,11 @@ export async function approveExpenseRequest(expense: Expense, context: ApprovalC
     branchId: context.activeBranchId,
     approvedBy: context.approvedBy,
   });
-  await Promise.allSettled([
-    db.expenses.reload(),
-    db.financialAccounts.reload(),
-    db.products.reload(),
-    db.stockMovements.reload(),
+  await reloadBestEffort([
+    () => db.expenses.reload(),
+    () => db.financialAccounts.reload(),
+    () => db.products.reload(),
+    () => db.stockMovements.reload(),
   ]);
 }
 

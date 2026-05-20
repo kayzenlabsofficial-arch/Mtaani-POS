@@ -1,6 +1,7 @@
 import { db, type Supplier } from '../db';
 import { SupplierService } from '../services/suppliers';
 import { calculateShiftCashFromSales, getTodayStartMs } from './cashDrawer';
+import { reloadBestEffort } from './reloads';
 
 export type SupplierPaymentInput = {
   amount: number;
@@ -100,12 +101,12 @@ export async function settleSupplierPayment({
     shiftId,
   });
 
-  await Promise.allSettled([
-    db.supplierPayments.reload(),
-    db.creditNotes.reload(),
-    db.purchaseOrders.reload(),
-    db.suppliers.reload(),
-    db.financialAccounts.reload(),
+  await reloadBestEffort([
+    () => db.supplierPayments.reload(),
+    () => db.creditNotes.reload(),
+    () => db.purchaseOrders.reload(),
+    () => db.suppliers.reload(),
+    () => db.financialAccounts.reload(),
   ]);
 
   return result;

@@ -158,7 +158,7 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
                               onClick={() => openPaymentModal(s)}
                               className="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition-all shadow-sm press flex items-center justify-center gap-1.5 shrink-0"
                            >
-                              <DollarSign size={13} /> Clear
+                              <DollarSign size={13} /> Pay
                            </button>
                         </div>
                      </div>

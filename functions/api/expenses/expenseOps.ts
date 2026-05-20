@@ -257,6 +257,31 @@ async function effectStatementsForApprovedExpense(
   return [];
 }
 
+async function amountForStockExpense(
+  db: D1Database,
+  businessId: string,
+  branchId: string,
+  expense: Record<string, any>,
+): Promise<number> {
+  const productId = trimText(expense.productId, 120);
+  const quantity = Math.max(0, asNumber(expense.quantity, 1));
+  if (!productId || quantity <= 0) throw new PolicyError('Select the stock item and quantity being expensed.', 400);
+
+  const product = await db.prepare(`
+    SELECT id, name, stockQuantity, costPrice, branchId
+    FROM products
+    WHERE id = ? AND businessId = ?
+    LIMIT 1
+  `).bind(productId, businessId).first<any>();
+  if (!product) throw new PolicyError('Selected shop item was not found.', 404);
+  if (product.branchId && product.branchId !== branchId) throw new PolicyError('Selected stock item belongs to another branch.', 403);
+  if (asNumber(product.stockQuantity) < quantity) throw new PolicyError(`Insufficient stock for ${product.name}.`, 409);
+
+  const costPrice = asNumber(product.costPrice);
+  if (costPrice <= 0) throw new PolicyError(`Set a cost price for ${product.name} before expensing it from stock.`, 400);
+  return Math.round(costPrice * quantity * 100) / 100;
+}
+
 export async function prepareExpenseSubmit(
   db: D1Database,
   args: {
@@ -273,11 +298,13 @@ export async function prepareExpenseSubmit(
   const now = Date.now();
   const expense = { ...(args.expense || {}) };
   expense.id = trimText(expense.id || crypto.randomUUID(), 120);
-  expense.amount = Math.round(asNumber(expense.amount) * 100) / 100;
+  expense.source = String(expense.source || 'TILL').toUpperCase();
+  expense.amount = expense.source === 'SHOP'
+    ? await amountForStockExpense(db, businessId, branchId, expense)
+    : Math.round(asNumber(expense.amount) * 100) / 100;
   if (expense.amount <= 0) throw new PolicyError('Expense amount must be more than zero.', 400);
   expense.category = trimText(expense.category || 'General', 120);
   expense.description = trimText(expense.description, 240);
-  expense.source = String(expense.source || 'TILL').toUpperCase();
   expense.timestamp = Math.min(asNumber(expense.timestamp, now), now + 5 * 60 * 1000);
   expense.userName = trimText(expense.userName || principal.userName, 120);
   expense.preparedBy = trimText(expense.preparedBy || principal.userName, 120);
@@ -344,14 +371,17 @@ export async function prepareExpenseApproval(
   const clean = deserializeRow(expense);
   if (clean.status === 'APPROVED') return { expense: clean, statements: [], idempotent: true };
   if (clean.status !== 'PENDING') throw new PolicyError('This expense has already been processed.', 409);
+  if (String(clean.source || '').toUpperCase() === 'SHOP') {
+    clean.amount = await amountForStockExpense(db, businessId, branchId, clean);
+  }
 
   clean.status = 'APPROVED';
   clean.approvedBy = trimText(args.approvedBy || principal.userName, 120);
   clean.updated_at = Date.now();
 
   const statements = [
-    db.prepare(`UPDATE expenses SET status = 'APPROVED', approvedBy = ?, updated_at = ? WHERE id = ? AND businessId = ? AND branchId = ?`)
-      .bind(clean.approvedBy, clean.updated_at, clean.id, businessId, branchId),
+    db.prepare(`UPDATE expenses SET status = 'APPROVED', approvedBy = ?, amount = ?, updated_at = ? WHERE id = ? AND businessId = ? AND branchId = ?`)
+      .bind(clean.approvedBy, clean.amount, clean.updated_at, clean.id, businessId, branchId),
     ...await effectStatementsForApprovedExpense(db, businessId, branchId, clean),
     auditStatement(db, {
       principal,

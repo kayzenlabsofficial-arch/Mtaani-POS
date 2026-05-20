@@ -6,6 +6,9 @@ import { useToast } from '../../context/ToastContext';
 import { shareDocument } from '../../utils/shareUtils';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { SupplierService } from '../../services/suppliers';
+import { useStore } from '../../store';
+import { reloadBestEffort } from '../../utils/reloads';
+import { productsForSupplier } from '../../utils/supplierProducts';
 
 interface SupplierLedgerModalProps {
   supplier: Supplier | null;
@@ -57,7 +60,11 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
   const pageSize = 50;
   const [creditNoteForm, setCreditNoteForm] = useState({ reference: '', reason: '', productId: '', quantity: '1' });
   const [creditNoteItems, setCreditNoteItems] = useState<CreditNoteReturnItem[]>([]);
+  const [isSavingCreditNote, setIsSavingCreditNote] = useState(false);
+  const [deletingCreditNoteId, setDeletingCreditNoteId] = useState<string | null>(null);
+  const currentUser = useStore(state => state.currentUser);
   const { success, error } = useToast();
+  const canDeleteCreditNotes = currentUser?.role === 'ADMIN' || currentUser?.role === 'ROOT';
 
   const invoices = useLiveQuery(
     () => supplier ? db.purchaseOrders.where('supplierId').equals(supplier.id).reverse().sortBy('orderDate') : [],
@@ -72,6 +79,12 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
   const creditNotes = useLiveQuery(
     () => supplier ? db.creditNotes.where('supplierId').equals(supplier.id).reverse().sortBy('timestamp') : [],
     [supplier]
+  );
+
+  const supplierPurchaseOrders = useLiveQuery(
+    () => supplier ? db.purchaseOrders.where('supplierId').equals(supplier.id).toArray() : [],
+    [supplier],
+    []
   );
 
   React.useEffect(() => {
@@ -104,7 +117,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
   const pagedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const pagedPayments = filteredPayments.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const pagedCreditNotes = filteredCreditNotes.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const inventoryProducts = products || [];
+  const inventoryProducts = productsForSupplier(products || [], supplierPurchaseOrders || [], supplier.id);
   const selectedCreditProduct = inventoryProducts.find(product => product.id === creditNoteForm.productId);
   const selectedCreditQuantity = Number(creditNoteForm.quantity) || 0;
   const selectedCreditUnitCost = productUnitCost(selectedCreditProduct);
@@ -148,9 +161,11 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
   };
 
   const handleAddCreditNote = async () => {
+    if (isSavingCreditNote) return;
+    if (creditNoteItems.length === 0) return error("Add at least one product to the credit note.");
+    if (creditNoteTotal <= 0) return error("Credit note amount must be more than zero.");
+    setIsSavingCreditNote(true);
     try {
-      if (creditNoteItems.length === 0) return error("Add at least one product to the credit note.");
-      if (creditNoteTotal <= 0) return error("Credit note amount must be more than zero.");
       await SupplierService.recordCreditNote({
         supplierId: supplier.id,
         amount: creditNoteTotal,
@@ -162,17 +177,43 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
         businessId: supplier.businessId,
       });
 
-      await Promise.allSettled([
-        db.creditNotes.reload(),
-        db.products.reload(),
-        db.stockMovements.reload(),
+      await reloadBestEffort([
+        () => db.creditNotes.reload(),
+        () => db.products.reload(),
+        () => db.stockMovements.reload(),
       ]);
 
-      success("Credit Note recorded as PENDING and stock adjusted.");
+      success("Credit note recorded as PENDING and stock adjusted.");
       setIsAddCreditNoteOpen(false);
       resetCreditNoteForm();
     } catch (err: any) {
       error(err?.message || "Failed to record credit note.");
+    } finally {
+      setIsSavingCreditNote(false);
+    }
+  };
+
+  const handleDeleteCreditNote = async (cn: any) => {
+    if (!canDeleteCreditNotes || deletingCreditNoteId) return;
+    if (cn.status === 'ALLOCATED') return error("Allocated credit notes cannot be deleted.");
+    if (!confirm(`Delete credit note ${cn.reference || cn.id}? Stock will be restored.`)) return;
+    setDeletingCreditNoteId(cn.id);
+    try {
+      await SupplierService.deleteCreditNote({
+        creditNoteId: cn.id,
+        businessId: supplier.businessId,
+        branchId: supplier.branchId,
+      });
+      await reloadBestEffort([
+        () => db.creditNotes.reload(),
+        () => db.products.reload(),
+        () => db.stockMovements.reload(),
+      ]);
+      success("Credit note deleted and stock restored.");
+    } catch (err: any) {
+      error(err?.message || "Failed to delete credit note.");
+    } finally {
+      setDeletingCreditNoteId(null);
     }
   };
 
@@ -231,7 +272,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                         Ksh {supplier.balance.toLocaleString()}
                     </h3>
                     <button onClick={() => onPay(supplier)} className="mt-3 bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-green-600/20 active:scale-95 transition-all no-print w-full sm:w-auto">
-                        Clear balance
+                        Pay balance
                     </button>
                 </div>
             </div>
@@ -381,12 +422,24 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                                     <div className="text-right">
                                         <p className="text-sm font-black text-blue-600">Ksh {cn.amount.toLocaleString()}</p>
                                         {cn.status !== 'ALLOCATED' ? (
-                                            <button
-                                                onClick={() => onPay(supplier)}
-                                                className="mt-1 text-[9px] font-black text-blue-600 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-600 hover:text-white transition-all"
-                                            >
-                                                Apply during payment
-                                            </button>
+                                            <div className="mt-1 flex items-center justify-end gap-1.5">
+                                                <button
+                                                    onClick={() => onPay(supplier)}
+                                                    className="text-[9px] font-black text-blue-600 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-600 hover:text-white transition-all"
+                                                >
+                                                    Apply during payment
+                                                </button>
+                                                {canDeleteCreditNotes && (
+                                                    <button
+                                                        onClick={() => handleDeleteCreditNote(cn)}
+                                                        disabled={deletingCreditNoteId === cn.id}
+                                                        className="w-7 h-7 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all disabled:opacity-50"
+                                                        title="Delete credit note"
+                                                    >
+                                                        {deletingCreditNoteId === cn.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                                    </button>
+                                                )}
+                                            </div>
                                         ) : (
                                             <p className="text-[9px] font-bold text-slate-400 mt-0.5 italic">Balance updated</p>
                                         )}
@@ -494,7 +547,10 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
                 </div>
                 <div className="flex gap-2 p-6 border-t border-slate-100 bg-white">
                     <button data-testid="supplier-credit-cancel" onClick={() => { setIsAddCreditNoteOpen(false); resetCreditNoteForm(); }} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs  ">Cancel</button>
-                    <button data-testid="supplier-credit-save" onClick={handleAddCreditNote} disabled={creditNoteItems.length === 0 || creditNoteTotal <= 0} className="flex-[2] py-3 bg-blue-600 text-white font-bold rounded-xl text-xs active:scale-95 transition-all disabled:opacity-50 shadow-blue">Save credit note</button>
+                    <button data-testid="supplier-credit-save" onClick={handleAddCreditNote} disabled={creditNoteItems.length === 0 || creditNoteTotal <= 0 || isSavingCreditNote} className="flex-[2] py-3 bg-blue-600 text-white font-bold rounded-xl text-xs active:scale-95 transition-all disabled:opacity-50 shadow-blue flex items-center justify-center gap-2">
+                        {isSavingCreditNote && <Loader2 size={14} className="animate-spin" />}
+                        {isSavingCreditNote ? 'Saving...' : 'Save credit note'}
+                    </button>
                 </div>
             </div>
         </div>
