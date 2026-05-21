@@ -322,7 +322,8 @@ function sanitizeForMemory(text: string) {
 }
 
 function isAiLimitMemory(text: string) {
-  return /\b(daily\s+)?(business\s+)?ai\s+limit\b/i.test(text)
+  return /\b(ai|data|daily|business|request)?\s*limit\b.{0,120}\b(reached|exhausted|used up|hit)\b/i.test(text)
+    || /\b(reached|exhausted|used up|hit)\b.{0,120}\b(ai|data|daily|business|request)?\s*limit\b/i.test(text)
     || /\bdata limit has been reached\b/i.test(text)
     || /\bask the super admin to raise\b/i.test(text)
     || /\btry again tomorrow\b/i.test(text);
@@ -388,6 +389,26 @@ async function loadConversationContext(db: D1Database, phone: string, businessId
   return safeRows
     .map(row => `${row.role === 'assistant' ? 'Mtaani POS' : 'User'}: ${trimText(row.text, 320)}`)
     .join('\n');
+}
+
+async function latestProductLookupQuery(db: D1Database, phone: string, businessId: string) {
+  const { results } = await db.prepare(`
+    SELECT text
+    FROM whatsappConversationTurns
+    WHERE phone = ?
+      AND businessId = ?
+      AND role = 'assistant'
+      AND text LIKE '%Stock:%'
+      AND text LIKE '%Branch in POS:%'
+    ORDER BY createdAt DESC
+    LIMIT 8
+  `).bind(phone, businessId).all<any>();
+  for (const row of results || []) {
+    const text = String(row.text || '');
+    const title = text.match(/^\*([^*]+)\*/)?.[1]?.trim();
+    if (title) return title.replace(/\s+-\s+/g, '\n');
+  }
+  return '';
 }
 
 async function linkedBusiness(db: D1Database, phone: string) {
@@ -649,6 +670,200 @@ async function stockSummary(db: D1Database, businessId: string) {
       return `${index + 1}. ${product.name}: ${Number(product.stockQuantity || 0)}${unit} left (reorder at ${Number(product.reorderPoint || 0)}${unit})`;
     }),
   ].join('\n');
+}
+
+type ToolBranch = {
+  id: string;
+  name: string;
+  location?: string | null;
+};
+
+type ToolProduct = {
+  id: string;
+  name: string;
+  category?: string | null;
+  barcode?: string | null;
+  sellingPrice?: number | null;
+  costPrice?: number | null;
+  stockQuantity?: number | null;
+  reorderPoint?: number | null;
+  supplierIds?: string | null;
+  branchId?: string | null;
+  branchName?: string | null;
+  unit?: string | null;
+  updated_at?: number | null;
+};
+
+function wantsAiUsageQuestion(text: string) {
+  return /\b(ai|assistant|bot)\b/i.test(text)
+    && /\b(usage|limit|allowance|quota|remaining|used|increased|raised)\b/i.test(text);
+}
+
+function wantsProductStatusQuestion(text: string) {
+  return /\b(status|stock|inventory|available|availability|left|quantity|qty|price|cost|reorder|check again|check)\b/i.test(text);
+}
+
+function isShortFollowUp(text: string) {
+  return /^(check|check again|again|recheck|what about it|what about that|and now|now|that one|those ones)\??$/i.test(text.trim())
+    || (/^(why|so|then)\b/i.test(text.trim()) && /\b(that|it|those)\b/i.test(text));
+}
+
+function bestTextMatch<T extends Record<string, any>>(query: string, rows: T[], labels: Array<keyof T>, minScore = 45) {
+  let best: { row: T; score: number } | null = null;
+  for (const row of rows) {
+    const score = scoreMatch(query, labels.map(label => String(row[label] || '')));
+    if (!best || score > best.score) best = { row, score };
+  }
+  return best && best.score >= minScore ? best.row : null;
+}
+
+function stockSignal(stock: number, reorderPoint: number) {
+  if (stock <= 0) return 'Out of stock';
+  if (reorderPoint > 0 && stock <= reorderPoint) return 'Low stock';
+  return 'In stock';
+}
+
+function unitSuffix(unit?: string | null) {
+  return unit ? ` ${unit}` : '';
+}
+
+function formatMaybeMoney(label: string, value: unknown) {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0 ? `${label}: ${money(amount)}` : '';
+}
+
+async function aiUsageSummary(db: D1Database, link: any, message: IncomingMessage) {
+  await ensureAiSchema(db);
+  const settings = await getAiSettings(db, link.businessId);
+  const usage = await getUsage(db, link.businessId, `whatsapp:${message.from}`, message.contactName || message.from, link.branchId || null);
+  const remaining = Math.max(0, settings.dailyLimit - usage.count);
+  return [
+    '*AI usage today*',
+    `Used: ${usage.count}`,
+    `Limit: ${settings.dailyLimit}`,
+    `Remaining: ${remaining}`,
+    `Status: ${settings.enabled ? (remaining > 0 ? 'Ready' : 'Limit reached') : 'Disabled'}`,
+  ].join('\n');
+}
+
+async function loadToolBranches(db: D1Database, businessId: string) {
+  const { results } = await db.prepare(`
+    SELECT id, name, location
+    FROM branches
+    WHERE businessId = ? AND COALESCE(isActive, 1) != 0
+    ORDER BY name
+    LIMIT 80
+  `).bind(businessId).all<ToolBranch>();
+  return results || [];
+}
+
+async function loadToolProducts(db: D1Database, businessId: string) {
+  const { results } = await db.prepare(`
+    SELECT p.id, p.name, p.category, p.barcode, p.sellingPrice, p.costPrice, p.stockQuantity,
+           p.reorderPoint, p.supplierIds, p.branchId, p.unit, p.updated_at, b.name AS branchName
+    FROM products p
+    LEFT JOIN branches b ON b.id = p.branchId AND b.businessId = p.businessId
+    WHERE p.businessId = ?
+    ORDER BY p.name
+    LIMIT 600
+  `).bind(businessId).all<ToolProduct>();
+  return results || [];
+}
+
+async function productMovementSummary(db: D1Database, businessId: string, productId: string, branchId?: string | null) {
+  const since7 = Date.now() - 7 * DAY_MS;
+  const since30 = Date.now() - 30 * DAY_MS;
+  return db.prepare(`
+    SELECT
+      MAX(timestamp) AS lastOut,
+      COALESCE(SUM(CASE WHEN timestamp >= ? THEN quantity ELSE 0 END), 0) AS sold7,
+      COALESCE(SUM(CASE WHEN timestamp >= ? THEN quantity ELSE 0 END), 0) AS sold30
+    FROM stockMovements
+    WHERE businessId = ?
+      AND productId = ?
+      AND UPPER(COALESCE(type, '')) = 'OUT'
+      AND (? IS NULL OR branchId = ? OR branchId IS NULL)
+  `).bind(since7, since30, businessId, productId, branchId || null, branchId || null).first<any>();
+}
+
+async function supplierNamesForProduct(db: D1Database, businessId: string, product: ToolProduct) {
+  const ids = supplierIds(product.supplierIds).slice(0, 8);
+  if (!ids.length) return [];
+  const placeholders = ids.map(() => '?').join(', ');
+  const { results } = await db.prepare(`
+    SELECT name, company
+    FROM suppliers
+    WHERE businessId = ?
+      AND id IN (${placeholders})
+    ORDER BY COALESCE(company, name)
+  `).bind(businessId, ...ids).all<any>();
+  return (results || []).map(row => supplierName(row));
+}
+
+async function productStatusTool(db: D1Database, link: any, message: IncomingMessage) {
+  const body = message.text.trim();
+  if (!wantsProductStatusQuestion(body) && !isShortFollowUp(body)) return null;
+
+  let context = '';
+  if (isShortFollowUp(body)) {
+    context = await latestProductLookupQuery(db, message.from, link.businessId)
+      || await loadConversationContext(db, message.from, link.businessId, 6);
+  }
+  const queryText = `${body}\n${context}`.trim();
+
+  const [branches, products] = await Promise.all([
+    loadToolBranches(db, link.businessId),
+    loadToolProducts(db, link.businessId),
+  ]);
+  if (!products.length) return null;
+
+  const linkedBranch = link.branchId ? branches.find(branch => branch.id === link.branchId) : null;
+  const branch = linkedBranch || bestTextMatch(queryText, branches, ['name', 'location'], 32);
+  const branchProducts = branch
+    ? products.filter(product => !product.branchId || product.branchId === branch.id)
+    : products;
+  const product = bestTextMatch(queryText, branchProducts.length ? branchProducts : products, ['name', 'category', 'barcode'], 45);
+  if (!product) return null;
+
+  const stock = asNumber(product.stockQuantity);
+  const reorderPoint = asNumber(product.reorderPoint);
+  const signal = stockSignal(stock, reorderPoint);
+  const movement = await productMovementSummary(db, link.businessId, product.id, branch?.id || product.branchId || null);
+  const suppliers = await supplierNamesForProduct(db, link.businessId, product);
+  const productBranch = product.branchName || (product.branchId ? product.branchId : 'Unassigned/global');
+  const requestedBranch = branch?.name || null;
+  const unit = unitSuffix(product.unit);
+  const lastOut = asNumber(movement?.lastOut);
+  const branchNote = requestedBranch && product.branchId && product.branchId !== branch?.id
+    ? `Note: this product is assigned to ${productBranch}, not ${requestedBranch}.`
+    : requestedBranch && !product.branchId
+      ? `Note: ${product.name} is not assigned to a specific branch; stock is recorded as global/unassigned.`
+      : '';
+
+  const lines = [
+    `*${product.name}${requestedBranch ? ` - ${requestedBranch}` : ''}*`,
+    `Status: ${signal}`,
+    `Stock: ${stock}${unit}`,
+    reorderPoint > 0 ? `Reorder point: ${reorderPoint}${unit}` : 'Reorder point: not set',
+    formatMaybeMoney('Selling price', product.sellingPrice),
+    formatMaybeMoney('Cost price', product.costPrice),
+    `Branch in POS: ${productBranch}`,
+    suppliers.length ? `Suppliers: ${suppliers.join(', ')}` : 'Suppliers: none linked',
+    `Sold last 7 days: ${asNumber(movement?.sold7)}${unit}`,
+    `Sold last 30 days: ${asNumber(movement?.sold30)}${unit}`,
+    lastOut ? `Last stock-out/sale movement: ${dateLabel(lastOut)}` : 'Last stock-out/sale movement: none recorded',
+    branchNote,
+  ].filter(Boolean);
+
+  return lines.join('\n');
+}
+
+async function businessToolAnswer(db: D1Database, link: any, message: IncomingMessage) {
+  const body = message.text.trim();
+  if (wantsAiUsageQuestion(body)) return aiUsageSummary(db, link, message);
+  const productStatus = await productStatusTool(db, link, message);
+  if (productStatus) return productStatus;
+  return null;
 }
 
 type ApprovalType = 'EXPENSE' | 'REFUND' | 'LPO' | 'STOCK' | 'CASH';
@@ -1857,13 +2072,18 @@ async function askBusinessAi(db: D1Database, env: Env, link: any, message: Incom
     const snapshot = await buildBusinessSnapshot(db, link.businessId, branchId);
     const context = await loadConversationContext(db, message.from, link.businessId);
     const remaining = Math.max(0, settings.dailyLimit - usage.count);
+    const allowanceBlock = wantsAiUsageQuestion(question)
+      ? [
+        'Current AI allowance:',
+        `- Used before this request: ${usage.count}`,
+        `- Limit today: ${settings.dailyLimit}`,
+        `- Remaining before this request: ${remaining}`,
+        '',
+      ].join('\n')
+      : '';
     const prompt = `${buildPrompt(question, snapshot)}
 
-Current AI allowance:
-- Used before this request: ${usage.count}
-- Limit today: ${settings.dailyLimit}
-- Remaining before this request: ${remaining}
-
+${allowanceBlock}
 Recent WhatsApp context:
 ${context || 'No recent context.'}
 
@@ -1874,6 +2094,7 @@ WhatsApp reply rules:
 - If the user asks why something failed, explain the last relevant system reply instead of switching topics.
 - Do not claim the AI limit is reached unless Current AI allowance shows remaining is 0.
 - Ignore old conversation lines about a previous limit being reached; the admin may have raised the limit since then.
+- Do not mention AI allowance, limit, usage, or remaining requests unless the user explicitly asks about AI usage or limits.
 - Use plain lines or short bullets.
 - A small amount of emoji is okay when it improves clarity.
 - If the answer contains sensitive financial data, be concise and only use the linked business data.`;
@@ -1947,6 +2168,9 @@ async function handleTextMessage(db: D1Database, env: Env, message: IncomingMess
   if (lower === 'status') {
     return `Linked to ${link.businessName}. Ask any POS question, or send summary, branches, stock, help, or unlink.`;
   }
+
+  const toolAnswer = await businessToolAnswer(db, link, message);
+  if (toolAnswer) return toolAnswer;
 
   return askBusinessAi(db, env, link, message);
 }
