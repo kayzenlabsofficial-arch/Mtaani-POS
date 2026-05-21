@@ -314,10 +314,18 @@ function sanitizeForMemory(text: string) {
   const source = String(text || '').replace(/\s+/g, ' ').trim();
   if (!source) return '';
   if (isStandaloneAdminSecret(source)) return '';
+  if (isAiLimitMemory(source)) return '';
   const redacted = source
     .replace(/\b(pin|password|code)\s*(?:is|:|=)?\s*([A-Za-z0-9@#$%^&*!._-]{3,120})\b/gi, '$1 [redacted]')
     .replace(/\b(EAA[A-Za-z0-9_-]{20,})\b/g, '[redacted-token]');
   return trimText(redacted, 700);
+}
+
+function isAiLimitMemory(text: string) {
+  return /\b(daily\s+)?(business\s+)?ai\s+limit\b/i.test(text)
+    || /\bdata limit has been reached\b/i.test(text)
+    || /\bask the super admin to raise\b/i.test(text)
+    || /\btry again tomorrow\b/i.test(text);
 }
 
 async function rememberConversationTurn(db: D1Database, args: {
@@ -375,8 +383,9 @@ async function loadConversationContext(db: D1Database, phone: string, businessId
     LIMIT ?
   `).bind(phone, businessId, Date.now() - CHAT_CONTEXT_TTL_MS, limit).all<any>();
   const rows = (results || []).slice().reverse();
-  if (!rows.length) return '';
-  return rows
+  const safeRows = rows.filter(row => !isAiLimitMemory(String(row.text || '')));
+  if (!safeRows.length) return '';
+  return safeRows
     .map(row => `${row.role === 'assistant' ? 'Mtaani POS' : 'User'}: ${trimText(row.text, 320)}`)
     .join('\n');
 }
@@ -1847,7 +1856,13 @@ async function askBusinessAi(db: D1Database, env: Env, link: any, message: Incom
     const question = truncateText(message.text, 900);
     const snapshot = await buildBusinessSnapshot(db, link.businessId, branchId);
     const context = await loadConversationContext(db, message.from, link.businessId);
+    const remaining = Math.max(0, settings.dailyLimit - usage.count);
     const prompt = `${buildPrompt(question, snapshot)}
+
+Current AI allowance:
+- Used before this request: ${usage.count}
+- Limit today: ${settings.dailyLimit}
+- Remaining before this request: ${remaining}
 
 Recent WhatsApp context:
 ${context || 'No recent context.'}
@@ -1857,6 +1872,8 @@ WhatsApp reply rules:
 - No tables.
 - Use the recent context to answer follow-up words like "that", "those", "today", or "it".
 - If the user asks why something failed, explain the last relevant system reply instead of switching topics.
+- Do not claim the AI limit is reached unless Current AI allowance shows remaining is 0.
+- Ignore old conversation lines about a previous limit being reached; the admin may have raised the limit since then.
 - Use plain lines or short bullets.
 - A small amount of emoji is okay when it improves clarity.
 - If the answer contains sensitive financial data, be concise and only use the linked business data.`;
