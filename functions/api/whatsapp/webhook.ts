@@ -8,7 +8,7 @@ import {
   runAi,
   truncateText,
 } from '../ai/ask';
-import { verifyPassword, type Principal } from '../authUtils';
+import { hashPassword, verifyPassword, type Principal } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 import { ensureExpenseActionSchema, prepareExpenseApproval } from '../expenses/expenseOps';
 import { ensureRefundSchema, prepareRefundApproval } from '../sales/refundOps';
@@ -87,6 +87,11 @@ function todayBounds(now = Date.now()) {
 
 function dateLabel(timestamp: number) {
   return new Date(timestamp + NAIROBI_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+function daysAgo(timestamp: unknown, now = Date.now()) {
+  const ts = asNumber(timestamp, 0);
+  return ts ? Math.max(0, Math.floor((now - ts) / DAY_MS)) : 0;
 }
 
 function firstWords(value: string, max = 80) {
@@ -496,25 +501,36 @@ function helpText(linked = false) {
   }
 
   return [
-    'Mtaani POS commands',
+    '*Mtaani POS AI operator*',
     '',
-    'Ask any POS question, for example:',
-    'Which products are slow?',
-    'Which customers owe us most?',
-    'How are sales today?',
+    'I can read your business data, draft work, and execute admin actions after PIN confirmation.',
     '',
-    'Quick commands:',
-    'summary - today snapshot',
-    'branches - active branches',
-    'stock - low stock',
-    'approvals - pending admin approvals',
-    'approve A1 1234 - approve with admin PIN',
-    'reject A1 1234 - reject with admin PIN',
-    'create LPO from Supplier: 10 Product',
-    'audit orders - review LPO risks',
-    'help - show commands',
-    'unlink - remove this WhatsApp link',
+    '*Ask me to check*',
+    '- sales today, yesterday, 7d, 30d',
+    '- branch performance',
+    '- stock status, low stock, lowest stock per branch',
+    '- dead stock and top moving products',
+    '- suppliers, balances, customers owing',
+    '- expenses, cash status, open shifts',
+    '- pending approvals and LPO audits',
+    '',
+    '*Ask me to prepare*',
+    '- draft LPOs',
+    '- update an LPO draft quantity',
+    '- draft low-stock LPOs by supplier/branch',
+    '- draft a cashier/manager/admin user',
+    '',
+    '*Admin actions*',
+    '- approve A1 password 1234',
+    '- reject A1 password 1234',
+    '- confirm PO CODE password 1234',
+    '- confirm user CODE password 1234',
   ].join('\n');
+}
+
+function wantsCapabilityHelp(text: string) {
+  return /\b(what can you do|what do you do|capabilities|commands|tools|help me|how can you help|show help)\b/i.test(text)
+    || (/^(hi|hello|hey|start)\b/i.test(text.trim()) && /\b(can|do|help|tools|commands)\b/i.test(text));
 }
 
 async function businessSummary(db: D1Database, businessId: string) {
@@ -651,12 +667,13 @@ async function suppliersSummary(db: D1Database, businessId: string) {
 
 async function stockSummary(db: D1Database, businessId: string) {
   const { results } = await db.prepare(`
-    SELECT name, stockQuantity, reorderPoint, unit
-    FROM products
-    WHERE businessId = ?
+    SELECT p.name, p.stockQuantity, p.reorderPoint, p.unit, COALESCE(b.name, 'Unassigned/global') AS branchName
+    FROM products p
+    LEFT JOIN branches b ON b.id = p.branchId AND b.businessId = p.businessId
+    WHERE p.businessId = ?
       AND COALESCE(reorderPoint, 0) > 0
       AND COALESCE(stockQuantity, 0) <= COALESCE(reorderPoint, 0)
-    ORDER BY stockQuantity ASC, name ASC
+    ORDER BY stockQuantity ASC, COALESCE(b.name, 'Unassigned/global') ASC, name ASC
     LIMIT 10
   `).bind(businessId).all<any>();
 
@@ -667,7 +684,7 @@ async function stockSummary(db: D1Database, businessId: string) {
     '',
     ...products.map((product: any, index: number) => {
       const unit = product.unit ? ` ${product.unit}` : '';
-      return `${index + 1}. ${product.name}: ${Number(product.stockQuantity || 0)}${unit} left (reorder at ${Number(product.reorderPoint || 0)}${unit})`;
+      return `${index + 1}. ${product.name}: ${Number(product.stockQuantity || 0)}${unit} left (reorder at ${Number(product.reorderPoint || 0)}${unit}) | ${product.branchName}`;
     }),
   ].join('\n');
 }
@@ -703,6 +720,28 @@ function wantsProductStatusQuestion(text: string) {
   return /\b(status|stock|inventory|available|availability|left|quantity|qty|price|cost|reorder|check again|check)\b/i.test(text);
 }
 
+function wantsStockIntelligence(text: string) {
+  const lower = text.toLowerCase();
+  const stockWords = /\b(stock|inventory|products?|items?|reorder|branch|branches|them|those)\b/i.test(lower);
+  const insightWords = /\b(low|lowest|least|minimum|min|almost out|out of stock|running out|reorder|short|arrange|group|per branch|by branch|branch wise)\b/i.test(lower);
+  return stockWords && insightWords;
+}
+
+function wantsGroupedStock(text: string) {
+  return /\b(arrange|group|split|show|list)\b/i.test(text)
+    && /\b(per branch|by branch|branch wise|branches|branch)\b/i.test(text)
+    && /\b(stock|products?|items?|them|those|low)\b/i.test(text);
+}
+
+function wantsLowestStock(text: string) {
+  return /\b(lowest|least|minimum|min|smallest)\b/i.test(text)
+    && /\b(stock|inventory|quantity|qty|products?|items?)\b/i.test(text);
+}
+
+function wantsOutOfStock(text: string) {
+  return /\b(out of stock|zero stock|stock out|stocked out)\b/i.test(text);
+}
+
 function isShortFollowUp(text: string) {
   return /^(check|check again|again|recheck|what about it|what about that|and now|now|that one|those ones)\??$/i.test(text.trim())
     || (/^(why|so|then)\b/i.test(text.trim()) && /\b(that|it|those)\b/i.test(text));
@@ -730,6 +769,102 @@ function unitSuffix(unit?: string | null) {
 function formatMaybeMoney(label: string, value: unknown) {
   const amount = Number(value);
   return Number.isFinite(amount) && amount > 0 ? `${label}: ${money(amount)}` : '';
+}
+
+function branchGroupName(row: any) {
+  return String(row?.branchName || 'Unassigned/global');
+}
+
+function formatStockLine(product: any, includeBranch = false) {
+  const unit = unitSuffix(product.unit);
+  const reorder = asNumber(product.reorderPoint) > 0
+    ? ` (reorder at ${asNumber(product.reorderPoint)}${unit})`
+    : '';
+  return `${product.name}: ${asNumber(product.stockQuantity)}${unit} left${reorder}${includeBranch ? ` | ${branchGroupName(product)}` : ''}`;
+}
+
+async function latestAssistantText(db: D1Database, phone: string, businessId: string) {
+  const row = await db.prepare(`
+    SELECT text
+    FROM whatsappConversationTurns
+    WHERE phone = ? AND businessId = ? AND role = 'assistant'
+    ORDER BY createdAt DESC
+    LIMIT 1
+  `).bind(phone, businessId).first<any>();
+  return String(row?.text || '');
+}
+
+async function stockIntelligenceTool(db: D1Database, link: any, message: IncomingMessage) {
+  const body = message.text.trim();
+  const previous = await latestAssistantText(db, message.from, link.businessId);
+  const isFollowUpGrouping = wantsGroupedStock(body) && /\blow stock products\b/i.test(previous);
+  if (!wantsStockIntelligence(body) && !isFollowUpGrouping) return null;
+
+  const groupByBranch = wantsGroupedStock(body) || isFollowUpGrouping;
+  const lowest = wantsLowestStock(body);
+  const outOnly = wantsOutOfStock(body);
+  const branch = await resolveBranchFromTool(db, link, body);
+  const strictBranchId = branch?.id || null;
+
+  const baseSql = `
+    SELECT p.id, p.name, p.stockQuantity, p.reorderPoint, p.unit, p.branchId,
+           COALESCE(b.name, 'Unassigned/global') AS branchName
+    FROM products p
+    LEFT JOIN branches b ON b.id = p.branchId AND b.businessId = p.businessId
+    WHERE p.businessId = ?
+      AND (? IS NULL OR p.branchId = ?)
+  `;
+
+  if (lowest) {
+    const wantsMany = /\b(products|items|list|show|top|all)\b/i.test(body)
+      && !/\b(which|what)\s+(?:is|'s|one)\b/i.test(body);
+    const { results } = await db.prepare(`${baseSql}
+      ORDER BY COALESCE(p.stockQuantity, 0) ASC, p.name ASC
+      LIMIT ?
+    `).bind(link.businessId, strictBranchId, strictBranchId, wantsMany ? 8 : 1).all<any>();
+    const rows = results || [];
+    if (!rows.length) return `No products found${branch ? ` in ${branch.name}` : ''}.`;
+    return [
+      `*Lowest stock${branch ? ` - ${branch.name}` : ''}*`,
+      '',
+      ...rows.map((product: any, index: number) => `${index + 1}. ${formatStockLine(product, !branch)}`),
+    ].join('\n');
+  }
+
+  const condition = outOnly
+    ? 'AND COALESCE(p.stockQuantity, 0) <= 0'
+    : 'AND COALESCE(p.reorderPoint, 0) > 0 AND COALESCE(p.stockQuantity, 0) <= COALESCE(p.reorderPoint, 0)';
+  const { results } = await db.prepare(`${baseSql}
+    ${condition}
+    ORDER BY COALESCE(b.name, 'Unassigned/global') ASC, COALESCE(p.stockQuantity, 0) ASC, p.name ASC
+    LIMIT 80
+  `).bind(link.businessId, strictBranchId, strictBranchId).all<any>();
+  const rows = results || [];
+  if (!rows.length) return `${outOnly ? 'No out-of-stock products' : 'No low-stock products'}${branch ? ` in ${branch.name}` : ''}.`;
+
+  if (groupByBranch || !branch) {
+    const grouped = new Map<string, any[]>();
+    for (const row of rows) {
+      const name = branchGroupName(row);
+      const list = grouped.get(name) || [];
+      list.push(row);
+      grouped.set(name, list);
+    }
+    const lines = [`*${outOnly ? 'Out-of-stock products' : 'Low stock by branch'}*`, ''];
+    for (const [branchName, products] of grouped) {
+      lines.push(`${branchName}:`);
+      for (const product of products.slice(0, 10)) lines.push(`- ${formatStockLine(product)}`);
+      if (products.length > 10) lines.push(`- +${products.length - 10} more`);
+      lines.push('');
+    }
+    return lines.join('\n').trim();
+  }
+
+  return [
+    `*${outOnly ? 'Out of stock' : 'Low stock'} - ${branch.name}*`,
+    '',
+    ...rows.slice(0, 20).map((product: any, index: number) => `${index + 1}. ${formatStockLine(product)}`),
+  ].join('\n');
 }
 
 async function aiUsageSummary(db: D1Database, link: any, message: IncomingMessage) {
@@ -861,9 +996,938 @@ async function productStatusTool(db: D1Database, link: any, message: IncomingMes
 async function businessToolAnswer(db: D1Database, link: any, message: IncomingMessage) {
   const body = message.text.trim();
   if (wantsAiUsageQuestion(body)) return aiUsageSummary(db, link, message);
+  const stockInsight = await stockIntelligenceTool(db, link, message);
+  if (stockInsight) return stockInsight;
   const productStatus = await productStatusTool(db, link, message);
   if (productStatus) return productStatus;
   return null;
+}
+
+type AgentToolName =
+  | 'business_summary'
+  | 'sales_summary'
+  | 'branch_performance'
+  | 'product_status'
+  | 'low_stock'
+  | 'dead_stock'
+  | 'top_products'
+  | 'suppliers_list'
+  | 'supplier_balances'
+  | 'customers_owing'
+  | 'expenses_summary'
+  | 'cash_status'
+  | 'open_shifts'
+  | 'pending_approvals'
+  | 'audit_orders'
+  | 'lpo_status'
+  | 'draft_lpo'
+  | 'draft_low_stock_lpo'
+  | 'update_lpo_draft'
+  | 'ai_usage'
+  | 'branches'
+  | 'staff_list'
+  | 'draft_create_user';
+
+type AgentToolCall = {
+  name: AgentToolName;
+  args?: Record<string, unknown>;
+};
+
+const AGENT_TOOLS: Array<{ name: AgentToolName; access: 'read' | 'draft' | 'protected'; description: string }> = [
+  { name: 'business_summary', access: 'read', description: 'Today snapshot: sales, invoices, expenses, refunds, open shifts, low stock.' },
+  { name: 'sales_summary', access: 'read', description: 'Sales totals by date range, branch, and payment method.' },
+  { name: 'branch_performance', access: 'read', description: 'Compare branches by recent sales.' },
+  { name: 'product_status', access: 'read', description: 'Stock, price, supplier, reorder point, and sales movement for a named product.' },
+  { name: 'low_stock', access: 'read', description: 'List products at or below reorder point.' },
+  { name: 'dead_stock', access: 'read', description: 'Find products with stock but little or no recent movement.' },
+  { name: 'top_products', access: 'read', description: 'Top selling products by stock movement.' },
+  { name: 'suppliers_list', access: 'read', description: 'Registered suppliers grouped by branch.' },
+  { name: 'supplier_balances', access: 'read', description: 'Suppliers with outstanding balances.' },
+  { name: 'customers_owing', access: 'read', description: 'Customers with outstanding balances.' },
+  { name: 'expenses_summary', access: 'read', description: 'Expense totals by category for a range.' },
+  { name: 'cash_status', access: 'read', description: 'Cash sales, cash picks, and cash account picture.' },
+  { name: 'open_shifts', access: 'read', description: 'Open cashier shifts by branch.' },
+  { name: 'pending_approvals', access: 'read', description: 'Pending expenses, refunds, stock adjustments, LPOs, and cash picks. Supports branch/type filters.' },
+  { name: 'audit_orders', access: 'read', description: 'Review LPO risks and admin actions needed.' },
+  { name: 'lpo_status', access: 'read', description: 'Check whether the latest WhatsApp LPO draft or LPO was created.' },
+  { name: 'draft_lpo', access: 'draft', description: 'Draft an LPO from natural language; requires later admin PIN confirmation.' },
+  { name: 'draft_low_stock_lpo', access: 'draft', description: 'Draft LPOs for low-stock items; requires later admin PIN confirmation.' },
+  { name: 'update_lpo_draft', access: 'draft', description: 'Change quantity on an active pending LPO draft.' },
+  { name: 'ai_usage', access: 'read', description: 'Show AI daily usage and remaining allowance.' },
+  { name: 'branches', access: 'read', description: 'List active branches.' },
+  { name: 'staff_list', access: 'read', description: 'List POS users/staff by role and branch.' },
+  { name: 'draft_create_user', access: 'protected', description: 'Draft creation of a POS user. Actual creation requires admin PIN/password.' },
+];
+
+function agentCatalogText() {
+  return AGENT_TOOLS
+    .map(tool => `- ${tool.name} [${tool.access}]: ${tool.description}`)
+    .join('\n');
+}
+
+function shouldTryAgentTools(text: string) {
+  return /\b(summary|sales?|revenue|payment|mpesa|cash|stock|inventory|product|price|supplier|customer|owe|debt|expense|shift|approval|approve|reject|lpo|po|purchase|order|audit|branch|performance|dead|slow|top|usage|limit|user|staff|employee|cashier|manager|admin|create|add|draft|make|update|change|show|list|which|what|check)\b/i.test(text);
+}
+
+function safeJsonFromAi(text: string): any | null {
+  try {
+    return extractJsonObject(text);
+  } catch {
+    try { return JSON.parse(text); } catch { return null; }
+  }
+}
+
+function normalizeToolName(value: unknown): AgentToolName | '' {
+  const name = String(value || '').trim() as AgentToolName;
+  return AGENT_TOOLS.some(tool => tool.name === name) ? name : '';
+}
+
+type PromptIntentName =
+  | 'system.help'
+  | 'system.status'
+  | 'system.unlink'
+  | 'auth.link'
+  | 'auth.secret_reply'
+  | 'approval.execute'
+  | 'approval.list'
+  | 'lpo.confirm'
+  | 'lpo.update_draft'
+  | 'lpo.create'
+  | 'lpo.audit'
+  | 'inventory.low_stock'
+  | 'inventory.product_status'
+  | 'inventory.dead_stock'
+  | 'inventory.top_products'
+  | 'sales.summary'
+  | 'branches.performance'
+  | 'branches.list'
+  | 'suppliers.list'
+  | 'suppliers.balances'
+  | 'customers.owing'
+  | 'expenses.summary'
+  | 'cash.status'
+  | 'shifts.open'
+  | 'staff.list'
+  | 'staff.create'
+  | 'ai.usage'
+  | 'business.summary'
+  | 'unknown';
+
+type PromptIntent = {
+  name: PromptIntentName;
+  confidence: number;
+  risk: 'read' | 'draft' | 'protected' | 'auth' | 'system' | 'unknown';
+  slots: Record<string, string>;
+  toolCalls: AgentToolCall[];
+  legacyFirst?: boolean;
+  reason: string;
+};
+
+function textHas(text: string, pattern: RegExp) {
+  return pattern.test(text);
+}
+
+function extractRangeSlot(text: string) {
+  const lower = text.toLowerCase();
+  if (/\byesterday\b/.test(lower)) return 'yesterday';
+  const match = lower.match(/\b(7|14|30|60|90)\s*(?:d|day|days)\b/);
+  if (match) return `${match[1]}d`;
+  if (/\b(today|now)\b/.test(lower)) return 'today';
+  if (/\bweek\b/.test(lower)) return '7d';
+  if (/\bmonth\b/.test(lower)) return '30d';
+  return '';
+}
+
+function makeIntent(
+  name: PromptIntentName,
+  confidence: number,
+  risk: PromptIntent['risk'],
+  reason: string,
+  toolCalls: AgentToolCall[] = [],
+  slots: Record<string, string> = {},
+  legacyFirst = false,
+): PromptIntent {
+  return { name, confidence, risk, slots, toolCalls, reason, legacyFirst };
+}
+
+function analyzePromptFast(text: string): PromptIntent {
+  const raw = text.trim();
+  const lower = raw.toLowerCase();
+  const has = (pattern: RegExp) => textHas(lower, pattern);
+  const slots: Record<string, string> = {};
+  const range = extractRangeSlot(raw);
+  if (range) slots.range = range;
+
+  if (/^(link|business|connect)\s+/i.test(raw)) {
+    return makeIntent('auth.link', 0.99, 'auth', 'explicit link command', [], slots, true);
+  }
+  if (/^(unlink|logout|remove)$/i.test(raw)) {
+    return makeIntent('system.unlink', 0.99, 'system', 'explicit unlink command', [], slots);
+  }
+  if (wantsCapabilityHelp(raw) || /^(help|hi|hello|start)$/i.test(raw)) {
+    return makeIntent('system.help', 0.98, 'system', 'capability/help request', [], slots);
+  }
+  if (/^status$/i.test(raw)) {
+    return makeIntent('system.status', 0.95, 'system', 'link status request', [], slots);
+  }
+  if (isStandaloneAdminSecret(raw)) {
+    return makeIntent('auth.secret_reply', 0.95, 'protected', 'standalone admin secret for pending action', [], slots, true);
+  }
+  if (has(/\bconfirm\s+(?:po|lpo)\b/)) {
+    return makeIntent('lpo.confirm', 0.96, 'protected', 'confirm pending LPO', [], slots, true);
+  }
+  if (has(/\bconfirm\s+(?:user|staff|employee)\b/)) {
+    return makeIntent('staff.create', 0.96, 'protected', 'confirm pending user creation', [], slots, true);
+  }
+  if (has(/\b(approve|reject|accept|authorize|decline|deny)\b/) && (ordinalCode(raw) || has(/\b(expense|refund|stock|cash|lpo|po|purchase|approval)\b/))) {
+    return makeIntent('approval.execute', 0.95, 'protected', 'approval action request', [], slots, true);
+  }
+  if (has(/\b(create|add|make|register)\b/) && has(/\b(user|staff|employee|cashier|manager|admin)\b/)) {
+    return makeIntent('staff.create', 0.93, 'protected', 'draft staff/user creation', [{ name: 'draft_create_user', args: { query: raw } }], slots);
+  }
+  if (has(/\b(update|change|edit|make|set)\b/) && has(/\b(lpo|po|draft|order)\b/)) {
+    return makeIntent('lpo.update_draft', 0.88, 'draft', 'update active LPO draft', [{ name: 'update_lpo_draft', args: { query: raw } }], slots);
+  }
+  if (/\d/.test(raw) && has(/\b(make|set|change|update|edit|increase|reduce|quantity|qty)\b/)) {
+    return makeIntent('lpo.update_draft', 0.72, 'draft', 'quantity-like follow-up that may target active LPO draft', [{ name: 'update_lpo_draft', args: { query: raw } }], slots);
+  }
+  if (has(/\b(create|draft|raise|prepare|generate|order|buy|restock)\b/) && has(/\b(lpo|po|purchase order|order)\b/)) {
+    const tool: AgentToolName = has(/\b(low stock|almost out|out of stock|reorder|stock)\b/) ? 'draft_low_stock_lpo' : 'draft_lpo';
+    return makeIntent('lpo.create', 0.91, 'draft', 'draft purchase order request', [{ name: tool, args: { query: raw } }], slots);
+  }
+  if (has(/\b(approval|approvals|pending request|pending requests)\b/)) {
+    return makeIntent('approval.list', 0.9, 'read', 'pending approvals list', [{ name: 'pending_approvals', args: { query: raw } }], slots);
+  }
+  if (has(/\b(audit|review|risk|inspect)\b/) && has(/\b(lpo|po|purchase|orders?)\b/)) {
+    return makeIntent('lpo.audit', 0.9, 'read', 'LPO audit request', [{ name: 'audit_orders', args: { query: raw } }], slots);
+  }
+  if (has(/\b(did|was|is|status)\b/) && has(/\b(lpo|po|purchase order)\b/)) {
+    return makeIntent('lpo.confirm', 0.78, 'read', 'LPO status request', [{ name: 'lpo_status', args: { query: raw } }], slots);
+  }
+  if (has(/\b(branch performance|performance by branch|best branch|worst branch|branches performing)\b/)) {
+    return makeIntent('branches.performance', 0.91, 'read', 'branch performance request', [{ name: 'branch_performance', args: { query: raw, range } }], slots);
+  }
+  if (has(/\b(open shifts?|active shifts?|who is clocked|cashiers? working)\b/)) {
+    return makeIntent('shifts.open', 0.88, 'read', 'open shifts request', [{ name: 'open_shifts', args: { query: raw } }], slots);
+  }
+  if (has(/\b(cash status|cash drawer|cash picks?|cash account|cash at hand)\b/)) {
+    return makeIntent('cash.status', 0.88, 'read', 'cash status request', [{ name: 'cash_status', args: { query: raw, range } }], slots);
+  }
+  if (has(/\b(expenses?|spend|spending)\b/)) {
+    return makeIntent('expenses.summary', 0.82, 'read', 'expenses summary request', [{ name: 'expenses_summary', args: { query: raw, range } }], slots);
+  }
+  if (has(/\b(customers?|clients?)\b/) && has(/\b(owe|owing|debt|balance|unpaid)\b/)) {
+    return makeIntent('customers.owing', 0.88, 'read', 'customer balances request', [{ name: 'customers_owing', args: { query: raw } }], slots);
+  }
+  if (has(/\bsuppliers?\b/) && has(/\b(balance|owe|owing|debt|unpaid)\b/)) {
+    return makeIntent('suppliers.balances', 0.88, 'read', 'supplier balance request', [{ name: 'supplier_balances', args: { query: raw } }], slots);
+  }
+  if (has(/\bsuppliers?\b/)) {
+    return makeIntent('suppliers.list', 0.84, 'read', 'supplier list request', [{ name: 'suppliers_list', args: { query: raw } }], slots);
+  }
+  if (has(/\b(staff|users?|employees?|cashiers?|managers?|admins?)\b/) && has(/\b(list|show|who|which|all)\b/)) {
+    return makeIntent('staff.list', 0.86, 'read', 'staff list request', [{ name: 'staff_list', args: { query: raw } }], slots);
+  }
+  if (has(/\b(dead stock|slow stock|not moving|slow moving)\b/)) {
+    return makeIntent('inventory.dead_stock', 0.9, 'read', 'dead stock request', [{ name: 'dead_stock', args: { query: raw, range } }], slots);
+  }
+  if (has(/\b(top products?|best sellers?|fast moving|moving most|sold most|most sold|highest selling)\b/)) {
+    return makeIntent('inventory.top_products', 0.9, 'read', 'top products request', [{ name: 'top_products', args: { query: raw, range } }], slots);
+  }
+  if (/^(stock|inventory)$/i.test(raw)) {
+    return makeIntent('inventory.low_stock', 0.86, 'read', 'stock summary command', [{ name: 'low_stock', args: { query: 'low stock by branch' } }], slots);
+  }
+  if (wantsStockIntelligence(raw)) {
+    return makeIntent('inventory.low_stock', 0.9, 'read', 'stock intelligence request', [{ name: 'low_stock', args: { query: raw } }], slots);
+  }
+  if (wantsProductStatusQuestion(raw) || has(/\b(product|item)\b/)) {
+    return makeIntent('inventory.product_status', 0.68, 'read', 'product status style request', [{ name: 'product_status', args: { query: raw } }], slots);
+  }
+  if (has(/\b(branches|branch list|locations)\b/)) {
+    return makeIntent('branches.list', 0.86, 'read', 'branch list request', [{ name: 'branches', args: { query: raw } }], slots);
+  }
+  if (has(/\b(ai usage|ai limit|assistant usage|bot usage|remaining requests)\b/)) {
+    return makeIntent('ai.usage', 0.95, 'read', 'AI usage request', [{ name: 'ai_usage', args: { query: raw } }], slots);
+  }
+  if (has(/\b(sales?|revenue|turnover|payments?|mpesa)\b/)) {
+    return makeIntent('sales.summary', 0.82, 'read', 'sales summary request', [{ name: 'sales_summary', args: { query: raw, range } }], slots);
+  }
+  if (has(/\b(summary|dashboard|snapshot|today)\b/)) {
+    return makeIntent('business.summary', 0.78, 'read', 'business summary request', [{ name: 'business_summary', args: { query: raw } }], slots);
+  }
+  return makeIntent('unknown', 0.15, 'unknown', 'no fast intent matched', [], slots);
+}
+
+function deterministicAgentToolCalls(text: string): AgentToolCall[] {
+  const analyzed = analyzePromptFast(text);
+  if (!analyzed.legacyFirst && analyzed.toolCalls.length) return analyzed.toolCalls;
+
+  const calls: AgentToolCall[] = [];
+  const lower = text.toLowerCase();
+  const has = (pattern: RegExp) => pattern.test(lower);
+
+  if (has(/\b(create|add|make|register)\b/) && has(/\b(user|staff|employee|cashier|manager|admin)\b/)) {
+    return [{ name: 'draft_create_user', args: { query: text } }];
+  }
+  if (has(/\b(update|change|edit|make|set)\b/) && has(/\b(lpo|po|draft|order)\b/)) {
+    return [{ name: 'update_lpo_draft', args: { query: text } }];
+  }
+  if (has(/\b(create|draft|raise|prepare|generate|order|buy|restock)\b/) && has(/\b(lpo|po|purchase order|order)\b/)) {
+    return [{ name: has(/\b(low stock|almost out|out of stock|reorder|stock)\b/) ? 'draft_low_stock_lpo' : 'draft_lpo', args: { query: text } }];
+  }
+  if (has(/\b(approve|reject|approval|approvals|pending request|pending requests)\b/)) {
+    return [{ name: 'pending_approvals', args: { query: text } }];
+  }
+  if (has(/\b(audit|review|risk|inspect)\b/) && has(/\b(lpo|po|purchase|orders?)\b/)) {
+    return [{ name: 'audit_orders', args: { query: text } }];
+  }
+  if (has(/\b(did|was|is|status)\b/) && has(/\b(lpo|po|purchase order)\b/)) {
+    return [{ name: 'lpo_status', args: { query: text } }];
+  }
+  if (has(/\b(branch performance|performance by branch|best branch|worst branch|branches performing)\b/)) {
+    return [{ name: 'branch_performance', args: { query: text } }];
+  }
+  if (has(/\b(open shifts?|active shifts?|who is clocked|cashiers? working)\b/)) {
+    return [{ name: 'open_shifts', args: { query: text } }];
+  }
+  if (has(/\b(cash status|cash drawer|cash picks?|cash account|cash at hand)\b/)) {
+    return [{ name: 'cash_status', args: { query: text } }];
+  }
+  if (has(/\b(expenses?|spend|spending)\b/)) {
+    return [{ name: 'expenses_summary', args: { query: text } }];
+  }
+  if (has(/\b(customers?|clients?)\b/) && has(/\b(owe|owing|debt|balance|unpaid)\b/)) {
+    return [{ name: 'customers_owing', args: { query: text } }];
+  }
+  if (has(/\bsuppliers?\b/) && has(/\b(balance|owe|owing|debt|unpaid)\b/)) {
+    return [{ name: 'supplier_balances', args: { query: text } }];
+  }
+  if (has(/\bsuppliers?\b/)) {
+    return [{ name: 'suppliers_list', args: { query: text } }];
+  }
+  if (has(/\b(staff|users?|employees?|cashiers?|managers?|admins?)\b/) && has(/\b(list|show|who|which|all)\b/)) {
+    return [{ name: 'staff_list', args: { query: text } }];
+  }
+  if (has(/\b(dead stock|slow stock|not moving|slow moving)\b/)) {
+    return [{ name: 'dead_stock', args: { query: text } }];
+  }
+  if (has(/\b(top products?|best sellers?|fast moving|moving most)\b/)) {
+    return [{ name: 'top_products', args: { query: text } }];
+  }
+  if (has(/\b(low stock|lowest stock|out of stock|almost out|reorder|inventory)\b/)) {
+    return [{ name: 'low_stock', args: { query: text } }];
+  }
+  if (has(/\b(branches|branch list|locations)\b/)) {
+    return [{ name: 'branches', args: { query: text } }];
+  }
+  if (has(/\b(ai usage|ai limit|assistant usage|bot usage|remaining requests)\b/)) {
+    return [{ name: 'ai_usage', args: { query: text } }];
+  }
+  if (has(/\b(sales?|revenue|turnover|payments?|mpesa)\b/)) {
+    calls.push({ name: 'sales_summary', args: { query: text } });
+  }
+  if (has(/\b(summary|dashboard|snapshot|today)\b/) && !calls.length) {
+    calls.push({ name: 'business_summary', args: { query: text } });
+  }
+  return calls.slice(0, 3);
+}
+
+async function planAgentToolCalls(db: D1Database, env: Env, link: any, message: IncomingMessage): Promise<AgentToolCall[]> {
+  if (!env.AI && !env.CLOUDFLARE_ACCOUNT_ID) return [];
+  const context = await loadConversationContext(db, message.from, link.businessId, 8);
+  const prompt = [
+    'You are the tool planner for Mtaani POS WhatsApp.',
+    'Choose the POS tool calls that should answer or perform the user request.',
+    'Return JSON only with this shape: {"tool_calls":[{"name":"tool_name","args":{}}]}',
+    'Use at most 3 tools. If no tool fits, return {"tool_calls":[]}.',
+    'Do not answer the user. Do not invent data. Tools will query the POS database.',
+    'Write tools only draft or request confirmation; protected tools require admin PIN later.',
+    '',
+    'Available tools:',
+    agentCatalogText(),
+    '',
+    'Useful args:',
+    '- query: product, supplier, customer, or free text to match.',
+    '- range: today, yesterday, 7d, 30d, 60d, 90d.',
+    '- branch: branch name.',
+    '- type: EXPENSE, REFUND, LPO, STOCK, CASH.',
+    '- name, role, password, pin, branch for draft_create_user.',
+    '',
+    `Recent context:\n${context || 'None'}`,
+    '',
+    `User message: ${message.text}`,
+  ].join('\n');
+
+  try {
+    const planned = safeJsonFromAi(await runAi(env, prompt));
+    const rawCalls = Array.isArray(planned?.tool_calls) ? planned.tool_calls : [];
+    return rawCalls
+      .slice(0, 3)
+      .map((call: any) => ({ name: normalizeToolName(call?.name), args: call?.args && typeof call.args === 'object' ? call.args : {} }))
+      .filter((call: AgentToolCall) => !!call.name);
+  } catch (err) {
+    console.error('WhatsApp agent planner failed:', err);
+    return [];
+  }
+}
+
+function rangeDays(range: unknown, text = '') {
+  const source = `${String(range || '')} ${text}`.toLowerCase();
+  if (/\byesterday\b/.test(source)) return { label: 'yesterday', days: 1, offsetDays: 1 };
+  const match = source.match(/\b(7|14|30|60|90)\s*(?:d|day|days)\b/);
+  if (match) return { label: `last ${match[1]} days`, days: Number(match[1]), offsetDays: 0 };
+  if (/\b(month|30)\b/.test(source)) return { label: 'last 30 days', days: 30, offsetDays: 0 };
+  if (/\bweek|7\b/.test(source)) return { label: 'last 7 days', days: 7, offsetDays: 0 };
+  return { label: 'today', days: 1, offsetDays: 0 };
+}
+
+function rangeBoundsFromTool(range: unknown, text = '') {
+  const parsed = rangeDays(range, text);
+  if (parsed.offsetDays === 1) {
+    const today = todayBounds();
+    return { label: parsed.label, start: today.start - DAY_MS, end: today.start };
+  }
+  if (parsed.days === 1) {
+    const today = todayBounds();
+    return { label: parsed.label, start: today.start, end: today.end };
+  }
+  return { label: parsed.label, start: Date.now() - parsed.days * DAY_MS, end: Date.now() + 1 };
+}
+
+async function resolveBranchFromTool(db: D1Database, link: any, text: string, branchArg?: unknown) {
+  const branches = await loadToolBranches(db, link.businessId);
+  if (link.branchId) return branches.find(branch => branch.id === link.branchId) || null;
+  const explicitArg = trimText(branchArg, 120);
+  if (explicitArg) return bestTextMatch(explicitArg, branches, ['name', 'location'], 35);
+  const normalizedText = norm(text);
+  const direct = branches.find(branch => {
+    const branchName = norm(branch.name);
+    const location = norm(branch.location || '');
+    return (branchName && normalizedText.includes(branchName))
+      || (location && normalizedText.includes(location));
+  });
+  if (direct) return direct;
+  const phrase = text.match(/\b(?:in|at|for|from)\s+([a-z0-9\s&.'-]{2,80}?)(?:\s+(?:branch|store|outlet|shop|today|yesterday|last|this|only|with|where|which|what)|$)/i)?.[1];
+  return phrase ? bestTextMatch(phrase, branches, ['name', 'location'], 35) : null;
+}
+
+async function salesSummaryTool(db: D1Database, link: any, text: string, args: Record<string, unknown> = {}) {
+  const range = rangeBoundsFromTool(args.range, text);
+  const branch = await resolveBranchFromTool(db, link, text, args.branch);
+  const [totals, payments] = await Promise.all([
+    db.prepare(`
+      SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total, COALESCE(SUM(tax), 0) AS taxTotal
+      FROM transactions
+      WHERE businessId = ?
+        AND timestamp >= ?
+        AND timestamp < ?
+        AND UPPER(COALESCE(status, '')) NOT IN ('VOIDED', 'QUOTE')
+        AND (? IS NULL OR branchId = ?)
+    `).bind(link.businessId, range.start, range.end, branch?.id || null, branch?.id || null).first<any>(),
+    db.prepare(`
+      SELECT COALESCE(paymentMethod, 'UNKNOWN') AS method, COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
+      FROM transactions
+      WHERE businessId = ?
+        AND timestamp >= ?
+        AND timestamp < ?
+        AND UPPER(COALESCE(status, '')) NOT IN ('VOIDED', 'QUOTE')
+        AND (? IS NULL OR branchId = ?)
+      GROUP BY COALESCE(paymentMethod, 'UNKNOWN')
+      ORDER BY total DESC
+      LIMIT 8
+    `).bind(link.businessId, range.start, range.end, branch?.id || null, branch?.id || null).all<any>(),
+  ]);
+
+  return [
+    `*Sales ${range.label}${branch ? ` - ${branch.name}` : ''}*`,
+    `Total: ${money(totals?.total)} from ${asNumber(totals?.count)} receipts`,
+    `Tax: ${money(totals?.taxTotal)}`,
+    '',
+    ...((payments.results || []) as any[]).map(row => `${String(row.method || 'UNKNOWN').toUpperCase()}: ${money(row.total)} (${asNumber(row.count)})`),
+  ].join('\n').trim();
+}
+
+async function branchPerformanceTool(db: D1Database, link: any, text: string, args: Record<string, unknown> = {}) {
+  const range = rangeBoundsFromTool(args.range || '30d', text);
+  const { results } = await db.prepare(`
+    SELECT b.name, COUNT(t.id) AS count, COALESCE(SUM(t.total), 0) AS sales
+    FROM branches b
+    LEFT JOIN transactions t ON t.businessId = b.businessId
+      AND t.branchId = b.id
+      AND t.timestamp >= ?
+      AND t.timestamp < ?
+      AND UPPER(COALESCE(t.status, '')) NOT IN ('VOIDED', 'QUOTE')
+    WHERE b.businessId = ? AND COALESCE(b.isActive, 1) != 0
+    GROUP BY b.id, b.name
+    ORDER BY sales DESC, b.name ASC
+    LIMIT 12
+  `).bind(range.start, range.end, link.businessId).all<any>();
+  const rows = results || [];
+  if (!rows.length) return 'No active branch sales found.';
+  return [
+    `*Branch performance - ${range.label}*`,
+    '',
+    ...rows.map((row: any, index: number) => `${index + 1}. ${row.name}: ${money(row.sales)} (${asNumber(row.count)} receipts)`),
+  ].join('\n');
+}
+
+async function deadStockTool(db: D1Database, link: any, text: string, args: Record<string, unknown> = {}) {
+  const range = rangeDays(args.range || '60d', text);
+  const since = Date.now() - range.days * DAY_MS;
+  const branch = await resolveBranchFromTool(db, link, text, args.branch);
+  const { results } = await db.prepare(`
+    SELECT p.id, p.name, p.stockQuantity, p.unit, b.name AS branchName,
+           COALESCE(SUM(CASE WHEN sm.timestamp >= ? THEN sm.quantity ELSE 0 END), 0) AS sold,
+           MAX(sm.timestamp) AS lastSold
+    FROM products p
+    LEFT JOIN branches b ON b.id = p.branchId AND b.businessId = p.businessId
+    LEFT JOIN stockMovements sm ON sm.productId = p.id AND sm.businessId = p.businessId AND UPPER(COALESCE(sm.type, '')) = 'OUT'
+    WHERE p.businessId = ?
+      AND COALESCE(p.stockQuantity, 0) > 0
+      AND (? IS NULL OR p.branchId = ? OR p.branchId IS NULL)
+    GROUP BY p.id
+    HAVING sold <= 3
+    ORDER BY sold ASC, p.stockQuantity DESC, p.name ASC
+    LIMIT 12
+  `).bind(since, link.businessId, branch?.id || null, branch?.id || null).all<any>();
+  const rows = results || [];
+  if (!rows.length) return `No dead-stock candidates found for ${range.label}.`;
+  return [
+    `*Dead/slow stock - ${range.label}${branch ? ` - ${branch.name}` : ''}*`,
+    '',
+    ...rows.map((row: any) => {
+      const last = asNumber(row.lastSold);
+      return `- ${row.name}: ${asNumber(row.stockQuantity)}${unitSuffix(row.unit)}, sold ${asNumber(row.sold)}${unitSuffix(row.unit)}${last ? `, last sold ${daysAgo(last)}d ago` : ', no sale movement recorded'}`;
+    }),
+  ].join('\n');
+}
+
+async function topProductsTool(db: D1Database, link: any, text: string, args: Record<string, unknown> = {}) {
+  const range = rangeBoundsFromTool(args.range || '30d', text);
+  const branch = await resolveBranchFromTool(db, link, text, args.branch);
+  const { results } = await db.prepare(`
+    SELECT p.name, p.unit, COALESCE(SUM(sm.quantity), 0) AS qty
+    FROM stockMovements sm
+    JOIN products p ON p.id = sm.productId AND p.businessId = sm.businessId
+    WHERE sm.businessId = ?
+      AND sm.timestamp >= ?
+      AND sm.timestamp < ?
+      AND UPPER(COALESCE(sm.type, '')) = 'OUT'
+      AND (? IS NULL OR sm.branchId = ? OR sm.branchId IS NULL)
+    GROUP BY p.id, p.name, p.unit
+    ORDER BY qty DESC
+    LIMIT 10
+  `).bind(link.businessId, range.start, range.end, branch?.id || null, branch?.id || null).all<any>();
+  const rows = results || [];
+  if (!rows.length) return `No product movement found for ${range.label}.`;
+  return [
+    `*Top products - ${range.label}${branch ? ` - ${branch.name}` : ''}*`,
+    '',
+    ...rows.map((row: any, index: number) => `${index + 1}. ${row.name}: ${asNumber(row.qty)}${unitSuffix(row.unit)}`),
+  ].join('\n');
+}
+
+async function supplierBalancesTool(db: D1Database, businessId: string) {
+  const { results } = await db.prepare(`
+    SELECT s.name, s.company, s.balance, b.name AS branchName
+    FROM suppliers s
+    LEFT JOIN branches b ON b.id = s.branchId AND b.businessId = s.businessId
+    WHERE s.businessId = ? AND COALESCE(s.balance, 0) > 0
+    ORDER BY s.balance DESC
+    LIMIT 12
+  `).bind(businessId).all<any>();
+  const rows = results || [];
+  if (!rows.length) return 'No supplier balances are outstanding.';
+  return [
+    '*Supplier balances*',
+    '',
+    ...rows.map((row: any) => `- ${supplierName(row)}: ${money(row.balance)}${row.branchName ? ` | ${row.branchName}` : ''}`),
+  ].join('\n');
+}
+
+async function customersOwingTool(db: D1Database, link: any, text: string, args: Record<string, unknown> = {}) {
+  const branch = await resolveBranchFromTool(db, link, text, args.branch);
+  const { results } = await db.prepare(`
+    SELECT c.name, c.phone, c.balance, c.totalSpent, b.name AS branchName
+    FROM customers c
+    LEFT JOIN branches b ON b.id = c.branchId AND b.businessId = c.businessId
+    WHERE c.businessId = ?
+      AND COALESCE(c.balance, 0) > 0
+      AND (? IS NULL OR c.branchId = ? OR c.branchId IS NULL)
+    ORDER BY c.balance DESC
+    LIMIT 12
+  `).bind(link.businessId, branch?.id || null, branch?.id || null).all<any>();
+  const rows = results || [];
+  if (!rows.length) return `No customers owing${branch ? ` in ${branch.name}` : ''}.`;
+  return [
+    `*Customers owing${branch ? ` - ${branch.name}` : ''}*`,
+    '',
+    ...rows.map((row: any) => `- ${row.name}: ${money(row.balance)}${row.phone ? ` | ${row.phone}` : ''}`),
+  ].join('\n');
+}
+
+async function expensesSummaryTool(db: D1Database, link: any, text: string, args: Record<string, unknown> = {}) {
+  const range = rangeBoundsFromTool(args.range || '30d', text);
+  const branch = await resolveBranchFromTool(db, link, text, args.branch);
+  const { results } = await db.prepare(`
+    SELECT category, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total
+    FROM expenses
+    WHERE businessId = ?
+      AND timestamp >= ?
+      AND timestamp < ?
+      AND UPPER(COALESCE(status, 'APPROVED')) != 'REJECTED'
+      AND (? IS NULL OR branchId = ?)
+    GROUP BY category
+    ORDER BY total DESC
+    LIMIT 12
+  `).bind(link.businessId, range.start, range.end, branch?.id || null, branch?.id || null).all<any>();
+  const rows = results || [];
+  if (!rows.length) return `No expenses found for ${range.label}.`;
+  const total = rows.reduce((sum: number, row: any) => sum + asNumber(row.total), 0);
+  return [
+    `*Expenses - ${range.label}${branch ? ` - ${branch.name}` : ''}*`,
+    `Total: ${money(total)}`,
+    '',
+    ...rows.map((row: any) => `- ${row.category || 'General'}: ${money(row.total)} (${asNumber(row.count)})`),
+  ].join('\n');
+}
+
+async function cashStatusTool(db: D1Database, link: any, text: string, args: Record<string, unknown> = {}) {
+  const range = rangeBoundsFromTool(args.range || 'today', text);
+  const branch = await resolveBranchFromTool(db, link, text, args.branch);
+  const [cashSales, picks, accounts] = await Promise.all([
+    db.prepare(`
+      SELECT COALESCE(SUM(total), 0) AS total, COUNT(*) AS count
+      FROM transactions
+      WHERE businessId = ?
+        AND timestamp >= ?
+        AND timestamp < ?
+        AND UPPER(COALESCE(paymentMethod, '')) = 'CASH'
+        AND UPPER(COALESCE(status, '')) NOT IN ('VOIDED', 'QUOTE')
+        AND (? IS NULL OR branchId = ?)
+    `).bind(link.businessId, range.start, range.end, branch?.id || null, branch?.id || null).first<any>(),
+    db.prepare(`
+      SELECT status, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+      FROM cashPicks
+      WHERE businessId = ?
+        AND timestamp >= ?
+        AND timestamp < ?
+        AND (? IS NULL OR branchId = ?)
+      GROUP BY status
+    `).bind(link.businessId, range.start, range.end, branch?.id || null, branch?.id || null).all<any>(),
+    db.prepare(`
+      SELECT name, balance
+      FROM financialAccounts
+      WHERE businessId = ?
+        AND UPPER(COALESCE(type, '')) = 'CASH'
+        AND (? IS NULL OR branchId = ? OR branchId IS NULL)
+      ORDER BY balance DESC
+      LIMIT 6
+    `).bind(link.businessId, branch?.id || null, branch?.id || null).all<any>().catch(() => ({ results: [] })),
+  ]);
+  return [
+    `*Cash status - ${range.label}${branch ? ` - ${branch.name}` : ''}*`,
+    `Cash sales: ${money(cashSales?.total)} (${asNumber(cashSales?.count)} receipts)`,
+    '',
+    '*Cash picks*',
+    ...((picks.results || []) as any[]).map(row => `- ${row.status || 'UNKNOWN'}: ${money(row.total)} (${asNumber(row.count)})`),
+    (picks.results || []).length ? '' : '- None recorded',
+    '',
+    '*Cash accounts*',
+    ...((accounts.results || []) as any[]).map(row => `- ${row.name}: ${money(row.balance)}`),
+    (accounts.results || []).length ? '' : '- None found',
+  ].join('\n').trim();
+}
+
+async function openShiftsTool(db: D1Database, link: any, text: string, args: Record<string, unknown> = {}) {
+  const branch = await resolveBranchFromTool(db, link, text, args.branch);
+  const { results } = await db.prepare(`
+    SELECT s.id, s.cashierName, s.startTime, b.name AS branchName
+    FROM shifts s
+    LEFT JOIN branches b ON b.id = s.branchId AND b.businessId = s.businessId
+    WHERE s.businessId = ?
+      AND UPPER(COALESCE(s.status, '')) = 'OPEN'
+      AND (? IS NULL OR s.branchId = ?)
+    ORDER BY s.startTime ASC
+    LIMIT 12
+  `).bind(link.businessId, branch?.id || null, branch?.id || null).all<any>();
+  const rows = results || [];
+  if (!rows.length) return `No open shifts${branch ? ` in ${branch.name}` : ''}.`;
+  return [
+    `*Open shifts${branch ? ` - ${branch.name}` : ''}*`,
+    '',
+    ...rows.map((row: any) => `- ${row.cashierName || 'Cashier'} | ${row.branchName || 'Branch'} | opened ${dateLabel(asNumber(row.startTime))}`),
+  ].join('\n');
+}
+
+async function staffListTool(db: D1Database, link: any, text: string, args: Record<string, unknown> = {}) {
+  const branch = await resolveBranchFromTool(db, link, text, args.branch);
+  const role = String(args.role || text.match(/\b(admin|manager|cashier)\b/i)?.[1] || '').toUpperCase();
+  const { results } = await db.prepare(`
+    SELECT u.name, u.role, b.name AS branchName
+    FROM users u
+    LEFT JOIN branches b ON b.id = u.branchId AND b.businessId = u.businessId
+    WHERE u.businessId = ?
+      AND (? = '' OR UPPER(u.role) = ?)
+      AND (? IS NULL OR u.branchId = ? OR u.role = 'ADMIN')
+    ORDER BY u.role, u.name
+    LIMIT 30
+  `).bind(link.businessId, role, role, branch?.id || null, branch?.id || null).all<any>();
+  const rows = results || [];
+  if (!rows.length) return 'No matching staff users found.';
+  return [
+    `*Staff users${role ? ` - ${role}` : ''}${branch ? ` - ${branch.name}` : ''}*`,
+    '',
+    ...rows.map((row: any) => `- ${row.name} | ${row.role}${row.branchName ? ` | ${row.branchName}` : ''}`),
+  ].join('\n');
+}
+
+function normalizeStaffRole(value: unknown, text = '') {
+  const role = String(value || text.match(/\b(admin|manager|cashier)\b/i)?.[1] || 'CASHIER').toUpperCase();
+  return ['ADMIN', 'MANAGER', 'CASHIER'].includes(role) ? role : '';
+}
+
+function extractStaffName(args: Record<string, unknown>, text: string) {
+  const provided = trimText(args.name, 120);
+  if (provided) return provided;
+  const match = text.match(/\b(?:called|named|name\s+is|user|staff|employee|cashier|manager|admin)\s+([A-Za-z][A-Za-z0-9 .'-]{1,80})(?:\s+(?:as|for|in|at|with|password|pin|role|branch)\b|$)/i);
+  return trimText(match?.[1] || '', 120);
+}
+
+function extractNewUserPassword(args: Record<string, unknown>, text: string) {
+  const fromArgs = String(args.password || '');
+  if (fromArgs.length >= 4) return fromArgs.slice(0, 80);
+  const match = text.match(/\b(?:login\s+password|new\s+password|password)\s*(?:is|:|=)?\s*([A-Za-z0-9@#$%^&*!._-]{4,80})\b/i);
+  return match ? match[1] : '';
+}
+
+function temporaryPassword() {
+  return `MT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+}
+
+async function ensureUserToolSchema(db: D1Database) {
+  try { await db.prepare('ALTER TABLE users ADD COLUMN pin TEXT').run(); } catch {}
+  await ensureActionTables(db);
+}
+
+async function draftCreateUserTool(db: D1Database, link: any, message: IncomingMessage, args: Record<string, unknown> = {}) {
+  await ensureUserToolSchema(db);
+  const name = extractStaffName(args, message.text);
+  const role = normalizeStaffRole(args.role, message.text);
+  if (!name) return 'Who should I create? Example: create cashier Jane for CBD Express.';
+  if (!role) return 'Which role should this user have? Allowed roles: ADMIN, MANAGER, CASHIER.';
+
+  const branch = await resolveBranchFromTool(db, link, message.text, args.branch);
+  if (role !== 'ADMIN' && !branch) {
+    const branches = await loadToolBranches(db, link.businessId);
+    return [
+      `Which branch is ${name} assigned to?`,
+      '',
+      `Active branches: ${branches.map(row => row.name).join(', ') || 'none'}.`,
+      `Example: create ${role.toLowerCase()} ${name} for CBD Express.`,
+    ].join('\n');
+  }
+
+  const duplicate = await db.prepare(`
+    SELECT id
+    FROM users
+    WHERE businessId = ? AND lower(trim(name)) = lower(trim(?))
+    LIMIT 1
+  `).bind(link.businessId, name).first<any>();
+  if (duplicate) return `A staff user named ${name} already exists.`;
+
+  const password = extractNewUserPassword(args, message.text);
+  const payload: any = {
+    name,
+    role,
+    branchId: role === 'ADMIN' ? (branch?.id || null) : branch?.id,
+    branchName: branch?.name || null,
+    passwordProvided: !!password,
+    passwordHash: password ? await hashPassword(password) : null,
+  };
+  const code = await savePendingAction(db, {
+    phone: message.from,
+    businessId: link.businessId,
+    branchId: payload.branchId,
+    actionType: 'CREATE_USER',
+    payload,
+  });
+
+  return [
+    '*User draft ready*',
+    `Name: ${payload.name}`,
+    `Role: ${payload.role}`,
+    `Branch: ${payload.branchName || 'All branches/admin'}`,
+    `Password: ${payload.passwordProvided ? 'provided' : 'temporary password will be generated after confirmation'}`,
+    '',
+    `To create this user, reply: confirm user ${code} YOUR_ADMIN_PIN`,
+  ].join('\n');
+}
+
+async function createUserFromDraft(db: D1Database, businessId: string, draft: any, principal: Principal) {
+  await ensureUserToolSchema(db);
+  const now = Date.now();
+  const id = `user_${businessId}_${crypto.randomUUID()}`;
+  const tempPassword = draft.passwordHash ? '' : temporaryPassword();
+  const passwordHash = draft.passwordHash || await hashPassword(tempPassword);
+  await db.batch([
+    db.prepare(`INSERT INTO users (id, name, password, role, businessId, branchId, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .bind(id, draft.name, passwordHash, draft.role, businessId, draft.branchId || null, now),
+    auditLog(db, {
+      principal,
+      businessId,
+      branchId: draft.branchId || null,
+      action: 'admin.user.create.whatsapp',
+      entity: 'user',
+      entityId: id,
+      severity: 'WARN',
+      details: `Created ${draft.role} account for ${draft.name} via WhatsApp.`,
+    }),
+  ]);
+  return { id, tempPassword };
+}
+
+async function confirmUserDraft(db: D1Database, link: any, phone: string, code: string, pin: string) {
+  const pending = await loadPendingAction(db, code, phone, link.businessId, 'CREATE_USER');
+  const principal = await verifyAdminPin(db, link.businessId, phone, pin, pending.branchId);
+  const created = await createUserFromDraft(db, link.businessId, pending.payload, principal);
+  await db.prepare("UPDATE whatsappPendingActions SET status = 'COMPLETED', completedAt = ? WHERE id = ?")
+    .bind(Date.now(), pending.id)
+    .run();
+  return [
+    `Created ${pending.payload.role} user ${pending.payload.name}.`,
+    created.tempPassword ? `Temporary password: ${created.tempPassword}` : 'Password: the provided password was used.',
+    'Ask them to change the password after first login.',
+  ].join('\n');
+}
+
+async function confirmLatestUserDraft(db: D1Database, link: any, phone: string, pin: string) {
+  const pending = await latestPendingAction(db, phone, link.businessId, 'CREATE_USER');
+  if (!pending) return null;
+  const principal = await verifyAdminPin(db, link.businessId, phone, pin, pending.branchId);
+  const created = await createUserFromDraft(db, link.businessId, pending.payload, principal);
+  await db.prepare("UPDATE whatsappPendingActions SET status = 'COMPLETED', completedAt = ? WHERE id = ?")
+    .bind(Date.now(), pending.id)
+    .run();
+  return [
+    `Created ${pending.payload.role} user ${pending.payload.name}.`,
+    created.tempPassword ? `Temporary password: ${created.tempPassword}` : 'Password: the provided password was used.',
+    'Ask them to change the password after first login.',
+  ].join('\n');
+}
+
+async function executeAgentTool(db: D1Database, env: Env, link: any, message: IncomingMessage, call: AgentToolCall) {
+  const args = call.args || {};
+  const queryText = trimText(args.query || args.instruction || message.text, 900);
+  const toolMessage = { ...message, text: queryText || message.text };
+
+  switch (call.name) {
+    case 'business_summary':
+      return businessSummary(db, link.businessId);
+    case 'sales_summary':
+      return salesSummaryTool(db, link, message.text, args);
+    case 'branch_performance':
+      return branchPerformanceTool(db, link, message.text, args);
+    case 'product_status':
+      return await productStatusTool(db, link, toolMessage) || `I could not match that product. Try the product name and branch together.`;
+    case 'low_stock':
+      return await stockIntelligenceTool(db, link, toolMessage) || stockSummary(db, link.businessId);
+    case 'dead_stock':
+      return deadStockTool(db, link, message.text, args);
+    case 'top_products':
+      return topProductsTool(db, link, message.text, args);
+    case 'suppliers_list':
+      return suppliersSummary(db, link.businessId);
+    case 'supplier_balances':
+      return supplierBalancesTool(db, link.businessId);
+    case 'customers_owing':
+      return customersOwingTool(db, link, message.text, args);
+    case 'expenses_summary':
+      return expensesSummaryTool(db, link, message.text, args);
+    case 'cash_status':
+      return cashStatusTool(db, link, message.text, args);
+    case 'open_shifts':
+      return openShiftsTool(db, link, message.text, args);
+    case 'pending_approvals':
+      return approvalsSummary(db, link.businessId, [args.type, args.branch, message.text].filter(Boolean).join(' '));
+    case 'audit_orders':
+      return auditOrders(db, env, link.businessId);
+    case 'lpo_status':
+      return latestLpoStatus(db, link, message.from);
+    case 'draft_lpo':
+      return draftLpoFromWhatsApp(db, env, link, toolMessage);
+    case 'draft_low_stock_lpo':
+      return draftLowStockLpos(db, link, toolMessage);
+    case 'update_lpo_draft':
+      return await updateLatestLpoDraftFromText(db, link, message.from, toolMessage.text)
+        || 'I do not have an active LPO draft to update.';
+    case 'ai_usage':
+      return aiUsageSummary(db, link, message);
+    case 'branches':
+      return branchesSummary(db, link.businessId);
+    case 'staff_list':
+      return staffListTool(db, link, message.text, args);
+    case 'draft_create_user':
+      return draftCreateUserTool(db, link, message, args);
+    default:
+      return null;
+  }
+}
+
+async function agenticToolAnswer(db: D1Database, env: Env, link: any, message: IncomingMessage) {
+  if (!shouldTryAgentTools(message.text)) return null;
+  const deterministicCalls = deterministicAgentToolCalls(message.text);
+  const calls = deterministicCalls.length ? deterministicCalls : await planAgentToolCalls(db, env, link, message);
+  if (!calls.length) return null;
+  const outputs: string[] = [];
+  for (const call of calls) {
+    try {
+      const output = await executeAgentTool(db, env, link, message, call);
+      if (output) outputs.push(output);
+      if (call.name.startsWith('draft_') || call.name === 'update_lpo_draft') break;
+    } catch (err: any) {
+      if (err instanceof PolicyError) outputs.push(err.message);
+      else {
+        console.error(`WhatsApp tool ${call.name} failed:`, err?.message || err);
+        outputs.push(`I could not complete ${call.name.replace(/_/g, ' ')}. Please try again or use the POS.`);
+      }
+      break;
+    }
+  }
+  return outputs.length ? truncateText(outputs.join('\n\n'), 3500) : null;
+}
+
+async function executeFastIntent(
+  db: D1Database,
+  env: Env,
+  link: any,
+  message: IncomingMessage,
+  intent: PromptIntent,
+) {
+  if (intent.legacyFirst) return null;
+  if (intent.name === 'system.help') return helpText(true);
+  if (intent.name === 'system.status') {
+    return `Linked to ${link.businessName}. Intent engine is active. Ask a POS question, request an action, or send help.`;
+  }
+  if (intent.name === 'system.unlink') return unlinkBusiness(db, message.from);
+  if (!intent.toolCalls.length || intent.confidence < 0.68) return null;
+
+  const outputs: string[] = [];
+  for (const call of intent.toolCalls.slice(0, 3)) {
+    try {
+      const output = await executeAgentTool(db, env, link, message, call);
+      if (output) outputs.push(output);
+      if (call.name.startsWith('draft_') || call.name === 'update_lpo_draft') break;
+    } catch (err: any) {
+      if (err instanceof PolicyError) outputs.push(err.message);
+      else {
+        console.error(`Fast intent ${intent.name} via ${call.name} failed:`, err?.message || err);
+        outputs.push(`I understood this as ${intent.name}, but could not complete the tool action. Try again or use the POS.`);
+      }
+      break;
+    }
+  }
+  return outputs.length ? truncateText(outputs.join('\n\n'), 3500) : null;
 }
 
 type ApprovalType = 'EXPENSE' | 'REFUND' | 'LPO' | 'STOCK' | 'CASH';
@@ -1382,6 +2446,12 @@ async function latestPendingAction(db: D1Database, phone: string, businessId: st
   return row ? { ...row, payload: parseMaybeJson(row.payload) } : null;
 }
 
+async function updatePendingActionPayload(db: D1Database, id: string, payload: unknown) {
+  await db.prepare('UPDATE whatsappPendingActions SET payload = ?, expiresAt = ? WHERE id = ? AND status = ?')
+    .bind(JSON.stringify(payload), Date.now() + ACTION_TTL_MS, id, 'PENDING')
+    .run();
+}
+
 function norm(value: unknown) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
@@ -1776,17 +2846,17 @@ async function createPurchaseOrderFromDraft(db: D1Database, businessId: string, 
   return { id, poNumber, totalAmount };
 }
 
-async function draftLpoFromWhatsApp(db: D1Database, env: Env, link: any, message: IncomingMessage) {
-  const draft = await resolveLpoDraft(db, env, link, message);
-  const code = await savePendingAction(db, {
-    phone: message.from,
-    businessId: link.businessId,
-    branchId: draft.branchId,
-    actionType: 'CREATE_LPO',
-    payload: draft,
-  });
+function recalcDraftTotal(draft: any) {
+  draft.totalAmount = roundMoney(asArray(draft.items).reduce((sum, item) => {
+    return sum + asNumber(item.expectedQuantity) * asNumber(item.unitCost);
+  }, 0));
+  return draft;
+}
+
+function lpoDraftSummary(draft: any, code: string, title = '*LPO draft ready*') {
+  recalcDraftTotal(draft);
   return [
-    '*LPO draft ready*',
+    title,
     `Supplier: ${draft.supplierName}`,
     `Branch: ${draft.branchName}`,
     '',
@@ -1797,6 +2867,18 @@ async function draftLpoFromWhatsApp(db: D1Database, env: Env, link: any, message
     `To create it, reply: confirm PO ${code} YOUR_ADMIN_PIN`,
     'It will be created as pending approval.',
   ].join('\n');
+}
+
+async function draftLpoFromWhatsApp(db: D1Database, env: Env, link: any, message: IncomingMessage) {
+  const draft = await resolveLpoDraft(db, env, link, message);
+  const code = await savePendingAction(db, {
+    phone: message.from,
+    businessId: link.businessId,
+    branchId: draft.branchId,
+    actionType: 'CREATE_LPO',
+    payload: draft,
+  });
+  return lpoDraftSummary(draft, code);
 }
 
 async function confirmLpo(db: D1Database, link: any, phone: string, code: string, pin: string) {
@@ -1818,6 +2900,57 @@ async function confirmLatestLpo(db: D1Database, link: any, phone: string, pin: s
     .bind(Date.now(), pending.id)
     .run();
   return `Created LPO ${created.poNumber} for ${money(created.totalAmount)}. It is pending approval in POS.`;
+}
+
+function extractQuantityUpdate(text: string) {
+  const direct = text.match(/\b(?:make|set|change|update|edit|increase|reduce)\b[\s\S]{0,80}?\b(?:to\s*)?(\d+(?:\.\d+)?)\s*(?:pcs?|pieces?|units?|pkt|packets?|ctn|cartons?)?\b/i)
+    || text.match(/\b(\d+(?:\.\d+)?)\s*(?:pcs?|pieces?|units?|pkt|packets?|ctn|cartons?)\b/i);
+  const quantity = direct ? asNumber(direct[1]) : 0;
+  return quantity > 0 ? quantity : 0;
+}
+
+function cleanedLpoItemQuery(text: string) {
+  return norm(text
+    .replace(/\b(?:make|set|change|update|edit|increase|reduce|the|it|this|that|item|line|quantity|qty|to|pcs?|pieces?|units?|pkt|packets?|ctn|cartons?)\b/gi, ' ')
+    .replace(/\d+(?:\.\d+)?/g, ' '));
+}
+
+async function updateLatestLpoDraftFromText(db: D1Database, link: any, phone: string, text: string) {
+  const quantity = extractQuantityUpdate(text);
+  if (!quantity) return null;
+  const pending = await latestPendingAction(db, phone, link.businessId, 'CREATE_LPO');
+  if (!pending) return null;
+  const draft = pending.payload || {};
+  const items = asArray(draft.items);
+  if (!items.length) return null;
+
+  const query = cleanedLpoItemQuery(text);
+  let index = -1;
+  if (!query || /\b(it|this|that|item|line)\b/i.test(text)) {
+    if (items.length === 1) index = 0;
+  }
+  if (index < 0) {
+    const match = bestMatch(query || text, items, ['name']);
+    index = match ? items.findIndex((item: any) => item.productId === match.productId || item.name === match.name) : -1;
+  }
+  if (index < 0) {
+    return [
+      'Which LPO item should I change?',
+      '',
+      ...items.map((item: any, i: number) => `${i + 1}. ${item.name}: ${item.expectedQuantity}${item.unit ? ` ${item.unit}` : ''}`),
+      '',
+      'Example: make milk 20pc',
+    ].join('\n');
+  }
+
+  items[index] = {
+    ...items[index],
+    expectedQuantity: quantity,
+  };
+  draft.items = items;
+  recalcDraftTotal(draft);
+  await updatePendingActionPayload(db, pending.id, draft);
+  return lpoDraftSummary(draft, pending.id, '*LPO draft updated*');
 }
 
 async function latestLpoStatus(db: D1Database, link: any, phone: string) {
@@ -1985,6 +3118,19 @@ async function handleNaturalAction(db: D1Database, env: Env, link: any, message:
     if (approvalResult) return approvalResult;
     const pendingLpo = await latestPendingAction(db, message.from, link.businessId, 'CREATE_LPO');
     if (pendingLpo) return confirmLatestLpo(db, link, message.from, body);
+    const userResult = await confirmLatestUserDraft(db, link, message.from, body);
+    if (userResult) return userResult;
+  }
+
+  const looksLikeDraftQuantityEdit = /\d/.test(body)
+    && !/\b(confirm|approve|reject|password|pin|passcode)\b/i.test(body)
+    && (
+      /\b(make|set|change|update|edit|increase|reduce|quantity|qty)\b/i.test(body)
+      || /\b\d+(?:\.\d+)?\s*(?:pcs?|pieces?|units?|pkt|packets?|ctn|cartons?)\b/i.test(body)
+    );
+  if (looksLikeDraftQuantityEdit) {
+    const updatedDraft = await updateLatestLpoDraftFromText(db, link, message.from, body);
+    if (updatedDraft) return updatedDraft;
   }
 
   const confirmsDraft = /\byes\b/i.test(body) || /\bdraft\b/i.test(body) || /\bconfirm\s+(?:po|lpo)\b/i.test(body);
@@ -1996,6 +3142,15 @@ async function handleNaturalAction(db: D1Database, env: Env, link: any, message:
       try { return await confirmLpo(db, link, message.from, code, pin); } catch {}
     }
     return confirmLatestLpo(db, link, message.from, pin);
+  }
+
+  if (/\bconfirm\s+(?:user|staff|employee)\b/i.test(body)) {
+    const pin = extractPin(body);
+    if (!pin) return 'Send your admin PIN/password to create the drafted user.';
+    const code = normaliseCode(body.match(/\b(?:user|staff|employee|code)\s+([a-z0-9]{4,10})\b/i)?.[1] || '');
+    if (code) return confirmUserDraft(db, link, message.from, code, pin);
+    const userResult = await confirmLatestUserDraft(db, link, message.from, pin);
+    if (userResult) return userResult;
   }
 
   if ((wantsApprove || wantsReject) && (mentionsApproval || ordinalCode(body) || /\b(expense|refund|stock|cash|lpo|po|purchase)\b/i.test(body))) {
@@ -2122,12 +3277,13 @@ async function handleTextMessage(db: D1Database, env: Env, message: IncomingMess
     return helpText(false);
   }
 
-  if (lower === 'unlink' || lower === 'logout' || lower === 'remove') {
-    return unlinkBusiness(db, message.from);
-  }
-  if (lower === 'help' || lower === 'hi' || lower === 'hello' || lower === 'start') {
-    return helpText(true);
-  }
+  const promptIntent = analyzePromptFast(body);
+  const fastIntentAnswer = await executeFastIntent(db, env, link, message, promptIntent);
+  if (fastIntentAnswer) return fastIntentAnswer;
+
+  if (lower === 'unlink' || lower === 'logout' || lower === 'remove') return unlinkBusiness(db, message.from);
+  if (wantsCapabilityHelp(body) || lower === 'help' || lower === 'hi' || lower === 'hello' || lower === 'start') return helpText(true);
+
   const naturalAction = await handleNaturalAction(db, env, link, message);
   if (naturalAction) return naturalAction;
   const confirmPo = body.match(/^confirm\s+(?:po|lpo)\s+([a-z0-9]{4,10})\s+(.+)$/i);
@@ -2171,6 +3327,9 @@ async function handleTextMessage(db: D1Database, env: Env, message: IncomingMess
 
   const toolAnswer = await businessToolAnswer(db, link, message);
   if (toolAnswer) return toolAnswer;
+
+  const agentToolAnswer = await agenticToolAnswer(db, env, link, message);
+  if (agentToolAnswer) return agentToolAnswer;
 
   return askBusinessAi(db, env, link, message);
 }
