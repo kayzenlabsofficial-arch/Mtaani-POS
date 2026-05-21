@@ -654,6 +654,16 @@ CREATE TABLE IF NOT EXISTS whatsappOutboundMessages (
 );
 CREATE INDEX IF NOT EXISTS idx_whatsappOutboundMessages_phone ON whatsappOutboundMessages(phone, createdAt);
 
+CREATE TABLE IF NOT EXISTS whatsappConversationTurns (
+    id TEXT PRIMARY KEY,
+    phone TEXT NOT NULL,
+    businessId TEXT NOT NULL,
+    role TEXT NOT NULL,
+    text TEXT NOT NULL,
+    createdAt INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_whatsappConversationTurns_lookup ON whatsappConversationTurns(phone, businessId, createdAt);
+
 CREATE TABLE IF NOT EXISTS billingAccounts (
     businessId TEXT PRIMARY KEY,
     monthlyBaseFee REAL DEFAULT 3000,

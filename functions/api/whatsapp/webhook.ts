@@ -38,6 +38,8 @@ type IncomingMessage = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NAIROBI_OFFSET_MS = 3 * 60 * 60 * 1000;
 const ACTION_TTL_MS = 15 * 60 * 1000;
+const CHAT_CONTEXT_TTL_MS = 6 * 60 * 60 * 1000;
+const CHAT_CONTEXT_MAX_TURNS = 10;
 
 function responseText(body: string, status = 200) {
   return new Response(body, {
@@ -165,6 +167,17 @@ async function ensureSchema(db: D1Database) {
     )
   `).run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_whatsappOutboundMessages_phone ON whatsappOutboundMessages(phone, createdAt)').run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS whatsappConversationTurns (
+      id TEXT PRIMARY KEY,
+      phone TEXT NOT NULL,
+      businessId TEXT NOT NULL,
+      role TEXT NOT NULL,
+      text TEXT NOT NULL,
+      createdAt INTEGER NOT NULL
+    )
+  `).run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_whatsappConversationTurns_lookup ON whatsappConversationTurns(phone, businessId, createdAt)').run();
 }
 
 async function hmacSha256Hex(secret: string, body: string) {
@@ -295,6 +308,77 @@ async function rememberMessage(db: D1Database, message: IncomingMessage, busines
     firstWords(message.text, 500),
     Date.now(),
   ).run();
+}
+
+function sanitizeForMemory(text: string) {
+  const source = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!source) return '';
+  if (isStandaloneAdminSecret(source)) return '';
+  const redacted = source
+    .replace(/\b(pin|password|code)\s*(?:is|:|=)?\s*([A-Za-z0-9@#$%^&*!._-]{3,120})\b/gi, '$1 [redacted]')
+    .replace(/\b(EAA[A-Za-z0-9_-]{20,})\b/g, '[redacted-token]');
+  return trimText(redacted, 700);
+}
+
+async function rememberConversationTurn(db: D1Database, args: {
+  phone: string;
+  businessId?: string | null;
+  userText: string;
+  assistantText: string;
+}) {
+  if (!args.businessId) return;
+  const now = Date.now();
+  const userText = sanitizeForMemory(args.userText);
+  const assistantText = sanitizeForMemory(args.assistantText);
+  const statements = [];
+  if (userText) {
+    statements.push(db.prepare(`
+      INSERT INTO whatsappConversationTurns (id, phone, businessId, role, text, createdAt)
+      VALUES (?, ?, ?, 'user', ?, ?)
+    `).bind(crypto.randomUUID(), args.phone, args.businessId, userText, now));
+  }
+  if (assistantText) {
+    statements.push(db.prepare(`
+      INSERT INTO whatsappConversationTurns (id, phone, businessId, role, text, createdAt)
+      VALUES (?, ?, ?, 'assistant', ?, ?)
+    `).bind(crypto.randomUUID(), args.phone, args.businessId, assistantText, now + 1));
+  }
+  statements.push(
+    db.prepare('DELETE FROM whatsappConversationTurns WHERE phone = ? AND businessId = ? AND createdAt < ?')
+      .bind(args.phone, args.businessId, now - CHAT_CONTEXT_TTL_MS),
+  );
+  statements.push(
+    db.prepare(`
+      DELETE FROM whatsappConversationTurns
+      WHERE phone = ?
+        AND businessId = ?
+        AND id NOT IN (
+          SELECT id
+          FROM whatsappConversationTurns
+          WHERE phone = ? AND businessId = ?
+          ORDER BY createdAt DESC
+          LIMIT ?
+        )
+    `).bind(args.phone, args.businessId, args.phone, args.businessId, CHAT_CONTEXT_MAX_TURNS),
+  );
+  if (statements.length) await db.batch(statements);
+}
+
+async function loadConversationContext(db: D1Database, phone: string, businessId: string, limit = 8) {
+  const { results } = await db.prepare(`
+    SELECT role, text
+    FROM whatsappConversationTurns
+    WHERE phone = ?
+      AND businessId = ?
+      AND createdAt >= ?
+    ORDER BY createdAt DESC
+    LIMIT ?
+  `).bind(phone, businessId, Date.now() - CHAT_CONTEXT_TTL_MS, limit).all<any>();
+  const rows = (results || []).slice().reverse();
+  if (!rows.length) return '';
+  return rows
+    .map(row => `${row.role === 'assistant' ? 'Mtaani POS' : 'User'}: ${trimText(row.text, 320)}`)
+    .join('\n');
 }
 
 async function linkedBusiness(db: D1Database, phone: string) {
@@ -498,6 +582,41 @@ async function branchesSummary(db: D1Database, businessId: string) {
       return `${index + 1}. ${branch.name}${details ? `\n   ${details}` : ''}`;
     }),
   ].join('\n');
+}
+
+async function suppliersSummary(db: D1Database, businessId: string) {
+  const { results } = await db.prepare(`
+    SELECT s.name, s.company, s.phone, s.branchId, b.name AS branchName
+    FROM suppliers s
+    LEFT JOIN branches b ON b.id = s.branchId AND b.businessId = s.businessId
+    WHERE s.businessId = ?
+    ORDER BY COALESCE(b.name, 'Unassigned') ASC, COALESCE(s.company, s.name) ASC
+    LIMIT 40
+  `).bind(businessId).all<any>();
+
+  const suppliers = results || [];
+  if (suppliers.length === 0) return 'No suppliers are registered yet.';
+
+  const byBranch = new Map<string, string[]>();
+  for (const supplier of suppliers) {
+    const branch = supplier.branchName || 'Unassigned branch';
+    const name = supplier.company && supplier.company !== supplier.name
+      ? `${supplier.name} (${supplier.company})`
+      : supplier.name || supplier.company || 'Supplier';
+    const list = byBranch.get(branch) || [];
+    list.push(name);
+    byBranch.set(branch, list);
+  }
+
+  const lines = ['*Registered suppliers*', ''];
+  for (const [branch, names] of byBranch) {
+    lines.push(`${branch}:`);
+    for (const name of names.slice(0, 8)) lines.push(`- ${name}`);
+    if (names.length > 8) lines.push(`- +${names.length - 8} more`);
+    lines.push('');
+  }
+  lines.push('Use the supplier and branch together when creating an LPO.');
+  return lines.join('\n').trim();
 }
 
 async function stockSummary(db: D1Database, businessId: string) {
@@ -1085,7 +1204,7 @@ function extractJsonObject(text: string) {
   return JSON.parse(source.slice(start, end + 1));
 }
 
-async function parseLpoIntent(db: D1Database, env: Env, businessId: string, text: string) {
+async function parseLpoIntent(db: D1Database, env: Env, businessId: string, text: string, context = '') {
   const [suppliers, products, branches] = await Promise.all([
     db.prepare(`
       SELECT id, name, company, branchId
@@ -1120,6 +1239,8 @@ async function parseLpoIntent(db: D1Database, env: Env, businessId: string, text
     `Branches: ${(branches.results || []).map((b: any) => `${b.name} (${b.location || ''})`).join('; ')}`,
     `Products: ${(products.results || []).map((p: any) => p.name).join('; ')}`,
     '',
+    context ? `Recent WhatsApp context:\n${context}` : '',
+    '',
     `Message: ${text}`,
   ].join('\n');
 
@@ -1136,7 +1257,8 @@ async function parseLpoIntent(db: D1Database, env: Env, businessId: string, text
 }
 
 async function resolveLpoDraft(db: D1Database, env: Env, link: any, message: IncomingMessage) {
-  const intent = await parseLpoIntent(db, env, link.businessId, message.text);
+  const context = await loadConversationContext(db, message.from, link.businessId);
+  const intent = await parseLpoIntent(db, env, link.businessId, message.text, context);
   if (!intent.supplierText) throw new PolicyError('Tell me the supplier for the LPO.', 400);
   if (!intent.items.length) throw new PolicyError('Tell me the products and quantities for the LPO.', 400);
 
@@ -1210,20 +1332,7 @@ function skippedLowStockSummary(skipped: Map<string, string[]>) {
 }
 
 async function draftLowStockLpos(db: D1Database, link: any, message: IncomingMessage) {
-  const branchId = link.branchId || null;
-  const [products, suppliers] = await Promise.all([
-    db.prepare(`
-      SELECT p.id, p.name, p.category, p.costPrice, p.sellingPrice, p.stockQuantity, p.reorderPoint,
-             p.supplierIds, p.branchId, p.unit, b.name AS branchName
-      FROM products p
-      LEFT JOIN branches b ON b.id = p.branchId AND b.businessId = p.businessId
-      WHERE p.businessId = ?
-        AND (? IS NULL OR p.branchId = ?)
-        AND COALESCE(p.reorderPoint, 0) > 0
-        AND COALESCE(p.stockQuantity, 0) <= COALESCE(p.reorderPoint, 0)
-      ORDER BY p.stockQuantity ASC, p.name ASC
-      LIMIT 40
-    `).bind(link.businessId, branchId, branchId).all<any>(),
+  const [suppliers, branches] = await Promise.all([
     db.prepare(`
       SELECT id, name, company, branchId
       FROM suppliers
@@ -1231,12 +1340,58 @@ async function draftLowStockLpos(db: D1Database, link: any, message: IncomingMes
       ORDER BY name ASC
       LIMIT 120
     `).bind(link.businessId).all<any>(),
+    db.prepare(`
+      SELECT id, name, location
+      FROM branches
+      WHERE businessId = ? AND COALESCE(isActive, 1) != 0
+      ORDER BY name ASC
+      LIMIT 40
+    `).bind(link.businessId).all<any>(),
   ]);
+
+  const supplierRows = suppliers.results || [];
+  const branchRows = branches.results || [];
+  const selectedSupplier = bestMatch(message.text, supplierRows, ['name', 'company']);
+  const linkedBranch = link.branchId ? branchRows.find((row: any) => row.id === link.branchId) : null;
+  const selectedBranch = linkedBranch || bestMatch(message.text, branchRows, ['name', 'location']);
+  const supplierBranch = selectedSupplier?.branchId
+    ? branchRows.find((row: any) => row.id === selectedSupplier.branchId)
+    : null;
+  if (selectedSupplier && selectedBranch && selectedSupplier.branchId && selectedSupplier.branchId !== selectedBranch.id) {
+    const branchSuppliers = supplierRows
+      .filter((supplier: any) => supplier.branchId === selectedBranch.id)
+      .map(supplierName)
+      .slice(0, 8);
+    return [
+      '\u26A0\uFE0F I did not create the LPO.',
+      `${supplierName(selectedSupplier)} is assigned to ${supplierBranch?.name || 'another branch'}, not ${selectedBranch.name}.`,
+      '',
+      branchSuppliers.length
+        ? `${selectedBranch.name} suppliers: ${branchSuppliers.join(', ')}.`
+        : `${selectedBranch.name} does not have suppliers assigned yet.`,
+      '',
+      `Reply with a ${selectedBranch.name} supplier, or move ${supplierName(selectedSupplier)} to that branch in POS.`,
+    ].join('\n');
+  }
+
+  const inferredBranch = selectedBranch || supplierBranch || null;
+  const branchId = inferredBranch?.id || link.branchId || null;
+  const products = await db.prepare(`
+    SELECT p.id, p.name, p.category, p.costPrice, p.sellingPrice, p.stockQuantity, p.reorderPoint,
+           p.supplierIds, p.branchId, p.unit, b.name AS branchName
+    FROM products p
+    LEFT JOIN branches b ON b.id = p.branchId AND b.businessId = p.businessId
+    WHERE p.businessId = ?
+      AND (? IS NULL OR p.branchId = ?)
+      AND COALESCE(p.reorderPoint, 0) > 0
+      AND COALESCE(p.stockQuantity, 0) <= COALESCE(p.reorderPoint, 0)
+    ORDER BY p.stockQuantity ASC, p.name ASC
+    LIMIT 40
+  `).bind(link.businessId, branchId, branchId).all<any>();
 
   const lowStock = products.results || [];
   if (!lowStock.length) return 'No low-stock products need an LPO right now.';
 
-  const supplierRows = suppliers.results || [];
   const suppliersById = new Map<string, any>();
   for (const supplier of supplierRows) suppliersById.set(String(supplier.id), supplier);
 
@@ -1250,7 +1405,12 @@ async function draftLowStockLpos(db: D1Database, link: any, message: IncomingMes
       .filter((supplier: any) => supplier && (!supplier.branchId || !productBranchId || supplier.branchId === productBranchId));
 
     const sameBranchSuppliers = supplierRows.filter((supplier: any) => !supplier.branchId || !productBranchId || supplier.branchId === productBranchId);
-    const supplier = linked[0] || (sameBranchSuppliers.length === 1 ? sameBranchSuppliers[0] : null);
+    const linkedSupplierIds = supplierIds(product.supplierIds);
+    if (selectedSupplier && linkedSupplierIds.length > 0 && !linkedSupplierIds.includes(selectedSupplier.id)) {
+      addGroupedValue(skipped, productBranchName, `${product.name} (linked to another supplier)`);
+      continue;
+    }
+    const supplier = selectedSupplier || linked[0] || (sameBranchSuppliers.length === 1 ? sameBranchSuppliers[0] : null);
     if (!supplier || (supplier.branchId && productBranchId && supplier.branchId !== productBranchId)) {
       addGroupedValue(skipped, productBranchName, product.name);
       continue;
@@ -1288,7 +1448,7 @@ async function draftLowStockLpos(db: D1Database, link: any, message: IncomingMes
   if (groups.size === 0) {
     const skippedLines = skippedLowStockSummary(skipped);
     return [
-      'I found low-stock items, but I could not safely draft an LPO because the products do not have a clear supplier.',
+      '\u26A0\uFE0F I found low-stock items, but I could not safely draft an LPO because the products do not have a clear supplier.',
       '',
       ...skippedLines.map(line => `- ${line}`),
       '',
@@ -1296,7 +1456,7 @@ async function draftLowStockLpos(db: D1Database, link: any, message: IncomingMes
     ].join('\n');
   }
 
-  const replies = ['*Low-stock LPO drafts*', ''];
+  const replies = ['\u2705 *Low-stock LPO drafts*', ''];
   for (const draft of Array.from(groups.values()).slice(0, 5)) {
     draft.totalAmount = roundMoney(draft.items.reduce((sum: number, item: any) => sum + item.expectedQuantity * item.unitCost, 0));
     const code = await savePendingAction(db, {
@@ -1591,6 +1751,7 @@ async function handleNaturalAction(db: D1Database, env: Env, link: any, message:
   const wantsReject = /\b(reject|decline|deny|cancel)\b/i.test(body);
   const mentionsApproval = /\b(approval|approvals|pending|request|requests)\b/i.test(body);
   const mentionsOrder = /\b(lpo|po|purchase order|purchase orders|orders?)\b/i.test(body);
+  const mentionsSupplier = /\bsuppliers?\b/i.test(body);
   const wantsCreate = /\b(create|draft|make|raise|prepare|generate|order|buy|restock)\b/i.test(body);
   const wantsAudit = /\b(audit|review|check|inspect|risk|risks)\b/i.test(body);
   const wantsList = /\b(show|list|what|which|give|view|see|any|all|want|need)\b/i.test(body);
@@ -1639,6 +1800,10 @@ async function handleNaturalAction(db: D1Database, env: Env, link: any, message:
     return approvalsSummary(db, link.businessId, body);
   }
 
+  if (mentionsSupplier && wantsList && !mentionsOrder) {
+    return suppliersSummary(db, link.businessId);
+  }
+
   if (mentionsOrder && wantsAudit) {
     return auditOrders(db, env, link.businessId);
   }
@@ -1681,12 +1846,19 @@ async function askBusinessAi(db: D1Database, env: Env, link: any, message: Incom
 
     const question = truncateText(message.text, 900);
     const snapshot = await buildBusinessSnapshot(db, link.businessId, branchId);
+    const context = await loadConversationContext(db, message.from, link.businessId);
     const prompt = `${buildPrompt(question, snapshot)}
+
+Recent WhatsApp context:
+${context || 'No recent context.'}
 
 WhatsApp reply rules:
 - Keep the answer short enough for a phone screen.
 - No tables.
+- Use the recent context to answer follow-up words like "that", "those", "today", or "it".
+- If the user asks why something failed, explain the last relevant system reply instead of switching topics.
 - Use plain lines or short bullets.
+- A small amount of emoji is okay when it improves clarity.
 - If the answer contains sensitive financial data, be concise and only use the linked business data.`;
 
     const answer = maybeAnswerFromSnapshot(question, snapshot) || await runAi(env, prompt);
@@ -1749,6 +1921,9 @@ async function handleTextMessage(db: D1Database, env: Env, message: IncomingMess
   if (lower === 'branches' || lower === 'branch') {
     return branchesSummary(db, link.businessId);
   }
+  if (lower === 'suppliers' || lower === 'supplier') {
+    return suppliersSummary(db, link.businessId);
+  }
   if (lower === 'stock' || lower === 'inventory') {
     return stockSummary(db, link.businessId);
   }
@@ -1801,6 +1976,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           ? err.message
           : 'I could not complete that WhatsApp action. Please try again or use the POS.';
       }
+      await rememberConversationTurn(env.DB, {
+        phone: message.from,
+        businessId: link?.businessId,
+        userText: message.text,
+        assistantText: reply,
+      });
       const sendResult = await sendWhatsAppText(env, message.from, reply, message.phoneNumberId);
       await rememberOutbound(env.DB, {
         to: message.from,
