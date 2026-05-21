@@ -783,6 +783,128 @@ function formatStockLine(product: any, includeBranch = false) {
   return `${product.name}: ${asNumber(product.stockQuantity)}${unit} left${reorder}${includeBranch ? ` | ${branchGroupName(product)}` : ''}`;
 }
 
+async function loadToolSuppliers(db: D1Database, businessId: string) {
+  const { results } = await db.prepare(`
+    SELECT s.id, s.name, s.company, s.phone, s.branchId, b.name AS branchName
+    FROM suppliers s
+    LEFT JOIN branches b ON b.id = s.branchId AND b.businessId = s.businessId
+    WHERE s.businessId = ?
+    ORDER BY COALESCE(b.name, 'Unassigned') ASC, COALESCE(s.company, s.name) ASC
+    LIMIT 160
+  `).bind(businessId).all<any>();
+  return results || [];
+}
+
+async function supplierRecommendationTool(db: D1Database, link: any, message: IncomingMessage) {
+  const text = message.text.trim();
+  if (!/\b(restock|reorder|order|buy|purchase|get|use|supplier|from)\b/i.test(text)
+    || !/\b(who|which supplier|supplier|from|use)\b/i.test(text)) return null;
+
+  const [branch, products, suppliers] = await Promise.all([
+    resolveBranchFromTool(db, link, text),
+    loadToolProducts(db, link.businessId),
+    loadToolSuppliers(db, link.businessId),
+  ]);
+  const branchProducts = branch
+    ? products.filter(product => !product.branchId || product.branchId === branch.id)
+    : products;
+  const product = bestTextMatch(text, branchProducts.length ? branchProducts : products, ['name', 'category', 'barcode'], 42);
+  if (!product) return null;
+
+  const ids = supplierIds(product.supplierIds);
+  const linked = suppliers.filter((supplier: any) => ids.includes(String(supplier.id)));
+  const branchLinked = linked.filter((supplier: any) => !branch?.id || !supplier.branchId || supplier.branchId === branch.id);
+  const sameBranchSuppliers = suppliers.filter((supplier: any) => !branch?.id || !supplier.branchId || supplier.branchId === branch.id);
+  const title = `*Supplier check - ${product.name}${branch ? ` / ${branch.name}` : ''}*`;
+
+  if (branchLinked.length) {
+    return [
+      title,
+      `Use: ${branchLinked.map(supplierName).join(', ')}.`,
+      product.branchName ? `Product branch: ${product.branchName}` : 'Product branch: Unassigned/global',
+      `Stock: ${asNumber(product.stockQuantity)}${unitSuffix(product.unit)}`,
+      asNumber(product.reorderPoint) > 0 ? `Reorder point: ${asNumber(product.reorderPoint)}${unitSuffix(product.unit)}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  if (linked.length) {
+    return [
+      title,
+      `${product.name} is linked to supplier(s) outside the requested branch: ${linked.map((supplier: any) => `${supplierName(supplier)}${supplier.branchName ? ` (${supplier.branchName})` : ''}`).join(', ')}.`,
+      branch ? `${branch.name} suppliers: ${sameBranchSuppliers.slice(0, 8).map(supplierName).join(', ') || 'none assigned'}.` : '',
+      'Do not create the LPO until the product-supplier branch is clear.',
+    ].filter(Boolean).join('\n');
+  }
+
+  return [
+    title,
+    `${product.name} has no supplier linked in POS.`,
+    branch
+      ? `${branch.name} suppliers: ${sameBranchSuppliers.slice(0, 8).map(supplierName).join(', ') || 'none assigned'}.`
+      : `Registered suppliers: ${suppliers.slice(0, 8).map(supplierName).join(', ') || 'none'}.`,
+    'Pick a supplier in your message, or link the product to a supplier in POS.',
+  ].join('\n');
+}
+
+async function attentionSummaryTool(db: D1Database, link: any) {
+  const { start, end } = todayBounds();
+  const since7 = Date.now() - 7 * DAY_MS;
+  const [approvals, lowStock, zeroSales, expenses7, openShifts] = await Promise.all([
+    loadPendingApprovals(db, link.businessId),
+    db.prepare(`
+      SELECT p.name, p.stockQuantity, p.reorderPoint, p.unit, COALESCE(b.name, 'Unassigned/global') AS branchName
+      FROM products p
+      LEFT JOIN branches b ON b.id = p.branchId AND b.businessId = p.businessId
+      WHERE p.businessId = ?
+        AND COALESCE(p.reorderPoint, 0) > 0
+        AND COALESCE(p.stockQuantity, 0) <= COALESCE(p.reorderPoint, 0)
+      ORDER BY COALESCE(p.stockQuantity, 0) ASC, p.name ASC
+      LIMIT 6
+    `).bind(link.businessId).all<any>(),
+    db.prepare(`
+      SELECT b.name, COALESCE(SUM(t.total), 0) AS sales
+      FROM branches b
+      LEFT JOIN transactions t ON t.businessId = b.businessId
+        AND t.branchId = b.id
+        AND t.timestamp >= ?
+        AND t.timestamp < ?
+        AND UPPER(COALESCE(t.status, '')) NOT IN ('VOIDED', 'QUOTE')
+      WHERE b.businessId = ? AND COALESCE(b.isActive, 1) != 0
+      GROUP BY b.id, b.name
+      HAVING sales <= 0
+      ORDER BY b.name
+      LIMIT 6
+    `).bind(start, end, link.businessId).all<any>(),
+    db.prepare(`
+      SELECT category, COALESCE(SUM(amount), 0) AS total
+      FROM expenses
+      WHERE businessId = ?
+        AND timestamp >= ?
+        AND UPPER(COALESCE(status, 'APPROVED')) != 'REJECTED'
+      GROUP BY category
+      ORDER BY total DESC
+      LIMIT 3
+    `).bind(link.businessId, since7).all<any>(),
+    db.prepare("SELECT COUNT(*) AS count FROM shifts WHERE businessId = ? AND UPPER(COALESCE(status, '')) = 'OPEN'")
+      .bind(link.businessId).first<any>(),
+  ]);
+
+  const byType = new Map<string, number>();
+  for (const item of approvals) byType.set(item.type, (byType.get(item.type) || 0) + 1);
+  const approvalBits = Array.from(byType.entries()).map(([type, count]) => `${type.toLowerCase()} ${count}`).join(', ');
+  const lines = ['*Needs attention*', ''];
+  lines.push(`Pending approvals: ${approvals.length}${approvalBits ? ` (${approvalBits})` : ''}`);
+  lines.push(`Open shifts: ${asNumber(openShifts?.count)}`);
+  const low = lowStock.results || [];
+  lines.push(`Low stock: ${low.length}${low.length ? ` - ${low.slice(0, 3).map((row: any) => `${row.name} (${row.branchName})`).join(', ')}` : ''}`);
+  const zero = zeroSales.results || [];
+  if (zero.length) lines.push(`No sales today: ${zero.map((row: any) => row.name).join(', ')}`);
+  const expenses = expenses7.results || [];
+  if (expenses.length) lines.push(`Top 7d expenses: ${expenses.map((row: any) => `${row.category || 'General'} ${money(row.total)}`).join(', ')}`);
+  lines.push('', 'Action: clear approvals first, then handle low-stock items by branch.');
+  return lines.join('\n');
+}
+
 async function latestAssistantText(db: D1Database, phone: string, businessId: string) {
   const row = await db.prepare(`
     SELECT text
@@ -996,6 +1118,8 @@ async function productStatusTool(db: D1Database, link: any, message: IncomingMes
 async function businessToolAnswer(db: D1Database, link: any, message: IncomingMessage) {
   const body = message.text.trim();
   if (wantsAiUsageQuestion(body)) return aiUsageSummary(db, link, message);
+  const supplierRecommendation = await supplierRecommendationTool(db, link, message);
+  if (supplierRecommendation) return supplierRecommendation;
   const stockInsight = await stockIntelligenceTool(db, link, message);
   if (stockInsight) return stockInsight;
   const productStatus = await productStatusTool(db, link, message);
@@ -1026,6 +1150,8 @@ type AgentToolName =
   | 'ai_usage'
   | 'branches'
   | 'staff_list'
+  | 'supplier_recommendation'
+  | 'attention_summary'
   | 'draft_create_user';
 
 type AgentToolCall = {
@@ -1056,6 +1182,8 @@ const AGENT_TOOLS: Array<{ name: AgentToolName; access: 'read' | 'draft' | 'prot
   { name: 'ai_usage', access: 'read', description: 'Show AI daily usage and remaining allowance.' },
   { name: 'branches', access: 'read', description: 'List active branches.' },
   { name: 'staff_list', access: 'read', description: 'List POS users/staff by role and branch.' },
+  { name: 'supplier_recommendation', access: 'read', description: 'Recommend or validate the supplier to use for restocking a product in a branch.' },
+  { name: 'attention_summary', access: 'read', description: 'Summarize what needs owner/admin attention across approvals, low stock, branches, shifts, and cash.' },
   { name: 'draft_create_user', access: 'protected', description: 'Draft creation of a POS user. Actual creation requires admin PIN/password.' },
 ];
 
@@ -1198,16 +1326,19 @@ function analyzePromptFast(text: string): PromptIntent {
   if (has(/\b(approval|approvals|pending request|pending requests)\b/)) {
     return makeIntent('approval.list', 0.9, 'read', 'pending approvals list', [{ name: 'pending_approvals', args: { query: raw } }], slots);
   }
+  if (has(/\b(attention|need my attention|needs attention|weird|strange|problem|problems|issue|issues|what should i do|what should we do|what next|boss briefing|briefing)\b/)) {
+    return makeIntent('business.summary', 0.86, 'read', 'owner attention summary request', [{ name: 'attention_summary', args: { query: raw } }], slots);
+  }
   if (has(/\b(audit|review|risk|inspect)\b/) && has(/\b(lpo|po|purchase|orders?)\b/)) {
     return makeIntent('lpo.audit', 0.9, 'read', 'LPO audit request', [{ name: 'audit_orders', args: { query: raw } }], slots);
   }
   if (has(/\b(did|was|is|status)\b/) && has(/\b(lpo|po|purchase order)\b/)) {
     return makeIntent('lpo.confirm', 0.78, 'read', 'LPO status request', [{ name: 'lpo_status', args: { query: raw } }], slots);
   }
-  if (has(/\b(branch performance|performance by branch|best branch|worst branch|branches performing)\b/)) {
+  if (has(/\b(branch performance|performance by branch|best branch|worst branch|branches performing|branch.*sleeping|sleeping.*branch|quiet branch|dead branch)\b/)) {
     return makeIntent('branches.performance', 0.91, 'read', 'branch performance request', [{ name: 'branch_performance', args: { query: raw, range } }], slots);
   }
-  if (has(/\b(open shifts?|active shifts?|who is clocked|cashiers? working)\b/)) {
+  if (has(/\b(open shifts?|active shifts?|who is clocked|cashiers? working|who is working|working right now|staff working|employees working)\b/)) {
     return makeIntent('shifts.open', 0.88, 'read', 'open shifts request', [{ name: 'open_shifts', args: { query: raw } }], slots);
   }
   if (has(/\b(cash status|cash drawer|cash picks?|cash account|cash at hand)\b/)) {
@@ -1216,8 +1347,11 @@ function analyzePromptFast(text: string): PromptIntent {
   if (has(/\b(expenses?|spend|spending)\b/)) {
     return makeIntent('expenses.summary', 0.82, 'read', 'expenses summary request', [{ name: 'expenses_summary', args: { query: raw, range } }], slots);
   }
-  if (has(/\b(customers?|clients?)\b/) && has(/\b(owe|owing|debt|balance|unpaid)\b/)) {
+  if (has(/\b(customers?|clients?)\b/) && has(/\b(owe|owing|debt|balance|unpaid|money stuck|stuck|receivable|receivables)\b/)) {
     return makeIntent('customers.owing', 0.88, 'read', 'customer balances request', [{ name: 'customers_owing', args: { query: raw } }], slots);
+  }
+  if (has(/\b(restock|reorder|buy|purchase|get)\b/) && has(/\b(who|supplier|use|from)\b/)) {
+    return makeIntent('suppliers.list', 0.86, 'read', 'supplier recommendation request', [{ name: 'supplier_recommendation', args: { query: raw } }], slots);
   }
   if (has(/\bsuppliers?\b/) && has(/\b(balance|owe|owing|debt|unpaid)\b/)) {
     return makeIntent('suppliers.balances', 0.88, 'read', 'supplier balance request', [{ name: 'supplier_balances', args: { query: raw } }], slots);
@@ -1256,6 +1390,105 @@ function analyzePromptFast(text: string): PromptIntent {
     return makeIntent('business.summary', 0.78, 'read', 'business summary request', [{ name: 'business_summary', args: { query: raw } }], slots);
   }
   return makeIntent('unknown', 0.15, 'unknown', 'no fast intent matched', [], slots);
+}
+
+function hasExplicitScope(text: string) {
+  return /\b(all branches|every branch|whole business|entire business|overall|total|company-wide|business-wide|everywhere)\b/i.test(text);
+}
+
+function hasExplicitTimeRange(text: string) {
+  return !!extractRangeSlot(text)
+    || /\b(today|yesterday|this week|last week|this month|last month|now|current|daily|weekly|monthly|since|between)\b/i.test(text);
+}
+
+function vagueQuestionPrefix(text: string) {
+  return /^(tell me|show me|give me|check|what about|how about|status|report)\b/i.test(text.trim());
+}
+
+async function clarificationForIntent(db: D1Database, link: any, message: IncomingMessage, intent: PromptIntent) {
+  const text = message.text.trim();
+  if (intent.legacyFirst || intent.risk === 'system' || intent.risk === 'auth') return null;
+  if (intent.confidence < 0.55) {
+    return [
+      'I am not fully sure what you want me to check.',
+      'Please mention the area: sales, stock, approvals, suppliers, customers, cash, staff, or LPOs.',
+    ].join('\n');
+  }
+
+  if (intent.name === 'sales.summary') {
+    const branch = await resolveBranchFromTool(db, link, text);
+    if (!hasExplicitTimeRange(text) && !branch && !hasExplicitScope(text)) {
+      return [
+        'Which sales should I check?',
+        'Example: sales today all branches',
+        'Example: sales this week CBD Express',
+      ].join('\n');
+    }
+  }
+
+  if (intent.name === 'expenses.summary' || intent.name === 'cash.status') {
+    const branch = await resolveBranchFromTool(db, link, text);
+    if (vagueQuestionPrefix(text) && !hasExplicitTimeRange(text) && !branch && !hasExplicitScope(text)) {
+      return [
+        `Which ${intent.name === 'cash.status' ? 'cash' : 'expense'} view do you want?`,
+        'Mention a branch or time range, for example: this week CBD Express.',
+      ].join('\n');
+    }
+  }
+
+  if (intent.name === 'inventory.product_status') {
+    const products = await loadToolProducts(db, link.businessId);
+    const product = bestTextMatch(text, products, ['name', 'category', 'barcode'], 45);
+    if (!product) {
+      return [
+        'Which product should I check?',
+        'Include the product name and branch if needed.',
+        'Example: status of Milk 1L in CBD Express.',
+      ].join('\n');
+    }
+  }
+
+  if (intent.name === 'inventory.low_stock' && /^(stock|inventory)$/i.test(text)) {
+    return [
+      'What stock view do you want?',
+      '1. low stock by branch',
+      '2. lowest stock in a branch',
+      '3. status of a specific product',
+    ].join('\n');
+  }
+
+  if (intent.toolCalls.some(call => call.name === 'supplier_recommendation')) {
+    const [branch, products] = await Promise.all([
+      resolveBranchFromTool(db, link, text),
+      loadToolProducts(db, link.businessId),
+    ]);
+    const product = bestTextMatch(text, products, ['name', 'category', 'barcode'], 42);
+    if (!product || !branch) {
+      return [
+        'Which product and branch should I match to a supplier?',
+        'Example: which supplier should I use for Cooking Oil 1L in CBD Express?',
+      ].join('\n');
+    }
+  }
+
+  if (intent.name === 'lpo.create') {
+    const hasSupplierHint = /\b(from|supplier|using|use)\b/i.test(text);
+    const hasQuantityHint = /\b\d+(?:\.\d+)?\s*(?:pcs?|pieces?|units?|pkt|packets?|ctn|cartons?|box|boxes|pack|packs|set|sets)?\b/i.test(text);
+    if (!hasSupplierHint && !/\blow stock|almost out|out of stock|reorder\b/i.test(text)) {
+      return [
+        'Which supplier should I use for the LPO?',
+        'Example: create LPO for 20 Milk 1L from OMBURI MLA CHAKE in CBD Express.',
+      ].join('\n');
+    }
+    if (!hasQuantityHint && !/\blow stock|almost out|out of stock|reorder\b/i.test(text)) {
+      return [
+        'How many units should I put on the LPO?',
+        'Example: order 20 Milk 1L from OMBURI MLA CHAKE.',
+      ].join('\n');
+    }
+  }
+
+  return null;
 }
 
 function deterministicAgentToolCalls(text: string): AgentToolCall[] {
@@ -1690,8 +1923,8 @@ function normalizeStaffRole(value: unknown, text = '') {
 function extractStaffName(args: Record<string, unknown>, text: string) {
   const provided = trimText(args.name, 120);
   if (provided) return provided;
-  const match = text.match(/\b(?:called|named|name\s+is|user|staff|employee|cashier|manager|admin)\s+([A-Za-z][A-Za-z0-9 .'-]{1,80})(?:\s+(?:as|for|in|at|with|password|pin|role|branch)\b|$)/i);
-  return trimText(match?.[1] || '', 120);
+  const match = text.match(/\b(?:called|named|name\s+is|user|staff|employee|cashier|manager|admin)\s+([A-Za-z][A-Za-z0-9 .'-]{1,80}?)(?:\s+(?:as|for|in|at|with|password|pin|role|branch)\b|$)/i);
+  return trimText(match?.[1]?.replace(/\s+(?:for|in|at|with)\s+.*$/i, '') || '', 120);
 }
 
 function extractNewUserPassword(args: Record<string, unknown>, text: string) {
@@ -1867,6 +2100,11 @@ async function executeAgentTool(db: D1Database, env: Env, link: any, message: In
       return branchesSummary(db, link.businessId);
     case 'staff_list':
       return staffListTool(db, link, message.text, args);
+    case 'supplier_recommendation':
+      return await supplierRecommendationTool(db, link, toolMessage)
+        || 'I could not match the product and branch for supplier recommendation. Try: which supplier should I use for Cooking Oil 1L in CBD Express?';
+    case 'attention_summary':
+      return attentionSummaryTool(db, link);
     case 'draft_create_user':
       return draftCreateUserTool(db, link, message, args);
     default:
@@ -1910,6 +2148,8 @@ async function executeFastIntent(
     return `Linked to ${link.businessName}. Intent engine is active. Ask a POS question, request an action, or send help.`;
   }
   if (intent.name === 'system.unlink') return unlinkBusiness(db, message.from);
+  const clarification = await clarificationForIntent(db, link, message, intent);
+  if (clarification) return clarification;
   if (!intent.toolCalls.length || intent.confidence < 0.68) return null;
 
   const outputs: string[] = [];
