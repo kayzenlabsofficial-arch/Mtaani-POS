@@ -531,6 +531,7 @@ type ApprovalItem = {
   id: string;
   businessId: string;
   branchId: string;
+  branchName?: string;
   title: string;
   details: string;
   amount?: number;
@@ -553,7 +554,7 @@ function principalForAdmin(admin: any, businessId: string, branchId?: string | n
 
 async function verifyAdminPin(db: D1Database, businessId: string, phone: string, pin: string, branchId?: string | null) {
   const cleanPin = String(pin || '').trim();
-  if (cleanPin.length < 4) throw new PolicyError('Admin PIN is required.', 401);
+  if (cleanPin.length < 3) throw new PolicyError('Admin PIN/password is required.', 401);
 
   await db.prepare('CREATE TABLE IF NOT EXISTS loginAttempts (id TEXT PRIMARY KEY, count INTEGER DEFAULT 0, lockedUntil INTEGER, updated_at INTEGER)').run();
   const attemptId = `WHATSAPP_ADMIN_PIN:${businessId}:${phone}`;
@@ -686,6 +687,7 @@ async function loadPendingApprovals(db: D1Database, businessId: string): Promise
       id: row.id,
       businessId,
       branchId: row.branchId,
+      branchName: row.branchName || 'Branch',
       title: `Expense ${money(row.amount)} - ${row.category || 'General'}`,
       details: `${row.branchName || 'Branch'}${row.userName ? ` | ${row.userName}` : ''}${row.description ? ` | ${firstWords(row.description, 60)}` : ''}`,
       amount: asNumber(row.amount),
@@ -697,6 +699,7 @@ async function loadPendingApprovals(db: D1Database, businessId: string): Promise
       id: row.id,
       businessId,
       branchId: row.branchId,
+      branchName: row.branchName || 'Branch',
       title: `Refund ${money(row.total)} - receipt ${shortId(row.id)}`,
       details: `${row.branchName || 'Branch'}${row.cashierName ? ` | ${row.cashierName}` : ''}${row.customerName ? ` | ${row.customerName}` : ''}`,
       amount: asNumber(row.total),
@@ -709,6 +712,7 @@ async function loadPendingApprovals(db: D1Database, businessId: string): Promise
       id: row.id,
       businessId,
       branchId: row.branchId,
+      branchName: row.branchName || 'Branch',
       title: `${row.poNumber || shortId(row.id)} ${money(row.totalAmount)}`,
       details: `${row.branchName || 'Branch'} | ${row.company || row.supplierName || 'Supplier'} | ${itemCount} item${itemCount === 1 ? '' : 's'}`,
       amount: asNumber(row.totalAmount),
@@ -720,6 +724,7 @@ async function loadPendingApprovals(db: D1Database, businessId: string): Promise
       id: row.id,
       businessId,
       branchId: row.branchId,
+      branchName: row.branchName || 'Branch',
       title: `Stock adjust ${row.productName || row.productId}`,
       details: `${row.branchName || 'Branch'} | ${asNumber(row.oldQty)} -> ${asNumber(row.newQty)} | ${firstWords(row.reason || '', 60)}`,
     });
@@ -730,6 +735,7 @@ async function loadPendingApprovals(db: D1Database, businessId: string): Promise
       id: row.id,
       businessId,
       branchId: row.branchId,
+      branchName: row.branchName || 'Branch',
       title: `Cash pick ${money(row.amount)}`,
       details: `${row.branchName || 'Branch'}${row.userName ? ` | ${row.userName}` : ''}`,
       amount: asNumber(row.amount),
@@ -739,17 +745,91 @@ async function loadPendingApprovals(db: D1Database, businessId: string): Promise
   return items.slice(0, 20).map((item, index) => ({ ...item, code: `A${index + 1}` }));
 }
 
-async function approvalsSummary(db: D1Database, businessId: string) {
-  const items = await loadPendingApprovals(db, businessId);
-  if (items.length === 0) return 'No pending admin approvals right now.';
+type ApprovalFilters = {
+  type?: ApprovalType;
+  branchId?: string;
+  branchName?: string;
+};
+
+function approvalTypeFromText(text: string): ApprovalType | '' {
+  const lower = text.toLowerCase();
+  if (/\bexpenses?\b/i.test(lower)) return 'EXPENSE';
+  if (/\brefunds?\b/i.test(lower)) return 'REFUND';
+  if (/\bstock\b|\binventory\b/i.test(lower)) return 'STOCK';
+  if (/\bcash\b|\bpicks?\b/i.test(lower)) return 'CASH';
+  if (/\blpos?\b|\bpos?\b|\bpurchase\b/i.test(lower)) return 'LPO';
+  return '';
+}
+
+function uniqueApprovalBranches(items: ApprovalItem[]) {
+  const byId = new Map<string, { id: string; name: string }>();
+  for (const item of items) {
+    if (!item.branchId) continue;
+    byId.set(item.branchId, { id: item.branchId, name: item.branchName || 'Branch' });
+  }
+  return Array.from(byId.values());
+}
+
+function branchFilterFromText(items: ApprovalItem[], text: string) {
+  const branches = uniqueApprovalBranches(items);
+  if (!branches.length) return null;
+  const normalizedText = norm(text);
+  const direct = branches.find(branch => {
+    const branchName = norm(branch.name);
+    return branchName && normalizedText.includes(branchName);
+  });
+  if (direct) return direct;
+
+  const phrase = text.match(/\b(?:from|for|at|in)\s+([a-z0-9\s&.'-]{2,80}?)(?:\s+(?:only|branch|approvals?|expenses?|refunds?|stock|cash|lpos?|pos?|purchase)|$)/i)?.[1];
+  if (!phrase) return null;
+  return bestMatch(phrase, branches, ['name']);
+}
+
+function approvalFiltersFromText(items: ApprovalItem[], text: string): ApprovalFilters {
+  const type = approvalTypeFromText(text) || undefined;
+  const branch = branchFilterFromText(items, text);
+  return {
+    type,
+    branchId: branch?.id,
+    branchName: branch?.name,
+  };
+}
+
+function applyApprovalFilters(items: ApprovalItem[], filters?: ApprovalFilters) {
+  return items.filter(item => {
+    if (filters?.type && item.type !== filters.type) return false;
+    if (filters?.branchId && item.branchId !== filters.branchId) return false;
+    return true;
+  });
+}
+
+function approvalFilterLabel(filters?: ApprovalFilters) {
+  const parts: string[] = [];
+  if (filters?.type) parts.push(filters.type.toLowerCase());
+  parts.push('approvals');
+  if (filters?.branchName) parts.push(`for ${filters.branchName}`);
+  return parts.join(' ');
+}
+
+async function approvalsSummary(db: D1Database, businessId: string, filterSource?: string | ApprovalFilters) {
+  const allItems = await loadPendingApprovals(db, businessId);
+  if (allItems.length === 0) return 'No pending admin approvals right now.';
+  const filters = typeof filterSource === 'string'
+    ? approvalFiltersFromText(allItems, filterSource)
+    : filterSource;
+  const items = applyApprovalFilters(allItems, filters);
+  if (items.length === 0) return `No pending ${approvalFilterLabel(filters)} right now.`;
+  const title = filters?.type || filters?.branchId
+    ? `*Pending ${approvalFilterLabel(filters)}*`
+    : '*Pending approvals*';
   return [
-    '*Pending approvals*',
+    title,
     '',
     ...items.map(item => `${item.code}. [${item.type}] ${item.title}\n   ${item.details}`),
     '',
     'Reply with:',
-    'approve A1 1234',
-    'reject A1 1234',
+    'approve A1 password 1234',
+    'reject A1 password 1234',
   ].join('\n');
 }
 
@@ -1080,7 +1160,8 @@ async function resolveLpoDraft(db: D1Database, env: Env, link: any, message: Inc
     const productText = trimText(raw?.product || raw?.name, 160);
     const quantity = asNumber(raw?.quantity);
     if (!productText || quantity <= 0) continue;
-    const product = bestMatch(productText, intent.products, ['name', 'category']);
+    const branchProducts = intent.products.filter((row: any) => !row.branchId || row.branchId === branch.id);
+    const product = bestMatch(productText, branchProducts.length ? branchProducts : intent.products, ['name', 'category']);
     if (!product) throw new PolicyError(`I could not match product "${productText}". Check the product name in POS.`, 400);
     if (product.branchId && product.branchId !== branch.id) throw new PolicyError(`Product "${product.name}" belongs to another branch.`, 403);
     const linkedSuppliers = supplierIds(product.supplierIds);
@@ -1108,6 +1189,137 @@ async function resolveLpoDraft(db: D1Database, env: Env, link: any, message: Inc
     items,
     totalAmount,
   };
+}
+
+function supplierName(row: any) {
+  return String(row?.company || row?.name || 'Supplier');
+}
+
+function addGroupedValue(map: Map<string, string[]>, key: string, value: string) {
+  const list = map.get(key) || [];
+  list.push(value);
+  map.set(key, list);
+}
+
+function skippedLowStockSummary(skipped: Map<string, string[]>) {
+  const lines: string[] = [];
+  for (const [branch, names] of Array.from(skipped.entries()).slice(0, 5)) {
+    lines.push(`${branch}: ${names.slice(0, 5).join(', ')}${names.length > 5 ? `, +${names.length - 5} more` : ''}`);
+  }
+  return lines;
+}
+
+async function draftLowStockLpos(db: D1Database, link: any, message: IncomingMessage) {
+  const branchId = link.branchId || null;
+  const [products, suppliers] = await Promise.all([
+    db.prepare(`
+      SELECT p.id, p.name, p.category, p.costPrice, p.sellingPrice, p.stockQuantity, p.reorderPoint,
+             p.supplierIds, p.branchId, p.unit, b.name AS branchName
+      FROM products p
+      LEFT JOIN branches b ON b.id = p.branchId AND b.businessId = p.businessId
+      WHERE p.businessId = ?
+        AND (? IS NULL OR p.branchId = ?)
+        AND COALESCE(p.reorderPoint, 0) > 0
+        AND COALESCE(p.stockQuantity, 0) <= COALESCE(p.reorderPoint, 0)
+      ORDER BY p.stockQuantity ASC, p.name ASC
+      LIMIT 40
+    `).bind(link.businessId, branchId, branchId).all<any>(),
+    db.prepare(`
+      SELECT id, name, company, branchId
+      FROM suppliers
+      WHERE businessId = ?
+      ORDER BY name ASC
+      LIMIT 120
+    `).bind(link.businessId).all<any>(),
+  ]);
+
+  const lowStock = products.results || [];
+  if (!lowStock.length) return 'No low-stock products need an LPO right now.';
+
+  const supplierRows = suppliers.results || [];
+  const suppliersById = new Map<string, any>();
+  for (const supplier of supplierRows) suppliersById.set(String(supplier.id), supplier);
+
+  const groups = new Map<string, any>();
+  const skipped = new Map<string, string[]>();
+  for (const product of lowStock) {
+    const productBranchId = String(product.branchId || branchId || '');
+    const productBranchName = String(product.branchName || 'Branch');
+    const linked = supplierIds(product.supplierIds)
+      .map(id => suppliersById.get(id))
+      .filter((supplier: any) => supplier && (!supplier.branchId || !productBranchId || supplier.branchId === productBranchId));
+
+    const sameBranchSuppliers = supplierRows.filter((supplier: any) => !supplier.branchId || !productBranchId || supplier.branchId === productBranchId);
+    const supplier = linked[0] || (sameBranchSuppliers.length === 1 ? sameBranchSuppliers[0] : null);
+    if (!supplier || (supplier.branchId && productBranchId && supplier.branchId !== productBranchId)) {
+      addGroupedValue(skipped, productBranchName, product.name);
+      continue;
+    }
+
+    const resolvedBranchId = productBranchId || supplier.branchId;
+    if (!resolvedBranchId) {
+      addGroupedValue(skipped, productBranchName, product.name);
+      continue;
+    }
+
+    const reorderPoint = Math.ceil(asNumber(product.reorderPoint));
+    const stock = asNumber(product.stockQuantity);
+    const quantity = Math.max(1, Math.ceil(reorderPoint - stock));
+    const unitCost = roundMoney(asNumber(product.costPrice) > 0 ? asNumber(product.costPrice) : asNumber(product.sellingPrice));
+    const key = `${resolvedBranchId}:${supplier.id}`;
+    const group = groups.get(key) || {
+      supplierId: supplier.id,
+      supplierName: supplierName(supplier),
+      branchId: resolvedBranchId,
+      branchName: productBranchName,
+      items: [],
+    };
+    group.items.push({
+      productId: product.id,
+      name: product.name,
+      expectedQuantity: quantity,
+      receivedQuantity: 0,
+      unitCost,
+      unit: product.unit || '',
+    });
+    groups.set(key, group);
+  }
+
+  if (groups.size === 0) {
+    const skippedLines = skippedLowStockSummary(skipped);
+    return [
+      'I found low-stock items, but I could not safely draft an LPO because the products do not have a clear supplier.',
+      '',
+      ...skippedLines.map(line => `- ${line}`),
+      '',
+      'Link suppliers to those products in POS, or tell me the supplier and branch in one message.',
+    ].join('\n');
+  }
+
+  const replies = ['*Low-stock LPO drafts*', ''];
+  for (const draft of Array.from(groups.values()).slice(0, 5)) {
+    draft.totalAmount = roundMoney(draft.items.reduce((sum: number, item: any) => sum + item.expectedQuantity * item.unitCost, 0));
+    const code = await savePendingAction(db, {
+      phone: message.from,
+      businessId: link.businessId,
+      branchId: draft.branchId,
+      actionType: 'CREATE_LPO',
+      payload: draft,
+    });
+    replies.push(
+      `${code}: ${draft.supplierName} | ${draft.branchName} | ${draft.items.length} item${draft.items.length === 1 ? '' : 's'} | ${money(draft.totalAmount)}`,
+      ...draft.items.slice(0, 4).map((item: any) => `- ${item.name}: ${item.expectedQuantity}${item.unit ? ` ${item.unit}` : ''}`),
+      `Create it: confirm PO ${code} password YOUR_ADMIN_PASSWORD`,
+      '',
+    );
+  }
+
+  if (groups.size > 5) replies.push(`I prepared the first 5 drafts. ${groups.size - 5} more supplier groups are still waiting.`);
+  const skippedLines = skippedLowStockSummary(skipped);
+  if (skippedLines.length) {
+    replies.push('Needs supplier choice:', ...skippedLines.map(line => `- ${line}`));
+  }
+  return replies.join('\n').trim();
 }
 
 async function ensurePurchaseSchema(db: D1Database) {
@@ -1224,6 +1436,29 @@ async function confirmLatestLpo(db: D1Database, link: any, phone: string, pin: s
   return `Created LPO ${created.poNumber} for ${money(created.totalAmount)}. It is pending approval in POS.`;
 }
 
+async function latestLpoStatus(db: D1Database, link: any, phone: string) {
+  const pending = await latestPendingAction(db, phone, link.businessId, 'CREATE_LPO');
+  if (pending) {
+    return `Not yet. I have an LPO draft waiting for admin confirmation. Reply: confirm PO ${pending.id} password YOUR_ADMIN_PASSWORD`;
+  }
+  try {
+    const recent = await db.prepare(`
+      SELECT po.poNumber, po.totalAmount, po.approvalStatus, po.orderDate, s.name AS supplierName, s.company
+      FROM auditLogs al
+      JOIN purchaseOrders po ON po.id = al.entityId AND po.businessId = al.businessId
+      LEFT JOIN suppliers s ON s.id = po.supplierId AND s.businessId = po.businessId
+      WHERE al.businessId = ?
+        AND al.action = 'purchase.create.whatsapp'
+      ORDER BY al.ts DESC
+      LIMIT 1
+    `).bind(link.businessId).first<any>();
+    if (recent) {
+      return `Latest WhatsApp LPO: ${recent.poNumber || 'PO'} for ${money(recent.totalAmount)} from ${recent.company || recent.supplierName || 'supplier'}. Approval: ${recent.approvalStatus || 'PENDING'}.`;
+    }
+  } catch {}
+  return 'Not yet. I only create an LPO after you confirm the draft with your admin PIN/password.';
+}
+
 async function auditOrders(db: D1Database, env: Env, businessId: string) {
   const since = Date.now() - 30 * DAY_MS;
   const { results } = await db.prepare(`
@@ -1277,10 +1512,15 @@ async function auditOrders(db: D1Database, env: Env, businessId: string) {
 }
 
 function extractPin(text: string) {
-  const explicit = text.match(/\b(?:pin|password|code)\s*(?:is|:|=)?\s*([A-Za-z0-9@#$%^&*!._-]{4,80})\b/i);
+  const explicit = text.match(/\b(?:pin|password|code)\s*(?:is|:|=)?\s*([A-Za-z0-9@#$%^&*!._-]{3,80})\b/i);
   if (explicit) return explicit[1].trim();
-  const trailing = text.trim().match(/\b([A-Za-z0-9@#$%^&*!._-]{4,80})\s*$/);
+  const trailing = text.trim().match(/\b([A-Za-z0-9@#$%^&*!._-]{3,80})\s*$/);
   return trailing ? trailing[1].trim() : '';
+}
+
+function isStandaloneAdminSecret(text: string) {
+  const value = text.trim();
+  return /^(?=.*\d)[A-Za-z0-9@#$%^&*!._-]{3,80}$/.test(value);
 }
 
 function ordinalCode(text: string) {
@@ -1302,21 +1542,46 @@ async function approvalItemFromText(db: D1Database, businessId: string, text: st
   const code = ordinalCode(text);
   if (code) return { item: items.find(row => row.code === code) || null, items };
 
-  const lower = text.toLowerCase();
-  const typeHint = lower.includes('expense')
-    ? 'EXPENSE'
-    : lower.includes('refund')
-      ? 'REFUND'
-      : lower.includes('stock')
-        ? 'STOCK'
-        : lower.includes('cash')
-          ? 'CASH'
-          : lower.includes('lpo') || lower.includes('po') || lower.includes('purchase')
-            ? 'LPO'
-            : '';
-  const typed = typeHint ? items.filter(row => row.type === typeHint) : items;
-  if (typed.length === 1) return { item: typed[0], items };
-  return { item: null, items };
+  const filters = approvalFiltersFromText(items, text);
+  const filtered = applyApprovalFilters(items, filters);
+  if (filtered.length === 1) return { item: filtered[0], items: filtered };
+  return { item: null, items: filtered.length ? filtered : items };
+}
+
+async function savePendingApprovalAction(
+  db: D1Database,
+  phone: string,
+  item: ApprovalItem,
+  action: 'APPROVE' | 'REJECT',
+) {
+  return savePendingAction(db, {
+    phone,
+    businessId: item.businessId,
+    branchId: item.branchId,
+    actionType: 'APPROVAL_ACTION',
+    payload: {
+      action,
+      approvalId: item.id,
+      approvalType: item.type,
+      code: item.code,
+      title: item.title,
+    },
+  });
+}
+
+async function confirmLatestApprovalAction(db: D1Database, link: any, phone: string, pin: string) {
+  const pending = await latestPendingAction(db, phone, link.businessId, 'APPROVAL_ACTION');
+  if (!pending) return null;
+  const payload = pending.payload || {};
+  const items = await loadPendingApprovals(db, link.businessId);
+  const item = items.find(row => row.id === payload.approvalId && row.type === payload.approvalType);
+  if (!item) throw new PolicyError('That approval is no longer pending. Send approvals to see the current list.', 409);
+  const principal = await verifyAdminPin(db, link.businessId, phone, pin, item.branchId);
+  const result = await applyApprovalAction(db, item, principal, payload.action === 'REJECT' ? 'REJECT' : 'APPROVE', phone);
+  await db.prepare("UPDATE whatsappPendingActions SET status = 'COMPLETED', completedAt = ? WHERE id = ?")
+    .bind(Date.now(), pending.id)
+    .run();
+  return result;
 }
 
 async function handleNaturalAction(db: D1Database, env: Env, link: any, message: IncomingMessage): Promise<string | null> {
@@ -1328,12 +1593,19 @@ async function handleNaturalAction(db: D1Database, env: Env, link: any, message:
   const mentionsOrder = /\b(lpo|po|purchase order|purchase orders|orders?)\b/i.test(body);
   const wantsCreate = /\b(create|draft|make|raise|prepare|generate|order|buy|restock)\b/i.test(body);
   const wantsAudit = /\b(audit|review|check|inspect|risk|risks)\b/i.test(body);
-  const wantsList = /\b(show|list|what|which|give|view|see)\b/i.test(body);
+  const wantsList = /\b(show|list|what|which|give|view|see|any|all|want|need)\b/i.test(body);
+
+  if (isStandaloneAdminSecret(body)) {
+    const approvalResult = await confirmLatestApprovalAction(db, link, message.from, body);
+    if (approvalResult) return approvalResult;
+    const pendingLpo = await latestPendingAction(db, message.from, link.businessId, 'CREATE_LPO');
+    if (pendingLpo) return confirmLatestLpo(db, link, message.from, body);
+  }
 
   const confirmsDraft = /\byes\b/i.test(body) || /\bdraft\b/i.test(body) || /\bconfirm\s+(?:po|lpo)\b/i.test(body);
   if (confirmsDraft && /\b(lpo|po|draft)\b/i.test(body)) {
     const pin = extractPin(body);
-    if (!pin) return 'Send your admin PIN to confirm the LPO draft, for example: yes pin 1234';
+    if (!pin) return 'Send your admin PIN/password to confirm the LPO draft. You can reply with just the PIN/password.';
     const code = normaliseCode(body.match(/\b(?:po|lpo|code)\s+([a-z0-9]{4,10})\b/i)?.[1] || '');
     if (code) {
       try { return await confirmLpo(db, link, message.from, code, pin); } catch {}
@@ -1342,8 +1614,6 @@ async function handleNaturalAction(db: D1Database, env: Env, link: any, message:
   }
 
   if ((wantsApprove || wantsReject) && (mentionsApproval || ordinalCode(body) || /\b(expense|refund|stock|cash|lpo|po|purchase)\b/i.test(body))) {
-    const pin = extractPin(body);
-    if (!pin) return 'Please include your admin PIN/password to approve or reject from WhatsApp.';
     const { item, items } = await approvalItemFromText(db, link.businessId, body);
     if (!item) {
       if (items.length === 0) return 'No pending admin approvals right now.';
@@ -1355,19 +1625,32 @@ async function handleNaturalAction(db: D1Database, env: Env, link: any, message:
         'Example: approve the first one pin 1234',
       ].join('\n');
     }
+    const pin = extractPin(body);
+    if (!pin) {
+      await savePendingApprovalAction(db, message.from, item, wantsReject ? 'REJECT' : 'APPROVE');
+      return `Send your admin PIN/password to ${wantsReject ? 'reject' : 'approve'} ${item.code}: ${item.title}. You can reply with just the PIN/password.`;
+    }
     const principal = await verifyAdminPin(db, link.businessId, message.from, pin, item.branchId);
     return applyApprovalAction(db, item, principal, wantsReject ? 'REJECT' : 'APPROVE', message.from);
   }
 
-  if ((mentionsApproval && wantsList) || /^approvals?$/i.test(body) || lower.includes('pending approvals')) {
-    return approvalsSummary(db, link.businessId);
+  const wantsApprovalList = mentionsApproval && (wantsList || /\b(from|for|at|in|only|branch|expenses?|refunds?|stock|cash|lpos?|pos?|purchase)\b/i.test(body));
+  if (wantsApprovalList || /^approvals?$/i.test(body) || lower.includes('pending approvals')) {
+    return approvalsSummary(db, link.businessId, body);
   }
 
   if (mentionsOrder && wantsAudit) {
     return auditOrders(db, env, link.businessId);
   }
 
+  if (mentionsOrder && /\b(did|have|has|was)\b.*\b(create|created|make|made|raise|raised)\b/i.test(body)) {
+    return latestLpoStatus(db, link, message.from);
+  }
+
   if (mentionsOrder && wantsCreate) {
+    if (/\b(stock|restock|reorder|almost out|out of stock|low stock)\b/i.test(body)) {
+      return draftLowStockLpos(db, link, message);
+    }
     return draftLpoFromWhatsApp(db, env, link, message);
   }
 
