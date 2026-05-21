@@ -608,6 +608,52 @@ CREATE TABLE IF NOT EXISTS aiUsage (
 );
 CREATE INDEX IF NOT EXISTS idx_aiUsage_scope ON aiUsage(businessId, userId, day);
 
+CREATE TABLE IF NOT EXISTS whatsappContacts (
+    phone TEXT PRIMARY KEY,
+    displayName TEXT,
+    businessId TEXT,
+    branchId TEXT,
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    createdAt INTEGER,
+    updated_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_whatsappContacts_business ON whatsappContacts(businessId, status);
+
+CREATE TABLE IF NOT EXISTS whatsappWebhookMessages (
+    id TEXT PRIMARY KEY,
+    phone TEXT,
+    businessId TEXT,
+    messageType TEXT,
+    text TEXT,
+    createdAt INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_whatsappWebhookMessages_phone ON whatsappWebhookMessages(phone, createdAt);
+
+CREATE TABLE IF NOT EXISTS whatsappPendingActions (
+    id TEXT PRIMARY KEY,
+    phone TEXT NOT NULL,
+    businessId TEXT NOT NULL,
+    branchId TEXT,
+    actionType TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    payload TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    expiresAt INTEGER NOT NULL,
+    completedAt INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_whatsappPendingActions_lookup ON whatsappPendingActions(phone, businessId, status, expiresAt);
+
+CREATE TABLE IF NOT EXISTS whatsappOutboundMessages (
+    id TEXT PRIMARY KEY,
+    phone TEXT NOT NULL,
+    businessId TEXT,
+    inboundMessageId TEXT,
+    status TEXT NOT NULL,
+    error TEXT,
+    createdAt INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_whatsappOutboundMessages_phone ON whatsappOutboundMessages(phone, createdAt);
+
 CREATE TABLE IF NOT EXISTS billingAccounts (
     businessId TEXT PRIMARY KEY,
     monthlyBaseFee REAL DEFAULT 3000,

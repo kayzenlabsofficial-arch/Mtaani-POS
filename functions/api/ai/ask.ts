@@ -77,11 +77,11 @@ function daysSince(timestamp: unknown, now = Date.now()) {
   return Math.max(0, Math.floor((now - ts) / DAY_MS));
 }
 
-function truncateText(text: unknown, max = 900) {
+export function truncateText(text: unknown, max = 900) {
   return String(text || '').trim().slice(0, max);
 }
 
-async function ensureAiSchema(db: D1Database) {
+export async function ensureAiSchema(db: D1Database) {
   const migrations = [
     'ALTER TABLE settings ADD COLUMN aiAssistantEnabled INTEGER DEFAULT 1',
     'ALTER TABLE settings ADD COLUMN aiDailyRequestLimit INTEGER DEFAULT 20',
@@ -107,7 +107,7 @@ async function ensureAiSchema(db: D1Database) {
   }
 }
 
-async function getAiSettings(db: D1Database, businessId: string) {
+export async function getAiSettings(db: D1Database, businessId: string) {
   const settings = await first<any>(
     db,
     `SELECT aiAssistantEnabled, aiDailyRequestLimit
@@ -124,7 +124,7 @@ async function getAiSettings(db: D1Database, businessId: string) {
   return { enabled, dailyLimit };
 }
 
-async function getUsage(db: D1Database, businessId: string, userId: string, userName: string, branchId: string | null) {
+export async function getUsage(db: D1Database, businessId: string, userId: string, userName: string, branchId: string | null) {
   const day = nairobiDay();
   const id = `${businessId}|BUSINESS|${day}`;
   const row = await first<any>(db, 'SELECT count FROM aiUsage WHERE id = ?', id);
@@ -147,7 +147,7 @@ function productName(productsById: Map<string, any>, productId: string) {
   return productsById.get(productId)?.name || productId;
 }
 
-async function buildBusinessSnapshot(db: D1Database, businessId: string, branchId: string | null) {
+export async function buildBusinessSnapshot(db: D1Database, businessId: string, branchId: string | null) {
   const now = Date.now();
   const since7 = now - 7 * DAY_MS;
   const since30 = now - 30 * DAY_MS;
@@ -424,7 +424,7 @@ async function buildBusinessSnapshot(db: D1Database, businessId: string, branchI
   };
 }
 
-function buildPrompt(question: string, snapshot: unknown) {
+export function buildPrompt(question: string, snapshot: unknown) {
   return [
     'You are the Mtaani POS AI analyst inside a Kenyan point-of-sale system.',
     'Answer only from the provided business data. Do not invent records, totals, or dates.',
@@ -443,7 +443,7 @@ function buildPrompt(question: string, snapshot: unknown) {
   ].join('\n');
 }
 
-function maybeAnswerFromSnapshot(question: string, snapshot: any): string | null {
+export function maybeAnswerFromSnapshot(question: string, snapshot: any): string | null {
   const q = question.toLowerCase();
   const wantsDeadStock = (
     q.includes('dead stock') ||
@@ -515,7 +515,7 @@ function extractAiText(result: any) {
   return JSON.stringify(result);
 }
 
-async function runAi(env: Env, prompt: string) {
+export async function runAi(env: Env, prompt: string) {
   const model = env.CLOUDFLARE_AI_MODEL || MODEL_FALLBACK;
   const input = {
     prompt,
