@@ -16,7 +16,7 @@ const shiftBelongsToUser = (shift: any, user: any) => {
 const SINGLE_SHOP_ID = 'single-shop';
 
 export function useMtaaniPOS() {
-  const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'TILLS' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'HR' | 'REPORTS' | 'ADMIN_PANEL'>('REGISTER');
+  const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'TILLS' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'HR' | 'REPORTS' | 'SETTINGS' | 'ADMIN_PANEL'>('REGISTER');
   const activeTabRef = useRef(activeTab);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
@@ -216,7 +216,7 @@ export function useMtaaniPOS() {
       return;
     }
     const role = currentUser?.role;
-    if (nextTab === 'ADMIN_PANEL' && role !== 'ADMIN') {
+    if ((nextTab === 'ADMIN_PANEL' || nextTab === 'SETTINGS') && role !== 'ADMIN') {
       error("Only administrators can open admin controls.");
       return;
     }
@@ -231,7 +231,7 @@ export function useMtaaniPOS() {
     setActiveTab(nextTab);
     setSidebarOpen(false);
     setIsMoreMenuOpen(false);
-    if (nextTab === 'ADMIN_PANEL') scrollAdminPanelToTopOnDesktop();
+    if (nextTab === 'ADMIN_PANEL' || nextTab === 'SETTINGS') scrollAdminPanelToTopOnDesktop();
   };
 
   useEffect(() => {

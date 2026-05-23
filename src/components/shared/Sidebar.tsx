@@ -9,6 +9,7 @@ import {
   RefreshCw,
   RotateCcw,
   Settings,
+  ShieldCheck,
   ShoppingBag,
   ShoppingCart,
   Store,
@@ -47,7 +48,8 @@ const navItems: Array<{
   { id: 'REPORTS', label: 'Reports', icon: BarChart3, adminOnly: true, managerAllowed: true },
   { id: 'DOCUMENTS', label: 'Documents', icon: FileText },
   { id: 'HR', label: 'HR', icon: UserRound, adminOnly: true, managerAllowed: true },
-  { id: 'ADMIN_PANEL', label: 'Admin', icon: Settings, adminOnly: true },
+  { id: 'SETTINGS', label: 'Settings', icon: Settings, adminOnly: true },
+  { id: 'ADMIN_PANEL', label: 'Admin', icon: ShieldCheck, adminOnly: true },
 ];
 
 export default function Sidebar({
@@ -63,7 +65,7 @@ export default function Sidebar({
   const isAdmin = currentUser?.role === 'ADMIN';
   const userInitial = currentUser?.name?.charAt(0)?.toUpperCase() || 'U';
   const visibleItems = navItems.filter(item => {
-    if (item.id === 'ADMIN_PANEL') return isAdmin;
+    if (item.id === 'ADMIN_PANEL' || item.id === 'SETTINGS') return isAdmin;
     if (item.adminOnly) return isAdmin || (item.managerAllowed && isAdminOrManager);
     return true;
   });

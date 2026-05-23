@@ -30,6 +30,7 @@ import ReportsTab from './components/tabs/ReportsTab';
 import HRTab from './components/tabs/HRTab';
 import AdminPanel from './components/tabs/AdminPanel';
 import TillsTab from './components/tabs/TillsTab';
+import SettingsTab from './components/tabs/SettingsTab';
 
 // Layout & Shell
 import Sidebar from './components/shared/Sidebar';
@@ -257,7 +258,8 @@ export default function MtaaniPOS() {
             {activeTab === 'DOCUMENTS' && <DocumentsTab />}
             {activeTab === 'HR' && <HRTab />}
             {activeTab === 'REPORTS' && <ReportsTab />}
-            {activeTab === 'ADMIN_PANEL' && <AdminPanel updateServiceWorker={updateServiceWorker} needRefresh={needRefresh} />}
+            {activeTab === 'SETTINGS' && <SettingsTab updateServiceWorker={updateServiceWorker} needRefresh={needRefresh} />}
+            {activeTab === 'ADMIN_PANEL' && <AdminPanel />}
           </div>
         </main>
 

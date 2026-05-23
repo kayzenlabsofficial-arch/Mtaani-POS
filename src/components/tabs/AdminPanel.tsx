@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Settings as SettingsIcon, ShieldCheck, Users, Plus, Trash2, KeyRound, Tag as TagIcon, Save, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Palette, Check } from 'lucide-react';
+import { ShieldCheck, Users, Plus, Trash2, KeyRound, Tag as TagIcon, Save, Utensils, GlassWater, ShoppingBag, Lightbulb, Package, Palette, Check } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { getApiKey } from '../../runtimeConfig';
 
-import SettingsTab from './SettingsTab';
 import AdminApprovals from './AdminApprovals';
 import { useToast } from '../../context/ToastContext';
 import { type Category } from '../../db';
@@ -38,7 +37,6 @@ const ADMIN_TABS = [
   { id: 'USERS', label: 'Staff', icon: Users },
   { id: 'CATEGORIES', label: 'Categories', icon: TagIcon },
   { id: 'APPROVALS', label: 'Approvals', icon: ShieldCheck },
-  { id: 'SETTINGS', label: 'Settings', icon: SettingsIcon },
 ] as const;
 
 function AdminSectionHeader({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
@@ -53,11 +51,11 @@ function AdminSectionHeader({ title, description, action }: { title: string; des
   );
 }
 
-export default function AdminPanel({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
-  const [activeAdminTab, setActiveAdminTab] = useState<'SETTINGS' | 'APPROVALS' | 'USERS' | 'CATEGORIES'>(() => {
+export default function AdminPanel() {
+  const [activeAdminTab, setActiveAdminTab] = useState<'APPROVALS' | 'USERS' | 'CATEGORIES'>(() => {
     const requested = sessionStorage.getItem('mtaani_admin_tab');
     sessionStorage.removeItem('mtaani_admin_tab');
-    return ['SETTINGS', 'APPROVALS', 'USERS', 'CATEGORIES'].includes(requested || '')
+    return ['APPROVALS', 'USERS', 'CATEGORIES'].includes(requested || '')
       ? requested as any
       : 'USERS';
   });
@@ -280,7 +278,6 @@ export default function AdminPanel({ updateServiceWorker, needRefresh }: { updat
 
       <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
          
-         {activeAdminTab === 'SETTINGS' && <SettingsTab updateServiceWorker={updateServiceWorker} needRefresh={needRefresh} />}
          {activeAdminTab === 'APPROVALS' && <AdminApprovals />}
          
          {activeAdminTab === 'USERS' && (

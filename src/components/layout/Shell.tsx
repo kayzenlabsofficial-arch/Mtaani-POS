@@ -11,6 +11,7 @@ import {
   RefreshCw,
   RotateCcw,
   Settings,
+  ShieldCheck,
   ShoppingBag,
   ShoppingCart,
   Store,
@@ -38,6 +39,7 @@ const MaterialIcon = ({ name, className = "", style = {} }: { name: string, clas
       shopping_bag: ShoppingBag,
       analytics: BarChart3,
       settings: Settings,
+      admin_panel_settings: ShieldCheck,
       logout: LogOut,
       add_shopping_cart: ShoppingCart,
       add: Plus,
@@ -175,9 +177,10 @@ export function MoreOptionsMenu({ onTabChange, onLogout, onClose, currentUser }:
     { id: 'PURCHASES', label: 'LPOs', icon: 'shopping_bag', color: 'bg-indigo-500' },
     { id: 'HR', label: 'HR', icon: 'badge', color: 'bg-sky-600' },
     { id: 'REPORTS', label: 'Reports', icon: 'analytics', color: 'bg-emerald-500' },
-    { id: 'ADMIN_PANEL', label: 'Admin', icon: 'settings', color: 'bg-slate-600' },
+    { id: 'SETTINGS', label: 'Settings', icon: 'settings', color: 'bg-slate-600' },
+    { id: 'ADMIN_PANEL', label: 'Admin', icon: 'admin_panel_settings', color: 'bg-slate-800' },
   ].filter(item => {
-    if (item.id === 'ADMIN_PANEL') return isAdmin;
+    if (item.id === 'ADMIN_PANEL' || item.id === 'SETTINGS') return isAdmin;
     if (item.id === 'SUPPLIERS' || item.id === 'REPORTS' || item.id === 'HR') return isAdminOrManager;
     return true;
   });

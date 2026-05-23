@@ -923,8 +923,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
 
   const openOwnerSettings = () => {
-    sessionStorage.setItem('mtaani_admin_tab', 'SETTINGS');
-    setActiveTab('ADMIN_PANEL');
+    setActiveTab('SETTINGS');
   };
 
   const dashboardQuickActions = quickActions.map((action: any) => ({
