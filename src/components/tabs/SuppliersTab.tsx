@@ -4,23 +4,18 @@ import { useLiveQuery } from '../../clouddb';
 import { db, type Supplier } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
-import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 import SupplierLedgerModal from '../modals/SupplierLedgerModal';
-import { settleSupplierPayment, type SupplierPaymentInput } from '../../utils/supplierLedger';
 import { belongsToActiveShop } from '../../utils/shopScope';
 import { SupplierService } from '../../services/suppliers';
-import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSession';
-import { getTodayStartMs } from '../../utils/cashDrawer';
+import { getCurrentShiftId } from '../../utils/shiftSession';
 
 
-export default function SuppliersTab({ setActiveTab, financialAccounts }: { setActiveTab?: (tab: string) => void, financialAccounts: any[] }) {
+export default function SuppliersTab({ setActiveTab }: { setActiveTab?: (tab: string) => void }) {
   const [supplierSearch, setSupplierSearch] = useState("");
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
 
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
   const [selectedSupplierForLedger, setSelectedSupplierForLedger] = useState<Supplier | null>(null);
-  const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<Supplier | null>(null);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [supplierForm, setSupplierForm] = useState({ name: '', company: '', phone: '', email: '', address: '', kraPin: '' });
   const isAdmin = useStore(state => state.isAdmin);
@@ -75,10 +70,10 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
       setIsSupplierModalOpen(true);
   }
 
-  const openPaymentModal = (s: Supplier, e?: React.MouseEvent) => {
+  const openPaymentPage = (s: Supplier, e?: React.MouseEvent) => {
       e?.stopPropagation();
-      setSelectedSupplierForPayment(s);
-      setIsPaymentModalOpen(true);
+      useStore.getState().setPaymentSupplierId(s.id);
+      if (setActiveTab) setActiveTab('SUPPLIER_PAYMENTS');
   }
 
   const handleSaveSupplier = async () => {
@@ -118,31 +113,6 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
       } catch (err: any) {
         error("Failed to delete supplier: " + err.message);
       }
-    }
-  }
-
-   const handleSavePayment = async (payment: SupplierPaymentInput) => {
-    if (!selectedSupplierForPayment || isSaving) return;
-    setIsSaving(true);
-    
-    try {
-        await settleSupplierPayment({
-          supplier: selectedSupplierForPayment,
-          payment,
-          activeShopId: activeShopId!,
-          activeBusinessId: activeBusinessId!,
-          preparedBy: currentUser?.name || 'Staff',
-          shiftId: currentShiftId,
-          shiftStart: getCurrentShiftStart(activeShift, getTodayStartMs()),
-        });
-        success("Payment recorded successfully.");
-        setIsPaymentModalOpen(false);
-        setSelectedSupplierForPayment(null);
-    } catch (err) {
-        console.error("Failed to save payment:", err);
-        error("Failed to save payment.");
-    } finally {
-        setIsSaving(false);
     }
   }
 
@@ -219,11 +189,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
                    </div>
                    <button
                      data-testid={`supplier-pay-${supplier.id}`}
-                     onClick={(e) => {
-                       e.stopPropagation();
-                       useStore.getState().setPaymentSupplierId(supplier.id);
-                       if (setActiveTab) setActiveTab('SUPPLIER_PAYMENTS');
-                     }}
+                     onClick={(e) => openPaymentPage(supplier, e)}
                      className="px-3 py-2 rounded-xl bg-slate-50 text-slate-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-95 font-bold text-xs whitespace-nowrap border border-slate-100 shrink-0"
                    >
                      Pay
@@ -315,21 +281,12 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
         </div>
       )}
 
-      {/* Statement & Payment Modals */}
-      <SupplierPaymentModal 
-        isOpen={isPaymentModalOpen}
-        onClose={() => setIsPaymentModalOpen(false)}
-        supplier={selectedSupplierForPayment}
-        onSave={handleSavePayment}
-        financialAccounts={financialAccounts}
-        shiftId={currentShiftId}
-      />
-
+      {/* Statement Modal */}
       <SupplierLedgerModal 
         supplier={selectedSupplierForLedger}
         onClose={() => { setIsLedgerModalOpen(false); setSelectedSupplierForLedger(null); }}
         onEdit={(s) => { setIsLedgerModalOpen(false); setSelectedSupplierForLedger(null); openEditSupplier(s); }}
-        onPay={(s) => { setIsLedgerModalOpen(false); setSelectedSupplierForLedger(null); openPaymentModal(s); }}
+        onPay={(s) => { setIsLedgerModalOpen(false); setSelectedSupplierForLedger(null); openPaymentPage(s); }}
         shiftId={currentShiftId}
         products={allProducts || []}
       />

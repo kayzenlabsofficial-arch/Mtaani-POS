@@ -103,6 +103,7 @@ async function ensureSchema(db: D1Database) {
       reference TEXT,
       source TEXT,
       accountId TEXT,
+      shopId TEXT,
       shiftId TEXT,
       preparedBy TEXT,
       businessId TEXT,
@@ -133,6 +134,7 @@ async function ensureSchema(db: D1Database) {
     'reference TEXT',
     'source TEXT',
     'accountId TEXT',
+    'shopId TEXT',
     'shiftId TEXT',
     'preparedBy TEXT',
     'businessId TEXT',
@@ -156,6 +158,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
+    const shopId = trimText(body?.shopId || 'single-shop', 160);
     const supplierId = String(body?.supplierId || body?.supplier?.id || '').trim();
     const payment = body?.payment || {};
     if (!businessId || !supplierId) return json({ error: 'Business and supplier are required.' }, 400);
@@ -307,8 +310,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const storedPurchaseOrderIds = storedInvoiceAllocations.map(allocation => allocation.purchaseOrderId);
     statements.unshift(
       env.DB.prepare(`
-        INSERT INTO supplierPayments (id, supplierId, purchaseOrderId, purchaseOrderIds, invoiceAllocations, creditNoteIds, amount, paymentMethod, transactionCode, timestamp, reference, source, accountId, businessId, shiftId, preparedBy, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO supplierPayments (id, supplierId, purchaseOrderId, purchaseOrderIds, invoiceAllocations, creditNoteIds, amount, paymentMethod, transactionCode, timestamp, reference, source, accountId, shopId, businessId, shiftId, preparedBy, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         paymentId,
         supplierId,
@@ -323,6 +326,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         trimText(payment.reference || 'Supplier payment', 160),
         source,
         source === 'ACCOUNT' ? pickedCashAccountId(businessId) : null,
+        shopId,
         businessId,
         body?.shiftId || null,
         trimText(body?.preparedBy || auth.principal.userName, 120),

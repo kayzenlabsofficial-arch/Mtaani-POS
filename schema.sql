@@ -348,6 +348,7 @@ CREATE TABLE IF NOT EXISTS supplierPayments (
     reference TEXT,
     source TEXT,
     accountId TEXT,
+    shopId TEXT,
     shiftId TEXT,
     preparedBy TEXT,
     businessId TEXT,

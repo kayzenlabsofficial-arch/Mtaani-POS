@@ -41,21 +41,6 @@ const MaterialIcon = ({ name, className = "", style = {} }: { name: string, clas
   })()
 );
 
-const CARD_COLORS = [
-  'bg-blue-600', 'bg-violet-600', 'bg-emerald-600',
-  'bg-amber-500', 'bg-rose-600', 'bg-indigo-600', 'bg-teal-600', 'bg-orange-500',
-];
-function colorFor(str: string) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  return CARD_COLORS[Math.abs(hash) % CARD_COLORS.length];
-}
-
-const CATEGORY_COLORS = [
-  'bg-blue-500', 'bg-violet-500', 'bg-emerald-500',
-  'bg-amber-500', 'bg-rose-500', 'bg-indigo-500', 'bg-teal-500',
-];
-
 type SortColumn = 'name' | 'stock' | 'price' | 'expiry';
 type StockStatusFilter = 'ALL' | 'EXPIRY_RISK' | 'OUT_OF_STOCK' | 'ALMOST_OUT';
 
@@ -387,34 +372,36 @@ export default function InventoryTab() {
     );
 
   return (
-    <div className="flex flex-col h-full animate-in fade-in pb-24 gap-5">
+    <div className="flex h-full flex-col gap-5 pb-24 animate-in fade-in">
 
       {/* Page heading */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <h2 className="text-xl font-black text-slate-900">Inventory</h2>
-          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+          <h2 className="text-2xl font-black text-slate-950">Inventory</h2>
+          <p className="mt-1 text-sm font-semibold text-slate-500">
             {products?.length || 0} products across {categories?.length || 0} categories
           </p>
         </div>
-        <button onClick={() => openProductModal()} className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start">
+        <button onClick={() => openProductModal()} className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-sm font-black text-white hover:bg-blue-800">
           <MaterialIcon name="add" style={{ fontSize: '20px' }} />
           Add product
         </button>
       </div>
+      </section>
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
         {[
-          { label: 'Total products', value: products?.length || 0, icon: 'inventory_2', color: 'bg-primary', unit: '' },
-          { label: 'Stock value', value: `Ksh ${totalValue.toLocaleString()}`, icon: 'payments', color: 'bg-emerald-600', unit: '' },
-          { label: 'Almost out', value: lowStock, icon: 'warning', color: 'bg-amber-500', unit: 'items' },
-          { label: 'Out of stock', value: outOfStock, icon: 'do_not_disturb_on', color: 'bg-rose-600', unit: 'items' },
-          { label: 'Expiry watch', value: `${expired}/${expiringSoon}`, icon: 'calendar', color: expired ? 'bg-rose-600' : expiringSoon ? 'bg-amber-500' : 'bg-slate-700', unit: 'expired/soon' },
+          { label: 'Total products', value: products?.length || 0, icon: 'inventory_2', unit: '' },
+          { label: 'Stock value', value: `Ksh ${totalValue.toLocaleString()}`, icon: 'payments', unit: '' },
+          { label: 'Almost out', value: lowStock, icon: 'warning', unit: 'items' },
+          { label: 'Out of stock', value: outOfStock, icon: 'do_not_disturb_on', unit: 'items' },
+          { label: 'Expiry watch', value: `${expired}/${expiringSoon}`, icon: 'calendar', unit: 'expired/soon' },
         ].map(kpi => (
-          <div key={kpi.label} className="bg-white border border-slate-100 rounded-2xl p-4 flex items-center gap-4 hover:shadow-sm transition-all">
-            <div className={`w-10 h-10 ${kpi.color} rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm`}>
-              <MaterialIcon name={kpi.icon} className="text-white" style={{ fontSize: '20px' }} />
+          <div key={kpi.label} className="flex items-center gap-3 rounded-lg border-2 border-slate-200 bg-white p-4">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50 text-blue-700">
+              <MaterialIcon name={kpi.icon} className="text-blue-700" style={{ fontSize: '20px' }} />
             </div>
             <div className="min-w-0">
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{kpi.label}</p>
@@ -425,13 +412,13 @@ export default function InventoryTab() {
       </div>
 
       {/* Toolbar: Search + Filters */}
-      <div className="flex flex-col md:flex-row gap-3">
+      <div className="flex flex-col gap-3 rounded-lg border-2 border-slate-200 bg-white p-3 shadow-sm md:flex-row">
         <div className="relative group flex-1">
           <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors">
             <MaterialIcon name="search" style={{ fontSize: '18px' }} />
           </div>
           <input
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/15 focus:border-primary outline-none transition-all shadow-sm"
+            className="h-11 w-full rounded-lg border-2 border-slate-200 bg-white pl-10 pr-4 text-sm font-bold outline-none transition-all focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
             placeholder="Search by name or barcode..."
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -447,7 +434,7 @@ export default function InventoryTab() {
           <button
             onClick={() => setSelectedCategory(null)}
             className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border flex-shrink-0 ${
-              !selectedCategory ? 'bg-primary text-white border-primary shadow-md' : 'bg-white border-slate-200 text-slate-600 hover:border-primary/30'
+              !selectedCategory ? 'border-blue-700 bg-blue-700 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300'
             }`}
           >
             All
@@ -457,7 +444,7 @@ export default function InventoryTab() {
               key={cat.id}
               onClick={() => setSelectedCategory(cat.name)}
               className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border flex-shrink-0 ${
-                selectedCategory === cat.name ? 'bg-primary text-white border-primary shadow-md' : 'bg-white border-slate-200 text-slate-600 hover:border-primary/30'
+                selectedCategory === cat.name ? 'border-blue-700 bg-blue-700 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300'
               }`}
             >
               {cat.name}
@@ -473,7 +460,7 @@ export default function InventoryTab() {
             type="button"
             onClick={() => setStockStatusFilter(filter.id)}
             className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border flex-shrink-0 flex items-center gap-2 ${
-              stockStatusFilter === filter.id ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
+              stockStatusFilter === filter.id ? 'border-blue-700 bg-blue-700 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300'
             }`}
           >
             <span>{filter.label}</span>
@@ -487,7 +474,7 @@ export default function InventoryTab() {
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden flex-1 flex flex-col min-h-0">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border-2 border-slate-200 bg-white">
 
         {/* Table header */}
         <div className="hidden md:grid md:grid-cols-[minmax(0,1.6fr)_9rem_5rem_7rem_8rem_8rem] items-center gap-4 px-6 py-3 bg-slate-50 border-b border-slate-100 flex-shrink-0">
@@ -511,7 +498,7 @@ export default function InventoryTab() {
         <div className="flex-1 overflow-y-auto no-scrollbar divide-y divide-slate-50">
           {sorted.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-3">
+              <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-lg border-2 border-dashed border-slate-200 bg-slate-50">
                 <MaterialIcon name="inventory" className="text-slate-300" style={{ fontSize: '32px' }} />
               </div>
               <p className="text-sm font-bold text-slate-400">No products found</p>
@@ -519,7 +506,7 @@ export default function InventoryTab() {
                 <button
                   type="button"
                   onClick={() => setStockStatusFilter('ALL')}
-                  className="mt-3 px-4 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest"
+                  className="mt-3 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white"
                 >
                   Clear stock filter
                 </button>
@@ -529,8 +516,6 @@ export default function InventoryTab() {
             const stock = product.stockQuantity || 0;
             const isOut = stock <= 0;
             const isLow = !isOut && stock <= (product.reorderPoint || 5);
-            const catIdx = categories?.findIndex(c => c.name === product.category) ?? 0;
-            const catColor = CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length];
             const expiry = getExpiryInfo(product);
 
             return (
@@ -542,13 +527,13 @@ export default function InventoryTab() {
               >
                 {/* Product info */}
                 <div className="min-w-0 flex items-center gap-3">
-                  <div className={`w-10 h-10 ${colorFor(product.name)} rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm opacity-90`}>
-                    <span className="text-white text-xs font-black">{product.name.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase()}</span>
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
+                    <span className="text-xs font-black text-blue-700">{product.name.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase()}</span>
                   </div>
                   <div className="stable-row-copy">
                     <p className="stable-title-2 text-[13px] font-bold leading-tight text-slate-900 group-hover:text-primary transition-colors">{product.name}</p>
                     <div className="flex min-w-0 items-center gap-2 mt-0.5 overflow-hidden">
-                      <span className={`w-1.5 h-1.5 rounded-full ${catColor}`} />
+                      <span className="h-1.5 w-1.5 rounded-full bg-blue-700" />
                       <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide stable-meta">{product.category || 'General'}</span>
                       <span className="md:hidden text-[9px] font-black text-slate-500 uppercase flex-shrink-0">{stock} {product.unit || 'pcs'}</span>
                       {isBundleProduct(product) && (
@@ -631,26 +616,26 @@ export default function InventoryTab() {
       </div>
 
       {/* FAB */}
-      <button onClick={() => openProductModal()} className="fixed bottom-24 md:bottom-8 right-6 md:right-8 w-14 h-14 bg-primary text-white rounded-2xl shadow-2xl shadow-primary/30 flex items-center justify-center z-40 hover:bg-blue-700 active:scale-95 transition-all">
+      <button onClick={() => openProductModal()} className="fixed bottom-24 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-lg border-2 border-blue-700 bg-blue-700 text-white shadow-xl transition-all hover:bg-blue-800 active:scale-95 md:bottom-8 md:right-8">
         <MaterialIcon name="add" style={{ fontSize: '28px' }} />
       </button>
 
       {/* Product detail slide-over */}
       {selectedProduct && (
         <div className="fixed inset-0 z-50 flex items-end justify-end md:items-stretch md:justify-center">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setSelectedProduct(null)} />
-          <div className="relative bg-white w-full md:w-full md:h-full md:max-h-full h-auto max-h-[85vh] rounded-t-3xl md:rounded-none shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom md:slide-in-from-right duration-300">
-            <div className="flex items-center justify-between px-6 py-5 md:px-8 border-b border-slate-100 flex-shrink-0">
+          <div className="absolute inset-0 bg-slate-900/45" onClick={() => setSelectedProduct(null)} />
+          <div className="relative flex h-auto max-h-[85vh] w-full flex-col overflow-hidden rounded-t-2xl border-2 border-slate-200 bg-white shadow-xl animate-in slide-in-from-bottom duration-300 md:h-full md:max-h-full md:w-full md:rounded-none md:border-0 md:slide-in-from-right">
+            <div className="flex flex-shrink-0 items-center justify-between border-b-2 border-slate-100 px-6 py-5 md:px-8">
               <h3 className="text-base font-black text-slate-900">Product Details</h3>
-              <button onClick={() => setSelectedProduct(null)} className="w-9 h-9 rounded-xl hover:bg-slate-100 flex items-center justify-center transition-colors">
+              <button onClick={() => setSelectedProduct(null)} className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-slate-200 bg-white text-slate-500 transition-colors hover:border-blue-300">
                 <MaterialIcon name="close" style={{ fontSize: '20px' }} />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto no-scrollbar p-6 md:mx-auto md:w-full md:max-w-[1440px] md:p-8 space-y-5">
               {/* Icon + name */}
               <div className="flex items-start gap-4">
-                <div className={`w-16 h-16 ${colorFor(selectedProduct.name)} rounded-2xl flex items-center justify-center flex-shrink-0`}>
-                  <span className="text-white text-xl font-black">{selectedProduct.name.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase()}</span>
+                <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
+                  <span className="text-xl font-black text-blue-700">{selectedProduct.name.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase()}</span>
                 </div>
                 <div>
                   <h4 className="text-lg font-black text-slate-900 leading-tight">{selectedProduct.name}</h4>
@@ -679,7 +664,7 @@ export default function InventoryTab() {
                 { label: 'Suppliers', value: supplierNamesForProduct(selectedProduct).join(', ') || 'Not assigned' },
                 { label: 'Barcode', value: selectedProduct.barcode || '---' },
               ].map(row => (
-                <div key={row.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <div key={row.label} className="rounded-lg border-2 border-slate-200 bg-slate-50 p-4">
                   <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">{row.label}</span>
                   <span className="mt-2 block break-words text-sm font-black text-slate-900">{row.value}</span>
                 </div>
@@ -693,35 +678,35 @@ export default function InventoryTab() {
                   { label: 'Gross profit', value: `Ksh ${grossProfit.toLocaleString()}`, color: grossProfit >= 0 ? 'text-slate-900' : 'text-rose-600' },
                   { label: 'Stock in / out', value: `${movementIn.toLocaleString()} / ${movementOut.toLocaleString()}`, color: 'text-indigo-600' },
                 ].map(metric => (
-                  <div key={metric.label} className="bg-slate-50 border border-slate-100 rounded-2xl p-3">
+                  <div key={metric.label} className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{metric.label}</p>
                     <p className={`text-sm font-black tabular-nums mt-1 ${metric.color}`}>{metric.value}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="bg-slate-950 rounded-2xl p-4 text-white">
+              <div className="rounded-lg border-2 border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">8-day performance</p>
-                    <p className="text-xs font-bold text-slate-200">Sales value and unit movement</p>
+                    <p className="text-xs font-bold text-slate-500">Sales value and unit movement</p>
                   </div>
-                  <MaterialIcon name="monitoring" className="text-emerald-300" style={{ fontSize: '20px' }} />
+                  <MaterialIcon name="monitoring" className="text-blue-700" style={{ fontSize: '20px' }} />
                 </div>
                 <div className="h-44 min-w-0">
                   <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                     <AreaChart data={chartData} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
                       <defs>
                         <linearGradient id="salesGlow" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#34d399" stopOpacity={0.8}/>
-                          <stop offset="95%" stopColor="#34d399" stopOpacity={0}/>
+                          <stop offset="5%" stopColor="#1d4ed8" stopOpacity={0.2}/>
+                          <stop offset="95%" stopColor="#1d4ed8" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
-                      <CartesianGrid stroke="#1e293b" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <Tooltip contentStyle={{ background: '#020617', border: '1px solid #334155', borderRadius: 12, color: '#fff' }} />
-                      <Area type="monotone" dataKey="sales" stroke="#34d399" strokeWidth={3} fill="url(#salesGlow)" />
+                      <CartesianGrid stroke="#e2e8f0" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={{ background: '#ffffff', border: '2px solid #e2e8f0', borderRadius: 8, color: '#0f172a' }} />
+                      <Area type="monotone" dataKey="sales" stroke="#1d4ed8" strokeWidth={3} fill="url(#salesGlow)" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
@@ -737,7 +722,7 @@ export default function InventoryTab() {
                     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
                     .slice(0, 8)
                     .map(move => (
-                      <div key={move.id} className="flex items-center justify-between bg-white border border-slate-100 rounded-xl px-3 py-2">
+                      <div key={move.id} className="flex items-center justify-between rounded-lg border-2 border-slate-200 bg-white px-3 py-2">
                         <div className="min-w-0">
                           <p className="text-[11px] font-black text-slate-800 truncate">{move.reference || move.type}</p>
                           <p className="text-[9px] font-bold text-slate-400">{new Date(move.timestamp).toLocaleString('en-KE')}</p>
@@ -751,7 +736,7 @@ export default function InventoryTab() {
                       </div>
                     ))}
                   {(selectedMovements || []).length === 0 && (
-                    <div className="text-center py-6 text-[10px] font-bold text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <div className="rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 py-6 text-center text-[10px] font-bold text-slate-400">
                       No stock movement recorded yet.
                     </div>
                   )}
@@ -761,15 +746,15 @@ export default function InventoryTab() {
 
             <div className="flex-shrink-0 border-t border-slate-100">
               <div className="mx-auto grid w-full max-w-[1440px] grid-cols-2 gap-3 p-6 md:px-8">
-                <button onClick={() => openProductModal(selectedProduct)} className="py-3 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
+                <button onClick={() => openProductModal(selectedProduct)} className="flex items-center justify-center gap-2 rounded-lg border-2 border-slate-200 py-3 text-sm font-bold text-slate-700 transition-all hover:border-blue-300 hover:text-blue-700">
                   <MaterialIcon name="edit" style={{ fontSize: '18px' }} /> Edit
                 </button>
                 {isBundleProduct(selectedProduct) ? (
-                  <button onClick={() => openProductModal(selectedProduct)} className="py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald/20 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
+                  <button onClick={() => openProductModal(selectedProduct)} className="flex items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 py-3 text-sm font-bold text-white transition-all hover:bg-blue-800">
                     <MaterialIcon name="restaurant" style={{ fontSize: '18px' }} /> Ingredients
                   </button>
                 ) : (
-                  <button onClick={() => setIsRestocking(true)} className="py-3 bg-primary text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+                  <button onClick={() => setIsRestocking(true)} className="flex items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 py-3 text-sm font-bold text-white transition-all hover:bg-blue-800">
                     <MaterialIcon name="add" style={{ fontSize: '18px' }} /> Adjust stock
                   </button>
                 )}
@@ -781,29 +766,29 @@ export default function InventoryTab() {
 
       {isRestocking && selectedProduct && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsRestocking(false)} />
-          <div className="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 z-10">
+          <div className="absolute inset-0 bg-slate-900/45" onClick={() => setIsRestocking(false)} />
+          <div className="relative z-10 w-full max-w-sm rounded-lg border-2 border-slate-200 bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-black text-slate-900">Adjust stock</h3>
-              <button onClick={() => setIsRestocking(false)} className="w-9 h-9 rounded-xl bg-slate-50 text-slate-400 hover:text-slate-700">
+              <button onClick={() => setIsRestocking(false)} className="h-9 w-9 rounded-lg border-2 border-slate-200 bg-white text-slate-500 hover:border-blue-300">
                 <MaterialIcon name="close" style={{ fontSize: '20px' }} />
               </button>
             </div>
             <div className="space-y-4">
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Quantity to add</label>
-                <input type="number" step="any" value={restockQty} onChange={e => setRestockQty(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="0" />
+                <input type="number" step="any" value={restockQty} onChange={e => setRestockQty(e.target.value)} className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600" placeholder="0" />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Latest unit cost</label>
-                <input type="number" step="any" value={restockCost} onChange={e => setRestockCost(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="Optional" />
+                <input type="number" step="any" value={restockCost} onChange={e => setRestockCost(e.target.value)} className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600" placeholder="Optional" />
               </div>
               <button
                 onClick={handleRestock}
                 disabled={!restockQty || Number(restockQty) <= 0 || isSavingRestock}
                 aria-busy={isSavingRestock}
                 data-busy={isSavingRestock ? 'true' : undefined}
-                className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50"
+                className="w-full rounded-lg border-2 border-blue-700 bg-blue-700 py-3.5 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50 hover:bg-blue-800"
               >
                 {isSavingRestock ? 'Saving...' : 'Save stock adjustment'}
               </button>
@@ -814,31 +799,31 @@ export default function InventoryTab() {
 
       {isProductModalOpen && (
         <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsProductModalOpen(false)} />
-          <div className="relative bg-white w-full max-w-lg max-h-[92vh] overflow-y-auto no-scrollbar rounded-t-3xl sm:rounded-2xl shadow-2xl p-6 z-10">
+          <div className="absolute inset-0 bg-slate-900/45" onClick={() => setIsProductModalOpen(false)} />
+          <div className="relative z-10 max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border-2 border-slate-200 bg-white p-6 shadow-xl sm:rounded-lg">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-xl font-black text-slate-900">{editingProduct ? 'Edit product' : 'Add product'}</h3>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inventory master record</p>
               </div>
-              <button onClick={() => setIsProductModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:text-slate-700">
+              <button onClick={() => setIsProductModalOpen(false)} className="h-10 w-10 rounded-lg border-2 border-slate-200 bg-white text-slate-500 hover:border-blue-300">
                 <MaterialIcon name="close" style={{ fontSize: '20px' }} />
               </button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Product name</label>
-                <input value={productForm.name} onChange={e => setProductForm({ ...productForm, name: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="e.g. 2kg Maize Flour" autoFocus />
+                <input value={productForm.name} onChange={e => setProductForm({ ...productForm, name: e.target.value })} className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600" placeholder="e.g. 2kg Maize Flour" autoFocus />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Category</label>
-                <input value={productForm.category} onChange={e => setProductForm({ ...productForm, category: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+                <input value={productForm.category} onChange={e => setProductForm({ ...productForm, category: e.target.value })} className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600" />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Barcode</label>
-                <input value={productForm.barcode} onChange={e => setProductForm({ ...productForm, barcode: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" placeholder="Auto if blank" />
+                <input value={productForm.barcode} onChange={e => setProductForm({ ...productForm, barcode: e.target.value })} className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600" placeholder="Auto if blank" />
               </div>
-              <div className="sm:col-span-2 rounded-2xl border-2 border-slate-100 bg-slate-50 p-4">
+              <div className="sm:col-span-2 rounded-lg border-2 border-slate-200 bg-slate-50 p-4">
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Suppliers</label>
                 <SearchableSelect
                   value=""
@@ -872,18 +857,18 @@ export default function InventoryTab() {
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Selling price</label>
-                <input type="number" value={productForm.sellingPrice} onChange={e => setProductForm({ ...productForm, sellingPrice: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+                <input type="number" value={productForm.sellingPrice} onChange={e => setProductForm({ ...productForm, sellingPrice: e.target.value })} className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600" />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Cost price</label>
-                <input type="number" value={productForm.costPrice} onChange={e => setProductForm({ ...productForm, costPrice: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+                <input type="number" value={productForm.costPrice} onChange={e => setProductForm({ ...productForm, costPrice: e.target.value })} className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600" />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Register discount</label>
                 <select
                   value={productForm.discountType}
                   onChange={e => setProductForm({ ...productForm, discountType: e.target.value as any, discountValue: e.target.value === 'NONE' ? '' : productForm.discountValue })}
-                  className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none"
+                  className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600"
                 >
                   <option value="NONE">No discount</option>
                   <option value="FIXED">Ksh off</option>
@@ -899,12 +884,12 @@ export default function InventoryTab() {
                   value={productForm.discountValue}
                   disabled={productForm.discountType === 'NONE'}
                   onChange={e => setProductForm({ ...productForm, discountValue: e.target.value })}
-                  className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none disabled:text-slate-400"
+                  className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600 disabled:bg-slate-50 disabled:text-slate-400"
                   placeholder={productForm.discountType === 'PERCENT' ? '0 - 100' : '0'}
                 />
               </div>
               {(sellingBelowCostBlocked || discountedBelowCost) && (
-                <div className={`sm:col-span-2 rounded-2xl border px-4 py-3 text-[11px] font-bold ${
+                <div className={`sm:col-span-2 rounded-lg border px-4 py-3 text-[11px] font-bold ${
                   sellingBelowCostBlocked
                     ? 'border-rose-100 bg-rose-50 text-rose-700'
                     : 'border-amber-100 bg-amber-50 text-amber-800'
@@ -917,41 +902,41 @@ export default function InventoryTab() {
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{editingProduct ? 'Current stock' : 'Opening stock'}</label>
                 {productForm.isBundle ? (
-                  <div className="w-full bg-emerald-50 border-2 border-emerald-100 rounded-xl px-4 py-3 text-sm font-black text-emerald-700">
+                  <div className="w-full rounded-lg border-2 border-slate-200 bg-slate-50 px-4 py-3 text-sm font-black text-slate-700">
                     Auto from ingredients
                   </div>
                 ) : editingProduct ? (
-                  <div className="w-full bg-slate-100 border-2 border-slate-200 rounded-xl px-4 py-3 text-sm font-black text-slate-600">
+                  <div className="w-full rounded-lg border-2 border-slate-200 bg-slate-50 px-4 py-3 text-sm font-black text-slate-600">
                     {productForm.stockQuantity || 0} {productForm.unit || 'pcs'}
                   </div>
                 ) : (
-                  <input type="number" step="any" value={productForm.stockQuantity} onChange={e => setProductForm({ ...productForm, stockQuantity: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+                  <input type="number" step="any" value={productForm.stockQuantity} onChange={e => setProductForm({ ...productForm, stockQuantity: e.target.value })} className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600" />
                 )}
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Unit</label>
-                <input value={productForm.unit} onChange={e => setProductForm({ ...productForm, unit: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+                <input value={productForm.unit} onChange={e => setProductForm({ ...productForm, unit: e.target.value })} className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600" />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Reorder point</label>
-                <input type="number" step="any" value={productForm.reorderPoint} onChange={e => setProductForm({ ...productForm, reorderPoint: e.target.value })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none" />
+                <input type="number" step="any" value={productForm.reorderPoint} onChange={e => setProductForm({ ...productForm, reorderPoint: e.target.value })} className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600" />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tax category</label>
-                <select value={productForm.taxCategory} onChange={e => setProductForm({ ...productForm, taxCategory: e.target.value as any })} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none">
+                <select value={productForm.taxCategory} onChange={e => setProductForm({ ...productForm, taxCategory: e.target.value as any })} className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600">
                   <option value="A">A - VAT</option>
                   <option value="C">C - Zero Rated</option>
                   <option value="E">E - Exempt</option>
                 </select>
               </div>
-              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_180px] gap-3 rounded-2xl border-2 border-slate-100 bg-slate-50 p-4">
+              <div className="grid grid-cols-1 gap-3 rounded-lg border-2 border-slate-200 bg-slate-50 p-4 sm:col-span-2 sm:grid-cols-[minmax(0,1fr)_180px]">
                 <button
                   type="button"
                   onClick={() => setProductForm({ ...productForm, expiryTracking: !productForm.expiryTracking, expiryDate: productForm.expiryTracking ? '' : productForm.expiryDate })}
                   className="flex items-center justify-between gap-4 text-left"
                 >
                   <div className="flex items-center gap-3">
-                    <span className={`w-10 h-10 rounded-xl flex items-center justify-center ${productForm.expiryTracking ? 'bg-amber-500 text-white' : 'bg-white text-slate-400 border border-slate-100'}`}>
+                    <span className={`flex h-10 w-10 items-center justify-center rounded-lg border-2 ${productForm.expiryTracking ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-400'}`}>
                       <MaterialIcon name="calendar" style={{ fontSize: '20px' }} />
                     </span>
                     <div>
@@ -959,7 +944,7 @@ export default function InventoryTab() {
                       <p className="text-xs font-bold text-slate-500 mt-0.5">Show expired and soon-to-expire stock in inventory and register.</p>
                     </div>
                   </div>
-                  <div className={`w-12 h-7 rounded-full p-1 flex transition-all ${productForm.expiryTracking ? 'bg-amber-500 justify-end' : 'bg-slate-300 justify-start'}`}>
+                  <div className={`flex h-7 w-12 rounded-full p-1 transition-all ${productForm.expiryTracking ? 'justify-end bg-blue-700' : 'justify-start bg-slate-300'}`}>
                     <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
                   </div>
                 </button>
@@ -970,7 +955,7 @@ export default function InventoryTab() {
                     value={productForm.expiryDate}
                     disabled={!productForm.expiryTracking}
                     onChange={e => setProductForm({ ...productForm, expiryDate: e.target.value })}
-                    className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 text-sm font-black outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                    className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600 disabled:bg-slate-100 disabled:text-slate-400"
                   />
                 </div>
               </div>
@@ -978,10 +963,10 @@ export default function InventoryTab() {
                 <button
                   type="button"
                   onClick={() => setProductForm({ ...productForm, isBundle: !productForm.isBundle })}
-                  className={`w-full flex items-center justify-between gap-4 p-4 rounded-2xl border-2 transition-all ${productForm.isBundle ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-slate-50 border-slate-100 text-slate-600'}`}
+                  className={`flex w-full items-center justify-between gap-4 rounded-lg border-2 p-4 transition-all ${productForm.isBundle ? 'border-blue-700 bg-blue-50 text-blue-900' : 'border-slate-200 bg-slate-50 text-slate-600'}`}
                 >
                   <div className="flex items-center gap-3 text-left">
-                    <span className={`w-10 h-10 rounded-xl flex items-center justify-center ${productForm.isBundle ? 'bg-emerald-600 text-white' : 'bg-white text-slate-400 border border-slate-100'}`}>
+                    <span className={`flex h-10 w-10 items-center justify-center rounded-lg border-2 ${productForm.isBundle ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-400'}`}>
                       <MaterialIcon name="restaurant" style={{ fontSize: '20px' }} />
                     </span>
                     <div>
@@ -989,36 +974,36 @@ export default function InventoryTab() {
                       <p className="text-xs font-bold mt-0.5">Stock is calculated from ingredients</p>
                     </div>
                   </div>
-                  <div className={`w-12 h-7 rounded-full p-1 flex transition-all ${productForm.isBundle ? 'bg-emerald-600 justify-end' : 'bg-slate-300 justify-start'}`}>
+                  <div className={`flex h-7 w-12 rounded-full p-1 transition-all ${productForm.isBundle ? 'justify-end bg-blue-700' : 'justify-start bg-slate-300'}`}>
                     <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
                   </div>
                 </button>
               </div>
 
               {productForm.isBundle && (
-                <div className="sm:col-span-2 bg-emerald-50/70 border-2 border-emerald-100 rounded-2xl p-4 space-y-3">
+                <div className="space-y-3 rounded-lg border-2 border-slate-200 bg-slate-50 p-4 sm:col-span-2">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h4 className="text-[10px] font-black text-emerald-900 uppercase tracking-widest">Ingredients</h4>
-                      <p className="text-[10px] font-bold text-emerald-700/70 mt-0.5">Quantity is the amount used to sell one bulk item.</p>
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-800">Ingredients</h4>
+                      <p className="mt-0.5 text-[10px] font-bold text-slate-500">Quantity is the amount used to sell one bulk item.</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setIngredientRows([...ingredientRows, { ingredientProductId: '', quantity: '1' }])}
-                      className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest"
+                      className="rounded-lg border-2 border-blue-700 bg-blue-700 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white"
                     >
                       Add ingredient
                     </button>
                   </div>
 
                   {ingredientRows.length === 0 && (
-                    <div className="py-6 text-center text-[10px] font-bold text-emerald-700/60 bg-white/60 border border-dashed border-emerald-200 rounded-xl">
+                    <div className="rounded-lg border-2 border-dashed border-slate-200 bg-white py-6 text-center text-[10px] font-bold text-slate-400">
                       Add the products that make up this bulk item.
                     </div>
                   )}
 
                   {ingredientRows.map((row, idx) => (
-                    <div key={idx} className="grid grid-cols-1 sm:grid-cols-[1fr_120px_40px] gap-2 items-center bg-white p-3 rounded-xl border border-emerald-100">
+                    <div key={idx} className="grid grid-cols-1 items-center gap-2 rounded-lg border-2 border-slate-200 bg-white p-3 sm:grid-cols-[1fr_120px_40px]">
                       <SearchableSelect
                         value={row.ingredientProductId}
                         onChange={(v) => setIngredientRows(rows => rows.map((r, i) => i === idx ? { ...r, ingredientProductId: v } : r))}
@@ -1033,13 +1018,13 @@ export default function InventoryTab() {
                         min="0"
                         value={row.quantity}
                         onChange={e => setIngredientRows(rows => rows.map((r, i) => i === idx ? { ...r, quantity: e.target.value } : r))}
-                        className="w-full bg-slate-50 border-2 border-transparent focus:border-emerald-500 rounded-xl px-4 py-3 text-sm font-black outline-none"
+                        className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-blue-600"
                         placeholder="Qty"
                       />
                       <button
                         type="button"
                         onClick={() => setIngredientRows(rows => rows.filter((_, i) => i !== idx))}
-                        className="w-10 h-10 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white flex items-center justify-center"
+                        className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-rose-100 bg-rose-50 text-rose-600"
                       >
                         <MaterialIcon name="close" style={{ fontSize: '18px' }} />
                       </button>
@@ -1049,13 +1034,13 @@ export default function InventoryTab() {
               )}
             </div>
             <div className="flex gap-3 mt-6 pt-4 border-t border-slate-100">
-              <button onClick={() => setIsProductModalOpen(false)} disabled={isSavingProduct} className="flex-1 py-3.5 bg-slate-100 text-slate-500 rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50">Cancel</button>
+              <button onClick={() => setIsProductModalOpen(false)} disabled={isSavingProduct} className="flex-1 rounded-lg border-2 border-slate-200 bg-white py-3.5 text-xs font-black uppercase tracking-widest text-slate-600 disabled:opacity-50">Cancel</button>
               <button
                 onClick={handleSaveProduct}
                 disabled={!productForm.name.trim() || !productForm.sellingPrice || sellingBelowCostBlocked || isSavingProduct}
                 aria-busy={isSavingProduct}
                 data-busy={isSavingProduct ? 'true' : undefined}
-                className="flex-[2] py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50"
+                className="flex-[2] rounded-lg border-2 border-blue-700 bg-blue-700 py-3.5 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50 hover:bg-blue-800"
               >
                 {isSavingProduct ? 'Saving...' : editingProduct ? 'Save changes' : 'Create product'}
               </button>

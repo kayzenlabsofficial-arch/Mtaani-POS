@@ -249,7 +249,7 @@ export default function MtaaniPOS() {
             {activeTab === 'TILLS' && <TillsTab />}
             {activeTab === 'INVENTORY' && <InventoryTab />}
             {activeTab === 'CUSTOMERS' && <CustomersTab />}
-            {activeTab === 'SUPPLIERS' && <SuppliersTab setActiveTab={navigateToTab} financialAccounts={financialAccounts || []} />}
+            {activeTab === 'SUPPLIERS' && <SuppliersTab setActiveTab={navigateToTab} />}
             {activeTab === 'PURCHASES' && <PurchasesTab />}
             {activeTab === 'INVOICES' && <SalesInvoicesTab />}
             {activeTab === 'EXPENSES' && <ExpensesTab />}

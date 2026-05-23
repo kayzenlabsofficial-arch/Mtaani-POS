@@ -383,53 +383,55 @@ export default function SalesInvoicesTab() {
   }
 
   return (
-    <div className="w-full animate-in fade-in pb-28 md:pb-8">
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div className="w-full animate-in fade-in space-y-5 pb-28 md:pb-8">
+      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-xl font-black text-slate-900">Sales invoices</h2>
-          <div className="mt-1 flex flex-wrap items-center gap-3 text-[10px] font-bold text-slate-500">
+          <h2 className="text-2xl font-black text-slate-950">Invoices</h2>
+          <div className="mt-1 flex flex-wrap items-center gap-3 text-xs font-bold text-slate-500">
             <span>{invoices.length} invoices</span>
-            <span className="text-slate-300">|</span>
+            <span className="text-slate-300">/</span>
             <span className="text-rose-600">{money(unpaidTotal)} not cleared</span>
-            <span className="text-slate-300">|</span>
-            <span className="text-emerald-600">{services.length} services</span>
+            <span className="text-slate-300">/</span>
+            <span>{services.length} services</span>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex">
           <button
             type="button"
             onClick={() => openServiceModal()}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black uppercase tracking-widest text-slate-700 shadow-sm"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-slate-200 bg-white px-4 text-xs font-black uppercase tracking-widest text-slate-700 hover:border-blue-300 hover:text-blue-700"
           >
             <BriefcaseBusiness size={16} /> Service
           </button>
           <button
             type="button"
             onClick={() => { resetInvoiceForm(); setIsInvoiceModalOpen(true); }}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-black uppercase tracking-widest text-white shadow-blue"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-xs font-black uppercase tracking-widest text-white hover:bg-blue-800"
           >
             <Plus size={16} /> Invoice
           </button>
         </div>
       </div>
 
-      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Not cleared</p>
           <p className="mt-1 text-2xl font-black tabular-nums text-rose-600">{money(unpaidTotal)}</p>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Cleared this month</p>
-          <p className="mt-1 text-2xl font-black tabular-nums text-emerald-600">{money(paidThisMonth)}</p>
+          <p className="mt-1 text-2xl font-black tabular-nums text-slate-950">{money(paidThisMonth)}</p>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Ready services</p>
-          <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{activeServices.length}</p>
+          <p className="mt-1 text-2xl font-black tabular-nums text-slate-950">{activeServices.length}</p>
         </div>
       </div>
+      </section>
 
-      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex rounded-xl bg-slate-200 p-1">
+      <div className="flex flex-col gap-3 rounded-lg border-2 border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex rounded-lg border-2 border-slate-200 bg-slate-50 p-1">
           {([
             ['INVOICES', 'Invoices'],
             ['SERVICES', 'Services'],
@@ -437,7 +439,7 @@ export default function SalesInvoicesTab() {
             <button
               key={id}
               onClick={() => setMode(id)}
-              className={`h-10 rounded-lg px-4 text-xs font-black uppercase tracking-widest ${mode === id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+              className={`h-10 rounded-md px-4 text-xs font-black uppercase tracking-widest ${mode === id ? 'bg-blue-700 text-white' : 'text-slate-600'}`}
             >
               {label}
             </button>
@@ -448,7 +450,7 @@ export default function SalesInvoicesTab() {
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as any)}
-              className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-widest text-slate-600 outline-none"
+              className="h-11 rounded-lg border-2 border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-widest text-slate-600 outline-none focus:border-blue-600"
             >
               <option value="ALL">All status</option>
               <option value="SENT">Not cleared</option>
@@ -463,14 +465,14 @@ export default function SalesInvoicesTab() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={mode === 'INVOICES' ? 'Search customer or invoice...' : 'Search services...'}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              className="h-11 w-full rounded-lg border-2 border-slate-200 bg-white pl-10 pr-4 text-sm font-bold outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
             />
           </div>
         </div>
       </div>
 
       {mode === 'INVOICES' ? (
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <section className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-sm">
           {filteredInvoices.length === 0 ? (
             <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
               <ReceiptText size={44} className="mb-3 text-slate-200" />
@@ -487,7 +489,7 @@ export default function SalesInvoicesTab() {
                   className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-slate-50 sm:px-5"
                 >
                   <div className="grid min-w-0 grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-3">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50 text-blue-700">
                       <FileText size={20} />
                     </span>
                     <span className="min-w-0">
@@ -509,7 +511,7 @@ export default function SalesInvoicesTab() {
       ) : (
         <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {filteredServices.length === 0 ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm md:col-span-2 xl:col-span-3">
+            <div className="rounded-lg border-2 border-slate-200 bg-white p-10 text-center shadow-sm md:col-span-2 xl:col-span-3">
               <BriefcaseBusiness size={44} className="mx-auto mb-3 text-slate-200" />
               <p className="text-sm font-black text-slate-700">No services yet.</p>
               <p className="mt-1 text-xs font-bold text-slate-400">Add services like delivery, repair, installation, design, transport, or labour.</p>
@@ -519,10 +521,10 @@ export default function SalesInvoicesTab() {
               key={service.id}
               type="button"
               onClick={() => openServiceModal(service)}
-              className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:border-primary/30 hover:shadow-md"
+              className="rounded-lg border-2 border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:border-blue-300"
             >
               <div className="mb-4 flex items-start justify-between gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700">
+                <span className="flex h-11 w-11 items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50 text-blue-700">
                   <BriefcaseBusiness size={20} />
                 </span>
                 <span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest ${Number(service.isActive) === 0 ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-600'}`}>
@@ -539,14 +541,14 @@ export default function SalesInvoicesTab() {
       )}
 
       {isInvoiceModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
+          <div className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-t-2xl border-2 border-slate-200 bg-white shadow-xl sm:rounded-lg">
+            <div className="flex items-center justify-between border-b-2 border-slate-100 px-5 py-4">
               <div>
                 <h3 className="text-base font-black text-slate-900">New invoice</h3>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">For products, services, or custom work</p>
               </div>
-              <button onClick={() => setIsInvoiceModalOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+              <button onClick={() => setIsInvoiceModalOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-slate-200 bg-white text-slate-500">
                 <X size={18} />
               </button>
             </div>
@@ -571,17 +573,17 @@ export default function SalesInvoicesTab() {
                         type="date"
                         value={invoiceForm.dueDate}
                         onChange={e => setInvoiceForm(prev => ({ ...prev, dueDate: e.target.value }))}
-                        className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary"
+                        className="h-12 w-full rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-blue-600"
                       />
                     </label>
                   </div>
 
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-4">
                     <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-[9rem_minmax(0,1fr)]">
                       <select
                         value={lineInput.itemType}
                         onChange={e => setLineInput({ itemType: e.target.value as any, itemId: '', name: '', quantity: '1', unitPrice: '', taxCategory: 'A' })}
-                        className="h-12 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 outline-none"
+                        className="h-12 rounded-lg border-2 border-slate-200 bg-white px-3 text-sm font-black text-slate-700 outline-none focus:border-blue-600"
                       >
                         <option value="SERVICE">Service</option>
                         <option value="PRODUCT">Product</option>
@@ -592,7 +594,7 @@ export default function SalesInvoicesTab() {
                           value={lineInput.name}
                           onChange={e => setLineInput(prev => ({ ...prev, name: e.target.value }))}
                           placeholder="Type the work or item name"
-                          className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-primary"
+                          className="h-12 rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-blue-600"
                         />
                       ) : (
                         <SearchableSelect
@@ -612,7 +614,7 @@ export default function SalesInvoicesTab() {
                         value={lineInput.quantity}
                         onChange={e => setLineInput(prev => ({ ...prev, quantity: e.target.value }))}
                         placeholder="Qty"
-                        className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-primary"
+                        className="h-12 rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-blue-600"
                       />
                       <input
                         type="number"
@@ -620,23 +622,23 @@ export default function SalesInvoicesTab() {
                         value={lineInput.unitPrice}
                         onChange={e => setLineInput(prev => ({ ...prev, unitPrice: e.target.value }))}
                         placeholder="Amount"
-                        className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-primary"
+                        className="h-12 rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-blue-600"
                       />
                       <select
                         value={lineInput.taxCategory}
                         onChange={e => setLineInput(prev => ({ ...prev, taxCategory: e.target.value as 'A' | 'E' }))}
-                        className="h-12 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 outline-none"
+                        className="h-12 rounded-lg border-2 border-slate-200 bg-white px-3 text-sm font-black text-slate-700 outline-none focus:border-blue-600"
                       >
                         <option value="A">VAT</option>
                         <option value="E">No VAT</option>
                       </select>
-                      <button onClick={addLine} type="button" className="col-span-2 h-12 rounded-xl bg-slate-900 px-5 text-xs font-black uppercase tracking-widest text-white md:col-span-1 md:w-full">
+                      <button onClick={addLine} type="button" className="col-span-2 h-12 rounded-lg border-2 border-blue-700 bg-blue-700 px-5 text-xs font-black uppercase tracking-widest text-white hover:bg-blue-800 md:col-span-1 md:w-full">
                         Add
                       </button>
                     </div>
                   </div>
 
-                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                  <div className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white">
                     {lines.length === 0 ? (
                       <div className="px-4 py-10 text-center text-sm font-bold text-slate-400">No invoice lines yet.</div>
                     ) : lines.map(line => (
@@ -649,7 +651,7 @@ export default function SalesInvoicesTab() {
                         </div>
                         <div className="flex items-center gap-3">
                           <p className="text-sm font-black tabular-nums text-slate-900">{money(lineAmount(line) + lineVat(line))}</p>
-                          <button onClick={() => setLines(prev => prev.filter(row => row.id !== line.id))} className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+                          <button onClick={() => setLines(prev => prev.filter(row => row.id !== line.id))} className="flex h-9 w-9 items-center justify-center rounded-lg border border-rose-100 bg-rose-50 text-rose-600">
                             <Trash2 size={15} />
                           </button>
                         </div>
@@ -660,22 +662,22 @@ export default function SalesInvoicesTab() {
                     value={invoiceForm.notes}
                     onChange={e => setInvoiceForm(prev => ({ ...prev, notes: e.target.value }))}
                     placeholder="Notes for the customer..."
-                    className="min-h-24 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-bold outline-none focus:border-primary"
+                    className="min-h-24 w-full rounded-lg border-2 border-slate-200 bg-white p-4 text-sm font-bold outline-none focus:border-blue-600"
                   />
                 </div>
 
-                <aside className="h-fit rounded-2xl border border-slate-200 bg-slate-950 p-5 text-white">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-200">Invoice total</p>
-                  <p className="mt-2 text-3xl font-black tabular-nums">{money(totals.total)}</p>
-                  <div className="mt-5 space-y-2 text-sm font-bold">
-                    <div className="flex justify-between"><span className="text-slate-400">Before VAT</span><span>{money(totals.subtotal)}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-400">VAT</span><span>{money(totals.tax)}</span></div>
+                <aside className="h-fit rounded-lg border-2 border-slate-200 bg-white p-5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Invoice total</p>
+                  <p className="mt-2 text-3xl font-black tabular-nums text-slate-950">{money(totals.total)}</p>
+                  <div className="mt-5 space-y-2 rounded-lg border-2 border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-700">
+                    <div className="flex justify-between"><span className="text-slate-500">Before VAT</span><span>{money(totals.subtotal)}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">VAT</span><span>{money(totals.tax)}</span></div>
                   </div>
                   <button
                     type="button"
                     onClick={saveInvoice}
                     disabled={isSaving}
-                    className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-xs font-black uppercase tracking-widest text-white disabled:opacity-50"
+                    className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50 hover:bg-blue-800"
                   >
                     <Send size={16} /> {isSaving ? 'Saving...' : 'Create invoice'}
                   </button>
@@ -687,37 +689,37 @@ export default function SalesInvoicesTab() {
       )}
 
       {isServiceModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="w-full max-w-lg rounded-t-[2rem] bg-white p-5 shadow-2xl sm:rounded-[2rem]">
+        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
+          <div className="w-full max-w-lg rounded-t-2xl border-2 border-slate-200 bg-white p-5 shadow-xl sm:rounded-lg">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-black text-slate-900">{editingService ? 'Edit service' : 'Add service'}</h3>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">For service provider invoices</p>
               </div>
-              <button onClick={() => setIsServiceModalOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+              <button onClick={() => setIsServiceModalOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-slate-200 bg-white text-slate-500">
                 <X size={18} />
               </button>
             </div>
             <div className="space-y-3">
-              <input value={serviceForm.name} onChange={e => setServiceForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Service name" className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary" />
+              <input value={serviceForm.name} onChange={e => setServiceForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Service name" className="h-12 w-full rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-blue-600" />
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <input value={serviceForm.category} onChange={e => setServiceForm(prev => ({ ...prev, category: e.target.value }))} placeholder="Category" className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary" />
-                <div className="flex h-12 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 text-xs font-black uppercase tracking-widest text-slate-400">
+                <input value={serviceForm.category} onChange={e => setServiceForm(prev => ({ ...prev, category: e.target.value }))} placeholder="Category" className="h-12 rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-blue-600" />
+                <div className="flex h-12 items-center rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 px-4 text-xs font-black uppercase tracking-widest text-slate-400">
                   Amount is added on the invoice
                 </div>
               </div>
-              <textarea value={serviceForm.description} onChange={e => setServiceForm(prev => ({ ...prev, description: e.target.value }))} placeholder="Short description" className="min-h-24 w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-bold outline-none focus:border-primary" />
+              <textarea value={serviceForm.description} onChange={e => setServiceForm(prev => ({ ...prev, description: e.target.value }))} placeholder="Short description" className="min-h-24 w-full rounded-lg border-2 border-slate-200 bg-white p-4 text-sm font-bold outline-none focus:border-blue-600" />
               <div className="grid grid-cols-2 gap-3">
-                <select value={serviceForm.taxCategory} onChange={e => setServiceForm(prev => ({ ...prev, taxCategory: e.target.value as 'A' | 'E' }))} className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-black text-slate-700 outline-none">
+                <select value={serviceForm.taxCategory} onChange={e => setServiceForm(prev => ({ ...prev, taxCategory: e.target.value as 'A' | 'E' }))} className="h-12 rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-black text-slate-700 outline-none focus:border-blue-600">
                   <option value="A">VAT</option>
                   <option value="E">No VAT</option>
                 </select>
-                <label className="flex h-12 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-black text-slate-700">
+                <label className="flex h-12 items-center gap-3 rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-black text-slate-700">
                   <input type="checkbox" checked={serviceForm.isActive} onChange={e => setServiceForm(prev => ({ ...prev, isActive: e.target.checked }))} />
                   Active
                 </label>
               </div>
-              <button onClick={saveService} disabled={isSaving} className="h-12 w-full rounded-xl bg-primary text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">
+              <button onClick={saveService} disabled={isSaving} className="h-12 w-full rounded-lg border-2 border-blue-700 bg-blue-700 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50 hover:bg-blue-800">
                 {isSaving ? 'Saving...' : 'Save service'}
               </button>
             </div>
@@ -726,25 +728,25 @@ export default function SalesInvoicesTab() {
       )}
 
       {selectedInvoice && (
-        <div className="fixed inset-0 z-[105] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[92vh] w-full max-w-2xl overflow-hidden rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+        <div className="fixed inset-0 z-[105] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-hidden rounded-t-2xl border-2 border-slate-200 bg-white shadow-xl sm:rounded-lg">
+            <div className="flex items-center justify-between border-b-2 border-slate-100 px-5 py-4">
               <div className="min-w-0">
                 <h3 className="truncate text-base font-black text-slate-900">{selectedInvoice.invoiceNumber}</h3>
                 <p className="truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">{selectedInvoice.customerName}</p>
               </div>
-              <button onClick={() => setSelectedInvoice(null)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+              <button onClick={() => setSelectedInvoice(null)} className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-slate-200 bg-white text-slate-500">
                 <X size={18} />
               </button>
             </div>
             <div className="max-h-[calc(92vh-74px)] overflow-y-auto p-5">
               <div className="mb-5 grid grid-cols-2 gap-3">
-                <div className="rounded-2xl bg-slate-50 p-4">
+                <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-4">
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total</p>
                   <p className="mt-1 text-xl font-black text-slate-900">{money(selectedInvoice.total)}</p>
                 </div>
-                <div className="rounded-2xl bg-rose-50 p-4">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Balance</p>
+                <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-4">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Balance</p>
                   <p className="mt-1 text-xl font-black text-rose-700">{money(selectedInvoice.balance)}</p>
                 </div>
               </div>
@@ -760,20 +762,20 @@ export default function SalesInvoicesTab() {
                 ))}
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <button onClick={() => downloadInvoice(selectedInvoice)} className="flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-black uppercase tracking-widest text-slate-700">
+                <button onClick={() => downloadInvoice(selectedInvoice)} className="flex h-12 items-center justify-center gap-2 rounded-lg border-2 border-slate-200 bg-white text-xs font-black uppercase tracking-widest text-slate-700">
                   <Download size={16} /> PDF
                 </button>
                 <button
                   onClick={() => { setPaymentInvoice(selectedInvoice); setPaymentForm({ amount: String(selectedInvoice.balance || ''), method: 'CASH', reference: '' }); }}
                   disabled={selectedInvoice.status === 'PAID' || selectedInvoice.status === 'CANCELLED'}
-                  className="flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 text-xs font-black uppercase tracking-widest text-white disabled:opacity-40"
+                  className="flex h-12 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 text-xs font-black uppercase tracking-widest text-white disabled:opacity-40 hover:bg-blue-800"
                 >
                   <Banknote size={16} /> Clear
                 </button>
                 <button
                   onClick={() => cancelInvoice(selectedInvoice)}
                   disabled={selectedInvoice.status === 'PAID' || selectedInvoice.status === 'CANCELLED' || Number(selectedInvoice.paidAmount || 0) > 0}
-                  className="flex h-12 items-center justify-center gap-2 rounded-xl bg-rose-50 text-xs font-black uppercase tracking-widest text-rose-600 disabled:opacity-40"
+                  className="flex h-12 items-center justify-center gap-2 rounded-lg border-2 border-rose-100 bg-rose-50 text-xs font-black uppercase tracking-widest text-rose-600 disabled:opacity-40"
                 >
                   <Trash2 size={16} /> Cancel
                 </button>
@@ -784,28 +786,28 @@ export default function SalesInvoicesTab() {
       )}
 
       {paymentInvoice && (
-        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="w-full max-w-md rounded-t-[2rem] bg-white p-5 shadow-2xl sm:rounded-[2rem]">
+        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
+          <div className="w-full max-w-md rounded-t-2xl border-2 border-slate-200 bg-white p-5 shadow-xl sm:rounded-lg">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-black text-slate-900">Clear invoice balance</h3>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{paymentInvoice.invoiceNumber}</p>
               </div>
-              <button onClick={() => setPaymentInvoice(null)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+              <button onClick={() => setPaymentInvoice(null)} className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-slate-200 bg-white text-slate-500">
                 <X size={18} />
               </button>
             </div>
             <div className="space-y-3">
-              <input type="number" min="0" value={paymentForm.amount} onChange={e => setPaymentForm(prev => ({ ...prev, amount: e.target.value }))} placeholder="Amount to clear" className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary" />
-              <select value={paymentForm.method} onChange={e => setPaymentForm(prev => ({ ...prev, method: e.target.value as any }))} className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-black text-slate-700 outline-none">
+              <input type="number" min="0" value={paymentForm.amount} onChange={e => setPaymentForm(prev => ({ ...prev, amount: e.target.value }))} placeholder="Amount to clear" className="h-12 w-full rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-blue-600" />
+              <select value={paymentForm.method} onChange={e => setPaymentForm(prev => ({ ...prev, method: e.target.value as any }))} className="h-12 w-full rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-black text-slate-700 outline-none focus:border-blue-600">
                 <option value="CASH">Cash</option>
                 <option value="MPESA">M-Pesa</option>
                 <option value="BANK">Bank</option>
                 <option value="PDQ">Card</option>
                 <option value="CHEQUE">Cheque</option>
               </select>
-              <input value={paymentForm.reference} onChange={e => setPaymentForm(prev => ({ ...prev, reference: e.target.value }))} placeholder="Code or note" className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary" />
-              <button onClick={applyPayment} disabled={isSaving} className="h-12 w-full rounded-xl bg-emerald-600 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">
+              <input value={paymentForm.reference} onChange={e => setPaymentForm(prev => ({ ...prev, reference: e.target.value }))} placeholder="Code or note" className="h-12 w-full rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-blue-600" />
+              <button onClick={applyPayment} disabled={isSaving} className="h-12 w-full rounded-lg border-2 border-blue-700 bg-blue-700 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50 hover:bg-blue-800">
                 {isSaving ? 'Saving...' : 'Clear balance'}
               </button>
             </div>
@@ -818,10 +820,10 @@ export default function SalesInvoicesTab() {
 
 function StatusPill({ status }: { status: SalesInvoice['status'] }) {
   const styles: Record<SalesInvoice['status'], string> = {
-    SENT: 'bg-rose-50 text-rose-600',
-    PARTIAL: 'bg-amber-50 text-amber-700',
-    PAID: 'bg-emerald-50 text-emerald-600',
-    CANCELLED: 'bg-slate-100 text-slate-500',
+    SENT: 'border-rose-100 bg-rose-50 text-rose-600',
+    PARTIAL: 'border-amber-100 bg-amber-50 text-amber-700',
+    PAID: 'border-emerald-100 bg-emerald-50 text-emerald-600',
+    CANCELLED: 'border-slate-200 bg-slate-100 text-slate-500',
   };
   const labels: Record<SalesInvoice['status'], string> = {
     SENT: 'Not cleared',
@@ -830,7 +832,7 @@ function StatusPill({ status }: { status: SalesInvoice['status'] }) {
     CANCELLED: 'Cancelled',
   };
   return (
-    <span className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-widest ${styles[status]}`}>
+    <span className={`mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-widest ${styles[status]}`}>
       {status === 'PAID' ? <CheckCircle2 size={11} /> : status === 'SENT' ? <WalletCards size={11} /> : <ArrowRight size={11} />}
       {labels[status]}
     </span>
