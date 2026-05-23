@@ -7,7 +7,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -22,8 +22,18 @@ function temporaryPassword() {
 }
 
 async function ensureSchema(db: D1Database) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS financialAccounts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      balance REAL NOT NULL DEFAULT 0,
+      businessId TEXT,
+      accountNumber TEXT,
+      updated_at INTEGER
+    )
+  `).run();
   const userColumns = [
-    'branchId TEXT',
     'pin TEXT',
     'updated_at INTEGER',
   ];
@@ -52,19 +62,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await ensureSchema(env.DB);
     const now = Date.now();
     const businessId = crypto.randomUUID();
-    const branchId = crypto.randomUUID();
     const userId = crypto.randomUUID();
     const adminPassword = temporaryPassword();
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO businesses (id, name, code, isActive, updated_at) VALUES (?, ?, ?, ?, ?)`)
         .bind(businessId, name, code, 1, now),
-      env.DB.prepare(`INSERT INTO users (id, name, password, role, businessId, branchId, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .bind(userId, 'admin', await hashPassword(adminPassword), 'ADMIN', businessId, null, now),
-      env.DB.prepare(`INSERT INTO branches (id, name, location, phone, tillNumber, kraPin, isActive, businessId, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(branchId, 'Main Branch', 'Default', null, null, null, 1, businessId, now),
+      env.DB.prepare(`INSERT INTO users (id, name, password, role, businessId, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(userId, 'admin', await hashPassword(adminPassword), 'ADMIN', businessId, now),
+      env.DB.prepare(`INSERT INTO financialAccounts (id, name, type, balance, businessId, accountNumber, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .bind(`picked_cash_${businessId}`, 'Picked cash account', 'CASH', 0, businessId, 'PICKED-CASH', now),
     ]);
 
-    return json({ success: true, businessId, branchId, adminPassword });
+    return json({ success: true, businessId, adminPassword });
   } catch (err: any) {
     return json({ error: err?.message || 'Could not create business.' }, 500);
   }

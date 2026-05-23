@@ -11,13 +11,13 @@ export const ProductService = {
     product: Partial<Product> & { id?: string };
     ingredients?: ProductIngredientInput[];
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<{ success: boolean; product: Product }>('/api/products/save', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 };

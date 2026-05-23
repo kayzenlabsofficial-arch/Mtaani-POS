@@ -5,7 +5,6 @@ export type Principal = {
   userName: string;
   role: Role;
   businessId?: string;
-  branchId?: string;
   exp: number;
 };
 
@@ -176,11 +175,6 @@ export async function authorizeRequest(request: Request, env: { API_SECRET?: str
 export function canAccessBusiness(principal: Principal, businessId?: string | null): boolean {
   if (principal.role === 'ROOT') return true;
   return !!businessId && !!principal.businessId && principal.businessId === businessId;
-}
-
-export function canAccessBranch(principal: Principal, branchId?: string | null): boolean {
-  if (principal.role === 'ROOT' || !principal.branchId) return true;
-  return !!branchId && principal.branchId === branchId;
 }
 
 export async function sha256Hex(value: string): Promise<string> {

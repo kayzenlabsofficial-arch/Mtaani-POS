@@ -14,7 +14,7 @@ export default function AdminVerificationModal({ actionDescription, onSuccess, o
   const [error, setError] = useState("");
   const [isChecking, setIsChecking] = useState(false);
   const activeBusinessId = useStore(state => state.activeBusinessId);
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
 
   const handleVerify = async () => {
     if (!activeBusinessId) {
@@ -30,7 +30,6 @@ export default function AdminVerificationModal({ actionDescription, onSuccess, o
           'Content-Type': 'application/json',
           'X-API-Key': apiKey,
           'X-Business-ID': activeBusinessId,
-          ...(activeBranchId ? { 'X-Branch-ID': activeBranchId } : {}),
         },
         credentials: 'same-origin',
         cache: 'no-store',
@@ -106,4 +105,3 @@ export default function AdminVerificationModal({ actionDescription, onSuccess, o
     </div>
   );
 }
-

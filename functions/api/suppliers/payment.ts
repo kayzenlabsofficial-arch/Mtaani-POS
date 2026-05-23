@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +10,7 @@ const ALLOWED_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -51,6 +51,42 @@ function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
 }
 
+function pickedCashAccountId(businessId: string) {
+  return trimText(`picked_cash_${businessId}`, 160);
+}
+
+async function ensurePickedCashAccount(db: D1Database, businessId: string) {
+  const id = pickedCashAccountId(businessId);
+  const now = Date.now();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS financialAccounts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      balance REAL NOT NULL DEFAULT 0,
+      businessId TEXT,
+      accountNumber TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
+    INSERT OR IGNORE INTO financialAccounts (id, name, type, balance, businessId, accountNumber, updated_at)
+    VALUES (?, 'Picked cash account', 'CASH', 0, ?, 'PICKED-CASH', ?)
+  `).bind(id, businessId, now).run();
+  await db.prepare(`
+    UPDATE financialAccounts
+    SET name = 'Picked cash account', type = 'CASH', accountNumber = 'PICKED-CASH',
+        updated_at = ?
+    WHERE id = ? AND businessId = ?
+  `).bind(now, id, businessId).run();
+  return db.prepare(`
+    SELECT id, name, balance
+    FROM financialAccounts
+    WHERE id = ? AND businessId = ?
+    LIMIT 1
+  `).bind(id, businessId).first<any>();
+}
+
 async function ensureSchema(db: D1Database) {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS supplierPayments (
@@ -69,7 +105,6 @@ async function ensureSchema(db: D1Database) {
       accountId TEXT,
       shiftId TEXT,
       preparedBy TEXT,
-      branchId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -86,7 +121,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -101,7 +135,6 @@ async function ensureSchema(db: D1Database) {
     'accountId TEXT',
     'shiftId TEXT',
     'preparedBy TEXT',
-    'branchId TEXT',
     'businessId TEXT',
     'updated_at INTEGER',
   ];
@@ -123,23 +156,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const supplierId = String(body?.supplierId || body?.supplier?.id || '').trim();
     const payment = body?.payment || {};
-    if (!businessId || !branchId || !supplierId) return json({ error: 'Business, branch and supplier are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!businessId || !supplierId) return json({ error: 'Business and supplier are required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
     await ensureSchema(env.DB);
     const supplier = await env.DB.prepare(`
-      SELECT id, name, company, balance, branchId
+      SELECT id, name, company, balance
       FROM suppliers
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(supplierId, businessId).first<any>();
     if (!supplier) throw new PolicyError('Supplier was not found.', 404);
-    if (supplier.branchId && supplier.branchId !== branchId) throw new PolicyError('Supplier belongs to another branch.', 403);
 
     const cashAmount = roundMoney(Math.max(0, asNumber(payment.amount)));
     const source = String(payment.source || 'TILL').toUpperCase() === 'ACCOUNT' ? 'ACCOUNT' : 'TILL';
@@ -150,16 +181,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     let account: any = null;
     if (source === 'ACCOUNT' && cashAmount > 0) {
-      const accountId = trimText(payment.accountId, 120);
-      if (!accountId) throw new PolicyError('Select the funding account.', 400);
-      account = await env.DB.prepare(`
-        SELECT id, name, balance, branchId
-        FROM financialAccounts
-        WHERE id = ? AND businessId = ?
-        LIMIT 1
-      `).bind(accountId, businessId).first<any>();
+      account = await ensurePickedCashAccount(env.DB, businessId);
       if (!account) throw new PolicyError('Selected account was not found.', 404);
-      if (account.branchId && account.branchId !== branchId) throw new PolicyError('Selected account belongs to another branch.', 403);
       if (asNumber(account.balance) < cashAmount) throw new PolicyError(`Insufficient funds in "${account.name}".`, 409);
     }
 
@@ -168,9 +191,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const cn = await env.DB.prepare(`
         SELECT id, amount, supplierId, status
         FROM creditNotes
-        WHERE id = ? AND businessId = ? AND (branchId IS NULL OR branchId = ?)
+        WHERE id = ? AND businessId = ?
         LIMIT 1
-      `).bind(creditNoteId, businessId, branchId).first<any>();
+      `).bind(creditNoteId, businessId).first<any>();
       if (cn && cn.supplierId === supplierId && (!cn.status || cn.status === 'PENDING')) creditNotes.push(cn);
     }
 
@@ -179,9 +202,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const fetchInvoice = async (poId: string) => env.DB.prepare(`
       SELECT id, supplierId, status, paymentStatus, totalAmount, paidAmount, orderDate, receivedDate, invoiceNumber, poNumber
       FROM purchaseOrders
-      WHERE id = ? AND businessId = ? AND branchId = ?
+      WHERE id = ? AND businessId = ?
       LIMIT 1
-    `).bind(poId, businessId, branchId).first<any>();
+    `).bind(poId, businessId).first<any>();
 
     let invoicesToAllocate: Array<any & { allocationAmount?: number }> = [];
     let storedInvoiceAllocations: { purchaseOrderId: string; amount: number; invoiceNumber?: string; poNumber?: string }[] = [];
@@ -230,8 +253,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const { results } = await env.DB.prepare(`
         SELECT id, supplierId, status, paymentStatus, totalAmount, paidAmount, orderDate, receivedDate, invoiceNumber, poNumber
         FROM purchaseOrders
-        WHERE supplierId = ? AND businessId = ? AND branchId = ? AND status = 'RECEIVED' AND COALESCE(paymentStatus, 'UNPAID') != 'PAID'
-      `).bind(supplierId, businessId, branchId).all();
+        WHERE supplierId = ? AND businessId = ? AND status = 'RECEIVED' AND COALESCE(paymentStatus, 'UNPAID') != 'PAID'
+      `).bind(supplierId, businessId).all();
       invoicesToAllocate = ((results || []) as any[])
         .sort((a, b) => asNumber(a.receivedDate || a.orderDate) - asNumber(b.receivedDate || b.orderDate));
     }
@@ -269,15 +292,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         });
       }
       statements.push(
-        env.DB.prepare(`UPDATE purchaseOrders SET paidAmount = ?, paymentStatus = ?, updated_at = ? WHERE id = ? AND businessId = ? AND branchId = ?`)
+        env.DB.prepare(`UPDATE purchaseOrders SET paidAmount = ?, paymentStatus = ?, updated_at = ? WHERE id = ? AND businessId = ?`)
           .bind(
             newPaidAmount,
             newPaidAmount >= asNumber(inv.totalAmount) - 0.01 ? 'PAID' : 'PARTIAL',
             now,
             inv.id,
-            businessId,
-            branchId,
-          )
+            businessId, )
       );
       remainingPool = roundMoney(remainingPool - paymentForThisInv);
       allocatedInvoiceCount += 1;
@@ -286,8 +307,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const storedPurchaseOrderIds = storedInvoiceAllocations.map(allocation => allocation.purchaseOrderId);
     statements.unshift(
       env.DB.prepare(`
-        INSERT INTO supplierPayments (id, supplierId, purchaseOrderId, purchaseOrderIds, invoiceAllocations, creditNoteIds, amount, paymentMethod, transactionCode, timestamp, reference, source, accountId, branchId, businessId, shiftId, preparedBy, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO supplierPayments (id, supplierId, purchaseOrderId, purchaseOrderIds, invoiceAllocations, creditNoteIds, amount, paymentMethod, transactionCode, timestamp, reference, source, accountId, businessId, shiftId, preparedBy, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         paymentId,
         supplierId,
@@ -301,8 +322,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         now,
         trimText(payment.reference || 'Supplier payment', 160),
         source,
-        source === 'ACCOUNT' ? trimText(payment.accountId, 120) : null,
-        branchId,
+        source === 'ACCOUNT' ? pickedCashAccountId(businessId) : null,
         businessId,
         body?.shiftId || null,
         trimText(body?.preparedBy || auth.principal.userName, 120),
@@ -324,8 +344,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     statements.push(
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         now,
@@ -336,9 +356,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         paymentId,
         'INFO',
         `Settled supplier payment of Ksh ${totalDeduction.toLocaleString()} for ${supplier.company || supplier.name}.`,
-        businessId,
-        branchId,
-        now,
+        businessId, now,
       )
     );
 

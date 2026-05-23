@@ -20,7 +20,7 @@ export interface AuditLog {
   severity: 'INFO' | 'WARN' | 'CRITICAL';
   details?: string;
   businessId: string;
-  branchId?: string;
+  shopId?: string;
   updated_at?: number;
 }
 
@@ -38,7 +38,7 @@ export interface User {
   password: string;
   role: 'ADMIN' | 'CASHIER' | 'MANAGER' | 'ROOT';
   businessId: string;
-  branchId?: string; // Assigned branch for isolation
+  shopId?: string; // Assigned shop for isolation
   updated_at?: number;
 }
 
@@ -63,7 +63,7 @@ export interface Product {
   isBundle?: boolean | number | string;
   components?: { productId: string; quantity: number }[];
   businessId: string;
-  branchId: string;
+  shopId: string;
   updated_at?: number;
 }
 
@@ -115,7 +115,7 @@ export interface Transaction {
   approvedBy?: string;
   customerId?: string;
   customerName?: string;
-  branchId: string;
+  shopId: string;
   businessId: string;
   shiftId?: string; // Link to the specific shift session
   mpesaCode?: string;
@@ -142,7 +142,7 @@ export interface RefundDocument {
   cashierName?: string;
   approvedBy?: string;
   status: 'APPROVED' | 'REJECTED' | 'PENDING';
-  branchId: string;
+  shopId: string;
   businessId: string;
   shiftId?: string;
   updated_at?: number;
@@ -155,7 +155,7 @@ export interface CashPick {
   status: 'PENDING' | 'APPROVED';
   userName?: string;
   accountId?: string;
-  branchId: string;
+  shopId: string;
   businessId: string;
   shiftId?: string; // Link to the specific shift session
   updated_at?: number;
@@ -164,11 +164,14 @@ export interface CashPick {
 export interface EndOfDayReport {
   id: string;
   shiftId?: string;
+  tillId?: string;
+  tillName?: string;
   timestamp: number;
   totalSales: number;
   grossSales: number;
   taxTotal: number;
   cashSales: number;
+  customerCashPayments?: number;
   mpesaSales: number;
   pdqSales?: number;
   totalExpenses: number;
@@ -176,11 +179,16 @@ export interface EndOfDayReport {
   remittanceTotal?: number;
   totalPicks: number;
   totalRefunds?: number; // Total amount refunded during this shift
+  cashRefunds?: number;
+  openingCash?: number;
+  closingCash?: number;
   expectedCash: number;
   reportedCash: number;
   difference: number;
   cashierName: string;
-  branchId: string;
+  cashierId?: string;
+  closeBreakdown?: any;
+  shopId: string;
   businessId: string;
   updated_at?: number;
 }
@@ -191,8 +199,15 @@ export interface Shift {
   endTime?: number;
   cashierId?: string;
   cashierName: string;
+  tillId?: string;
+  tillName?: string;
+  openingCash?: number;
+  closingCash?: number;
+  expectedCash?: number;
+  cashVariance?: number;
+  closeBreakdown?: any;
   status: 'OPEN' | 'CLOSED';
-  branchId: string;
+  shopId: string;
   businessId: string;
   lastSyncAt?: number;  // Timestamp of last successful cloud sync
   updated_at?: number;
@@ -210,7 +225,7 @@ export interface DailySummary {
   totalRefunds?: number;
   totalVariance: number;
   timestamp: number;
-  branchId: string;
+  shopId: string;
   businessId: string;
   updated_at?: number;
 }
@@ -222,7 +237,7 @@ export interface StockMovement {
   quantity: number; // Changed to allow decimals
   timestamp: number;
   reference: string;
-  branchId: string;
+  shopId: string;
   businessId: string;
   shiftId?: string; // Link to the shift if applicable (e.g. shop item expense)
   expiryDate?: number; // Optional batch expiry for received stock
@@ -240,7 +255,7 @@ export interface StockAdjustmentRequest {
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   preparedBy?: string;
   approvedBy?: string;
-  branchId: string;
+  shopId: string;
   businessId: string;
   updated_at?: number;
 }
@@ -252,7 +267,7 @@ export interface Customer {
   email: string;
   totalSpent: number;
   balance: number;
-  branchId: string;
+  shopId: string;
   businessId: string;
   updated_at?: number;
 }
@@ -267,7 +282,8 @@ export interface CustomerPayment {
   allocations?: { sourceType: 'SALE' | 'INVOICE'; sourceId: string; amount: number }[];
   timestamp: number;
   preparedBy?: string;
-  branchId: string;
+  shiftId?: string;
+  shopId: string;
   businessId: string;
   updated_at?: number;
 }
@@ -311,7 +327,7 @@ export interface SalesInvoice {
   dueDate?: number;
   notes?: string;
   preparedBy?: string;
-  branchId: string;
+  shopId: string;
   businessId: string;
   updated_at?: number;
 }
@@ -325,7 +341,7 @@ export interface Supplier {
   address?: string;
   kraPin?: string;
   balance: number;
-  branchId: string;
+  shopId: string;
   businessId: string;
   updated_at?: number;
 }
@@ -349,7 +365,7 @@ export interface CreditNote {
   }>;
   productId?: string;
   quantity?: number;
-  branchId?: string;
+  shopId?: string;
   businessId: string;
   shiftId?: string;
   updated_at?: number;
@@ -375,7 +391,7 @@ export interface SupplierPayment {
   preparedBy?: string;
   source: 'TILL' | 'ACCOUNT'; // Fund source
   accountId?: string; // Link to FinancialAccount if source is ACCOUNT
-  branchId: string;
+  shopId: string;
   businessId: string;
   shiftId?: string; // Link to the shift
   updated_at?: number;
@@ -395,7 +411,7 @@ export interface Expense {
   accountId?: string; // Link to FinancialAccount if source is ACCOUNT
   productId?: string;
   quantity?: number;
-  branchId: string;
+  shopId: string;
   businessId: string;
   shiftId?: string; // Link to the shift
   updated_at?: number;
@@ -424,7 +440,7 @@ export interface HRStaff {
   payCycle: HRPayCycle;
   emergencyContact?: string;
   notes?: string;
-  branchId: string;
+  shopId: string;
   businessId: string;
   updated_at?: number;
 }
@@ -440,7 +456,7 @@ export interface HRStaffDocument {
   fileName?: string;
   fileUrl?: string;
   notes?: string;
-  branchId: string;
+  shopId: string;
   businessId: string;
   updated_at?: number;
 }
@@ -454,7 +470,7 @@ export interface HRAttendance {
   status: HRAttendanceStatus;
   hoursWorked?: number;
   notes?: string;
-  branchId: string;
+  shopId: string;
   businessId: string;
   updated_at?: number;
 }
@@ -469,7 +485,7 @@ export interface HRPayrollAdjustment {
   recurring: boolean | number;
   status: HRPayrollStatus;
   notes?: string;
-  branchId: string;
+  shopId: string;
   businessId: string;
   updated_at?: number;
 }
@@ -480,7 +496,7 @@ export interface FinancialAccount {
   type: 'BANK' | 'MPESA' | 'CASH';
   accountNumber?: string;
   balance: number;
-  branchId?: string; // Optional: Link to a specific branch for local cash/accounts
+  shopId?: string; // Optional: Link to a specific shop for local cash/accounts
   businessId: string;
   updated_at?: number;
 }
@@ -504,31 +520,24 @@ export interface BusinessSettings {
   autoApproveOwnerActions?: number;
   cashSweepEnabled?: number;
   cashDrawerLimit?: number;
-  aiAssistantEnabled?: number;
-  aiDailyRequestLimit?: number;
-  businessId: string;
-  updated_at?: number;
-}
-
-export interface Branch {
-  id: string;
-  name: string;
-  location: string;
-  phone?: string;
-  tillNumber?: string;
-  kraPin?: string;
-  isActive: boolean;
-  businessId: string;
-  mpesaConsumerKey?: string;
-  mpesaConsumerSecret?: string;
-  mpesaPasskey?: string;
-  mpesaEnv?: 'sandbox' | 'production';
-  mpesaType?: 'paybill' | 'buygoods';
-  mpesaStoreNumber?: string;
+  salesTills?: string | Array<{ id: string; name: string; isActive?: boolean | number | string }>;
+  defaultOpeningFloat?: number;
   mpesaConsumerKeySet?: boolean;
   mpesaConsumerSecretSet?: boolean;
   mpesaPasskeySet?: boolean;
   mpesaConfigured?: boolean;
+  mpesaEnv?: 'sandbox' | 'production';
+  mpesaType?: 'paybill' | 'buygoods';
+  mpesaStoreNumber?: string;
+  businessId: string;
+  updated_at?: number;
+}
+
+export interface SalesTill {
+  id: string;
+  name: string;
+  isActive?: boolean | number | string;
+  businessId: string;
   updated_at?: number;
 }
 
@@ -538,7 +547,7 @@ export interface Category {
   iconName: string;
   color: string;
   businessId: string;
-  branchId: string;
+  shopId: string;
   updated_at?: number;
 }
 
@@ -566,7 +575,7 @@ export interface PurchaseOrder {
   poNumber?: string;
   preparedBy?: string;
   approvedBy?: string;
-  branchId: string;
+  shopId: string;
   businessId: string;
   updated_at?: number;
 }
@@ -604,6 +613,7 @@ class MtaaniCloudDB {
   hrAttendance        = new CloudTable<HRAttendance>('hrAttendance');
   hrPayrollAdjustments = new CloudTable<HRPayrollAdjustment>('hrPayrollAdjustments');
   settings            = new CloudTable<BusinessSettings>('settings');
+  salesTills          = new CloudTable<SalesTill>('salesTills');
   purchaseOrders      = new CloudTable<PurchaseOrder>('purchaseOrders');
   stockAdjustmentRequests = new CloudTable<StockAdjustmentRequest>('stockAdjustmentRequests');
   shifts              = new CloudTable<Shift>('shifts');
@@ -611,7 +621,6 @@ class MtaaniCloudDB {
   users               = new CloudTable<User>('users');
   creditNotes         = new CloudTable<CreditNote>('creditNotes');
   categories          = new CloudTable<Category>('categories');
-  branches            = new CloudTable<Branch>('branches');
   expenseAccounts     = new CloudTable<ExpenseAccount>('expenseAccounts');
   financialAccounts   = new CloudTable<FinancialAccount>('financialAccounts');
   auditLogs           = new CloudTable<AuditLog>('auditLogs');
@@ -623,10 +632,9 @@ class MtaaniCloudDB {
    */
   resetTenantCaches(): void {
     this.users.reset();
-    this.branches.reset();
     this.settings.reset();
+    this.salesTills.reset();
 
-    // Branch-scoped / operational tables
     this.products.reset();
     this.productIngredients.reset();
     this.transactions.reset();
@@ -668,7 +676,7 @@ class MtaaniCloudDB {
     }
 
     // 2. Hydrate ONLY businesses. 
-    // Other global tables (users, branches, settings) require an activeBusinessId
+    // Other business tables require an activeBusinessId
     // and will be hydrated during the login flow via db.sync().
     await Promise.all([
       this.businesses.hydrate()
@@ -683,11 +691,11 @@ class MtaaniCloudDB {
     const reloads: Array<() => Promise<void>> = [
       () => this.businesses.reload(),
       () => this.users.reload(),
-      () => this.branches.reload(),
       () => this.settings.reload(),
+      () => this.salesTills.reload(),
     ];
 
-    if (state.activeBranchId) {
+    if (state.activeBusinessId) {
       reloads.push(
         () => this.products.reload(),
         () => this.productIngredients.reload(),

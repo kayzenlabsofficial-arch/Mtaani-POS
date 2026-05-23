@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -11,7 +11,7 @@ const CREDIT_NOTE_DELETE_ROLES = new Set(['ROOT', 'ADMIN']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -63,7 +63,6 @@ async function ensureSchema(db: D1Database) {
       items TEXT,
       productId TEXT,
       quantity REAL,
-      branchId TEXT,
       businessId TEXT,
       shiftId TEXT,
       updated_at INTEGER
@@ -77,7 +76,6 @@ async function ensureSchema(db: D1Database) {
       quantity REAL NOT NULL,
       timestamp INTEGER NOT NULL,
       reference TEXT,
-      branchId TEXT,
       businessId TEXT,
       shiftId TEXT,
       updated_at INTEGER
@@ -95,7 +93,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -105,7 +102,6 @@ async function ensureSchema(db: D1Database) {
     'ALTER TABLE creditNotes ADD COLUMN items TEXT',
     'ALTER TABLE creditNotes ADD COLUMN productId TEXT',
     'ALTER TABLE creditNotes ADD COLUMN quantity REAL',
-    'ALTER TABLE creditNotes ADD COLUMN branchId TEXT',
     'ALTER TABLE creditNotes ADD COLUMN businessId TEXT',
     'ALTER TABLE creditNotes ADD COLUMN shiftId TEXT',
     'ALTER TABLE creditNotes ADD COLUMN updated_at INTEGER',
@@ -135,11 +131,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const supplierId = String(body?.supplierId || '').trim();
-    if (!businessId || !branchId) return json({ error: 'Business and branch are required.' }, 400);
+    if (!businessId) return json({ error: 'Business is required.' }, 400);
     if (action !== 'DELETE' && !supplierId) return json({ error: 'Supplier is required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
@@ -152,9 +147,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const existing = await env.DB.prepare(`
         SELECT *
         FROM creditNotes
-        WHERE id = ? AND businessId = ? AND branchId = ?
+        WHERE id = ? AND businessId = ?
         LIMIT 1
-      `).bind(creditNoteId, businessId, branchId).first<any>();
+      `).bind(creditNoteId, businessId).first<any>();
       if (!existing) throw new PolicyError('Credit note was not found.', 404);
       if (existing.status === 'ALLOCATED') {
         throw new PolicyError('Allocated credit notes cannot be deleted because they already affected supplier payments.', 409);
@@ -171,21 +166,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const statements: D1PreparedStatement[] = [];
       for (const item of returnItems) {
         const product = await env.DB.prepare(`
-          SELECT id, name, branchId
+          SELECT id, name
           FROM products
           WHERE id = ? AND businessId = ?
           LIMIT 1
         `).bind(item.productId, businessId).first<any>();
         if (!product) continue;
-        if (product.branchId && product.branchId !== branchId) {
-          throw new PolicyError(`Product "${product.name}" belongs to another branch.`, 403);
-        }
         statements.push(
           env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ?`)
             .bind(item.quantity, now, item.productId, businessId),
           env.DB.prepare(`
-            INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).bind(
             crypto.randomUUID(),
             item.productId,
@@ -193,7 +185,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
             item.quantity,
             now,
             `Reversed credit note: ${existing.reference || creditNoteId} - ${product.name}`,
-            branchId,
             businessId,
             existing.shiftId || null,
             now,
@@ -202,11 +193,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
 
       statements.push(
-        env.DB.prepare(`DELETE FROM creditNotes WHERE id = ? AND businessId = ? AND branchId = ?`)
-          .bind(creditNoteId, businessId, branchId),
+        env.DB.prepare(`DELETE FROM creditNotes WHERE id = ? AND businessId = ?`)
+          .bind(creditNoteId, businessId),
         env.DB.prepare(`
-          INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
           now,
@@ -217,9 +208,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           creditNoteId,
           'WARN',
           `Deleted supplier credit note ${existing.reference || creditNoteId} and restored ${returnItems.length} product line${returnItems.length === 1 ? '' : 's'}.`,
-          businessId,
-          branchId,
-          now,
+          businessId, now,
         )
       );
 
@@ -228,13 +217,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const supplier = await env.DB.prepare(`
-      SELECT id, name, company, branchId
+      SELECT id, name, company
       FROM suppliers
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(supplierId, businessId).first<any>();
     if (!supplier) throw new PolicyError('Supplier was not found.', 404);
-    if (supplier.branchId && supplier.branchId !== branchId) throw new PolicyError('Supplier belongs to another branch.', 403);
 
     let itemInputs = parseItems(body?.items);
     const legacyProductId = trimText(body?.productId, 160);
@@ -247,13 +235,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     for (const item of itemInputs) {
       if (item.quantity <= 0) throw new PolicyError('Return quantity must be greater than zero.', 400);
       const product = await env.DB.prepare(`
-        SELECT id, name, stockQuantity, costPrice, sellingPrice, unit, branchId
+        SELECT id, name, stockQuantity, costPrice, sellingPrice, unit
         FROM products
         WHERE id = ? AND businessId = ?
         LIMIT 1
       `).bind(item.productId, businessId).first<any>();
       if (!product) throw new PolicyError('Selected product was not found.', 404);
-      if (product.branchId && product.branchId !== branchId) throw new PolicyError('Selected product belongs to another branch.', 403);
       if (item.quantity > asNumber(product.stockQuantity) + 0.0001) {
         throw new PolicyError(`Cannot return more than available stock for ${product.name} (${asNumber(product.stockQuantity)}).`, 409);
       }
@@ -291,15 +278,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       productId: returnItems.length === 1 ? primaryItem?.productId : null,
       quantity: returnItems.length === 1 ? primaryItem?.quantity : null,
       shiftId: body?.shiftId || null,
-      branchId,
       businessId,
       updated_at: now,
     };
 
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(`
-        INSERT INTO creditNotes (id, supplierId, amount, reference, timestamp, reason, status, allocatedTo, items, productId, quantity, branchId, businessId, shiftId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO creditNotes (id, supplierId, amount, reference, timestamp, reason, status, allocatedTo, items, productId, quantity, businessId, shiftId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         creditNote.id,
         creditNote.supplierId,
@@ -312,7 +298,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         returnItems.length ? JSON.stringify(returnItems) : null,
         creditNote.productId,
         creditNote.quantity,
-        branchId,
         businessId,
         creditNote.shiftId,
         now,
@@ -324,8 +309,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         env.DB.prepare(`UPDATE products SET stockQuantity = MAX(0, COALESCE(stockQuantity, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ?`)
           .bind(item.quantity, now, item.productId, businessId),
         env.DB.prepare(`
-          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
           item.productId,
@@ -333,7 +318,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           item.quantity,
           now,
           `Supplier Return: ${reference} - ${item.name}`,
-          branchId,
           businessId,
           body?.shiftId || null,
           now,
@@ -343,8 +327,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     statements.push(
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         now,
@@ -355,9 +339,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         creditNote.id,
         'INFO',
         `Recorded supplier credit note of Ksh ${amount.toLocaleString()} for ${supplier.company || supplier.name}${returnItems.length ? ` (${returnItems.length} product line${returnItems.length === 1 ? '' : 's'})` : ''}.`,
-        businessId,
-        branchId,
-        now,
+        businessId, now,
       )
     );
 

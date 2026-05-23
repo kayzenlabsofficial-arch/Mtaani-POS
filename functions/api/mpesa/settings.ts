@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness, verifyPassword } from '../authUtils';
+import { authorizeRequest, canAccessBusiness, verifyPassword } from '../authUtils';
 import { encryptSecret, isEncryptedSecret } from './secureCredentials';
 
 interface Env {
@@ -13,7 +13,7 @@ const LOCKOUT_MS = 30 * 60 * 1000;
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(body: any, status = 200) {
@@ -54,16 +54,42 @@ async function clearAttempts(db: D1Database, id: string) {
   await db.prepare('DELETE FROM loginAttempts WHERE id = ?').bind(id).run();
 }
 
-function statusFromBranch(branch: any) {
-  const savedSecrets = [branch?.mpesaConsumerKey, branch?.mpesaConsumerSecret, branch?.mpesaPasskey].filter(Boolean);
+async function ensureSettingsSchema(db: D1Database) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS settings (
+      id TEXT PRIMARY KEY,
+      storeName TEXT NOT NULL,
+      location TEXT,
+      tillNumber TEXT,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  for (const sql of [
+    'ALTER TABLE settings ADD COLUMN mpesaConsumerKey TEXT',
+    'ALTER TABLE settings ADD COLUMN mpesaConsumerSecret TEXT',
+    'ALTER TABLE settings ADD COLUMN mpesaPasskey TEXT',
+    "ALTER TABLE settings ADD COLUMN mpesaEnv TEXT DEFAULT 'sandbox'",
+    "ALTER TABLE settings ADD COLUMN mpesaType TEXT DEFAULT 'paybill'",
+    'ALTER TABLE settings ADD COLUMN mpesaStoreNumber TEXT',
+    'ALTER TABLE settings ADD COLUMN tillNumber TEXT',
+    'ALTER TABLE settings ADD COLUMN businessId TEXT',
+    'ALTER TABLE settings ADD COLUMN updated_at INTEGER',
+  ]) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
+}
+
+function statusFromSettings(settings: any) {
+  const savedSecrets = [settings?.mpesaConsumerKey, settings?.mpesaConsumerSecret, settings?.mpesaPasskey].filter(Boolean);
   return {
-    mpesaConfigured: !!(branch?.mpesaConsumerKey && branch?.mpesaConsumerSecret && branch?.mpesaPasskey),
-    mpesaConsumerKeySet: !!branch?.mpesaConsumerKey,
-    mpesaConsumerSecretSet: !!branch?.mpesaConsumerSecret,
-    mpesaPasskeySet: !!branch?.mpesaPasskey,
-    mpesaEnv: branch?.mpesaEnv || 'sandbox',
-    mpesaType: branch?.mpesaType || 'paybill',
-    mpesaStoreNumberSet: !!branch?.mpesaStoreNumber,
+    mpesaConfigured: !!(settings?.mpesaConsumerKey && settings?.mpesaConsumerSecret && settings?.mpesaPasskey),
+    mpesaConsumerKeySet: !!settings?.mpesaConsumerKey,
+    mpesaConsumerSecretSet: !!settings?.mpesaConsumerSecret,
+    mpesaPasskeySet: !!settings?.mpesaPasskey,
+    mpesaEnv: settings?.mpesaEnv || 'sandbox',
+    mpesaType: settings?.mpesaType || 'paybill',
+    mpesaStoreNumberSet: !!settings?.mpesaStoreNumber,
     credentialsEncrypted: savedSecrets.length > 0 && savedSecrets.every(value => isEncryptedSecret(String(value))),
   };
 }
@@ -78,13 +104,12 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 
   const body = await request.json().catch(() => null) as any;
   const businessId = String(body?.businessId || request.headers.get('X-Business-ID') || '').trim();
-  const branchId = String(body?.branchId || request.headers.get('X-Branch-ID') || '').trim();
   const userId = String(body?.userId || '').trim();
   const adminPassword = String(body?.adminPassword || '');
   const confirmationText = String(body?.confirmationText || '').trim().toUpperCase();
 
-  if (!businessId || !branchId || !userId) return json({ error: 'Business, branch, and admin are required.' }, 400);
-  if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+  if (!businessId || !userId) return json({ error: 'Business and admin are required.' }, 400);
+  if (!canAccessBusiness(auth.principal, businessId)) {
     return json({ error: 'Access denied.' }, 403);
   }
   if (!auth.service && auth.principal.role !== 'ADMIN' && auth.principal.role !== 'ROOT') {
@@ -112,10 +137,15 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   }
   await clearAttempts(env.DB, attemptId);
 
-  const branch = await env.DB.prepare('SELECT * FROM branches WHERE id = ? AND businessId = ? LIMIT 1')
-    .bind(branchId, businessId)
+  await ensureSettingsSchema(env.DB);
+  const settingId = String(body?.settingsId || `core_${businessId}`).trim();
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO settings (id, storeName, businessId, updated_at)
+    VALUES (?, 'Mtaani Shop', ?, ?)
+  `).bind(settingId, businessId, Date.now()).run();
+  const settings = await env.DB.prepare('SELECT * FROM settings WHERE id = ? AND businessId = ? LIMIT 1')
+    .bind(settingId, businessId)
     .first<any>();
-  if (!branch) return json({ error: 'Branch not found.' }, 404);
 
   const credentials = body?.credentials || {};
   const secretUpdates: Record<string, string> = {};
@@ -134,7 +164,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 
   if (env.MPESA_CREDENTIAL_ENCRYPTION_KEY) {
     for (const field of ['mpesaConsumerKey', 'mpesaConsumerSecret', 'mpesaPasskey']) {
-      const savedValue = branch[field];
+      const savedValue = settings?.[field];
       if (!secretUpdates[field] && savedValue && !isEncryptedSecret(String(savedValue))) {
         secretUpdates[field] = await encryptSecret(String(savedValue), env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
       }
@@ -149,19 +179,19 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   };
 
   if (credentials.type === 'buygoods') {
-    updates.mpesaStoreNumber = String(credentials.storeNumber || '').trim() || branch.mpesaStoreNumber || null;
+    updates.mpesaStoreNumber = String(credentials.storeNumber || '').trim() || settings?.mpesaStoreNumber || null;
   } else if (Object.prototype.hasOwnProperty.call(credentials, 'storeNumber')) {
     updates.mpesaStoreNumber = String(credentials.storeNumber || '').trim() || null;
   }
 
   const cols = Object.keys(updates);
-  await env.DB.prepare(`UPDATE branches SET ${cols.map(col => `${col} = ?`).join(', ')} WHERE id = ? AND businessId = ?`)
-    .bind(...cols.map(col => updates[col]), branchId, businessId)
+  await env.DB.prepare(`UPDATE settings SET ${cols.map(col => `${col} = ?`).join(', ')} WHERE id = ? AND businessId = ?`)
+    .bind(...cols.map(col => updates[col]), settingId, businessId)
     .run();
 
-  const saved = await env.DB.prepare('SELECT * FROM branches WHERE id = ? AND businessId = ? LIMIT 1')
-    .bind(branchId, businessId)
+  const saved = await env.DB.prepare('SELECT * FROM settings WHERE id = ? AND businessId = ? LIMIT 1')
+    .bind(settingId, businessId)
     .first<any>();
 
-  return json({ success: true, status: statusFromBranch(saved) });
+  return json({ success: true, status: statusFromSettings(saved) });
 };

@@ -100,7 +100,7 @@ export default defineConfig(() => {
       chunkSizeWarningLimit: 1000,
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
+      // HMR can be disabled with DISABLE_HMR during automated edits.
       // Do not modifyâ€”file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {

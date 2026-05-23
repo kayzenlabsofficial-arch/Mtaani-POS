@@ -8,7 +8,7 @@ interface Env {
 const ADMIN_ROLES = new Set(['ROOT', 'ADMIN']);
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -48,8 +48,8 @@ async function ensureSchema(db: D1Database) {
       autoApproveOwnerActions INTEGER DEFAULT 1,
       cashSweepEnabled INTEGER DEFAULT 1,
       cashDrawerLimit REAL DEFAULT 5000,
-      aiAssistantEnabled INTEGER DEFAULT 1,
-      aiDailyRequestLimit INTEGER DEFAULT 20,
+      salesTills TEXT,
+      defaultOpeningFloat REAL DEFAULT 0,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -60,8 +60,14 @@ async function ensureSchema(db: D1Database) {
     ['autoApproveOwnerActions', 'INTEGER DEFAULT 1'],
     ['cashSweepEnabled', 'INTEGER DEFAULT 1'],
     ['cashDrawerLimit', 'REAL DEFAULT 5000'],
-    ['aiAssistantEnabled', 'INTEGER DEFAULT 1'],
-    ['aiDailyRequestLimit', 'INTEGER DEFAULT 20'],
+    ['salesTills', 'TEXT'],
+    ['defaultOpeningFloat', 'REAL DEFAULT 0'],
+    ['mpesaConsumerKey', 'TEXT'],
+    ['mpesaConsumerSecret', 'TEXT'],
+    ['mpesaPasskey', 'TEXT'],
+    ['mpesaEnv', "TEXT DEFAULT 'sandbox'"],
+    ['mpesaType', "TEXT DEFAULT 'paybill'"],
+    ['mpesaStoreNumber', 'TEXT'],
     ['businessId', 'TEXT'],
     ['updated_at', 'INTEGER'],
   ];
@@ -95,7 +101,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const fallback = existing || {};
     const now = Date.now();
     const id = text(settings.id, fallback.id || `core_${businessId}`, 160);
-    const canEditAi = auth.service || auth.principal.role === 'ROOT';
     const saved = {
       id,
       storeName: text(settings.storeName, fallback.storeName || 'Mtaani Shop', 160) || 'Mtaani Shop',
@@ -107,12 +112,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       autoApproveOwnerActions: flag(settings.autoApproveOwnerActions, numberValue(fallback.autoApproveOwnerActions, 1)),
       cashSweepEnabled: flag(settings.cashSweepEnabled, numberValue(fallback.cashSweepEnabled, 1)),
       cashDrawerLimit: Math.max(0, numberValue(settings.cashDrawerLimit, numberValue(fallback.cashDrawerLimit, 5000))),
-      aiAssistantEnabled: canEditAi
-        ? flag(settings.aiAssistantEnabled, numberValue(fallback.aiAssistantEnabled, 1))
-        : numberValue(fallback.aiAssistantEnabled, 1),
-      aiDailyRequestLimit: canEditAi
-        ? Math.max(0, Math.floor(numberValue(settings.aiDailyRequestLimit, numberValue(fallback.aiDailyRequestLimit, 20))))
-        : numberValue(fallback.aiDailyRequestLimit, 20),
+      salesTills: text(settings.salesTills, fallback.salesTills || '', 4000),
+      defaultOpeningFloat: Math.max(0, numberValue(settings.defaultOpeningFloat, numberValue(fallback.defaultOpeningFloat, 0))),
+      mpesaConsumerKey: fallback.mpesaConsumerKey || null,
+      mpesaConsumerSecret: fallback.mpesaConsumerSecret || null,
+      mpesaPasskey: fallback.mpesaPasskey || null,
+      mpesaEnv: fallback.mpesaEnv || 'sandbox',
+      mpesaType: fallback.mpesaType || 'paybill',
+      mpesaStoreNumber: fallback.mpesaStoreNumber || null,
       businessId,
       updated_at: now,
     };
@@ -121,9 +128,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       INSERT OR REPLACE INTO settings (
         id, storeName, location, tillNumber, kraPin, receiptFooter,
         ownerModeEnabled, autoApproveOwnerActions, cashSweepEnabled, cashDrawerLimit,
-        aiAssistantEnabled, aiDailyRequestLimit, businessId, updated_at
+        salesTills, defaultOpeningFloat,
+        mpesaConsumerKey, mpesaConsumerSecret, mpesaPasskey, mpesaEnv, mpesaType, mpesaStoreNumber,
+        businessId, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       saved.id,
       saved.storeName,
@@ -135,8 +144,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       saved.autoApproveOwnerActions,
       saved.cashSweepEnabled,
       saved.cashDrawerLimit,
-      saved.aiAssistantEnabled,
-      saved.aiDailyRequestLimit,
+      saved.salesTills,
+      saved.defaultOpeningFloat,
+      saved.mpesaConsumerKey,
+      saved.mpesaConsumerSecret,
+      saved.mpesaPasskey,
+      saved.mpesaEnv,
+      saved.mpesaType,
+      saved.mpesaStoreNumber,
       businessId,
       now,
     ).run();

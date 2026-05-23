@@ -17,28 +17,28 @@ export const SalesService = {
         idempotencyKey: options.idempotencyKey || transaction.id,
       },
       businessId: transaction.businessId,
-      branchId: transaction.branchId,
+      shopId: transaction.shopId,
     });
   },
 
   requestRefund(input: {
     transactionId: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
     itemsToReturn?: { productId: string; quantity: number }[];
   }) {
     return apiRequest<CheckoutResponse>('/api/sales/refund-request', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 
   approveRefund(input: {
     transactionId: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
     itemsToReturn?: { productId: string; quantity: number }[];
     approvedBy?: string;
     idempotencyKey?: string;
@@ -47,20 +47,20 @@ export const SalesService = {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 
   rejectRefund(input: {
     transactionId: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<{ success: boolean; transactionId: string }>('/api/sales/refund-reject', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 };

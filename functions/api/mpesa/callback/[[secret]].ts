@@ -74,7 +74,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT',
           'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT',
           'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedAt INTEGER',
-          'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, branchId, receiptNumber)',
+          'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber)',
         ]) {
           try { await env.DB.prepare(sql).run(); } catch (e) {}
         }

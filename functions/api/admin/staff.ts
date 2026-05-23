@@ -11,7 +11,7 @@ const STAFF_ROLES = new Set(['ADMIN', 'MANAGER', 'CASHIER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -31,7 +31,6 @@ function temporaryPassword() {
 
 async function ensureSchema(db: D1Database) {
   const userColumns = [
-    'branchId TEXT',
     'pin TEXT',
     'updated_at INTEGER',
   ];
@@ -51,7 +50,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -62,16 +60,6 @@ async function adminCount(db: D1Database, businessId: string) {
     .bind(businessId)
     .first<any>();
   return Number(row?.count || 0);
-}
-
-async function branchExists(db: D1Database, businessId: string, branchId: string) {
-  const row = await db.prepare(`
-    SELECT id
-    FROM branches
-    WHERE id = ? AND businessId = ? AND COALESCE(isActive, 1) != 0
-    LIMIT 1
-  `).bind(branchId, businessId).first<any>();
-  return !!row;
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -118,30 +106,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         ? await hashPassword(password)
         : existing?.password;
       if (!passwordHash) throw new PolicyError('Password is required for new staff accounts.', 400);
-      const requestedBranchId = trimText(staff.branchId, 160) || existing?.branchId || null;
-      if (role !== 'ADMIN' && !requestedBranchId) {
-        throw new PolicyError('Assign this staff member to a branch.', 400);
-      }
-      if (requestedBranchId && !(await branchExists(env.DB, businessId, requestedBranchId))) {
-        throw new PolicyError('Select an active branch for this staff member.', 400);
-      }
-
       const savedUser = {
         id,
         name,
         password: passwordHash,
         role,
         businessId,
-        branchId: role === 'ADMIN' ? (requestedBranchId || null) : requestedBranchId,
         updated_at: now,
       };
       await env.DB.batch([
-        env.DB.prepare(`INSERT OR REPLACE INTO users (id, name, password, role, businessId, branchId, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-          .bind(savedUser.id, savedUser.name, savedUser.password, savedUser.role, businessId, savedUser.branchId, now),
+        env.DB.prepare(`INSERT OR REPLACE INTO users (id, name, password, role, businessId, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+          .bind(savedUser.id, savedUser.name, savedUser.password, savedUser.role, businessId, now),
         env.DB.prepare(`
-          INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(crypto.randomUUID(), now, auth.principal.userId || null, auth.principal.userName || null, existing ? 'admin.user.update' : 'admin.user.create', 'user', id, 'INFO', `${existing ? 'Updated' : 'Created'} ${role} account for ${name}.`, businessId, savedUser.branchId, now),
+          INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(crypto.randomUUID(), now, auth.principal.userId || null, auth.principal.userName || null, existing ? 'admin.user.update' : 'admin.user.create', 'user', id, 'INFO', `${existing ? 'Updated' : 'Created'} ${role} account for ${name}.`, businessId, now),
       ]);
       const { password: _password, ...safeUser } = savedUser;
       return json({ success: true, user: safeUser });
@@ -149,7 +128,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const userId = trimText(body?.userId || body?.id, 160);
     if (!userId) return json({ error: 'Staff user is required.' }, 400);
-    const user = await env.DB.prepare(`SELECT id, name, role, businessId, branchId FROM users WHERE id = ? AND businessId = ? LIMIT 1`)
+    const user = await env.DB.prepare(`SELECT id, name, role, businessId FROM users WHERE id = ? AND businessId = ? LIMIT 1`)
       .bind(userId, businessId)
       .first<any>();
     if (!user) throw new PolicyError('Staff user was not found.', 404);
@@ -162,9 +141,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await env.DB.batch([
         env.DB.prepare(`DELETE FROM users WHERE id = ? AND businessId = ?`).bind(userId, businessId),
         env.DB.prepare(`
-          INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(crypto.randomUUID(), now, auth.principal.userId || null, auth.principal.userName || null, 'admin.user.delete', 'user', userId, 'WARN', `Deleted user ${user.name} (${user.role}).`, businessId, user.branchId || null, now),
+          INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(crypto.randomUUID(), now, auth.principal.userId || null, auth.principal.userName || null, 'admin.user.delete', 'user', userId, 'WARN', `Deleted user ${user.name} (${user.role}).`, businessId, now),
       ]);
       return json({ success: true, userId });
     }
@@ -176,9 +155,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         env.DB.prepare(`UPDATE users SET password = ?, updated_at = ? WHERE id = ? AND businessId = ?`)
           .bind(await hashPassword(newPassword), now, userId, businessId),
         env.DB.prepare(`
-          INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(crypto.randomUUID(), now, auth.principal.userId || null, auth.principal.userName || null, 'admin.user_password_reset', 'user', userId, 'WARN', `Reset password for ${user.name}.`, businessId, user.branchId || null, now),
+          INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(crypto.randomUUID(), now, auth.principal.userId || null, auth.principal.userName || null, 'admin.user_password_reset', 'user', userId, 'WARN', `Reset password for ${user.name}.`, businessId, now),
       ]);
       return json({ success: true, userId, temporaryPassword: requested ? undefined : newPassword });
     }

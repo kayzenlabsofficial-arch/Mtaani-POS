@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +10,7 @@ const STOCK_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -42,7 +42,6 @@ async function ensureSchema(db: D1Database) {
       quantity REAL NOT NULL,
       timestamp INTEGER NOT NULL,
       reference TEXT,
-      branchId TEXT,
       businessId TEXT,
       shiftId TEXT,
       expiryDate INTEGER,
@@ -61,7 +60,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -84,10 +82,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const productId = String(body?.productId || '').trim();
-    if (!businessId || !branchId || !productId) return json({ error: 'Business, branch and product are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!businessId || !productId) return json({ error: 'Business and product are required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
@@ -102,13 +99,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     await ensureSchema(env.DB);
     const product = await env.DB.prepare(`
-      SELECT id, name, stockQuantity, costPrice, expiryDate, branchId
+      SELECT id, name, stockQuantity, costPrice, expiryDate
       FROM products
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(productId, businessId).first<any>();
     if (!product) throw new PolicyError('Product was not found.', 404);
-    if (product.branchId && product.branchId !== branchId) throw new PolicyError('Product belongs to another branch.', 403);
 
     const now = Date.now();
     const updateFields = ['stockQuantity = COALESCE(stockQuantity, 0) + ?'];
@@ -137,8 +133,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB.batch([
       updateProduct,
       env.DB.prepare(`
-        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, expiryDate, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, expiryDate, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         productId,
@@ -146,15 +142,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         quantity,
         now,
         trimText(body?.reference, 160) || 'Manual stock adjustment',
-        branchId,
         businessId,
         body?.shiftId || null,
         expiryDate,
         now,
       ),
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         now,
@@ -165,9 +160,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         productId,
         'INFO',
         `Adjusted stock for ${product.name} by ${quantity}.`,
-        businessId,
-        branchId,
-        now,
+        businessId, now,
       ),
     ]);
 

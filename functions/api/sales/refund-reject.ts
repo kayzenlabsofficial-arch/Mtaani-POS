@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 import { deserializeRow, ensureRefundSchema } from './refundOps';
 
@@ -11,7 +11,7 @@ const APPROVER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -47,10 +47,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const transactionId = String(body?.transactionId || body?.id || '').trim();
-    if (!businessId || !branchId || !transactionId) return json({ error: 'Business, branch and sale are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!businessId || !transactionId) return json({ error: 'Business and sale are required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
@@ -58,9 +57,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const tx = await env.DB.prepare(`
       SELECT id, status, total, items, pendingRefundItems
       FROM transactions
-      WHERE id = ? AND businessId = ? AND branchId = ?
+      WHERE id = ? AND businessId = ?
       LIMIT 1
-    `).bind(transactionId, businessId, branchId).first<any>();
+    `).bind(transactionId, businessId).first<any>();
     if (!tx) throw new PolicyError('Sale was not found.', 404);
     if (tx.status !== 'PENDING_REFUND') throw new PolicyError('This receipt is not waiting for refund approval.', 409);
     const clean = deserializeRow(tx);
@@ -70,11 +69,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const now = Date.now();
     await env.DB.batch([
-      env.DB.prepare(`UPDATE transactions SET status = ?, pendingRefundItems = NULL, updated_at = ? WHERE id = ? AND businessId = ? AND branchId = ?`)
-        .bind(restoredStatus, now, transactionId, businessId, branchId),
+      env.DB.prepare(`UPDATE transactions SET status = ?, pendingRefundItems = NULL, updated_at = ? WHERE id = ? AND businessId = ?`)
+        .bind(restoredStatus, now, transactionId, businessId),
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         now,
@@ -85,9 +84,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         transactionId,
         'WARN',
         `Rejected refund request for sale of Ksh ${Number(tx.total || 0).toLocaleString()}.`,
-        businessId,
-        branchId,
-        now,
+        businessId, now,
       ),
     ]);
 

@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +10,7 @@ const APPROVER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -33,7 +33,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -52,10 +51,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const expenseId = String(body?.expenseId || body?.id || '').trim();
-    if (!businessId || !branchId || !expenseId) return json({ error: 'Business, branch and expense are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!businessId || !expenseId) return json({ error: 'Business and expense are required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
@@ -63,20 +61,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const expense = await env.DB.prepare(`
       SELECT id, amount, status
       FROM expenses
-      WHERE id = ? AND businessId = ? AND branchId = ?
+      WHERE id = ? AND businessId = ?
       LIMIT 1
-    `).bind(expenseId, businessId, branchId).first<any>();
+    `).bind(expenseId, businessId).first<any>();
     if (!expense) throw new PolicyError('Expense was not found.', 404);
     if (expense.status === 'REJECTED') return json({ success: true, expenseId, idempotent: true });
     if (expense.status !== 'PENDING') throw new PolicyError('This expense has already been processed.', 409);
 
     const now = Date.now();
     await env.DB.batch([
-      env.DB.prepare(`UPDATE expenses SET status = 'REJECTED', updated_at = ? WHERE id = ? AND businessId = ? AND branchId = ?`)
-        .bind(now, expenseId, businessId, branchId),
+      env.DB.prepare(`UPDATE expenses SET status = 'REJECTED', updated_at = ? WHERE id = ? AND businessId = ?`)
+        .bind(now, expenseId, businessId),
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         now,
@@ -87,9 +85,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         expenseId,
         'WARN',
         `Rejected expense request of Ksh ${Number(expense.amount || 0).toLocaleString()}.`,
-        businessId,
-        branchId,
-        now,
+        businessId, now,
       ),
     ]);
 

@@ -19,7 +19,6 @@ async function ensureAttemptTable(db: D1Database) {
 async function ensureAuthSchema(db: D1Database) {
   await ensureAttemptTable(db);
   const userColumns = [
-    'branchId TEXT',
     'pin TEXT',
     'updated_at INTEGER',
   ];
@@ -58,7 +57,6 @@ function safeUser(user: any) {
     name: user.name,
     role: user.role,
     businessId: user.businessId,
-    branchId: user.branchId || undefined,
   };
 }
 
@@ -103,7 +101,7 @@ async function handleAuthPost(request: Request, env: Env) {
         userName: 'System Root',
         role: 'ROOT',
       });
-      return json({ user: { id: 'root', name: 'System Root', role: 'ROOT' }, businessId: null, branchId: null }, 200, {
+      return json({ user: { id: 'root', name: 'System Root', role: 'ROOT' }, businessId: null }, 200, {
         ...corsHeaders,
         'Set-Cookie': createSessionCookie(request, token),
       });
@@ -128,7 +126,7 @@ async function handleAuthPost(request: Request, env: Env) {
   }
 
   const user = await env.DB.prepare(`
-    SELECT id, name, role, password, businessId, branchId
+    SELECT id, name, role, password, businessId
     FROM users
     WHERE businessId = ? AND lower(trim(name)) = ?
     LIMIT 1
@@ -147,27 +145,15 @@ async function handleAuthPost(request: Request, env: Env) {
       .run();
   }
 
-  let branchId = user.branchId || null;
-  if (!branchId) {
-    const firstBranch = await env.DB.prepare('SELECT id FROM branches WHERE businessId = ? AND COALESCE(isActive, 1) != 0 ORDER BY name LIMIT 1')
-      .bind(business.id)
-      .first<any>();
-    branchId = firstBranch?.id || null;
-  }
-
-  const cleanUser = safeUser({ ...user, branchId });
-  const branchScope = cleanUser.role === 'ADMIN' || cleanUser.role === 'ROOT'
-    ? (user.branchId || undefined)
-    : (branchId || undefined);
+  const cleanUser = safeUser(user);
   const token = await createSessionToken(env.API_SECRET, {
     userId: cleanUser.id,
     userName: cleanUser.name,
     role: cleanUser.role,
     businessId: business.id,
-    branchId: branchScope,
   });
 
-  return json({ user: cleanUser, businessId: business.id, branchId }, 200, {
+  return json({ user: cleanUser, businessId: business.id }, 200, {
     ...corsHeaders,
     'Set-Cookie': createSessionCookie(request, token),
   });

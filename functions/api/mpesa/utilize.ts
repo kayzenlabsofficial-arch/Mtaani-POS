@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 
 interface Env {
   DB: D1Database;
@@ -7,7 +7,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -42,7 +42,6 @@ async function ensureMpesaLedgerSchema(db: D1Database) {
       receiptNumber TEXT,
       phoneNumber TEXT,
       businessId TEXT,
-      branchId TEXT,
       timestamp INTEGER,
       utilizedTransactionId TEXT,
       utilizedCustomerId TEXT,
@@ -58,8 +57,8 @@ async function ensureMpesaLedgerSchema(db: D1Database) {
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedAt INTEGER',
     'ALTER TABLE transactions ADD COLUMN mpesaCustomer TEXT',
     'ALTER TABLE transactions ADD COLUMN mpesaCheckoutRequestId TEXT',
-    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, branchId, receiptNumber)',
-    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_utilized ON mpesaCallbacks(businessId, branchId, utilizedTransactionId)',
+    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber)',
+    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_utilized ON mpesaCallbacks(businessId, utilizedTransactionId)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
@@ -75,24 +74,23 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(body?.businessId || request.headers.get('X-Business-ID') || '').trim();
-    const branchId = String(body?.branchId || request.headers.get('X-Branch-ID') || '').trim();
     const transactionId = String(body?.transactionId || '').trim();
     const code = normaliseCode(body?.code);
     const customerId = String(body?.customerId || '').trim() || null;
     const customerName = String(body?.customerName || '').trim() || null;
 
-    if (!businessId || !branchId || !transactionId || !code) {
-      return json({ error: 'Business, branch, transaction and M-Pesa code are required.' }, 400);
+    if (!businessId || !transactionId || !code) {
+      return json({ error: 'Business, transaction and M-Pesa code are required.' }, 400);
     }
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) return json({ error: 'Access denied' }, 403);
+    if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied' }, 403);
 
     await ensureMpesaLedgerSchema(env.DB);
     const transaction = await env.DB.prepare(`
       SELECT id, customerId, customerName, total, paymentMethod, splitPayments
       FROM transactions
-      WHERE id = ? AND businessId = ? AND branchId = ?
+      WHERE id = ? AND businessId = ?
       LIMIT 1
-    `).bind(transactionId, businessId, branchId).first<any>();
+    `).bind(transactionId, businessId).first<any>();
 
     if (!transaction) return json({ error: 'POS receipt not found for this M-Pesa utilization.' }, 404);
 
@@ -100,7 +98,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       SELECT *
       FROM mpesaCallbacks
       WHERE businessId = ?
-        AND branchId = ?
         AND (
           UPPER(COALESCE(receiptNumber, '')) = ?
           OR UPPER(COALESCE(checkoutRequestId, '')) = ?
@@ -108,7 +105,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         )
       ORDER BY CASE WHEN resultCode = 0 THEN 0 ELSE 1 END, timestamp DESC
       LIMIT 1
-    `).bind(businessId, branchId, code, code, code).first<any>();
+    `).bind(businessId, code, code, code).first<any>();
 
     if (!payment) return json({ error: 'M-Pesa payment not found.' }, 404);
     if (Number(payment.resultCode) !== 0) return json({ error: payment.resultDesc || 'M-Pesa payment is not paid.' }, 409);
@@ -128,7 +125,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           SELECT id
           FROM transactions
           WHERE businessId = ?
-            AND branchId = ?
             AND id != ?
             AND (
               UPPER(COALESCE(mpesaCode, '')) = ?
@@ -136,7 +132,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
               OR UPPER(COALESCE(mpesaCheckoutRequestId, '')) = ?
             )
           LIMIT 1
-        `).bind(businessId, branchId, transactionId, code, code, code).first<any>();
+        `).bind(businessId, transactionId, code, code, code).first<any>();
 
     if (existingLink?.id && existingLink.id !== transactionId) {
       return json({ error: 'This M-Pesa payment is already tied to another POS receipt.' }, 409);

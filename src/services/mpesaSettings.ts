@@ -2,7 +2,7 @@ import { apiRequest } from './apiClient';
 
 export interface SaveMpesaSettingsInput {
   businessId: string;
-  branchId: string;
+  shopId?: string;
   userId: string;
   adminPassword: string;
   confirmationText: string;
@@ -16,13 +16,13 @@ export interface SaveMpesaSettingsInput {
   };
 }
 
-export async function saveBranchMpesaSettings(input: SaveMpesaSettingsInput): Promise<{ success?: boolean; error?: string; status?: any }> {
+export async function saveShopMpesaSettings(input: SaveMpesaSettingsInput): Promise<{ success?: boolean; error?: string; status?: any }> {
   try {
+    const { shopId: _legacyShopId, ...body } = input;
     return await apiRequest<{ success?: boolean; error?: string; status?: any }>('/api/mpesa/settings', {
       method: 'POST',
-      body: input,
+      body,
       businessId: input.businessId,
-      branchId: input.branchId,
     });
   } catch (err: any) {
     return { error: err?.message || 'Could not save M-Pesa settings.' };

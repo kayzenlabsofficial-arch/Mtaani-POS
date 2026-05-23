@@ -81,6 +81,7 @@ export function calculateCashDrawer({
   refunds = [],
   supplierPayments = [],
   customerPayments = [],
+  openingCash = 0,
   since = getTodayStartMs(),
   shiftId,
 }: {
@@ -90,9 +91,11 @@ export function calculateCashDrawer({
   refunds?: RefundLike[];
   supplierPayments?: SupplierPaymentLike[];
   customerPayments?: CustomerPaymentLike[];
+  openingCash?: number;
   since?: number;
   shiftId?: string;
 }): {
+  openingCash: number;
   cashSales: number;
   customerCashPayments: number;
   tillExpenses: number;
@@ -126,13 +129,14 @@ export function calculateCashDrawer({
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   return {
+    openingCash: Number(openingCash || 0),
     cashSales,
     customerCashPayments,
     tillExpenses,
     cashPicks: picked,
     cashRefunds,
     supplierTillPayments,
-    actualCashDrawer: cashSales + customerCashPayments - tillExpenses - picked - supplierTillPayments - cashRefunds,
+    actualCashDrawer: Number(openingCash || 0) + cashSales + customerCashPayments - tillExpenses - picked - supplierTillPayments - cashRefunds,
   };
 }
 
@@ -142,6 +146,7 @@ export function calculateShiftCashFromSales({
   cashPicks = [],
   refunds = [],
   supplierPayments = [],
+  customerPayments = [],
   since = getTodayStartMs(),
   shiftId,
 }: {
@@ -150,10 +155,12 @@ export function calculateShiftCashFromSales({
   cashPicks?: CashPickLike[];
   refunds?: RefundLike[];
   supplierPayments?: SupplierPaymentLike[];
+  customerPayments?: CustomerPaymentLike[];
   since?: number;
   shiftId?: string;
 }): {
   cashSales: number;
+  customerCashPayments: number;
   tillExpenses: number;
   cashPicks: number;
   cashRefunds: number;
@@ -180,12 +187,17 @@ export function calculateShiftCashFromSales({
     .filter(p => recordInShiftCashScope(p, since, shiftId) && p.source === 'TILL')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
+  const customerCashPayments = customerPayments
+    .filter(p => recordInShiftCashScope(p, since, shiftId) && p.paymentMethod === 'CASH')
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
   return {
     cashSales,
+    customerCashPayments,
     tillExpenses,
     cashPicks: picked,
     cashRefunds,
     supplierTillPayments,
-    availableCashSales: Math.max(0, cashSales - tillExpenses - picked - supplierTillPayments - cashRefunds),
+    availableCashSales: Math.max(0, cashSales + customerCashPayments - tillExpenses - picked - supplierTillPayments - cashRefunds),
   };
 }

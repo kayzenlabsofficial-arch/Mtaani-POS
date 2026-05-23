@@ -13,47 +13,47 @@ export const ExpenseService = {
       method: 'POST',
       body: { expense },
       businessId: expense.businessId,
-      branchId: expense.branchId,
+      shopId: expense.shopId,
     });
   },
 
   approve(input: {
     expenseId: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
     approvedBy?: string;
   }) {
     return apiRequest<ExpenseResponse>('/api/expenses/approve', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 
   reject(input: {
     expenseId: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<{ success: boolean; expenseId: string }>('/api/expenses/reject', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 
   delete(input: {
     expenseId: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<{ success: boolean; expenseId: string }>('/api/expenses/delete', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 };

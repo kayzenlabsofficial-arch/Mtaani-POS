@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { decryptSecret } from './secureCredentials';
 
 interface Env {
@@ -18,7 +18,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID'
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID'
 };
 
 function jsonHeaders() {
@@ -50,12 +50,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const auth = await authorizeRequest(request, env);
     if (!auth.ok) return auth.response;
 
-    const body = await request.json() as { amount: number, phone: string, reference?: string, businessId: string, branchId: string };
+    const body = await request.json() as { amount: number, phone: string, reference?: string, businessId: string };
     
-    if (!body.amount || !body.phone || !body.businessId || !body.branchId) {
-      return new Response(JSON.stringify({ error: 'Amount, phone, businessId, and branchId are required' }), { status: 400, headers: jsonHeaders() });
+    if (!body.amount || !body.phone || !body.businessId) {
+      return new Response(JSON.stringify({ error: 'Amount, phone, and businessId are required' }), { status: 400, headers: jsonHeaders() });
     }
-    if (!canAccessBusiness(auth.principal, body.businessId) || !canAccessBranch(auth.principal, body.branchId)) {
+    if (!canAccessBusiness(auth.principal, body.businessId)) {
       return new Response(JSON.stringify({ error: 'Access denied' }), { status: 403, headers: jsonHeaders() });
     }
 
@@ -64,33 +64,35 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const reference = body.reference || 'POS_PAYMENT';
     const description = 'Payment for items';
 
-    // 1. Fetch Credentials from D1 Database for this specific branch
+    // 1. Fetch Credentials from D1 Database for this business
     let consumerKey, consumerSecret, passkey, shortcode, isProd, mpesaType, storeNumber;
 
     try {
-      const branch = await env.DB.prepare(`
-        SELECT mpesaConsumerKey, mpesaConsumerSecret, mpesaPasskey, mpesaEnv, tillNumber, mpesaType, mpesaStoreNumber 
-        FROM branches 
-        WHERE id = ? AND businessId = ?
-      `).bind(body.branchId, body.businessId).first() as any;
+      const settings = await env.DB.prepare(`
+        SELECT mpesaConsumerKey, mpesaConsumerSecret, mpesaPasskey, mpesaEnv, tillNumber, mpesaType, mpesaStoreNumber
+        FROM settings
+        WHERE businessId = ?
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `).bind(body.businessId).first() as any;
 
-      if (branch && branch.mpesaConsumerKey && branch.mpesaConsumerSecret) {
-        consumerKey = await decryptSecret(branch.mpesaConsumerKey, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
-        consumerSecret = await decryptSecret(branch.mpesaConsumerSecret, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
-        passkey = await decryptSecret(branch.mpesaPasskey, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
-        isProd = branch.mpesaEnv === 'production';
-        mpesaType = branch.mpesaType || 'paybill';
+      if (settings && settings.mpesaConsumerKey && settings.mpesaConsumerSecret) {
+        consumerKey = await decryptSecret(settings.mpesaConsumerKey, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
+        consumerSecret = await decryptSecret(settings.mpesaConsumerSecret, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
+        passkey = await decryptSecret(settings.mpesaPasskey, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
+        isProd = settings.mpesaEnv === 'production';
+        mpesaType = settings.mpesaType || 'paybill';
         
         // For Paybill: shortcode = tillNumber
         // For Buy Goods: shortcode = Store Number, PartyB = tillNumber
         if (mpesaType === 'buygoods') {
-          shortcode = branch.mpesaStoreNumber;
-          storeNumber = branch.mpesaStoreNumber;
+          shortcode = settings.mpesaStoreNumber;
+          storeNumber = settings.tillNumber || settings.mpesaStoreNumber;
         } else {
-          shortcode = branch.tillNumber;
+          shortcode = settings.tillNumber;
         }
       } else {
-        // Fallback to Global Env Vars if branch settings are missing
+        // Fallback to Global Env Vars if business settings are missing
         consumerKey = env.MPESA_CONSUMER_KEY;
         consumerSecret = env.MPESA_CONSUMER_SECRET;
         passkey = env.MPESA_PASSKEY;
@@ -111,20 +113,20 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // Security & Validation: Prevent using sandbox defaults in production
     if (isProd && (!consumerKey || !consumerSecret || !shortcode || !passkey)) {
-       throw new Error("M-Pesa configuration is incomplete for this branch in PRODUCTION mode.");
+       throw new Error("M-Pesa configuration is incomplete for this business in PRODUCTION mode.");
     }
 
     if (!consumerKey || !consumerSecret || !passkey || !shortcode) {
       // Never fall back to hardcoded credentials.
       // Misconfiguration should fail closed to protect financial integrity.
-      throw new Error("M-Pesa configuration is missing (consumer key/secret/passkey/shortcode). Configure it per-branch or via environment variables.");
+      throw new Error("M-Pesa configuration is missing (consumer key/secret/passkey/shortcode). Configure it in business settings or via environment variables.");
     }
 
     const baseUrl = isProd 
       ? 'https://api.safaricom.co.ke'
       : 'https://sandbox.safaricom.co.ke';
 
-    console.log(`[M-Pesa] Sending phone request (${mpesaType}) for branch=${body.branchId} env=${isProd ? 'PRODUCTION' : 'SANDBOX'}`);
+    console.log(`[M-Pesa] Sending phone request (${mpesaType}) for business=${body.businessId} env=${isProd ? 'PRODUCTION' : 'SANDBOX'}`);
 
     // 2. Generate OAuth Token
     const authString = btoa(`${consumerKey}:${consumerSecret}`);
@@ -160,21 +162,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       TransactionType: isBuyGoods ? 'CustomerBuyGoodsOnline' : 'CustomerPayBillOnline',
       Amount: amount,
       PartyA: phone,
-      PartyB: isBuyGoods ? body.phone.replace(/\D/g, '').replace(/^0/, '254') : shortcode, // For Till, PartyB is the Till Number (handled via tillNumber in DB usually, but wait...)
+      PartyB: isBuyGoods ? (storeNumber || shortcode) : shortcode,
       PhoneNumber: phone,
       CallBackURL: callbackUrl,
       AccountReference: reference,
       TransactionDesc: description
     };
-
-    // Correcting PartyB if it's Buy Goods
-    // In our DB, 'tillNumber' field usually stores the Till Number.
-    // If it's Buy Goods: BusinessShortCode = Store Number, PartyB = Till Number.
-    if (isBuyGoods) {
-      // Re-fetch branch tillNumber just in case it was overwritten in local variable
-      const branchAgain = await env.DB.prepare(`SELECT tillNumber FROM branches WHERE id = ?`).bind(body.branchId).first() as any;
-      stkPayload.PartyB = branchAgain?.tillNumber || shortcode;
-    }
 
     // 4. PRE-LOG: Record as PENDING before the push to prevent race conditions
     // We don't have CheckoutRequestID yet, but we can generate a temporary internal ID or wait for response.
@@ -207,7 +200,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         receiptNumber TEXT,
         phoneNumber TEXT,
         businessId TEXT,
-        branchId TEXT,
         timestamp INTEGER,
         utilizedTransactionId TEXT,
         utilizedCustomerId TEXT,
@@ -221,17 +213,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT',
       'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT',
       'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedAt INTEGER',
-      'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, branchId, receiptNumber)',
+      'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber)',
     ]) {
       try { await env.DB.prepare(sql).run(); } catch (e) {}
     }
 
     await env.DB.prepare(`
       INSERT INTO mpesaCallbacks 
-      (checkoutRequestId, merchantRequestId, resultCode, resultDesc, amount, phoneNumber, businessId, branchId, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (checkoutRequestId, merchantRequestId, resultCode, resultDesc, amount, phoneNumber, businessId, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      stkData.CheckoutRequestID, stkData.MerchantRequestID, 999, 'PENDING', amount, phone, body.businessId, body.branchId, Date.now()
+      stkData.CheckoutRequestID, stkData.MerchantRequestID, 999, 'PENDING', amount, phone, body.businessId, Date.now()
     ).run();
 
     return new Response(JSON.stringify({ 

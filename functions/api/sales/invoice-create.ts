@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +10,7 @@ const INVOICE_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -61,7 +61,6 @@ async function ensureSchema(db: D1Database) {
       quantity REAL NOT NULL,
       timestamp INTEGER NOT NULL,
       reference TEXT,
-      branchId TEXT,
       businessId TEXT,
       shiftId TEXT,
       updated_at INTEGER
@@ -92,7 +91,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -107,14 +105,14 @@ async function ensureSchema(db: D1Database) {
   }
 }
 
-async function nextInvoiceNumber(db: D1Database, businessId: string, branchId: string) {
+async function nextInvoiceNumber(db: D1Database, businessId: string) {
   const { results } = await db.prepare(`
     SELECT invoiceNumber
     FROM salesInvoices
-    WHERE businessId = ? AND branchId = ? AND invoiceNumber LIKE 'INV-%'
+    WHERE businessId = ? AND invoiceNumber LIKE 'INV-%'
     ORDER BY issueDate DESC
     LIMIT 500
-  `).bind(businessId, branchId).all();
+  `).bind(businessId).all();
   const max = ((results || []) as any[]).reduce((highest, row) => {
     const match = String(row.invoiceNumber || '').match(/INV-(\d+)/i);
     const num = match ? Number(match[1]) : 0;
@@ -136,10 +134,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const customerId = String(body?.customerId || '').trim();
-    if (!businessId || !branchId || !customerId) return json({ error: 'Business, branch and customer are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!businessId || !customerId) return json({ error: 'Business and customer are required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
@@ -150,13 +147,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await ensureSchema(env.DB);
 
     const customer = await env.DB.prepare(`
-      SELECT id, name, phone, email, totalSpent, balance, branchId
+      SELECT id, name, phone, email, totalSpent, balance
       FROM customers
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(customerId, businessId).first<any>();
     if (!customer) throw new PolicyError('Customer was not found.', 404);
-    if (customer.branchId && customer.branchId !== branchId) throw new PolicyError('Customer belongs to another branch.', 403);
 
     const normalizedItems: any[] = [];
     const stockDeductions = new Map<string, { name: string; quantity: number }>();
@@ -171,13 +167,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         const itemId = String(raw?.itemId || '').trim();
         if (!itemId) throw new PolicyError('Product line is missing the product ID.', 400);
         const product = await env.DB.prepare(`
-          SELECT id, name, sellingPrice, taxCategory, stockQuantity, branchId
+          SELECT id, name, sellingPrice, taxCategory, stockQuantity
           FROM products
           WHERE id = ? AND businessId = ?
           LIMIT 1
         `).bind(itemId, businessId).first<any>();
         if (!product) throw new PolicyError('Invoice includes a product that was not found.', 404);
-        if (product.branchId && product.branchId !== branchId) throw new PolicyError(`Product "${product.name}" belongs to another branch.`, 403);
         const planned = stockDeductions.get(product.id)?.quantity || 0;
         if (asNumber(product.stockQuantity) < planned + quantity) throw new PolicyError(`Insufficient stock for ${product.name}.`, 409);
         stockDeductions.set(product.id, { name: product.name, quantity: planned + quantity });
@@ -228,15 +223,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const tax = roundMoney(normalizedItems.reduce((sum, item) => sum + lineVat(item), 0));
     const total = roundMoney(subtotal + tax);
     const now = Date.now();
-    const invoiceId = trimText(body?.invoiceId, 160) || `sales_invoice_${businessId}_${branchId}_${crypto.randomUUID()}`;
-    const invoiceNumber = trimText(body?.invoiceNumber, 80) || await nextInvoiceNumber(env.DB, businessId, branchId);
+    const invoiceId = trimText(body?.invoiceId, 160) || `sales_invoice_${businessId}_${crypto.randomUUID()}`;
+    const invoiceNumber = trimText(body?.invoiceNumber, 80) || await nextInvoiceNumber(env.DB, businessId);
 
     const existing = await env.DB.prepare(`
       SELECT *
       FROM salesInvoices
-      WHERE id = ? AND businessId = ? AND branchId = ?
+      WHERE id = ? AND businessId = ?
       LIMIT 1
-    `).bind(invoiceId, businessId, branchId).first<any>();
+    `).bind(invoiceId, businessId).first<any>();
     if (existing) {
       return json({ success: true, invoice: { ...existing, items: parseMaybeJson(existing.items) }, idempotent: true });
     }
@@ -244,10 +239,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const duplicateNumber = await env.DB.prepare(`
       SELECT id
       FROM salesInvoices
-      WHERE invoiceNumber = ? AND businessId = ? AND branchId = ?
+      WHERE invoiceNumber = ? AND businessId = ?
       LIMIT 1
-    `).bind(invoiceNumber, businessId, branchId).first<any>();
-    if (duplicateNumber) throw new PolicyError('Invoice number already exists for this branch.', 409);
+    `).bind(invoiceNumber, businessId).first<any>();
+    if (duplicateNumber) throw new PolicyError('Invoice number already exists.', 409);
 
     const invoice = {
       id: invoiceId,
@@ -267,15 +262,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       dueDate: body?.dueDate ? asNumber(body.dueDate) : null,
       notes: trimText(body?.notes, 500) || null,
       preparedBy: trimText(body?.preparedBy || auth.principal.userName, 120) || 'Staff',
-      branchId,
       businessId,
       updated_at: now,
     };
 
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(`
-        INSERT INTO salesInvoices (id, invoiceNumber, customerId, customerName, customerPhone, customerEmail, items, subtotal, tax, total, paidAmount, balance, status, issueDate, dueDate, notes, preparedBy, branchId, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO salesInvoices (id, invoiceNumber, customerId, customerName, customerPhone, customerEmail, items, subtotal, tax, total, paidAmount, balance, status, issueDate, dueDate, notes, preparedBy, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         invoice.id,
         invoice.invoiceNumber,
@@ -294,7 +288,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         invoice.dueDate,
         invoice.notes,
         invoice.preparedBy,
-        branchId,
         businessId,
         now,
       ),
@@ -312,8 +305,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         env.DB.prepare(`UPDATE products SET stockQuantity = MAX(0, COALESCE(stockQuantity, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ?`)
           .bind(deduction.quantity, now, productId, businessId),
         env.DB.prepare(`
-          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
           productId,
@@ -321,7 +314,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           deduction.quantity,
           now,
           `Invoice ${invoiceNumber}`,
-          branchId,
           businessId,
           body?.shiftId || null,
           now,
@@ -331,8 +323,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     statements.push(
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         now,
@@ -343,9 +335,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         invoice.id,
         'INFO',
         `Created ${invoiceNumber} for Ksh ${total.toLocaleString()}.`,
-        businessId,
-        branchId,
-        now,
+        businessId, now,
       )
     );
 

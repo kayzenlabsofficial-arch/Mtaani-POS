@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { hardenTransactionBatch, PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -15,7 +15,7 @@ type Mutation = {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(body: any, status = 200) {
@@ -48,7 +48,6 @@ async function ensureSyncSchema(db: D1Database) {
     `CREATE TABLE IF NOT EXISTS idempotencyKeys (
       id TEXT PRIMARY KEY,
       businessId TEXT NOT NULL,
-      branchId TEXT NOT NULL,
       idempotencyKey TEXT NOT NULL,
       operation TEXT NOT NULL,
       deviceId TEXT,
@@ -56,14 +55,13 @@ async function ensureSyncSchema(db: D1Database) {
       createdAt INTEGER NOT NULL
     )`
   ).run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, branchId, idempotencyKey)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, idempotencyKey)').run();
 
   await db.prepare('CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId)').run();
-  await db.prepare('CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, expiryDate INTEGER, updated_at INTEGER)').run();
+  await db.prepare('CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, businessId TEXT, shiftId TEXT, expiryDate INTEGER, updated_at INTEGER)').run();
 
   const migrations = [
-    'ALTER TABLE transactions ADD COLUMN branchId TEXT',
     'ALTER TABLE transactions ADD COLUMN businessId TEXT',
     'ALTER TABLE transactions ADD COLUMN shiftId TEXT',
     'ALTER TABLE transactions ADD COLUMN approvedBy TEXT',
@@ -82,7 +80,6 @@ async function ensureSyncSchema(db: D1Database) {
     'ALTER TABLE transactions ADD COLUMN splitData TEXT',
     'ALTER TABLE transactions ADD COLUMN isSynced INTEGER',
     'ALTER TABLE products ADD COLUMN businessId TEXT',
-    'ALTER TABLE products ADD COLUMN branchId TEXT',
     'ALTER TABLE products ADD COLUMN unit TEXT',
     'ALTER TABLE products ADD COLUMN costPrice REAL',
     "ALTER TABLE products ADD COLUMN taxCategory TEXT DEFAULT 'A'",
@@ -97,7 +94,6 @@ async function ensureSyncSchema(db: D1Database) {
     'ALTER TABLE customers ADD COLUMN updated_at INTEGER',
     'ALTER TABLE productIngredients ADD COLUMN businessId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN reference TEXT',
-    'ALTER TABLE stockMovements ADD COLUMN branchId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN businessId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN expiryDate INTEGER',
@@ -120,9 +116,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   await ensureSyncSchema(env.DB);
 
   const businessId = request.headers.get('X-Business-ID') || '';
-  const branchId = request.headers.get('X-Branch-ID') || '';
-  if (!businessId || !branchId) return json({ error: 'X-Business-ID and X-Branch-ID required' }, 400);
-  if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) return json({ error: 'Access denied' }, 403);
+  if (!businessId) return json({ error: 'X-Business-ID required' }, 400);
+  if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied' }, 403);
 
   const body = (await request.json().catch(() => null)) as any;
   const deviceId = body?.deviceId ? String(body.deviceId).slice(0, 120) : null;
@@ -138,7 +133,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   // Check idempotency before preparing the sale, then write the idempotency row in
   // the same final batch as the transaction and stock effects. If the sale batch
   // fails, the key is not burned and the device can retry safely.
-  const idemIds = mutations.map(m => `${businessId}|${branchId}|${String(m.idempotencyKey || '').trim()}`);
+  const idemIds = mutations.map(m => `${businessId}|${String(m.idempotencyKey || '').trim()}`);
   const placeholders = idemIds.map(() => '?').join(',');
   const existingIdem = placeholders
     ? await env.DB.prepare(`SELECT id FROM idempotencyKeys WHERE id IN (${placeholders})`).bind(...idemIds).all()
@@ -146,7 +141,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const existingIdemIds = new Set(((existingIdem.results || []) as any[]).map(row => String(row.id)));
   const validMutations = mutations.filter((m) => {
     const idempotencyKey = String(m.idempotencyKey || '').trim();
-    return !existingIdemIds.has(`${businessId}|${branchId}|${idempotencyKey}`);
+    return !existingIdemIds.has(`${businessId}|${idempotencyKey}`);
   });
   const skippedCount = mutations.length - validMutations.length;
 
@@ -168,7 +163,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     sideEffects = await hardenTransactionBatch({
       db: env.DB,
       businessId,
-      branchId,
       principal: auth.principal,
       service: auth.service,
       sourceLabel: 'Sale (Sync)',
@@ -180,7 +174,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   for (const payload of payloads) {
     payload.businessId = businessId;
-    payload.branchId = branchId;
 
     const cols = Object.keys(payload).filter((k) => validTxCols.has(k));
     if (cols.length > 0) {
@@ -191,12 +184,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   finalBatch.push(...sideEffects);
   for (const m of validMutations) {
     const idempotencyKey = String(m.idempotencyKey || '').trim();
-    const idemId = `${businessId}|${branchId}|${idempotencyKey}`;
+    const idemId = `${businessId}|${idempotencyKey}`;
     finalBatch.push(
       env.DB.prepare(
-        `INSERT OR IGNORE INTO idempotencyKeys (id, businessId, branchId, idempotencyKey, operation, deviceId, cashierName, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(idemId, businessId, branchId, idempotencyKey, 'transactions:UPSERT', deviceId, cashierName, Date.now())
+        `INSERT OR IGNORE INTO idempotencyKeys (id, businessId, idempotencyKey, operation, deviceId, cashierName, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).bind(idemId, businessId, idempotencyKey, 'transactions:UPSERT', deviceId, cashierName, Date.now())
     );
   }
 

@@ -10,7 +10,7 @@ import { submitExpenseRecord } from './utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from './utils/ownerMode';
 import { calculateShiftCashFromSales, getTodayStartMs } from './utils/cashDrawer';
 import { getBusinessSettings } from './utils/settings';
-import { belongsToActiveBranch } from './utils/branchScope';
+import { pickedCashAccountId, singleFinanceAccount } from './utils/financeAccount';
 import { useStore } from './store';
 import { getCurrentShiftId, getCurrentShiftStart } from './utils/shiftSession';
 
@@ -29,8 +29,7 @@ import DocumentsTab from './components/tabs/DocumentsTab';
 import ReportsTab from './components/tabs/ReportsTab';
 import HRTab from './components/tabs/HRTab';
 import AdminPanel from './components/tabs/AdminPanel';
-import AIAssistant from './components/ai/AIAssistant';
-import BillingBanner from './components/billing/BillingBanner';
+import TillsTab from './components/tabs/TillsTab';
 
 // Layout & Shell
 import Sidebar from './components/shared/Sidebar';
@@ -45,6 +44,7 @@ import ExpenseModal from './components/modals/ExpenseModal';
 const MaterialIcon = ({ name, className = "", style }: { name: string, className?: string, style?: React.CSSProperties }) => (
   <ShoppingCart className={className} style={style} size={28} strokeWidth={2.4} aria-label={name} />
 );
+const SINGLE_SHOP_ID = 'single-shop';
 
 export default function MtaaniPOS() {
   const {
@@ -61,28 +61,34 @@ export default function MtaaniPOS() {
     isLoggingIn, handleLogin,
     handleLogout, loginError,
     currentUser, isSystemAdmin,
-    activeBusinessId, activeBranchId, handleBranchChange,
+    activeBusinessId, activeShopId, setActiveShopId,
     handleCheckout,
     updateServiceWorker, needRefresh
   } = useMtaaniPOS();
   const { success, error } = useToast();
 
-  const branches = useLiveQuery(() => activeBusinessId ? db.branches.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
-  const activeBranch = branches?.find(b => b.id === activeBranchId);
   const activeBusiness = useLiveQuery(() => activeBusinessId ? db.businesses.get(activeBusinessId) : Promise.resolve(undefined), [activeBusinessId]);
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
+  const activeShop = React.useMemo(() => ({
+    id: SINGLE_SHOP_ID,
+    name: businessSettings?.storeName || activeBusiness?.name || 'Main shop',
+    location: businessSettings?.location || 'Nairobi, Kenya',
+    tillNumber: businessSettings?.tillNumber,
+    kraPin: businessSettings?.kraPin,
+  }), [activeBusiness?.name, businessSettings]);
   const activeShift = useStore(state => state.activeShift);
   const isRegisterTab = activeTab === 'REGISTER';
+
+  React.useEffect(() => {
+    if (activeBusinessId && !activeShopId) setActiveShopId(SINGLE_SHOP_ID);
+  }, [activeBusinessId, activeShopId, setActiveShopId]);
 
   const [expenseForm, setExpenseForm] = useState({
     description: '',
     amount: '',
     category: 'General',
-    source: 'TILL' as 'PETTY_CASH' | 'TILL' | 'ACCOUNT' | 'SHOP',
+    source: 'TILL' as 'TILL' | 'ACCOUNT',
     accountId: '',
-    financialAccountId: '',
-    productId: '',
-    quantity: '1'
   });
   const [isSavingExpense, setIsSavingExpense] = useState(false);
 
@@ -121,46 +127,44 @@ export default function MtaaniPOS() {
   }, []);
 
   const expenseAccounts = useLiveQuery(() => activeBusinessId ? db.expenseAccounts.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
-  const financialAccounts = useLiveQuery(() => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
-  const products = useLiveQuery(
-    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveBranch(p, activeBranchId)).toArray() : [],
-    [activeBusinessId, activeBranchId]
+  const rawFinancialAccounts = useLiveQuery(() => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : [], [activeBusinessId]);
+  const financialAccounts = React.useMemo(
+    () => singleFinanceAccount(rawFinancialAccounts || [], activeBusinessId),
+    [rawFinancialAccounts, activeBusinessId]
   );
-  const transactions = useLiveQuery(() => activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
-  const expenses = useLiveQuery(() => activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
-  const cashPicks = useLiveQuery(() => activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
-  const refunds = useLiveQuery(() => activeBranchId ? db.refunds.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
-  const supplierPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : [], [activeBranchId]);
-  const currentShiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser?.id);
+  const transactions = useLiveQuery(() => activeShopId ? db.transactions.where('shopId').equals(activeShopId).toArray() : [], [activeShopId]);
+  const expenses = useLiveQuery(() => activeShopId ? db.expenses.where('shopId').equals(activeShopId).toArray() : [], [activeShopId]);
+  const cashPicks = useLiveQuery(() => activeShopId ? db.cashPicks.where('shopId').equals(activeShopId).toArray() : [], [activeShopId]);
+  const refunds = useLiveQuery(() => activeShopId ? db.refunds.where('shopId').equals(activeShopId).toArray() : [], [activeShopId]);
+  const supplierPayments = useLiveQuery(() => activeShopId ? db.supplierPayments.where('shopId').equals(activeShopId).toArray() : [], [activeShopId]);
+  const customerPayments = useLiveQuery(() => activeShopId ? db.customerPayments.where('shopId').equals(activeShopId).toArray() : [], [activeShopId]);
+  const currentShiftId = getCurrentShiftId(activeShift, activeShopId, currentUser?.id);
   const shiftCashAvailable = calculateShiftCashFromSales({
     transactions: transactions || [],
     expenses: expenses || [],
     cashPicks: cashPicks || [],
     refunds: refunds || [],
     supplierPayments: supplierPayments || [],
+    customerPayments: customerPayments || [],
     since: getCurrentShiftStart(activeShift, getTodayStartMs()),
     shiftId: currentShiftId,
   }).availableCashSales;
 
   const handleSaveExpense = async () => {
     if (isSavingExpense) return;
-    if (!currentUser || !activeBusinessId || !activeBranchId) return;
-    const stockExpenseProduct = products?.find(product => product.id === expenseForm.productId);
-    const stockExpenseQty = Number(expenseForm.quantity || 0);
-    const amount = expenseForm.source === 'SHOP'
-      ? Math.round(((Number(stockExpenseProduct?.costPrice) || 0) * stockExpenseQty) * 100) / 100
-      : Number(expenseForm.amount);
+    if (!currentUser || !activeBusinessId) return;
+    const expenseSource = expenseForm.source === 'ACCOUNT' ? 'ACCOUNT' : 'TILL';
+    const amount = Number(expenseForm.amount);
     if (amount <= 0) return error("Invalid amount.");
     if (!canPerform(currentUser, 'expense.create')) return error("You do not have permission to create expenses.");
-    if (expenseForm.source === 'TILL' && amount > shiftCashAvailable) return error("Insufficient cash sales in this shift.");
-    if (expenseForm.source === 'ACCOUNT' && !expenseForm.accountId) return error("Select the account paying this expense.");
-    if (expenseForm.source === 'SHOP' && !expenseForm.productId) return error("Select the stock item being expensed.");
-    if (expenseForm.source === 'SHOP' && (!stockExpenseProduct || (Number(stockExpenseProduct.costPrice) || 0) <= 0)) return error("Set the product cost price before expensing stock.");
-    if (expenseForm.source === 'SHOP' && stockExpenseQty > (Number(stockExpenseProduct?.stockQuantity) || 0)) return error("Stock expense quantity exceeds available stock.");
+    if (expenseSource === 'TILL' && !currentShiftId) return error("Open a till shift before paying expenses from the till.");
+    if (expenseSource === 'TILL' && amount > shiftCashAvailable) return error("Insufficient cash sales in this shift.");
+    if (expenseSource === 'ACCOUNT' && amount > Number(financialAccounts[0]?.balance || 0)) return error("Insufficient balance in the picked cash account.");
 
     setIsSavingExpense(true);
     try {
       const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
+      const accountId = expenseSource === 'ACCOUNT' ? pickedCashAccountId(activeBusinessId) : undefined;
       const expenseRecord = {
         id: crypto.randomUUID(),
         amount,
@@ -171,12 +175,10 @@ export default function MtaaniPOS() {
         preparedBy: currentUser.name,
         status: autoApprove ? 'APPROVED' : 'PENDING',
         approvedBy: autoApprove ? currentUser.name : undefined,
-        source: expenseForm.source,
-        accountId: expenseForm.source === 'ACCOUNT' ? expenseForm.accountId : undefined,
-        productId: expenseForm.source === 'SHOP' ? expenseForm.productId : undefined,
-        quantity: expenseForm.source === 'SHOP' ? Number(expenseForm.quantity || 1) : undefined,
+        source: expenseSource,
+        accountId,
         shiftId: currentShiftId,
-        branchId: activeBranchId,
+        shopId: activeShopId || SINGLE_SHOP_ID,
         businessId: activeBusinessId
       } as any;
 
@@ -191,7 +193,7 @@ export default function MtaaniPOS() {
         details: `${autoApprove ? 'Auto-approved' : 'Created pending'} expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'General'})`,
       });
       setIsExpenseModalOpen(false);
-      setExpenseForm({ description: '', amount: '', category: 'General', source: 'TILL', accountId: '', financialAccountId: '', productId: '', quantity: '1' });
+      setExpenseForm({ description: '', amount: '', category: 'General', source: 'TILL', accountId: '' });
       success(autoApprove ? "Expense logged and approved." : "Expense logged successfully.");
     } catch (err: any) {
       error("Failed to log expense: " + err.message);
@@ -231,9 +233,7 @@ export default function MtaaniPOS() {
       <div className="flex-1 flex flex-col min-w-0 relative h-full">
         <TopHeader 
           activeBusiness={activeBusiness}
-          activeBranch={activeBranch}
-          branches={branches}
-          onBranchChange={handleBranchChange}
+          activeShop={activeShop}
           isSyncing={isSyncing}
           onSync={handleSync}
           isOnline={isOnline}
@@ -241,12 +241,11 @@ export default function MtaaniPOS() {
           currentUser={currentUser}
         />
 
-        <BillingBanner activeBusinessId={activeBusinessId} currentUser={currentUser} />
-
         <main className={`flex-1 main-scroll app-safe-scroll relative bg-slate-100 md:bg-transparent ${isRegisterTab ? 'overflow-y-auto p-0' : 'overflow-y-auto p-3 pb-28 sm:p-4 sm:pb-28 md:p-6 md:pb-6 lg:p-8'}`}>
           <div className={isRegisterTab ? 'h-full min-h-0' : 'max-w-[1440px] mx-auto min-h-full'}>
             {activeTab === 'REGISTER' && <RegisterTab toggleCart={toggleCart} handleCheckout={handleCheckout} />}
             {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={navigateToTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}
+            {activeTab === 'TILLS' && <TillsTab />}
             {activeTab === 'INVENTORY' && <InventoryTab />}
             {activeTab === 'CUSTOMERS' && <CustomersTab />}
             {activeTab === 'SUPPLIERS' && <SuppliersTab setActiveTab={navigateToTab} financialAccounts={financialAccounts || []} />}
@@ -278,13 +277,6 @@ export default function MtaaniPOS() {
           </button>
         )}
 
-        {currentUser.role === 'ADMIN' && (
-          <AIAssistant
-            activeBusinessId={activeBusinessId}
-            activeBranchId={activeBranchId}
-            currentUser={currentUser}
-          />
-        )}
       </div>
 
       {isMoreMenuOpen && (
@@ -307,7 +299,6 @@ export default function MtaaniPOS() {
         actualCashDrawer={shiftCashAvailable}
         accounts={expenseAccounts || []} 
         financialAccounts={financialAccounts || []} 
-        products={products || []} 
       />
     </div>
   );

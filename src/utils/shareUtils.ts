@@ -280,14 +280,14 @@ function safe(n: any): number { return Number(n) || 0; }
 function ksh(n: any): string { return `Ksh ${safe(n).toLocaleString()}`; }
 function looksLikeOpaqueId(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
-    || /^demo_branch_/i.test(value)
+    || /^demo_shop_/i.test(value)
     || value.length > 28;
 }
 
-function branchLabel(record: any, fallback = 'Main Branch'): string {
-  const named = safeStr(record?.branchName || record?.branch?.name || record?.branchLabel, '');
+function shopLabel(record: any, fallback = 'Main Shop'): string {
+  const named = safeStr(record?.shopName || record?.shop?.name || record?.shopLabel, '');
   if (named) return named;
-  const raw = safeStr(record?.branchId, '');
+  const raw = safeStr(record?.shopId, '');
   if (!raw || looksLikeOpaqueId(raw)) return fallback;
   return raw;
 }
@@ -334,7 +334,7 @@ function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya
   st(doc, slate600);
   doc.text(address, TW / 2, y, { align: 'center' });
   y += 4;
-  doc.text(`Branch: ${branchLabel(r)}`, TW / 2, y, { align: 'center' });
+  doc.text(`Shop: ${shopLabel(r)}`, TW / 2, y, { align: 'center' });
   y += 6;
   
   // Info
@@ -928,19 +928,26 @@ function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'
   const reportDate = new Date(safe(r.date || r.timestamp || Date.now()));
   const issuedDate = new Date(r.timestamp || Date.now());
   const shiftIds = parseList(r.shiftIds);
+  const closeBreakdown = typeof r.closeBreakdown === 'string'
+    ? (() => { try { return JSON.parse(r.closeBreakdown); } catch { return {}; } })()
+    : (r.closeBreakdown || {});
   const grossSales = safe(r.grossSales ?? r.totalSales);
   const totalSales = safe(r.totalSales ?? grossSales);
   const cashSales = safe(r.cashSales ?? Math.max(0, totalSales - safe(r.mpesaSales)));
+  const customerCashPayments = safe(r.customerCashPayments);
+  const customerMpesaPayments = safe(r.customerMpesaPayments ?? closeBreakdown.customerMpesaPayments);
   const mpesaSales = safe(r.mpesaSales);
   const pdqSales = safe(r.pdqSales);
   const expenses = safe(r.totalExpenses);
   const supplierPaymentsTotal = safe(r.supplierPaymentsTotal);
-  const remittanceTotal = Math.min(cashSales, safe(r.remittanceTotal ?? (supplierPaymentsTotal + expenses)));
+  const remittanceTotal = safe(r.remittanceTotal ?? (supplierPaymentsTotal + expenses));
   const banked = safe(r.totalPicks);
   const refunds = safe(r.totalRefunds);
+  const cashRefunds = safe(r.cashRefunds ?? refunds);
+  const openingCash = safe(r.openingCash);
   const taxTotal = safe(r.taxTotal);
   const expected = safe(r.expectedCash);
-  const reported = safe(r.reportedCash || expected);
+  const reported = safe(r.reportedCash ?? r.closingCash ?? expected);
   const diff = safe(r.difference ?? r.totalVariance);
   const shiftReports = parseList(r.shiftReports);
   const reportTitle = isDaily ? 'Daily Close Report' : 'Shift Report';
@@ -956,7 +963,7 @@ function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'
   y = drawCloseReportInfoGrid(doc, y, [
     ['Date Created', issuedDate.toLocaleDateString('en-KE')],
     ['Date Issued', issuedDate.toLocaleDateString('en-KE')],
-    [isDaily ? 'Business Day' : 'Shift ID', isDaily ? reportDate.toLocaleDateString('en-KE') : safeStr(r.shiftId, 'N/A')],
+    [isDaily ? 'Business Day' : 'Till', isDaily ? reportDate.toLocaleDateString('en-KE') : safeStr(r.tillName || r.shiftId, 'N/A')],
     ['Report Type', isDaily ? 'Daily Close' : 'Shift Close'],
   ]);
 
@@ -981,12 +988,19 @@ function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'
         { label: 'VAT', value: taxTotal, kind: 'total' },
       ]
     : [
+        { label: 'Opening Cash Float', value: openingCash },
         { label: 'Cash Sale', value: cashSales },
+        { label: 'Customer Cash Payments', value: customerCashPayments },
         { label: 'M-Pesa Sales', value: mpesaSales },
+        { label: 'Customer M-Pesa Payments', value: customerMpesaPayments },
         { label: 'PDQ Sales', value: pdqSales },
+        { label: 'Till Expenses', value: expenses, format: 'deduct' },
+        { label: 'Supplier Till Payments', value: supplierPaymentsTotal, format: 'deduct' },
         { label: 'Refunds', value: refunds, format: 'deduct' },
-        { label: 'Remittance (Supplier payments + Expenses)', value: remittanceTotal, format: 'deduct' },
-        { label: 'Cash Picked', value: banked },
+        { label: 'Cash Refunded From Till', value: cashRefunds, format: 'deduct' },
+        { label: 'Cash Picked', value: banked, format: 'deduct' },
+        { label: 'Expected Closing Cash', value: expected, kind: 'total' },
+        { label: 'Counted Closing Cash', value: reported, kind: 'total' },
         { label: 'Cashier Variance', value: diff, kind: 'highlight' },
         { label: 'Gross Sales', value: grossSales, kind: 'total' },
         { label: 'VAT', value: taxTotal, kind: 'total' },

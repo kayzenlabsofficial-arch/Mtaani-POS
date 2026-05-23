@@ -22,13 +22,13 @@ export const PurchaseService = {
     items: { productId: string; expectedQuantity: number; unitCost: number }[];
     preparedBy?: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<{ success: boolean; purchaseOrder: PurchaseOrder; autoApproved: boolean }>('/api/purchases/save', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 
@@ -37,13 +37,13 @@ export const PurchaseService = {
     action: 'APPROVE' | 'REJECT';
     approvedBy?: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<{ success: boolean; purchaseOrderId: string; approvalStatus: 'APPROVED' | 'REJECTED' }>('/api/purchases/approval', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 
@@ -53,14 +53,14 @@ export const PurchaseService = {
     items: PurchaseReceiveLine[];
     receivedBy: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
     shiftId?: string;
   }) {
     return apiRequest<PurchaseReceiveResponse>('/api/purchases/receive', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 };

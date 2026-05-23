@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -9,7 +9,7 @@ interface Env {
 const MANAGER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -48,7 +48,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -76,8 +75,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || auth.principal.businessId || '').trim();
     if (!businessId || !canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || auth.principal.branchId || '').trim();
-    if (branchId && !canAccessBranch(auth.principal, branchId)) return json({ error: 'Branch access denied.' }, 403);
     const service = body?.service || body || {};
     const name = trimText(service.name, 120);
     if (!name) return json({ error: 'Service name is required.' }, 400);
@@ -106,8 +103,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       env.DB.prepare(`INSERT OR REPLACE INTO serviceItems (id, name, category, description, price, taxCategory, isActive, businessId, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(saved.id, saved.name, saved.category, saved.description, saved.price, saved.taxCategory, saved.isActive, businessId, now),
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         now,
@@ -118,8 +115,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         id,
         'INFO',
         `${existing ? 'Updated' : 'Created'} service ${name}.`,
-        businessId,
-        branchId || null,
+        businessId || null,
         now,
       ),
     ]);

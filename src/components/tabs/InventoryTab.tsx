@@ -8,7 +8,7 @@ import { useToast } from '../../context/ToastContext';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { enrichProductsWithBundleStock, getProductIngredients, isBundleProduct } from '../../utils/bundleInventory';
-import { belongsToActiveBranch } from '../../utils/branchScope';
+import { belongsToActiveShop } from '../../utils/shopScope';
 import { StockService } from '../../services/stock';
 import { ProductService } from '../../services/products';
 import { dateInputToExpiryMs, expiryBadgeClass, expiryMsToDateInput, formatExpiryDate, getExpiryInfo } from '../../utils/expiry';
@@ -93,7 +93,7 @@ export default function InventoryTab() {
   const [ingredientRows, setIngredientRows] = useState<{ ingredientProductId: string; quantity: string }[]>([]);
   const scrollRef = useHorizontalScroll();
   const activeBusinessId = useStore(s => s.activeBusinessId);
-  const activeBranchId = useStore(s => s.activeBranchId);
+  const activeShopId = useStore(s => s.activeShopId);
   const { success, error } = useToast();
 
   const products = useLiveQuery(
@@ -102,17 +102,17 @@ export default function InventoryTab() {
       const query = db.products.where('businessId').equals(activeBusinessId);
       if (selectedCategory) {
         return query.filter(p =>
-          belongsToActiveBranch(p, activeBranchId) &&
+          belongsToActiveShop(p, activeShopId) &&
           p.category === selectedCategory &&
           (p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode && p.barcode.includes(search)))
         ).toArray();
       }
       return query.filter(p =>
-        belongsToActiveBranch(p, activeBranchId) &&
+        belongsToActiveShop(p, activeShopId) &&
         (p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode && p.barcode.includes(search)))
       ).toArray();
     },
-    [search, selectedCategory, activeBusinessId, activeBranchId], []
+    [search, selectedCategory, activeBusinessId, activeShopId], []
   );
   const productIngredients = useLiveQuery(
     () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
@@ -120,13 +120,13 @@ export default function InventoryTab() {
   );
 
   const categories = useLiveQuery(
-    () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveBranch(c, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId], []
+    () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveShop(c, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId], []
   );
 
   const suppliers = useLiveQuery(
-    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
     []
   );
 
@@ -137,10 +137,10 @@ export default function InventoryTab() {
   );
 
   const selectedSales = useLiveQuery(
-    () => selectedProduct && activeBranchId
-      ? db.transactions.where('branchId').equals(activeBranchId).filter(t => (t.items || []).some((i: any) => i.productId === selectedProduct.id)).toArray()
+    () => selectedProduct && activeShopId
+      ? db.transactions.where('shopId').equals(activeShopId).filter(t => (t.items || []).some((i: any) => i.productId === selectedProduct.id)).toArray()
       : Promise.resolve([]),
-    [selectedProduct?.id, activeBranchId],
+    [selectedProduct?.id, activeShopId],
     []
   );
 
@@ -220,7 +220,7 @@ export default function InventoryTab() {
   };
 
   const handleSaveProduct = async () => {
-    if (!activeBusinessId || !activeBranchId || !productForm.name.trim() || isSavingProduct) return;
+    if (!activeBusinessId || !activeShopId || !productForm.name.trim() || isSavingProduct) return;
     if (sellingBelowCostBlocked) {
       error('Selling price cannot be below buying price unless you set a product discount.');
       return;
@@ -262,7 +262,7 @@ export default function InventoryTab() {
       components: productForm.isBundle
         ? cleanIngredients.map(row => ({ productId: row.ingredientProductId, quantity: row.quantity }))
         : [],
-      branchId: activeBranchId,
+      shopId: activeShopId,
       businessId: activeBusinessId
     };
     setIsSavingProduct(true);
@@ -271,7 +271,7 @@ export default function InventoryTab() {
       const result = await ProductService.save({
         product: { id: productId, ...payload } as any,
         ingredients: cleanIngredients,
-        branchId: activeBranchId,
+        shopId: activeShopId,
         businessId: activeBusinessId,
       });
       await Promise.allSettled([
@@ -291,7 +291,7 @@ export default function InventoryTab() {
   };
 
   const handleRestock = async () => {
-    if (!selectedProduct || !activeBusinessId || !activeBranchId || isSavingRestock) return;
+    if (!selectedProduct || !activeBusinessId || !activeShopId || isSavingRestock) return;
     const qty = Number(restockQty);
     if (qty <= 0) return error('Enter a valid stock quantity.');
     setIsSavingRestock(true);
@@ -301,7 +301,7 @@ export default function InventoryTab() {
         quantity: qty,
         costPrice: restockCost ? Number(restockCost) || 0 : undefined,
         reference: 'Manual stock adjustment',
-        branchId: activeBranchId,
+        shopId: activeShopId,
         businessId: activeBusinessId,
       });
       await Promise.allSettled([

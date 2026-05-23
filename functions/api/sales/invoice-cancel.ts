@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +10,7 @@ const INVOICE_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -45,7 +45,6 @@ async function ensureSchema(db: D1Database) {
       quantity REAL NOT NULL,
       timestamp INTEGER NOT NULL,
       reference TEXT,
-      branchId TEXT,
       businessId TEXT,
       shiftId TEXT,
       updated_at INTEGER
@@ -63,7 +62,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -82,10 +80,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const invoiceId = String(body?.invoiceId || body?.id || '').trim();
-    if (!businessId || !branchId || !invoiceId) return json({ error: 'Business, branch and invoice are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!businessId || !invoiceId) return json({ error: 'Business and invoice are required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
@@ -93,9 +90,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const invoice = await env.DB.prepare(`
       SELECT *
       FROM salesInvoices
-      WHERE id = ? AND businessId = ? AND branchId = ?
+      WHERE id = ? AND businessId = ?
       LIMIT 1
-    `).bind(invoiceId, businessId, branchId).first<any>();
+    `).bind(invoiceId, businessId).first<any>();
     if (!invoice) throw new PolicyError('Sales invoice was not found.', 404);
     if (invoice.status === 'CANCELLED') return json({ success: true, invoice: { ...invoice, items: parseItems(invoice.items) }, idempotent: true });
     if (invoice.status === 'PAID' || asNumber(invoice.paidAmount) > 0) {
@@ -105,8 +102,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const now = Date.now();
     const items = parseItems(invoice.items);
     const statements: D1PreparedStatement[] = [
-      env.DB.prepare(`UPDATE salesInvoices SET status = 'CANCELLED', balance = 0, updated_at = ? WHERE id = ? AND businessId = ? AND branchId = ?`)
-        .bind(now, invoiceId, businessId, branchId),
+      env.DB.prepare(`UPDATE salesInvoices SET status = 'CANCELLED', balance = 0, updated_at = ? WHERE id = ? AND businessId = ?`)
+        .bind(now, invoiceId, businessId),
       env.DB.prepare(`
         UPDATE customers
         SET totalSpent = MAX(0, COALESCE(totalSpent, 0) - ?),
@@ -124,8 +121,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ?`)
           .bind(quantity, now, line.itemId, businessId),
         env.DB.prepare(`
-          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
           line.itemId,
@@ -133,7 +130,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           quantity,
           now,
           `Cancelled invoice ${invoice.invoiceNumber}`,
-          branchId,
           businessId,
           body?.shiftId || null,
           now,
@@ -143,8 +139,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     statements.push(
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         now,
@@ -155,9 +151,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         invoiceId,
         'WARN',
         `Cancelled ${invoice.invoiceNumber}.`,
-        businessId,
-        branchId,
-        now,
+        businessId, now,
       )
     );
 
@@ -177,4 +171,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not cancel sales invoice.' }, status);
   }
 };
-

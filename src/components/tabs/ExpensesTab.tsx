@@ -1,22 +1,22 @@
 import React, { useState } from 'react';
-import { Search, Plus, FileMinus, Trash2, Wallet, Calendar, User, ChevronRight, X, SlidersHorizontal, TrendingDown, BookOpen, CreditCard, ChevronDown, PieChart, Activity } from 'lucide-react';
+import { Search, Plus, FileMinus, Trash2, Calendar, User, X, SlidersHorizontal } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
-import { db, type Product } from '../../db';
+import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import ExpenseModal from '../modals/ExpenseModal';
-import ExpenseAccountModal from '../modals/ExpenseAccountModal';
 import { canPerform } from '../../utils/accessControl';
 import { recordAuditEvent } from '../../utils/auditLog';
 import { submitExpenseRecord } from '../../utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
 import { getBusinessSettings } from '../../utils/settings';
-import { belongsToActiveBranch } from '../../utils/branchScope';
+import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSession';
 import { ExpenseService } from '../../services/expenses';
+import { pickedCashAccountId, singleFinanceAccount } from '../../utils/financeAccount';
 
 type ExpenseDateRange = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL';
-type ExpenseSourceFilter = 'ALL' | 'TILL' | 'PETTY_CASH' | 'SHOP' | 'ACCOUNT';
+type ExpenseSourceFilter = 'ALL' | 'TILL' | 'ACCOUNT';
 type ExpenseStatusFilter = 'ALL' | 'APPROVED' | 'PENDING' | 'REJECTED';
 
 function toDateInputValue(date: Date) {
@@ -57,85 +57,76 @@ export default function ExpensesTab() {
   const [expenseStatusFilter, setExpenseStatusFilter] = useState<ExpenseStatusFilter>('ALL');
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('ALL');
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
-  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'PETTY_CASH' | 'TILL' | 'ACCOUNT' | 'SHOP', accountId: '', productId: '', quantity: '1' });
+  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'TILL' | 'ACCOUNT', accountId: '' });
   const [isSaving, setIsSaving] = useState(false);
   
   const currentUser = useStore(state => state.currentUser);
   const isAdmin = useStore(state => state.isAdmin);
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  const activeShift = useStore(state => state.activeShift);
   const { success, error } = useToast();
 
-  const allExpenses = useLiveQuery(() => activeBusinessId && activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
+  const allExpenses = useLiveQuery(() => activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
   const expenseAccounts = useLiveQuery(() => activeBusinessId ? db.expenseAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []) ;
-  const financialAccounts = useLiveQuery(
+  const rawFinancialAccounts = useLiveQuery(
     () => activeBusinessId
       ? db.financialAccounts
           .where('businessId')
           .equals(activeBusinessId)
-          .filter(account => !account.branchId || account.branchId === activeBranchId)
           .toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    [activeBusinessId],
     [],
   );
-  const products = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveBranch(p, activeBranchId)).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
+  const financialAccounts = React.useMemo(
+    () => singleFinanceAccount(rawFinancialAccounts || [], activeBusinessId),
+    [rawFinancialAccounts, activeBusinessId],
+  );
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
-  const allTransactions = useLiveQuery(() => activeBusinessId && activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
-  const allCashPicks = useLiveQuery(() => activeBusinessId && activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
-  const allRefunds = useLiveQuery(() => activeBusinessId && activeBranchId ? db.refunds.where('branchId').equals(activeBranchId).and(r => r.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
-  const allSupplierPayments = useLiveQuery(() => activeBusinessId && activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
+  const allTransactions = useLiveQuery(() => activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
+  const allCashPicks = useLiveQuery(() => activeBusinessId && activeShopId ? db.cashPicks.where('shopId').equals(activeShopId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
+  const allRefunds = useLiveQuery(() => activeBusinessId && activeShopId ? db.refunds.where('shopId').equals(activeShopId).and(r => r.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
+  const allSupplierPayments = useLiveQuery(() => activeBusinessId && activeShopId ? db.supplierPayments.where('shopId').equals(activeShopId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
+  const allCustomerPayments = useLiveQuery(() => activeBusinessId && activeShopId ? db.customerPayments.where('shopId').equals(activeShopId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
   
   const todayStartMs = getTodayStartMs();
+  const currentShiftId = getCurrentShiftId(activeShift, activeShopId, currentUser?.id);
+  const currentShiftStart = getCurrentShiftStart(activeShift, todayStartMs);
   const drawer = calculateCashDrawer({
     transactions: allTransactions || [],
     expenses: allExpenses || [],
     cashPicks: allCashPicks || [],
     refunds: allRefunds || [],
     supplierPayments: allSupplierPayments || [],
-    since: todayStartMs,
+    customerPayments: allCustomerPayments || [],
+    openingCash: Number(activeShift?.openingCash || 0),
+    since: currentShiftStart,
+    shiftId: currentShiftId,
   });
   const todayTillExpenses = drawer.tillExpenses;
-  const todayPettyCashExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'PETTY_CASH' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const todayStockExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'SHOP' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'ACCOUNT' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const actualCashDrawer = drawer.actualCashDrawer;
 
-  const productCost = (product?: Product) => Number(product?.costPrice || 0);
-  const stockExpenseAmount = () => {
-    if (expenseForm.source !== 'SHOP') return Number(expenseForm.amount);
-    const product = (products || []).find(p => p.id === expenseForm.productId);
-    const quantity = Number(expenseForm.quantity || 0);
-    return Math.round(productCost(product) * quantity * 100) / 100;
-  };
-
   const handleSaveExpense = async () => {
       if (isSaving) return;
-      const amount = stockExpenseAmount();
+      const expenseSource = expenseForm.source === 'ACCOUNT' ? 'ACCOUNT' : 'TILL';
+      const amount = Number(expenseForm.amount);
       if (amount <= 0) {
           error("Invalid amount.");
           return;
       }
-      if (expenseForm.source === 'TILL' && amount > actualCashDrawer) {
+      if (expenseSource === 'TILL' && !currentShiftId) {
+          error("Open a till shift before paying expenses from the till.");
+          return;
+      }
+      if (expenseSource === 'TILL' && amount > actualCashDrawer) {
           error("Insufficient cash in drawer.");
           return;
       }
-      if (expenseForm.source === 'ACCOUNT' && !expenseForm.accountId) {
-          error("Select the account paying this expense.");
+      if (expenseSource === 'ACCOUNT' && amount > Number(financialAccounts[0]?.balance || 0)) {
+          error("Insufficient balance in the picked cash account.");
           return;
-      }
-      if (expenseForm.source === 'SHOP' && !expenseForm.productId) {
-          error("Select the stock item being expensed.");
-          return;
-      }
-      if (expenseForm.source === 'SHOP') {
-          const product = (products || []).find(p => p.id === expenseForm.productId);
-          const quantity = Number(expenseForm.quantity || 0);
-          if (!product) return error("Selected stock item was not found.");
-          if (quantity <= 0) return error("Enter a valid stock quantity.");
-          if (productCost(product) <= 0) return error(`Set a cost price for ${product.name} before expensing it from stock.`);
-          if (quantity > Number(product.stockQuantity || 0)) return error(`Insufficient stock for ${product.name}.`);
       }
       if (!currentUser) return;
       if (!canPerform(currentUser, 'expense.create')) {
@@ -146,21 +137,21 @@ export default function ExpensesTab() {
       setIsSaving(true);
       try {
         const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
+        const accountId = expenseSource === 'ACCOUNT' && activeBusinessId ? pickedCashAccountId(activeBusinessId) : undefined;
         const expenseRecord = {
            id: crypto.randomUUID(),
            amount,
-           category: expenseForm.source === 'SHOP' ? (expenseForm.category || 'Stock') : expenseForm.category,
+           category: expenseForm.category || 'General',
            description: expenseForm.description,
            timestamp: Date.now(),
            userName: currentUser.name,
            preparedBy: currentUser.name,
            status: autoApprove ? 'APPROVED' : 'PENDING',
            approvedBy: autoApprove ? currentUser.name : undefined,
-           source: expenseForm.source,
-           accountId: expenseForm.source === 'ACCOUNT' ? expenseForm.accountId : undefined,
-           productId: expenseForm.source === 'SHOP' ? expenseForm.productId : undefined,
-           quantity: expenseForm.source === 'SHOP' ? Number(expenseForm.quantity || 1) : undefined,
-           branchId: activeBranchId!,
+           source: expenseSource,
+           accountId,
+           shiftId: expenseSource === 'TILL' ? currentShiftId : undefined,
+           shopId: activeShopId!,
            businessId: activeBusinessId!
         } as any;
 
@@ -175,7 +166,7 @@ export default function ExpensesTab() {
           details: `${autoApprove ? 'Auto-approved' : 'Created pending'} expense for Ksh ${amount.toLocaleString()} (${expenseForm.category || 'Uncategorized'})`,
         });
         setIsExpenseModalOpen(false);
-        setExpenseForm({ amount: '', category: '', description: '', source: 'TILL', accountId: '', productId: '', quantity: '1' });
+        setExpenseForm({ amount: '', category: '', description: '', source: 'TILL', accountId: '' });
         success(autoApprove ? "Expense logged and approved." : "Expense logged successfully.");
       } catch (err: any) {
         error("Failed to log expense: " + err.message);
@@ -186,14 +177,14 @@ export default function ExpensesTab() {
 
   const handleDeleteExpense = async (id: string) => {
       if (!isAdmin || isSaving) return;
-      if (!activeBusinessId || !activeBranchId) return error("Select a branch before deleting an expense.");
+      if (!activeBusinessId || !activeShopId) return error("The shop is still loading. Try again.");
       if (confirm("Are you sure you want to delete this expense? This action cannot be undone.")) {
           setIsSaving(true);
           try {
             await ExpenseService.delete({
               expenseId: id,
               businessId: activeBusinessId,
-              branchId: activeBranchId,
+              shopId: activeShopId,
             });
             await db.expenses.reload();
             recordAuditEvent({
@@ -215,10 +206,8 @@ export default function ExpensesTab() {
   };
 
   const sourceBadge = (source?: string) => {
-    if (source === 'PETTY_CASH') return { label: 'Petty cash', className: 'bg-amber-50 text-amber-700 border-amber-100' };
     if (source === 'TILL') return { label: 'Till', className: 'bg-emerald-50 text-emerald-600 border-emerald-100' };
-    if (source === 'SHOP') return { label: 'Stock', className: 'bg-orange-50 text-orange-600 border-orange-100' };
-    return { label: 'General', className: 'bg-indigo-50 text-indigo-600 border-indigo-100' };
+    return { label: 'Picked account', className: 'bg-slate-50 text-slate-700 border-slate-200' };
   };
 
   const statusBadge = (status?: string) => {
@@ -281,40 +270,22 @@ export default function ExpensesTab() {
         <div>
           <h2 className="text-xl font-black text-slate-900">Expenses</h2>
           <div className="hidden">
-            {todayPettyCashExpenses > 0 && <span className="text-[10px] font-bold text-slate-500">Petty: Ksh {todayPettyCashExpenses.toLocaleString()}</span>}
             <span className="text-slate-300">·</span>
             <span className="text-[10px] font-bold text-slate-500">Till: Ksh {todayTillExpenses.toLocaleString()}</span>
             <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-slate-500">Stock: Ksh {todayStockExpenses.toLocaleString()}</span>
-            {todayPettyCashExpenses > 0 && <span className="text-slate-300">Â·</span>}
             <span className="text-[10px] font-bold text-slate-500">General: Ksh {todayAccountExpenses.toLocaleString()}</span>
             <span className="text-slate-300">·</span>
             <span className="text-[10px] font-bold text-emerald-600">Drawer: Ksh {actualCashDrawer.toLocaleString()}</span>
           </div>
           <div className="flex flex-wrap items-center gap-2 mt-1">
-            {todayPettyCashExpenses > 0 && (
-              <>
-                <span className="text-[10px] font-bold text-slate-500">Petty: Ksh {todayPettyCashExpenses.toLocaleString()}</span>
-                <span className="text-slate-300">/</span>
-              </>
-            )}
             <span className="text-[10px] font-bold text-slate-500">Till: Ksh {todayTillExpenses.toLocaleString()}</span>
             <span className="text-slate-300">/</span>
-            <span className="text-[10px] font-bold text-slate-500">Stock: Ksh {todayStockExpenses.toLocaleString()}</span>
-            <span className="text-slate-300">/</span>
-            <span className="text-[10px] font-bold text-slate-500">General: Ksh {todayAccountExpenses.toLocaleString()}</span>
+            <span className="text-[10px] font-bold text-slate-500">Picked account: Ksh {todayAccountExpenses.toLocaleString()}</span>
             <span className="text-slate-300">/</span>
             <span className="text-[10px] font-bold text-emerald-600">Drawer: Ksh {actualCashDrawer.toLocaleString()}</span>
           </div>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => setIsAccountModalOpen(true)}
-            data-testid="expenses-setup-accounts"
-            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-50 active:scale-[0.98] transition-all self-start"
-          >
-            <BookOpen size={16} /> Setup accounts
-          </button>
           <button
             onClick={() => setIsExpenseModalOpen(true)}
             data-testid="expenses-log-expense"
@@ -402,9 +373,7 @@ export default function ExpensesTab() {
             >
               <option value="ALL">All sources</option>
               <option value="TILL">Till</option>
-              <option value="PETTY_CASH">Petty cash</option>
-              <option value="SHOP">Stock</option>
-              <option value="ACCOUNT">General account</option>
+              <option value="ACCOUNT">Picked account</option>
             </select>
             <select
               value={expenseStatusFilter}
@@ -516,12 +485,6 @@ export default function ExpensesTab() {
         actualCashDrawer={actualCashDrawer}
         accounts={expenseAccounts || []}
         financialAccounts={financialAccounts || []}
-        products={products || []}
-      />
-
-      <ExpenseAccountModal 
-        isOpen={isAccountModalOpen}
-        onClose={() => setIsAccountModalOpen(false)}
       />
     </div>
   );

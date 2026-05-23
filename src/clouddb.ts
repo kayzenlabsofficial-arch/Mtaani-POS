@@ -37,7 +37,7 @@ const OFFLINE_CACHE_TABLES = new Set<OfflineCacheTable>([
   'serviceItems',
   'suppliers',
   'settings',
-  'branches',
+  'salesTills',
   'users',
   'financialAccounts',
   'expenseAccounts',
@@ -46,8 +46,8 @@ const OFFLINE_CACHE_TABLES = new Set<OfflineCacheTable>([
 
 const CLIENT_GLOBAL_TABLES = new Set([
   'users',
-  'branches',
   'settings',
+  'salesTills',
   'expenseAccounts',
   'financialAccounts',
   'customers',
@@ -72,26 +72,14 @@ function isLikelyOfflineError(e: any): boolean {
   );
 }
 
-function sanitizeRowsForClient(table: string, rows: any[]): any[] {
-  if (table !== 'branches') return rows;
-  return rows.map(row => {
-    const clean = { ...row };
-    clean.mpesaConsumerKeySet = !!row.mpesaConsumerKeySet || !!row.mpesaConsumerKey;
-    clean.mpesaConsumerSecretSet = !!row.mpesaConsumerSecretSet || !!row.mpesaConsumerSecret;
-    clean.mpesaPasskeySet = !!row.mpesaPasskeySet || !!row.mpesaPasskey;
-    clean.mpesaConfigured = !!row.mpesaConfigured || !!(row.mpesaConsumerKey && row.mpesaConsumerSecret && row.mpesaPasskey);
-    delete clean.mpesaConsumerKey;
-    delete clean.mpesaConsumerSecret;
-    delete clean.mpesaPasskey;
-    return clean;
-  });
+function sanitizeRowsForClient(_table: string, rows: any[]): any[] {
+  return rows;
 }
 
 async function d1Fetch(table: string, method: string, body?: any): Promise<any> {
   // Lazy import to avoid circular dependency with store.ts
   const { useStore } = await import('./store');
   const businessId = useStore.getState().activeBusinessId;
-  const branchId = useStore.getState().activeBranchId;
   const apiKey = await getApiKey();
   const headers: Record<string, string> = { 
     'Content-Type': 'application/json',
@@ -104,10 +92,6 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
     throw new Error('Business ID missing for ' + method + ' ' + table);
   }
   
-  if (branchId) {
-    headers['X-Branch-ID'] = branchId;
-  }
-
   const url = `${API}/${table}`;
 
   try {
@@ -166,11 +150,9 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
     if (method === 'GET' && businessId && OFFLINE_CACHE_TABLES.has(table as OfflineCacheTable)) {
       try {
         const cacheTable = table as OfflineCacheTable;
-        const scopedBranchId = headers['X-Branch-ID'] ? (branchId ?? undefined) : undefined;
         await cacheTableRows({
           table: cacheTable,
           businessId,
-          branchId: scopedBranchId,
           rows: Array.isArray(json) ? json : [],
           updatedAt: Date.now(),
         });
@@ -187,12 +169,10 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
     if (method === 'GET' && businessId && OFFLINE_CACHE_TABLES.has(table as OfflineCacheTable) && isLikelyOfflineError(e)) {
       try {
         const cacheTable = table as OfflineCacheTable;
-        const scopedBranchId = headers['X-Branch-ID'] ? (branchId ?? undefined) : undefined;
-        const rows = sanitizeRowsForClient(table, await readCachedTableRows({ table: cacheTable, businessId, branchId: scopedBranchId }));
+        const rows = sanitizeRowsForClient(table, await readCachedTableRows({ table: cacheTable, businessId }));
         await cacheTableRows({
           table: cacheTable,
           businessId,
-          branchId: scopedBranchId,
           rows,
           updatedAt: Date.now(),
         }).catch(() => {});
@@ -211,7 +191,6 @@ async function d1Delete(table: string, id: string): Promise<void> {
   // Lazy import to avoid circular dependency with store.ts
   const { useStore } = await import('./store');
   const businessId = useStore.getState().activeBusinessId;
-  const branchId = useStore.getState().activeBranchId;
   const apiKey = await getApiKey();
   const headers: Record<string, string> = { 
     'X-API-Key': apiKey
@@ -222,7 +201,6 @@ async function d1Delete(table: string, id: string): Promise<void> {
   }
 
   if (businessId) headers['X-Business-ID'] = businessId;
-  if (branchId) headers['X-Branch-ID'] = branchId;
 
   const res = await fetch(`${API}/${table}/${id}`, { 
     method: 'DELETE',
@@ -263,21 +241,12 @@ export class CloudTable<T extends { id: string }> {
 
     const { useStore } = await import('./store');
     const businessId = useStore.getState().activeBusinessId;
-    const branchId = useStore.getState().activeBranchId;
 
     if (!businessId) {
       return { key: `${this.name}:no-business`, canHydrate: false };
     }
 
-    if (CLIENT_GLOBAL_TABLES.has(this.name)) {
-      return { key: `${this.name}:business:${businessId}`, canHydrate: true };
-    }
-
-    if (!branchId) {
-      return { key: `${this.name}:business:${businessId}:no-branch`, canHydrate: false };
-    }
-
-    return { key: `${this.name}:business:${businessId}:branch:${branchId}`, canHydrate: true };
+    return { key: `${this.name}:business:${businessId}`, canHydrate: true };
   }
 
   private clearIfScopeChanged(scopeKey: string): boolean {
@@ -290,7 +259,7 @@ export class CloudTable<T extends { id: string }> {
 
   /**
    * Clears the local cache and marks table as not loaded.
-   * Useful when switching tenant context (business/branch) to avoid UI showing stale cached rows.
+   * Useful when switching business context to avoid UI showing stale cached rows.
    */
   reset(): void {
     this.cache.clear();
@@ -430,7 +399,7 @@ export class CloudTable<T extends { id: string }> {
     };
 
     return {
-      equals: (v: any) => makeOp(r => (r[field] as any) === v),
+      equals: (v: any) => makeOp(field === 'shopId' ? () => true : r => (r[field] as any) === v),
       between: (low: any, high: any, includeLow = true, includeHigh = false) => makeOp(r => {
         const value = r[field] as any;
         const aboveLow = includeLow ? value >= low : value > low;
@@ -522,11 +491,10 @@ export class CloudTable<T extends { id: string }> {
           // Queue for sync (idempotencyKey = transaction.id)
           const { useStore } = await import('./store');
           const businessId = useStore.getState().activeBusinessId;
-          const branchId = useStore.getState().activeBranchId;
-          if (businessId && branchId) {
+          if (businessId) {
             await enqueueOutbox({
               businessId,
-              branchId,
+              shopId: 'single-shop',
               table: 'transactions',
               op: 'UPSERT',
               idempotencyKey: stamped.id,

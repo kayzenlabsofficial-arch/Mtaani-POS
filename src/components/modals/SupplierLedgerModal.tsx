@@ -173,7 +173,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
         reason: creditNoteForm.reason,
         items: creditNoteItems.map(item => ({ productId: item.productId, quantity: item.quantity })),
         shiftId,
-        branchId: supplier.branchId,
+        shopId: supplier.shopId,
         businessId: supplier.businessId,
       });
 
@@ -202,7 +202,7 @@ export default function SupplierLedgerModal({ supplier, onClose, onEdit, onPay, 
       await SupplierService.deleteCreditNote({
         creditNoteId: cn.id,
         businessId: supplier.businessId,
-        branchId: supplier.branchId,
+        shopId: supplier.shopId,
       });
       await reloadBestEffort([
         () => db.creditNotes.reload(),

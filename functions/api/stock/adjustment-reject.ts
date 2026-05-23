@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +10,7 @@ const APPROVER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -34,7 +34,6 @@ async function ensureSchema(db: D1Database) {
       status TEXT NOT NULL,
       preparedBy TEXT,
       approvedBy TEXT,
-      branchId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -51,7 +50,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -60,7 +58,6 @@ async function ensureSchema(db: D1Database) {
   try { await db.prepare('ALTER TABLE stockAdjustmentRequests ADD COLUMN approvedBy TEXT').run(); } catch {}
   try { await db.prepare('ALTER TABLE stockAdjustmentRequests ADD COLUMN requestedQuantity REAL').run(); } catch {}
   try { await db.prepare('ALTER TABLE stockAdjustmentRequests ADD COLUMN businessId TEXT').run(); } catch {}
-  try { await db.prepare('ALTER TABLE stockAdjustmentRequests ADD COLUMN branchId TEXT').run(); } catch {}
   try { await db.prepare('ALTER TABLE stockAdjustmentRequests ADD COLUMN updated_at INTEGER').run(); } catch {}
 }
 
@@ -77,10 +74,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const requestId = String(body?.requestId || body?.id || '').trim();
-    if (!businessId || !branchId || !requestId) return json({ error: 'Business, branch and request are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!businessId || !requestId) return json({ error: 'Business and request are required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
@@ -88,9 +84,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const req = await env.DB.prepare(`
       SELECT *
       FROM stockAdjustmentRequests
-      WHERE id = ? AND businessId = ? AND branchId = ?
+      WHERE id = ? AND businessId = ?
       LIMIT 1
-    `).bind(requestId, businessId, branchId).first<any>();
+    `).bind(requestId, businessId).first<any>();
     if (!req) throw new PolicyError('Stock adjustment request was not found.', 404);
     if (req.status !== 'PENDING') throw new PolicyError('This stock adjustment has already been processed.', 409);
 
@@ -99,11 +95,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       env.DB.prepare(`
         UPDATE stockAdjustmentRequests
         SET status = 'REJECTED', approvedBy = ?, updated_at = ?
-        WHERE id = ? AND businessId = ? AND branchId = ? AND status = 'PENDING'
-      `).bind(auth.principal.userName || 'Administrator', now, requestId, businessId, branchId),
+        WHERE id = ? AND businessId = ? AND status = 'PENDING'
+      `).bind(auth.principal.userName || 'Administrator', now, requestId, businessId),
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         now,
@@ -114,9 +110,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         requestId,
         'WARN',
         `Rejected stock adjustment for ${req.productName || req.productId}.`,
-        businessId,
-        branchId,
-        now,
+        businessId, now,
       ),
     ]);
 

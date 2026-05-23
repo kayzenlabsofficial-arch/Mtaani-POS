@@ -1,6 +1,7 @@
 import { db, type Supplier } from '../db';
 import { SupplierService } from '../services/suppliers';
 import { calculateShiftCashFromSales, getTodayStartMs } from './cashDrawer';
+import { pickedCashAccountId } from './financeAccount';
 import { reloadBestEffort } from './reloads';
 
 export type SupplierPaymentInput = {
@@ -18,7 +19,7 @@ export type SupplierPaymentInput = {
 export async function settleSupplierPayment({
   supplier,
   payment,
-  activeBranchId,
+  activeShopId,
   activeBusinessId,
   preparedBy,
   shiftId,
@@ -26,7 +27,7 @@ export async function settleSupplierPayment({
 }: {
   supplier: Supplier;
   payment: SupplierPaymentInput;
-  activeBranchId: string;
+  activeShopId: string;
   activeBusinessId: string;
   preparedBy: string;
   shiftId?: string;
@@ -34,27 +35,32 @@ export async function settleSupplierPayment({
 }) {
   const cashAmount = Number(payment.amount || 0);
   if (cashAmount < 0) throw new Error('Payment amount cannot be negative.');
-  if (!activeBranchId || !activeBusinessId) throw new Error('Branch and business are required.');
+  if (!activeShopId || !activeBusinessId) throw new Error('The shop is still loading. Try again.');
+  const normalizedPayment = {
+    ...payment,
+    accountId: payment.source === 'ACCOUNT' ? (payment.accountId || pickedCashAccountId(activeBusinessId)) : undefined,
+  };
 
   const freshSupplier = await db.suppliers.get(supplier.id);
   if (!freshSupplier) throw new Error('Supplier was not found.');
 
-  if (payment.source === 'ACCOUNT' && cashAmount > 0) {
-    if (!payment.accountId) throw new Error('Select the funding account.');
-    const account = await db.financialAccounts.get(payment.accountId);
-    if (!account) throw new Error('Selected account was not found.');
-    if ((account.balance || 0) < cashAmount) {
+  if (normalizedPayment.source === 'ACCOUNT' && cashAmount > 0) {
+    const account = normalizedPayment.accountId ? await db.financialAccounts.get(normalizedPayment.accountId) : null;
+    if (!account && normalizedPayment.accountId !== pickedCashAccountId(activeBusinessId)) throw new Error('Selected account was not found.');
+    if (account && (account.balance || 0) < cashAmount) {
       throw new Error(`Insufficient funds in "${account.name}". Balance: Ksh ${(account.balance || 0).toLocaleString()}`);
     }
   }
 
-  if (payment.source === 'TILL' && cashAmount > 0) {
-    const [transactions, expenses, cashPicks, refunds, supplierPayments] = await Promise.all([
-      db.transactions.where('branchId').equals(activeBranchId).toArray(),
-      db.expenses.where('branchId').equals(activeBranchId).toArray(),
-      db.cashPicks.where('branchId').equals(activeBranchId).toArray(),
-      db.refunds.where('branchId').equals(activeBranchId).toArray(),
-      db.supplierPayments.where('branchId').equals(activeBranchId).toArray(),
+  if (normalizedPayment.source === 'TILL' && cashAmount > 0) {
+    if (!shiftId) throw new Error('Open a till shift before paying suppliers from the till.');
+    const [transactions, expenses, cashPicks, refunds, supplierPayments, customerPayments] = await Promise.all([
+      db.transactions.where('shopId').equals(activeShopId).toArray(),
+      db.expenses.where('shopId').equals(activeShopId).toArray(),
+      db.cashPicks.where('shopId').equals(activeShopId).toArray(),
+      db.refunds.where('shopId').equals(activeShopId).toArray(),
+      db.supplierPayments.where('shopId').equals(activeShopId).toArray(),
+      db.customerPayments.where('shopId').equals(activeShopId).toArray(),
     ]);
     const drawer = calculateShiftCashFromSales({
       transactions,
@@ -62,6 +68,7 @@ export async function settleSupplierPayment({
       cashPicks,
       refunds,
       supplierPayments,
+      customerPayments,
       shiftId,
       since: shiftStart || getTodayStartMs(),
     }).availableCashSales;
@@ -71,14 +78,14 @@ export async function settleSupplierPayment({
   }
 
   const creditNotes = [];
-  for (const cnId of payment.creditNoteIds || []) {
+  for (const cnId of normalizedPayment.creditNoteIds || []) {
     const cn = await db.creditNotes.get(cnId);
     if (!cn || cn.supplierId !== freshSupplier.id || (cn.status && cn.status !== 'PENDING')) continue;
     creditNotes.push(cn);
   }
 
   const creditTotal = creditNotes.reduce((sum, cn) => sum + Number(cn.amount || 0), 0);
-  const invoiceAllocationTotal = (payment.invoiceAllocations || []).reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0);
+  const invoiceAllocationTotal = (normalizedPayment.invoiceAllocations || []).reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0);
   if (invoiceAllocationTotal > 0) {
     if (creditTotal > invoiceAllocationTotal + 0.01) {
       throw new Error('Selected credits exceed the invoice amounts.');
@@ -96,8 +103,8 @@ export async function settleSupplierPayment({
 
   const result = await SupplierService.settlePayment({
     supplier: freshSupplier,
-    payment,
-    activeBranchId,
+    payment: normalizedPayment,
+    activeShopId,
     activeBusinessId,
     preparedBy,
     shiftId,

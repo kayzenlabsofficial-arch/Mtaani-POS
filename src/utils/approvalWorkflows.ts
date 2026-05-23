@@ -1,11 +1,12 @@
 import { db, type Expense, type Transaction } from '../db';
 import { ExpenseService } from '../services/expenses';
 import { SalesService } from '../services/sales';
+import { pickedCashAccountId } from './financeAccount';
 import { reloadBestEffort } from './reloads';
 
 interface ApprovalContext {
   approvedBy: string;
-  activeBranchId: string;
+  activeShopId: string;
   activeBusinessId: string;
 }
 
@@ -13,10 +14,10 @@ type RefundLine = { productId: string; quantity: number };
 
 export async function ensureExpenseCanBeApproved(expense: Expense): Promise<void> {
   if (expense.source === 'ACCOUNT') {
-    if (!expense.accountId) throw new Error('Select the account paying this expense.');
-    const account = await db.financialAccounts.get(expense.accountId);
-    if (!account) throw new Error('Selected payment account was not found.');
-    if ((account.balance || 0) < (Number(expense.amount) || 0)) {
+    const accountId = expense.accountId || pickedCashAccountId(expense.businessId);
+    const account = accountId ? await db.financialAccounts.get(accountId) : null;
+    if (!account && accountId !== pickedCashAccountId(expense.businessId)) throw new Error('Selected payment account was not found.');
+    if (account && (account.balance || 0) < (Number(expense.amount) || 0)) {
       throw new Error(`Insufficient funds in ${account.name}.`);
     }
   }
@@ -32,7 +33,7 @@ export async function applyApprovedExpenseEffects(expense: Expense, context: App
   await ExpenseService.approve({
     expenseId: expense.id,
     businessId: context.activeBusinessId,
-    branchId: context.activeBranchId,
+    shopId: context.activeShopId,
     approvedBy: context.approvedBy,
   });
   await reloadBestEffort([
@@ -57,7 +58,7 @@ export async function approveExpenseRequest(expense: Expense, context: ApprovalC
   await ExpenseService.approve({
     expenseId: expense.id,
     businessId: context.activeBusinessId,
-    branchId: context.activeBranchId,
+    shopId: context.activeShopId,
     approvedBy: context.approvedBy,
   });
   await reloadBestEffort([
@@ -109,7 +110,7 @@ export async function requestRefundApproval(
   await SalesService.requestRefund({
     transactionId: transaction.id,
     businessId: transaction.businessId,
-    branchId: transaction.branchId,
+    shopId: transaction.shopId,
     itemsToReturn,
   });
   await db.transactions.reload();
@@ -124,7 +125,7 @@ export async function approveRefundTransaction(
   await SalesService.approveRefund({
     transactionId: transaction.id,
     businessId: context.activeBusinessId,
-    branchId: context.activeBranchId,
+    shopId: context.activeShopId,
     itemsToReturn,
     approvedBy: context.approvedBy,
     idempotencyKey: stableRefundApprovalKey(transaction, lines),

@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { hardenTransactionBatch, PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -8,7 +8,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -84,7 +84,6 @@ async function ensureCheckoutSchema(db: D1Database) {
     CREATE TABLE IF NOT EXISTS idempotencyKeys (
       id TEXT PRIMARY KEY,
       businessId TEXT NOT NULL,
-      branchId TEXT NOT NULL,
       idempotencyKey TEXT NOT NULL,
       operation TEXT NOT NULL,
       deviceId TEXT,
@@ -93,7 +92,7 @@ async function ensureCheckoutSchema(db: D1Database) {
       createdAt INTEGER NOT NULL
     )
   `).run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, branchId, idempotencyKey)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, idempotencyKey)').run();
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS auditLogs (
       id TEXT PRIMARY KEY,
@@ -106,7 +105,6 @@ async function ensureCheckoutSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -120,7 +118,6 @@ async function ensureCheckoutSchema(db: D1Database) {
       receiptNumber TEXT,
       phoneNumber TEXT,
       businessId TEXT,
-      branchId TEXT,
       timestamp INTEGER,
       utilizedTransactionId TEXT,
       utilizedCustomerId TEXT,
@@ -131,16 +128,16 @@ async function ensureCheckoutSchema(db: D1Database) {
 
   for (const sql of [
     'ALTER TABLE idempotencyKeys ADD COLUMN transactionId TEXT',
-    'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_transaction ON idempotencyKeys(businessId, branchId, transactionId)',
-    'CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, branchId TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER)',
+    'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_transaction ON idempotencyKeys(businessId, transactionId)',
+    'CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER)',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
     'ALTER TABLE transactions ADD COLUMN shiftId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedTransactionId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedAt INTEGER',
-    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, branchId, receiptNumber)',
-    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_utilized ON mpesaCallbacks(businessId, branchId, utilizedTransactionId)',
+    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber)',
+    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_utilized ON mpesaCallbacks(businessId, utilizedTransactionId)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
@@ -171,16 +168,15 @@ async function getTransactionColumns(db: D1Database) {
 async function getIdempotentTransaction(
   db: D1Database,
   businessId: string,
-  branchId: string,
   idempotencyId: string,
   idempotencyKey: string,
 ) {
   const keyRow = await db.prepare(`
     SELECT transactionId
     FROM idempotencyKeys
-    WHERE id = ? AND businessId = ? AND branchId = ?
+    WHERE id = ? AND businessId = ?
     LIMIT 1
-  `).bind(idempotencyId, businessId, branchId).first<{ transactionId?: string | null }>();
+  `).bind(idempotencyId, businessId).first<{ transactionId?: string | null }>();
   if (!keyRow) return null;
 
   const candidateIds = Array.from(new Set([
@@ -189,24 +185,24 @@ async function getIdempotentTransaction(
   ].filter(Boolean)));
 
   for (const candidateId of candidateIds) {
-    const existing = await getExistingTransaction(db, businessId, branchId, candidateId);
+    const existing = await getExistingTransaction(db, businessId, candidateId);
     if (existing) return existing;
   }
 
   throw new PolicyError('Checkout retry key is already used.', 409);
 }
 
-async function getExistingTransaction(db: D1Database, businessId: string, branchId: string, transactionId: string) {
+async function getExistingTransaction(db: D1Database, businessId: string, transactionId: string) {
   const row = await db.prepare(`
     SELECT *
     FROM transactions
-    WHERE id = ? AND businessId = ? AND branchId = ?
+    WHERE id = ? AND businessId = ?
     LIMIT 1
-  `).bind(transactionId, businessId, branchId).first<any>();
+  `).bind(transactionId, businessId).first<any>();
   return row ? deserializeRow(row) : null;
 }
 
-async function verifyMpesaPayment(db: D1Database, businessId: string, branchId: string, tx: any): Promise<D1PreparedStatement[]> {
+async function verifyMpesaPayment(db: D1Database, businessId: string, tx: any): Promise<D1PreparedStatement[]> {
   const code = mpesaReferenceFor(tx);
   if (!code) return [];
 
@@ -214,7 +210,6 @@ async function verifyMpesaPayment(db: D1Database, businessId: string, branchId: 
     SELECT *
     FROM mpesaCallbacks
     WHERE businessId = ?
-      AND branchId = ?
       AND (
         UPPER(COALESCE(receiptNumber, '')) = ?
         OR UPPER(COALESCE(checkoutRequestId, '')) = ?
@@ -222,7 +217,7 @@ async function verifyMpesaPayment(db: D1Database, businessId: string, branchId: 
       )
     ORDER BY CASE WHEN resultCode = 0 THEN 0 ELSE 1 END, timestamp DESC
     LIMIT 1
-  `).bind(businessId, branchId, code, code, code).first<any>();
+  `).bind(businessId, code, code, code).first<any>();
 
   if (!payment) throw new PolicyError('M-Pesa payment not found.', 404);
   if (asNumber(payment.resultCode, -1) !== 0) {
@@ -263,7 +258,7 @@ async function transactionInsert(db: D1Database, tx: any) {
   return db.prepare(sql).bind(...cols.map((col) => serializeValue(tx[col])));
 }
 
-function auditInsert(db: D1Database, tx: any, businessId: string, branchId: string, principal: any) {
+function auditInsert(db: D1Database, tx: any, businessId: string, principal: any) {
   const subtotal = asNumber(tx.subtotal, 0);
   const discount = asNumber(tx.discountAmount || tx.discount, 0);
   const severity = discount > subtotal * 0.1 ? 'WARN' : 'INFO';
@@ -272,8 +267,8 @@ function auditInsert(db: D1Database, tx: any, businessId: string, branchId: stri
     : `Completed Ksh ${asNumber(tx.total, 0).toLocaleString()} sale.`;
   const now = Date.now();
   return db.prepare(`
-    INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     crypto.randomUUID(),
     now,
@@ -285,7 +280,6 @@ function auditInsert(db: D1Database, tx: any, businessId: string, branchId: stri
     severity,
     details,
     businessId,
-    branchId,
     now,
   );
 }
@@ -303,9 +297,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!tx || typeof tx !== 'object') return json({ error: 'Transaction payload is required.' }, 400);
 
     const businessId = String(request.headers.get('X-Business-ID') || tx.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || tx.branchId || '').trim();
-    if (!businessId || !branchId) return json({ error: 'Business and branch are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!businessId) return json({ error: 'Business is required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
@@ -313,15 +306,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const transactionId = String(tx.id || crypto.randomUUID()).trim();
     tx.id = transactionId;
-    const existing = await getExistingTransaction(env.DB, businessId, branchId, transactionId);
+    const existing = await getExistingTransaction(env.DB, businessId, transactionId);
     if (existing) {
       return json({ success: true, transaction: existing, idempotent: true });
     }
 
     const idempotencyKey = String(body?.idempotencyKey || tx.id).trim() || transactionId;
-    const idempotencyId = `${businessId}|${branchId}|${idempotencyKey}`;
+    const idempotencyId = `${businessId}|${idempotencyKey}`;
     try {
-      const existingByKey = await getIdempotentTransaction(env.DB, businessId, branchId, idempotencyId, idempotencyKey);
+      const existingByKey = await getIdempotentTransaction(env.DB, businessId, idempotencyId, idempotencyKey);
       if (existingByKey) return json({ success: true, transaction: existingByKey, idempotent: true });
     } catch (err: any) {
       const status = err instanceof PolicyError ? err.status : 409;
@@ -333,7 +326,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       sideEffects = await hardenTransactionBatch({
         db: env.DB,
         businessId,
-        branchId,
         principal: auth.principal,
         service: auth.service,
       }, [tx]);
@@ -344,11 +336,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     tx.isSynced = 1;
     tx.businessId = businessId;
-    tx.branchId = branchId;
 
     let mpesaStatements: D1PreparedStatement[] = [];
     try {
-      mpesaStatements = await verifyMpesaPayment(env.DB, businessId, branchId, tx);
+      mpesaStatements = await verifyMpesaPayment(env.DB, businessId, tx);
     } catch (err: any) {
       const status = err instanceof PolicyError ? err.status : 400;
       return json({ error: err?.message || 'M-Pesa payment could not be verified.' }, status);
@@ -358,14 +349,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await transactionInsert(env.DB, tx),
       ...sideEffects,
       ...mpesaStatements,
-      auditInsert(env.DB, tx, businessId, branchId, auth.principal),
+      auditInsert(env.DB, tx, businessId, auth.principal),
       env.DB.prepare(`
-        INSERT OR IGNORE INTO idempotencyKeys (id, businessId, branchId, idempotencyKey, operation, deviceId, cashierName, transactionId, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO idempotencyKeys (id, businessId, idempotencyKey, operation, deviceId, cashierName, transactionId, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         idempotencyId,
         businessId,
-        branchId,
         idempotencyKey,
         'sales.checkout',
         null,

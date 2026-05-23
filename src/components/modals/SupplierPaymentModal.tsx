@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Save, X, CreditCard, Banknote, Building2, Receipt, FileText, ChevronDown, Loader2, CheckCircle2 } from 'lucide-react';
+import { DollarSign, Save, X, Wallet, Landmark, Loader2, CheckCircle2 } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Supplier } from '../../db';
-import { SearchableSelect } from '../shared/SearchableSelect';
+import { PICKED_CASH_ACCOUNT_NAME } from '../../utils/financeAccount';
 
 type InvoiceAllocation = { purchaseOrderId: string; amount: number };
 
@@ -22,9 +22,9 @@ interface SupplierPaymentModalProps {
 }
 
 export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave, financialAccounts }: SupplierPaymentModalProps) {
+  const pickedAccount = financialAccounts?.[0] || null;
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
-    method: 'CASH' as 'CASH' | 'MPESA' | 'BANK' | 'CHEQUE',
     reference: '',
     transactionCode: '',
     purchaseOrderId: '',
@@ -104,7 +104,6 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
     if (!isOpen) return;
     setPaymentForm({
       amount: '',
-      method: 'CASH',
       reference: '',
       transactionCode: '',
       purchaseOrderId: '',
@@ -115,6 +114,11 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
     setInvoiceAmounts({});
     setSelectedCreditNoteIds([]);
   }, [isOpen, supplier?.id]);
+
+  useEffect(() => {
+    if (!isOpen || paymentForm.source !== 'ACCOUNT' || paymentForm.accountId || !pickedAccount?.id) return;
+    setPaymentForm(prev => ({ ...prev, accountId: pickedAccount.id }));
+  }, [isOpen, paymentForm.source, paymentForm.accountId, pickedAccount?.id]);
 
   const toggleInvoice = (id: string) => {
     const invoice = outstandingInvoices.find(inv => inv.id === id);
@@ -147,14 +151,6 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
 
   if (!isOpen || !supplier) return null;
 
-  const paymentMethods = paymentForm.source === 'TILL'
-    ? [{ id: 'CASH', icon: Banknote }]
-    : [
-        { id: 'MPESA', icon: CreditCard },
-        { id: 'BANK', icon: Building2 },
-        { id: 'CHEQUE', icon: Receipt }
-      ];
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = roundMoney(Number(paymentForm.amount || 0));
@@ -162,23 +158,22 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
     if (amount < 0 || isSaving) return;
     if (hasInvoiceSelection && invoiceAllocations.length === 0) return;
     if (hasInvalidInvoiceAmount || creditExceedsInvoices) return;
-    if (paymentForm.source === 'ACCOUNT' && amount > 0 && !paymentForm.accountId) return;
     
     setIsSaving(true);
     try {
       await onSave({
         amount,
-        method: paymentForm.method,
+        method: 'CASH',
         reference: paymentForm.reference,
         transactionCode: paymentForm.transactionCode,
         source: paymentForm.source,
-        accountId: paymentForm.source === 'ACCOUNT' ? paymentForm.accountId : undefined,
+        accountId: paymentForm.source === 'ACCOUNT' ? pickedAccount?.id || paymentForm.accountId : undefined,
         purchaseOrderIds: invoiceAllocations.length > 0 ? invoiceAllocations.map(allocation => allocation.purchaseOrderId) : undefined,
         invoiceAllocations: invoiceAllocations.length > 0 ? invoiceAllocations : undefined,
         creditNoteIds: selectedCreditNoteIds.length > 0 ? selectedCreditNoteIds : undefined
       } as any);
       
-      setPaymentForm({ amount: '', method: 'CASH', reference: '', transactionCode: '', purchaseOrderId: '', source: 'TILL', accountId: '' });
+      setPaymentForm({ amount: '', reference: '', transactionCode: '', purchaseOrderId: '', source: 'TILL', accountId: '' });
       setSelectedInvoiceIds([]);
       setInvoiceAmounts({});
       setSelectedCreditNoteIds([]);
@@ -194,8 +189,7 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
     || Number(paymentForm.amount) < 0
     || (hasInvoiceSelection && invoiceAllocations.length === 0)
     || hasInvalidInvoiceAmount
-    || creditExceedsInvoices
-    || (paymentForm.source === 'ACCOUNT' && Number(paymentForm.amount) > 0 && !paymentForm.accountId);
+    || creditExceedsInvoices;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4 pb-safe">
@@ -370,69 +364,40 @@ export default function SupplierPaymentModal({ isOpen, onClose, supplier, onSave
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5 ml-1">Method</label>
-                <div className={`grid gap-1.5 ${paymentForm.source === 'TILL' ? 'grid-cols-1' : 'grid-cols-3'}`}>
-                   {paymentMethods.map(m => (
-                     <button 
-                       key={m.id}
-                       type="button"
-                       data-testid={`supplier-payment-method-${String(m.id).toLowerCase()}`}
-                       onClick={() => setPaymentForm({...paymentForm, method: m.id as any})}
-                       className={`flex flex-col items-center justify-center p-2 rounded-lg border-2 transition-all ${paymentForm.method === m.id ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-400'}`}
-                     >
-                       <m.icon size={14} />
-                       <span className="text-[7px] font-black mt-1 ">{m.id === 'MPESA' ? 'M-Pesa' : m.id === 'CHEQUE' ? 'Cheque' : m.id === 'BANK' ? 'Bank' : 'Cash'}</span>
-                     </button>
-                   ))}
-                </div>
-              </div>
-
-              <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5 ml-1">Pay from</label>
                 <div className="flex gap-2">
                    <button 
                     type="button"
                     data-testid="supplier-payment-source-till"
-                    onClick={() => setPaymentForm({...paymentForm, source: 'TILL', method: 'CASH', accountId: ''})}
-                    className={`flex-1 py-2.5 rounded-xl text-[10px] font-black border transition-all ${paymentForm.source === 'TILL' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 text-slate-500'}`}
+                    onClick={() => setPaymentForm({...paymentForm, source: 'TILL', accountId: ''})}
+                    className={`flex-1 py-3 rounded-xl text-[10px] font-black border transition-all flex items-center justify-center gap-2 ${paymentForm.source === 'TILL' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 text-slate-500'}`}
                    >
+                     <Wallet size={14} />
                      Till cash drawer
                    </button>
                    <button 
                     type="button"
                     data-testid="supplier-payment-source-account"
-                    onClick={() => setPaymentForm({...paymentForm, source: 'ACCOUNT', method: paymentForm.method === 'CASH' ? 'BANK' : paymentForm.method})}
-                    className={`flex-1 py-2.5 rounded-xl text-[10px] font-black border transition-all ${paymentForm.source === 'ACCOUNT' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-500'}`}
+                    onClick={() => setPaymentForm({...paymentForm, source: 'ACCOUNT', accountId: pickedAccount?.id || paymentForm.accountId})}
+                    className={`flex-1 py-3 rounded-xl text-[10px] font-black border transition-all flex items-center justify-center gap-2 ${paymentForm.source === 'ACCOUNT' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 text-slate-500'}`}
                    >
-                     Bank or M-Pesa account
+                     <Landmark size={14} />
+                     Picked account
                    </button>
                 </div>
               </div>
 
               {paymentForm.source === 'ACCOUNT' && (
-                <div className="animate-in slide-in-from-top-2">
-                   <label className="block text-xs font-semibold text-blue-600 mb-1.5 ml-1">Account to use</label>
-                   <SearchableSelect
-                     value={paymentForm.accountId || ''}
-                     onChange={(v) => setPaymentForm({ ...paymentForm, accountId: v })}
-                     placeholder="Select account..."
-                     options={(financialAccounts || []).map(acc => ({
-                       value: acc.id,
-                       label: `${acc.name} (${acc.type})`,
-                       keywords: `${acc.name} ${acc.type}`,
-                     }))}
-                     size="sm"
-                     buttonClassName="bg-blue-50 border-blue-200 text-blue-900 focus:border-blue-500"
-                     searchInputClassName="bg-white"
-                     dataTestId="supplier-payment-account"
-                   />
+                <div className="animate-in slide-in-from-top-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{PICKED_CASH_ACCOUNT_NAME}</p>
+                   <p className="text-sm font-black text-slate-900">Ksh {Number(pickedAccount?.balance || 0).toLocaleString()}</p>
                 </div>
               )}
             </div>
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5 ml-1">Reference or cheque number</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 ml-1">Reference</label>
                 <input 
                   type="text" 
                   value={paymentForm.transactionCode} 

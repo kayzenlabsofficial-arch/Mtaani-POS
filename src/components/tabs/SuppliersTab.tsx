@@ -7,7 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 import SupplierLedgerModal from '../modals/SupplierLedgerModal';
 import { settleSupplierPayment, type SupplierPaymentInput } from '../../utils/supplierLedger';
-import { belongsToActiveBranch } from '../../utils/branchScope';
+import { belongsToActiveShop } from '../../utils/shopScope';
 import { SupplierService } from '../../services/suppliers';
 import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSession';
 import { getTodayStartMs } from '../../utils/cashDrawer';
@@ -24,23 +24,23 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [supplierForm, setSupplierForm] = useState({ name: '', company: '', phone: '', email: '', address: '', kraPin: '' });
   const isAdmin = useStore(state => state.isAdmin);
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const activeShift = useStore(state => state.activeShift);
   const currentUser = useStore(state => state.currentUser);
   const { success, error } = useToast();
   const [isSaving, setIsSaving] = useState(false);
-  const currentShiftId = getCurrentShiftId(activeShift, activeBranchId, currentUser?.id);
+  const currentShiftId = getCurrentShiftId(activeShift, activeShopId, currentUser?.id);
 
   const allSuppliers = useLiveQuery(
-    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
     []
   );
   
   const allProducts = useLiveQuery(
-    () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveBranch(p, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    () => activeBusinessId && activeShopId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveShop(p, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
     []
   );
 
@@ -84,13 +84,13 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
   const handleSaveSupplier = async () => {
       if (!supplierForm.company) return;
       if (isSaving) return;
-      if (!activeBusinessId || !activeBranchId) return error("Select a branch before saving a supplier.");
+      if (!activeBusinessId || !activeShopId) return error("The shop is still loading. Try again.");
       setIsSaving(true);
       try {
         await SupplierService.saveProfile({
             supplierId: editingSupplier?.id,
             supplier: supplierForm,
-            branchId: activeBranchId,
+            shopId: activeShopId,
             businessId: activeBusinessId,
         });
         await db.suppliers.reload();
@@ -104,12 +104,12 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
   }
 
   const handleDeleteSupplier = async () => {
-    if (!activeBusinessId || !activeBranchId) return error("Select a branch before deleting a supplier.");
+    if (!activeBusinessId || !activeShopId) return error("The shop is still loading. Try again.");
     if (editingSupplier && confirm(`Are you sure you want to delete ${editingSupplier.company}?`)) {
       try {
         await SupplierService.deleteProfile({
           supplierId: editingSupplier.id,
-          branchId: activeBranchId,
+          shopId: activeShopId,
           businessId: activeBusinessId,
         });
         await db.suppliers.reload();
@@ -129,7 +129,7 @@ export default function SuppliersTab({ setActiveTab, financialAccounts }: { setA
         await settleSupplierPayment({
           supplier: selectedSupplierForPayment,
           payment,
-          activeBranchId: activeBranchId!,
+          activeShopId: activeShopId!,
           activeBusinessId: activeBusinessId!,
           preparedBy: currentUser?.name || 'Staff',
           shiftId: currentShiftId,

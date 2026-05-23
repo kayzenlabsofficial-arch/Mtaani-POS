@@ -23,10 +23,11 @@ import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { SearchableSelect } from '../shared/SearchableSelect';
 import { getBusinessSettings } from '../../utils/settings';
-import { belongsToActiveBranch } from '../../utils/branchScope';
+import { belongsToActiveShop } from '../../utils/shopScope';
 import { SalesInvoiceService } from '../../services/salesInvoices';
 import { CustomerService } from '../../services/customers';
 import { ServiceItemService } from '../../services/catalog';
+import { getCurrentShiftId } from '../../utils/shiftSession';
 
 type DraftLine = SalesInvoiceItem & { id: string };
 type ViewMode = 'INVOICES' | 'SERVICES';
@@ -57,8 +58,10 @@ const invoiceTotals = (lines: SalesInvoiceItem[]) => {
 export default function SalesInvoicesTab() {
   const { success, error } = useToast();
   const activeBusinessId = useStore(state => state.activeBusinessId);
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
   const currentUser = useStore(state => state.currentUser);
+  const activeShift = useStore(state => state.activeShift);
+  const currentShiftId = getCurrentShiftId(activeShift, activeShopId, currentUser?.id);
 
   const [mode, setMode] = React.useState<ViewMode>('INVOICES');
   const [search, setSearch] = React.useState('');
@@ -86,13 +89,13 @@ export default function SalesInvoicesTab() {
   const [isSaving, setIsSaving] = React.useState(false);
 
   const customers = useLiveQuery(
-    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveBranch(c, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveShop(c, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
     []
   );
   const products = useLiveQuery(
-    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(product => belongsToActiveBranch(product, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(product => belongsToActiveShop(product, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
     []
   );
   const services = useLiveQuery(
@@ -101,10 +104,10 @@ export default function SalesInvoicesTab() {
     []
   );
   const invoices = useLiveQuery(
-    () => activeBusinessId && activeBranchId
-      ? db.salesInvoices.where('branchId').equals(activeBranchId).and(i => i.businessId === activeBusinessId).toArray()
+    () => activeBusinessId && activeShopId
+      ? db.salesInvoices.where('shopId').equals(activeShopId).and(i => i.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    [activeBusinessId, activeShopId],
     []
   );
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
@@ -211,7 +214,7 @@ export default function SalesInvoicesTab() {
 
   const saveInvoice = async () => {
     if (isSaving) return;
-    if (!activeBusinessId || !activeBranchId) return error('Please select a branch first.');
+    if (!activeBusinessId || !activeShopId) return error('The shop is still loading. Try again.');
     const customer = (customers || []).find(c => c.id === invoiceForm.customerId);
     if (!customer) return error('Select the customer for this invoice.');
     if (lines.length === 0) return error('Add at least one item or service.');
@@ -233,7 +236,7 @@ export default function SalesInvoicesTab() {
         dueDate: invoiceForm.dueDate ? toDayStart(invoiceForm.dueDate) : undefined,
         notes: invoiceForm.notes.trim() || undefined,
         preparedBy: currentUser?.name || 'Staff',
-        branchId: activeBranchId,
+        shopId: activeShopId,
         businessId: activeBusinessId,
       });
 
@@ -295,7 +298,7 @@ export default function SalesInvoicesTab() {
 
   const applyPayment = async () => {
     if (!paymentInvoice || isSaving) return;
-    if (!activeBusinessId || !activeBranchId) return error('Please select a branch first.');
+    if (!activeBusinessId || !activeShopId) return error('The shop is still loading. Try again.');
     const amount = Number(paymentForm.amount);
     if (!amount || amount <= 0) return error('Enter the amount to clear.');
     if (amount > Number(paymentInvoice.balance || 0)) return error('Amount is more than the invoice balance.');
@@ -309,8 +312,9 @@ export default function SalesInvoicesTab() {
         reference: `Invoice ${paymentInvoice.invoiceNumber}`,
         allocations: [{ sourceType: 'INVOICE', sourceId: paymentInvoice.id, amount }],
         preparedBy: currentUser?.name,
+        shiftId: currentShiftId,
         businessId: activeBusinessId,
-        branchId: activeBranchId,
+        shopId: activeShopId,
       });
       await Promise.allSettled([
         db.customerPayments.reload(),
@@ -336,11 +340,11 @@ export default function SalesInvoicesTab() {
     if (!confirm(`Cancel invoice ${invoice.invoiceNumber}?`)) return;
     setIsSaving(true);
     try {
-      if (!activeBusinessId || !activeBranchId) return error('Please select a branch first.');
+      if (!activeBusinessId || !activeShopId) return error('The shop is still loading. Try again.');
       const result = await SalesInvoiceService.cancel({
         invoiceId: invoice.id,
         businessId: activeBusinessId,
-        branchId: activeBranchId,
+        shopId: activeShopId,
       });
       await Promise.allSettled([
         db.salesInvoices.reload(),

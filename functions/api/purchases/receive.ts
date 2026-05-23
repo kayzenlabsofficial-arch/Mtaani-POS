@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -17,7 +17,7 @@ const RECEIVER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -70,7 +70,6 @@ async function ensureSchema(db: D1Database) {
       quantity REAL NOT NULL,
       timestamp INTEGER NOT NULL,
       reference TEXT,
-      branchId TEXT,
       businessId TEXT,
       shiftId TEXT,
       updated_at INTEGER
@@ -88,7 +87,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -109,13 +107,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const purchaseOrderId = String(body?.purchaseOrderId || body?.id || '').trim();
     const invoiceNumber = trimText(body?.invoiceNumber, 80);
     const receivedBy = trimText(body?.receivedBy || auth.principal.userName || 'Staff', 120) || 'Staff';
-    if (!businessId || !branchId || !purchaseOrderId) return json({ error: 'Business, branch and purchase order are required.' }, 400);
+    if (!businessId || !purchaseOrderId) return json({ error: 'Business and purchase order are required.' }, 400);
     if (!invoiceNumber) return json({ error: 'Supplier invoice number is required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
@@ -124,21 +121,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const po = await env.DB.prepare(`
       SELECT *
       FROM purchaseOrders
-      WHERE id = ? AND businessId = ? AND branchId = ?
+      WHERE id = ? AND businessId = ?
       LIMIT 1
-    `).bind(purchaseOrderId, businessId, branchId).first<any>();
+    `).bind(purchaseOrderId, businessId).first<any>();
     if (!po) throw new PolicyError('Purchase order was not found.', 404);
     if (po.approvalStatus !== 'APPROVED') throw new PolicyError('Purchase order must be approved before receiving.', 409);
     if (po.status === 'RECEIVED') throw new PolicyError('Purchase order has already been received.', 409);
 
     const supplier = await env.DB.prepare(`
-      SELECT id, name, company, balance, branchId
+      SELECT id, name, company, balance
       FROM suppliers
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(po.supplierId, businessId).first<any>();
     if (!supplier) throw new PolicyError('Supplier was not found.', 404);
-    if (supplier.branchId && supplier.branchId !== branchId) throw new PolicyError('Supplier belongs to another branch.', 403);
 
     const savedItems = parseItems(po.items);
     if (!savedItems.length) throw new PolicyError('Purchase order has no line items.', 400);
@@ -182,13 +178,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
       const productId = String(item.productId || '').trim();
       const product = await env.DB.prepare(`
-        SELECT id, name, stockQuantity, sellingPrice, supplierIds, discountType, discountValue, branchId
+        SELECT id, name, stockQuantity, sellingPrice, supplierIds, discountType, discountValue
         FROM products
         WHERE id = ? AND businessId = ?
         LIMIT 1
       `).bind(productId, businessId).first<any>();
       if (!product) throw new PolicyError(`Product "${item.name || productId}" was not found.`, 404);
-      if (product.branchId && product.branchId !== branchId) throw new PolicyError(`Product "${product.name}" belongs to another branch.`, 403);
 
       const submitted = submittedLines.get(productId);
       const nextSellingPrice = submitted?.sellingPrice && submitted.sellingPrice > 0
@@ -211,8 +206,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           WHERE id = ? AND businessId = ?
         `).bind(quantity, roundMoney(asNumber(item.unitCost)), nextSellingPrice, JSON.stringify(nextSupplierIds), now, productId, businessId),
         env.DB.prepare(`
-          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
           productId,
@@ -220,7 +215,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           quantity,
           now,
           `${po.poNumber || po.id} Inv:${invoiceNumber}`,
-          branchId,
           businessId,
           body?.shiftId || null,
           now,
@@ -240,7 +234,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
             invoiceNumber = ?,
             receivedBy = ?,
             updated_at = ?
-        WHERE id = ? AND businessId = ? AND branchId = ?
+        WHERE id = ? AND businessId = ?
       `).bind(
         JSON.stringify(updatedItems),
         totalReceivedCost,
@@ -250,7 +244,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         now,
         purchaseOrderId,
         businessId,
-        branchId,
       )
     );
 
@@ -258,8 +251,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       env.DB.prepare(`UPDATE suppliers SET balance = COALESCE(balance, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ?`)
         .bind(totalReceivedCost, now, po.supplierId, businessId),
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         now,
@@ -270,9 +263,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         purchaseOrderId,
         'INFO',
         `Received ${po.poNumber || purchaseOrderId} for Ksh ${totalReceivedCost.toLocaleString()}.`,
-        businessId,
-        branchId,
-        now,
+        businessId, now,
       )
     );
 

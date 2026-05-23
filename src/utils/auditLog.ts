@@ -26,10 +26,10 @@ export function recordAuditEvent(event: Omit<AuditEvent, 'id' | 'ts'>): void {
     body: {
       ...event,
       businessId: state.activeBusinessId,
-      branchId: state.activeBranchId || undefined,
+      shopId: state.activeShopId || undefined,
     },
     businessId: state.activeBusinessId,
-    branchId: state.activeBranchId,
+    shopId: state.activeShopId,
   }).catch(err => {
     console.warn('[Audit] failed to persist event', err);
   });

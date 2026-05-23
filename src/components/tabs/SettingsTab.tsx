@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, ShieldCheck, RefreshCcw, Download, ChevronDown, ScanLine, Printer, Usb, SlidersHorizontal, Building2, Terminal, ShieldAlert, Cpu, Check, Activity, X } from 'lucide-react';
+import { Save, ShieldCheck, RefreshCcw, Download, ChevronDown, ScanLine, Printer, Usb, SlidersHorizontal, Building2, Terminal, ShieldAlert, Cpu, Check, Activity, X, Store } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
@@ -26,6 +26,7 @@ import {
   type HardwareSupport,
 } from '../../utils/hardware';
 import { BusinessSettingsService } from '../../services/businessSettings';
+import { normalizeTillCount, parseSalesTillRows, parseSalesTills, serializeSalesTills, type SalesTill } from '../../utils/tills';
 
 
 export default function SettingsTab({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
@@ -34,6 +35,17 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
   const { success, warning, error } = useToast();
   
   const savedSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId], null);
+  const savedTillRows = useLiveQuery(
+    () => activeBusinessId
+      ? db.salesTills.where('businessId').equals(activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId],
+    []
+  );
+  const savedTillSignature = React.useMemo(
+    () => JSON.stringify(parseSalesTillRows(savedTillRows)),
+    [savedTillRows]
+  );
   const [storeSettings, setStoreSettings] = useState({
      storeName: 'Mtaani Shop', krapin: 'P0000000000A', tillNumber: '123456', receiptFooter: 'Thank you for shopping!', location: 'Nairobi, Kenya'
   });
@@ -42,6 +54,15 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
     autoApproveOwnerActions: true,
     cashSweepEnabled: true,
     cashDrawerLimit: String(DEFAULT_CASH_DRAWER_LIMIT),
+  });
+  const [tillSettings, setTillSettings] = useState<{
+    count: string;
+    openingFloat: string;
+    tills: SalesTill[];
+  }>({
+    count: '1',
+    openingFloat: '0',
+    tills: parseSalesTills(null),
   });
   const [isUpdating, setIsUpdating] = useState(false);
   const [openSection, setOpenSection] = useState<'IDENTITY' | 'HARDWARE' | 'SYSTEM' | 'SECURITY'>('IDENTITY');
@@ -63,6 +84,8 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
   });
 
   useEffect(() => {
+     const tableTills = parseSalesTillRows(savedTillRows);
+     const savedTills = tableTills.length ? tableTills : parseSalesTills(savedSettings);
      if (savedSettings) {
         setStoreSettings({
            storeName: savedSettings.storeName,
@@ -78,7 +101,12 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
           cashDrawerLimit: String(savedSettings.cashDrawerLimit ?? DEFAULT_CASH_DRAWER_LIMIT),
         });
      }
-  }, [savedSettings]);
+     setTillSettings({
+       count: String(savedTills.length || 1),
+       openingFloat: String(savedSettings?.defaultOpeningFloat ?? 0),
+       tills: savedTills,
+     });
+  }, [savedSettings, savedTillSignature]);
 
   useEffect(() => {
     try {
@@ -229,13 +257,38 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
             autoApproveOwnerActions: ownerSettings.autoApproveOwnerActions ? 1 : 0,
             cashSweepEnabled: ownerSettings.cashSweepEnabled ? 1 : 0,
             cashDrawerLimit: Number(ownerSettings.cashDrawerLimit) || DEFAULT_CASH_DRAWER_LIMIT,
+            salesTills: serializeSalesTills(tillSettings.tills),
+            defaultOpeningFloat: Math.max(0, Number(tillSettings.openingFloat) || 0),
             businessId: activeBusinessId,
           },
         });
-        await db.settings.reload();
+        const normalizedTills = normalizeTillCount(tillSettings.count, tillSettings.tills);
+        const existingTillRows = await db.salesTills.where('businessId').equals(activeBusinessId).toArray();
+        const activeTillIds = new Set(normalizedTills.map(till => till.id));
+        const now = Date.now();
+        const rowsToPersist = [
+          ...normalizedTills.map((till, index) => ({
+            id: till.id || `till-${index + 1}`,
+            name: till.name || `Till ${index + 1}`,
+            isActive: 1,
+            businessId: activeBusinessId,
+            updated_at: now,
+          })),
+          ...existingTillRows
+            .filter(row => !activeTillIds.has(row.id))
+            .map(row => ({
+              ...row,
+              isActive: 0,
+              businessId: activeBusinessId,
+              updated_at: now,
+            })),
+        ];
+        await db.salesTills.bulkPut(rowsToPersist);
+        await Promise.all([db.settings.reload(), db.salesTills.reload()]);
         success("Business settings saved.");
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
+        error(err?.message || 'Could not save business settings.');
       } finally {
         setIsUpdating(false);
       }
@@ -265,6 +318,20 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
     { label: 'Bluetooth', ok: hardwareSupport.webBluetooth },
     { label: 'Camera', ok: hardwareSupport.camera },
   ];
+
+  const updateTillCount = (value: string) => {
+    setTillSettings(prev => {
+      const tills = normalizeTillCount(value, prev.tills);
+      return { ...prev, count: String(tills.length), tills };
+    });
+  };
+
+  const updateTillName = (index: number, name: string) => {
+    setTillSettings(prev => ({
+      ...prev,
+      tills: prev.tills.map((till, i) => i === index ? { ...till, name } : till),
+    }));
+  };
 
   return (
     <div className="pb-24 animate-in fade-in w-full">
@@ -320,6 +387,59 @@ export default function SettingsTab({ updateServiceWorker, needRefresh }: { upda
                      Save settings
                   </button>
                </div>
+            </div>
+
+            <div className="rounded-lg border-2 border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="mb-5 flex items-center gap-2 text-base font-black text-slate-900">
+                <Store className="text-blue-700" /> Tills
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 ml-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Number of tills</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="12"
+                    value={tillSettings.count}
+                    onChange={event => updateTillCount(event.target.value)}
+                    className="w-full rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-900 outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 ml-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Default opening cash</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={tillSettings.openingFloat}
+                    onChange={event => setTillSettings(prev => ({ ...prev, openingFloat: event.target.value }))}
+                    className="w-full rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-900 outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-2">
+                {tillSettings.tills.map((till, index) => (
+                  <div key={till.id} className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[84px_1fr] sm:items-center">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Till {index + 1}</span>
+                    <input
+                      type="text"
+                      value={till.name}
+                      onChange={event => updateTillName(index, event.target.value)}
+                      className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-900 outline-none focus:border-blue-500"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={handleSaveSettings}
+                disabled={isUpdating}
+                className="mt-5 flex w-full items-center justify-center gap-3 rounded-lg bg-blue-700 py-4 text-[10px] font-black uppercase tracking-widest text-white shadow-sm disabled:opacity-50"
+              >
+                {isUpdating ? <RefreshCcw size={16} className="animate-spin" /> : <Save size={16} />}
+                Save tills
+              </button>
             </div>
 
             {/* System Updates */}

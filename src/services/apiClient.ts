@@ -17,7 +17,7 @@ type ApiRequestOptions = Omit<RequestInit, 'body' | 'headers'> & {
   body?: unknown;
   headers?: Record<string, string>;
   businessId?: string | null;
-  branchId?: string | null;
+  shopId?: string | null;
   requireOnline?: boolean;
   requestTimeoutMs?: number;
 };
@@ -53,7 +53,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     body: requestBody,
     headers: optionHeaders,
     businessId: optionBusinessId,
-    branchId: optionBranchId,
+    shopId: _optionShopId,
     requireOnline: _requireOnline,
     requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
     ...requestOptions
@@ -66,9 +66,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
   if (apiKey) headers['X-API-Key'] = apiKey;
   const businessId = optionBusinessId ?? state.activeBusinessId;
-  const branchId = optionBranchId ?? state.activeBranchId;
   if (businessId) headers['X-Business-ID'] = businessId;
-  if (branchId) headers['X-Branch-ID'] = branchId;
 
   let body: BodyInit | undefined;
   if (requestBody !== undefined) {

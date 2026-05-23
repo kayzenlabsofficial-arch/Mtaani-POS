@@ -62,13 +62,12 @@ export const MpesaService = {
   /**
    * Sends an M-Pesa phone request to the specified phone number.
    */
-  async triggerStkPush(phone: string, amount: number, reference: string = 'POS', businessId: string, branchId: string): Promise<StkPushResponse> {
+  async triggerStkPush(phone: string, amount: number, reference: string = 'POS', businessId: string, _shopId?: string): Promise<StkPushResponse> {
     try {
       return await apiRequest<StkPushResponse>(`${API_BASE}/stkpush`, {
         method: 'POST',
-        body: { phone, amount, reference, businessId, branchId },
+        body: { phone, amount, reference, businessId },
         businessId,
-        branchId,
       });
     } catch (err: any) {
       console.error('M-Pesa Request Failed:', err);
@@ -88,13 +87,12 @@ export const MpesaService = {
     }
   },
 
-  async verifyPayment(code: string, amount: number, businessId: string, branchId: string): Promise<MpesaVerificationResponse> {
+  async verifyPayment(code: string, amount: number, businessId: string, _shopId?: string): Promise<MpesaVerificationResponse> {
     try {
       return await apiRequest<MpesaVerificationResponse>(`${API_BASE}/verify`, {
         method: 'POST',
-        body: { code, amount, businessId, branchId },
+        body: { code, amount, businessId },
         businessId,
-        branchId,
       });
     } catch (err: any) {
       console.error('M-Pesa Verify Failed:', err);
@@ -106,16 +104,16 @@ export const MpesaService = {
     code: string;
     transactionId: string;
     businessId: string;
-    branchId: string;
+    shopId?: string;
     customerId?: string;
     customerName?: string;
   }): Promise<{ success?: boolean; error?: string }> {
     try {
+      const { shopId: _legacyShopId, ...body } = input;
       return await apiRequest<{ success?: boolean; error?: string }>(`${API_BASE}/utilize`, {
         method: 'POST',
-        body: input,
+        body,
         businessId: input.businessId,
-        branchId: input.branchId,
       });
     } catch (err: any) {
       console.error('M-Pesa Utilization Failed:', err);
@@ -125,7 +123,7 @@ export const MpesaService = {
 
   async listTransactions(input: {
     businessId: string;
-    branchId: string;
+    shopId?: string;
     from?: number;
     to?: number;
     search?: string;
@@ -135,7 +133,6 @@ export const MpesaService = {
     try {
       const params = new URLSearchParams({
         businessId: input.businessId,
-        branchId: input.branchId,
         limit: String(input.limit || 500),
         offset: String(input.offset || 0),
       });
@@ -145,7 +142,6 @@ export const MpesaService = {
 
       const data = await apiRequest<{ rows?: MpesaLedgerRow[]; total?: number }>(`${API_BASE}/transactions?${params.toString()}`, {
         businessId: input.businessId,
-        branchId: input.branchId,
       });
       return { rows: data.rows || [], total: Number(data.total || 0) };
     } catch (err: any) {

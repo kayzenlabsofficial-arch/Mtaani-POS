@@ -69,12 +69,6 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   const storeName = businessSettings?.storeName || 'Mtaani POS';
   const storeLocation = businessSettings?.location || 'Nairobi, Kenya';
-  const activeRecordBranch = useLiveQuery(
-    () => selectedRecord?.branchId ? db.branches.get(selectedRecord.branchId) : Promise.resolve(undefined),
-    [selectedRecord?.branchId],
-    undefined
-  );
-
   // Fetch contextual data based on record type
   const supplier = useLiveQuery(
     () => (selectedRecord?.recordType === 'SUPPLIER_PAYMENT' || selectedRecord?.recordType === 'PURCHASE_ORDER' || selectedRecord?.recordType === 'CREDIT_NOTE') 
@@ -136,9 +130,9 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   const recordTimestamp = Number(selectedRecord.issueDate || selectedRecord.orderDate || selectedRecord.timestamp || Date.now());
   const recordDate = new Date(recordTimestamp);
   const saleReference = String(selectedRecord.receiptNumber || selectedRecord.invoiceNumber || selectedRecord.reference || selectedRecord.id || 'SALE').split('-')[0].toUpperCase();
-  const branchName = activeRecordBranch?.name || selectedRecord.branchName || 'Main branch';
-  const businessAddress = selectedRecord.businessAddress || activeRecordBranch?.location || storeLocation;
-  const tillNumber = selectedRecord.tillNumber || activeRecordBranch?.tillNumber || businessSettings?.tillNumber || 'N/A';
+  const shopName = String(selectedRecord.shopName || storeName || 'Main shop');
+  const businessAddress = selectedRecord.businessAddress || storeLocation;
+  const tillNumber = selectedRecord.tillNumber || businessSettings?.tillNumber || 'N/A';
   const receiptFooter = selectedRecord.receiptFooter || businessSettings?.receiptFooter || 'Thank you for shopping!';
   const cashierName = selectedRecord.cashierName || selectedRecord.preparedBy || selectedRecord.userName || 'Staff';
   const shiftNumber = selectedRecord.shiftId ? String(selectedRecord.shiftId).replace(/^shift_/, '').slice(-16).toUpperCase() : 'N/A';
@@ -152,9 +146,9 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
   };
   const withReceiptDetails = (record: any) => ({
     ...record,
-    branchName: activeRecordBranch?.name || record.branchName,
-    tillNumber: record.tillNumber || activeRecordBranch?.tillNumber || businessSettings?.tillNumber,
-    businessAddress: record.businessAddress || activeRecordBranch?.location || storeLocation,
+    shopName: record.shopName || storeName,
+    tillNumber: record.tillNumber || businessSettings?.tillNumber,
+    businessAddress: record.businessAddress || storeLocation,
     receiptFooter: record.receiptFooter || receiptFooter,
   });
   const supplierInvoiceAllocations = parseList(selectedRecord.invoiceAllocations);
@@ -361,7 +355,7 @@ export default function DocumentDetailsModal({ selectedRecord, setSelectedRecord
                   {isSale && (
                     <div className="mt-1 space-y-0.5 text-[11px] font-bold text-slate-600 print:text-[8pt]">
                       <p>{businessAddress}</p>
-                      <p>{branchName}</p>
+                      <p>{shopName}</p>
                     </div>
                   )}
                   <p className="text-xs font-bold text-slate-500  tracking-[0.2em] mt-1">

@@ -22,33 +22,33 @@ export const SupplierService = {
     supplier?: Partial<Supplier> & { id?: string };
     supplierId?: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<{ success: boolean; supplier: Supplier }>('/api/suppliers/profile', {
       method: 'POST',
       body: { action: 'SAVE', ...input },
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 
   deleteProfile(input: {
     supplierId: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<{ success: boolean; supplierId: string }>('/api/suppliers/profile', {
       method: 'POST',
       body: { action: 'DELETE', ...input },
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 
   settlePayment(input: {
     supplier: Supplier;
     payment: SupplierPaymentInput;
-    activeBranchId: string;
+    activeShopId: string;
     activeBusinessId: string;
     preparedBy: string;
     shiftId?: string;
@@ -61,10 +61,10 @@ export const SupplierService = {
         preparedBy: input.preparedBy,
         shiftId: input.shiftId,
         businessId: input.activeBusinessId,
-        branchId: input.activeBranchId,
+        shopId: input.activeShopId,
       },
       businessId: input.activeBusinessId,
-      branchId: input.activeBranchId,
+      shopId: input.activeShopId,
     });
   },
 
@@ -78,26 +78,26 @@ export const SupplierService = {
     quantity?: number;
     shiftId?: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<SupplierCreditNoteResponse>('/api/suppliers/credit-note', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 
   deleteCreditNote(input: {
     creditNoteId: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<{ success: boolean; creditNoteId: string }>('/api/suppliers/credit-note', {
       method: 'POST',
       body: { action: 'DELETE', ...input },
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 };

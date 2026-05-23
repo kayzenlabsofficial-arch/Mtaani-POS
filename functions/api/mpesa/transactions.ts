@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 
 interface Env {
   DB: D1Database;
@@ -7,7 +7,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -28,7 +28,6 @@ async function ensureMpesaLedgerSchema(db: D1Database) {
       receiptNumber TEXT,
       phoneNumber TEXT,
       businessId TEXT,
-      branchId TEXT,
       timestamp INTEGER,
       utilizedTransactionId TEXT,
       utilizedCustomerId TEXT,
@@ -44,8 +43,8 @@ async function ensureMpesaLedgerSchema(db: D1Database) {
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedAt INTEGER',
     'ALTER TABLE transactions ADD COLUMN mpesaCustomer TEXT',
     'ALTER TABLE transactions ADD COLUMN mpesaCheckoutRequestId TEXT',
-    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, branchId, receiptNumber)',
-    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_timestamp ON mpesaCallbacks(businessId, branchId, timestamp)',
+    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber)',
+    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_timestamp ON mpesaCallbacks(businessId, timestamp)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
@@ -61,20 +60,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
     const url = new URL(request.url);
     const businessId = String(url.searchParams.get('businessId') || request.headers.get('X-Business-ID') || '').trim();
-    const branchId = String(url.searchParams.get('branchId') || request.headers.get('X-Branch-ID') || '').trim();
     const from = Number(url.searchParams.get('from') || 0) || 0;
     const to = Number(url.searchParams.get('to') || 0) || 0;
     const search = String(url.searchParams.get('search') || '').trim().toUpperCase();
     const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit') || 200) || 200));
     const offset = Math.max(0, Number(url.searchParams.get('offset') || 0) || 0);
 
-    if (!businessId || !branchId) return json({ error: 'Business and branch are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) return json({ error: 'Access denied' }, 403);
+    if (!businessId) return json({ error: 'Business is required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied' }, 403);
 
     await ensureMpesaLedgerSchema(env.DB);
 
-    const clauses = ['m.businessId = ?', 'm.branchId = ?', 'COALESCE(m.resultCode, -1) = 0'];
-    const bindings: unknown[] = [businessId, branchId];
+    const clauses = ['m.businessId = ?', 'COALESCE(m.resultCode, -1) = 0'];
+    const bindings: unknown[] = [businessId];
     if (from) {
       clauses.push('m.timestamp >= ?');
       bindings.push(from);
@@ -104,7 +102,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           SELECT t.id
           FROM transactions t
           WHERE t.businessId = m.businessId
-            AND t.branchId = m.branchId
             AND (
               (
                 COALESCE(m.receiptNumber, '') != ''
@@ -124,7 +121,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           SELECT t.customerName
           FROM transactions t
           WHERE t.businessId = m.businessId
-            AND t.branchId = m.branchId
             AND (
               (
                 COALESCE(m.receiptNumber, '') != ''

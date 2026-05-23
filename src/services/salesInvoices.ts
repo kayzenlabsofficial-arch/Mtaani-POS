@@ -15,28 +15,28 @@ export const SalesInvoiceService = {
     notes?: string;
     preparedBy?: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
     shiftId?: string;
   }) {
     return apiRequest<SalesInvoiceCommandResponse>('/api/sales/invoice-create', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 
   cancel(input: {
     invoiceId: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
     shiftId?: string;
   }) {
     return apiRequest<SalesInvoiceCommandResponse>('/api/sales/invoice-cancel', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 };

@@ -6,6 +6,17 @@ export interface CartItem extends Product {
   cartQuantity: number;
 }
 
+export interface HeldOrder {
+  id: string;
+  name: string;
+  items: CartItem[];
+  total: number;
+  itemCount: number;
+  createdAt: number;
+  businessId: string | null;
+  shopId: string | null;
+}
+
 type SafeUser = Omit<User, 'password'> & { password: string };
 
 const sanitizeUser = (user: SafeUser | null): SafeUser | null => {
@@ -28,11 +39,12 @@ const clampCartQuantity = (quantity: number, product: Product) => {
 
 interface POSState {
   cart: CartItem[];
+  heldOrders: HeldOrder[];
   isAdmin: boolean;
   isManager: boolean;
   currentUser: SafeUser | null;
   activeShift: any | null;
-  activeBranchId: string | null;
+  activeShopId: string | null;
   activeBusinessId: string | null;
   authToken: string | null;
   isSystemAdmin: boolean;
@@ -42,10 +54,14 @@ interface POSState {
   removeFromCart: (productId: string) => void;
   updateQuantity: (productId: string, delta: number) => void;
   setQuantity: (productId: string, quantity: number) => void;
+  setCart: (items: CartItem[]) => void;
   clearCart: () => void;
+  holdCurrentOrder: (name?: string) => HeldOrder | null;
+  resumeHeldOrder: (orderId: string) => HeldOrder | null;
+  deleteHeldOrder: (orderId: string) => void;
   setCurrentUser: (user: SafeUser | null) => void;
   setActiveShift: (shift: any | null) => void;
-  setActiveBranchId: (id: string | null) => void;
+  setActiveShopId: (id: string | null) => void;
   setActiveBusinessId: (id: string | null) => void;
   paymentSupplierId: string | null;
   setPaymentSupplierId: (id: string | null) => void;
@@ -56,11 +72,12 @@ interface POSState {
 
 const initialState = {
   cart: [] as CartItem[],
+  heldOrders: [] as HeldOrder[],
   isAdmin: false,
   isManager: false,
   currentUser: null as SafeUser | null,
   activeShift: null as any | null,
-  activeBranchId: null as string | null,
+  activeShopId: null as string | null,
   activeBusinessId: null as string | null,
   authToken: null as string | null,
   isSystemAdmin: false,
@@ -68,13 +85,30 @@ const initialState = {
   selectedCustomerId: null as string | null,
 };
 
+const createId = () => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `held_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+};
+
+const cloneCart = (cart: CartItem[]) => cart.map(item => ({ ...item }));
+
+const estimateCartTotal = (cart: CartItem[]) => cart.reduce((sum, item) => {
+  const price = Number(item.sellingPrice) || 0;
+  const quantity = Number(item.cartQuantity) || 0;
+  return sum + (price * quantity);
+}, 0);
+
+const countCartItems = (cart: CartItem[]) => cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
+
 export const useStore = create<POSState>()(
   persist(
     (set) => ({
       ...initialState,
       setPaymentSupplierId: (id) => set({ paymentSupplierId: id }),
       setSelectedCustomerId: (id) => set({ selectedCustomerId: id }),
-      setActiveBranchId: (activeBranchId) => set({ activeBranchId }),
+      setActiveShopId: (activeShopId) => set({ activeShopId }),
       setActiveBusinessId: (activeBusinessId) => set({ activeBusinessId }),
       setCurrentUser: (user) => set({ 
         currentUser: sanitizeUser(user), 
@@ -92,7 +126,7 @@ export const useStore = create<POSState>()(
       logout: () => set({ 
         ...initialState,
         activeBusinessId: null,
-        activeBranchId: null,
+        activeShopId: null,
         authToken: null
       }),
       setActiveShift: (activeShift) => set({ activeShift }),
@@ -130,7 +164,49 @@ export const useStore = create<POSState>()(
             : item
         )
       })),
+      setCart: (items) => set({ cart: cloneCart(items) }),
       clearCart: () => set({ cart: [], selectedCustomerId: null }),
+      holdCurrentOrder: (name) => {
+        let heldOrder: HeldOrder | null = null;
+        set((state) => {
+          if (state.cart.length === 0) return { heldOrders: state.heldOrders };
+
+          heldOrder = {
+            id: createId(),
+            name: name?.trim() || `Held order ${state.heldOrders.length + 1}`,
+            items: cloneCart(state.cart),
+            total: estimateCartTotal(state.cart),
+            itemCount: countCartItems(state.cart),
+            createdAt: Date.now(),
+            businessId: state.activeBusinessId,
+            shopId: state.activeShopId,
+          };
+
+          return {
+            cart: [],
+            selectedCustomerId: null,
+            heldOrders: [heldOrder, ...state.heldOrders],
+          };
+        });
+        return heldOrder;
+      },
+      resumeHeldOrder: (orderId) => {
+        let resumedOrder: HeldOrder | null = null;
+        set((state) => {
+          const order = state.heldOrders.find(item => item.id === orderId);
+          if (!order) return { heldOrders: state.heldOrders };
+          resumedOrder = order;
+          return {
+            cart: cloneCart(order.items),
+            selectedCustomerId: null,
+            heldOrders: state.heldOrders.filter(item => item.id !== orderId),
+          };
+        });
+        return resumedOrder;
+      },
+      deleteHeldOrder: (orderId) => set((state) => ({
+        heldOrders: state.heldOrders.filter(item => item.id !== orderId)
+      })),
       resetSession: () => set({ ...initialState }),
     }),
     {
@@ -154,8 +230,9 @@ export const useStore = create<POSState>()(
         isSystemAdmin: state.isSystemAdmin,
         activeShift: state.activeShift,
         activeBusinessId: state.activeBusinessId,
-        activeBranchId: state.activeBranchId,
+        activeShopId: state.activeShopId,
         authToken: state.authToken,
+        heldOrders: state.heldOrders,
       }),
     }
   )

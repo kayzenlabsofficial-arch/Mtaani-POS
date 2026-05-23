@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../../authUtils';
 
 interface Env {
   DB: D1Database;
@@ -7,7 +7,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID'
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID'
 };
 
 function jsonHeaders() {
@@ -41,7 +41,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         const result = await env.DB.prepare(`SELECT * FROM mpesaCallbacks WHERE checkoutRequestId = ?`).bind(checkoutRequestId).first() as any;
         
         if (result) {
-            if (!canAccessBusiness(auth.principal, result.businessId) || !canAccessBranch(auth.principal, result.branchId)) {
+            if (!canAccessBusiness(auth.principal, result.businessId)) {
                 return new Response(JSON.stringify({ error: 'Access denied' }), { status: 403, headers: jsonHeaders() });
             }
             return new Response(JSON.stringify({

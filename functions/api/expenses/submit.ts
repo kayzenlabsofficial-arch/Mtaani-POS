@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 import { ensureExpenseActionSchema, prepareExpenseSubmit } from './expenseOps';
 
@@ -9,7 +9,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -30,17 +30,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json().catch(() => null) as any;
     const expense = body?.expense || body;
     const businessId = String(request.headers.get('X-Business-ID') || expense?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || expense?.branchId || '').trim();
-    if (!businessId || !branchId) return json({ error: 'Business and branch are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!businessId) return json({ error: 'Business is required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
     await ensureExpenseActionSchema(env.DB);
     const prepared = await prepareExpenseSubmit(env.DB, {
-      businessId,
-      branchId,
-      principal: auth.principal,
+      businessId, principal: auth.principal,
       service: auth.service,
       expense,
     });

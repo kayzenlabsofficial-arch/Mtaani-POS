@@ -1,1483 +1,356 @@
-import React, { useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Ban, Banknote, Calculator, CheckCircle2, CircleDollarSign, CreditCard, Loader2, Minus, Package, Percent, Plus, ScanBarcode, Search, ShieldCheck, ShoppingCart, Smartphone, Split, Store, UserRound, X } from 'lucide-react';
+import React, { useState } from 'react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction } from '../../db';
-import { useStore, type CartItem } from '../../store';
+import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
-import BarcodeScanner from '../shared/BarcodeScanner';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
 import { enrichProductsWithBundleStock, isBundleProduct } from '../../utils/bundleInventory';
-import { MpesaService } from '../../services/mpesa';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { getAssignedHardware, getHardwareProfile, printReceiptViaAssignedPrinter } from '../../utils/hardware';
 import { getBusinessSettings } from '../../utils/settings';
-import { belongsToActiveBranch } from '../../utils/branchScope';
-import { expiryBadgeClass, getExpiryInfo } from '../../utils/expiry';
-import { calculateCartTotals, productDiscountLabel, productSalePrice, productUnitDiscount } from '../../utils/productPricing';
+import { belongsToActiveShop } from '../../utils/shopScope';
+import { calculateCartTotals } from '../../utils/productPricing';
+import { getDefaultOpeningFloat, parseSalesTillRows, parseSalesTills } from '../../utils/tills';
+import { ShiftService } from '../../services/operations';
+import HeldOrdersModal from '../register/HeldOrdersModal';
+import OpenShiftModal from '../shift/OpenShiftModal';
+import ProductSearchModal from '../register/ProductSearchModal';
+import RegisterDesktop from '../register/RegisterDesktop';
+import RegisterHeader from '../register/RegisterHeader';
+import RegisterMobile from '../register/RegisterMobile';
+import RegisterScannerPanel from '../register/RegisterScannerPanel';
+import type { CheckoutOptions } from '../register/types';
 
-const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
-  (() => {
-    const icons: Record<string, React.ElementType> = {
-      add: Plus,
-      remove: Minus,
-      close: X,
-      search: Search,
-      barcode_scanner: ScanBarcode,
-      inventory: Package,
-      inventory_2: Package,
-      shopping_cart: ShoppingCart,
-      payments: CircleDollarSign,
-      block: Ban,
-      store_mall_directory: Store,
-    };
-    const Icon = icons[name] || Package;
-    const { fontSize, ...rest } = style || {};
-    const size = typeof fontSize === 'number' ? fontSize : Number.parseInt(String(fontSize || 20), 10);
-    return <Icon className={className} style={rest} size={Number.isFinite(size) ? size : 20} strokeWidth={2.4} />;
-  })()
-);
+type RegisterBackLayer = 'SCANNER' | 'MOBILE_CHECKOUT' | 'HELD_ORDERS' | 'PRODUCT_SEARCH';
+const REGISTER_BACK_LAYER = 'registerBackLayer';
+const createRegisterShiftId = (shopId: string, tillId: string, userId: string, timestamp = Date.now()) =>
+  `shift_${shopId}_${new Date(timestamp).toISOString().slice(0, 10)}_${tillId}_${userId}_${timestamp}`;
 
-// Deterministic color from string
-const CARD_COLORS = [
-  'bg-blue-600', 'bg-violet-600', 'bg-emerald-600',
-  'bg-amber-500', 'bg-rose-600', 'bg-indigo-600', 'bg-teal-600', 'bg-orange-500',
-];
-function colorFor(str: string) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  return CARD_COLORS[Math.abs(hash) % CARD_COLORS.length];
-}
-
-interface ProductTileProps {
-  key?: React.Key;
-  product: any;
-  onAdd: (p: any) => void;
-  recentlyAdded: boolean;
-}
-
-function ProductTile({ product, onAdd, recentlyAdded }: ProductTileProps) {
-  const stock = product.stockQuantity || 0;
-  const isOut = stock <= 0;
-  const isLow = !isOut && stock <= (product.reorderPoint || 5);
-  const expiry = getExpiryInfo(product);
-  const salePrice = productSalePrice(product);
-  const discountLabel = productDiscountLabel(product);
-  const initials = product.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
-  const color = colorFor(product.name);
-
-  return (
-    <button
-      type="button"
-      onClick={() => !isOut && onAdd(product)}
-      disabled={isOut}
-      className={`w-full text-left bg-white border rounded-2xl px-3 py-2.5 sm:px-4 transition-all group ${
-        isOut ? 'opacity-60 cursor-not-allowed border-slate-100 bg-slate-50/60' : 'cursor-pointer border-slate-100 hover:border-primary/30 hover:bg-blue-50/30 hover:shadow-sm active:scale-[0.995]'
-      } ${recentlyAdded ? 'ring-2 ring-primary/30 border-primary/40' : ''}`}
-    >
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:gap-3">
-        <div className="grid min-w-0 grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[2.75rem_minmax(0,1fr)] sm:gap-3">
-          <div className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl ${color} flex items-center justify-center flex-shrink-0 text-white text-[11px] sm:text-xs font-black shadow-sm`}>
-            {initials}
-          </div>
-
-          <div className="stable-row-copy">
-            <div className="flex items-center gap-2 min-w-0">
-              <p className="stable-title-2 text-[13px] sm:text-sm font-black leading-tight text-slate-900 group-hover:text-primary transition-colors">{product.name}</p>
-              {(product.taxCategory === 'A' || product.taxCategory === 'C') && (
-                <span className="hidden sm:inline-flex text-[8px] font-black bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full flex-shrink-0">VAT</span>
-              )}
-            </div>
-            <div className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden text-[9px] sm:text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              {isBundleProduct(product) && <span className="text-emerald-600 flex-shrink-0">bulk</span>}
-              {product.barcode && <span className="hidden sm:inline font-mono normal-case tracking-normal text-slate-500 stable-meta">#{product.barcode}</span>}
-              <span className="flex-shrink-0">{product.unit || 'pcs'}</span>
-              {expiry.tracking && (
-                <span className={`text-[8px] font-black border px-1.5 py-0.5 rounded-full flex-shrink-0 ${expiryBadgeClass(expiry.status)}`}>
-                  {expiry.label}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="stable-actions flex items-center justify-end gap-2 sm:gap-3">
-          <div className="hidden sm:flex flex-col items-end">
-            <span className={`text-[9px] font-black px-2 py-1 rounded-full border ${
-              isOut ? 'bg-rose-50 text-rose-600 border-rose-100'
-              : isLow ? 'bg-amber-50 text-amber-700 border-amber-100'
-              : 'bg-emerald-50 text-emerald-700 border-emerald-100'
-            }`}>
-              {isOut ? 'Out' : isLow ? `${stock} left` : `${stock} stock`}
-            </span>
-          </div>
-          <div className="text-right">
-            <p className="text-[13px] sm:text-base font-black text-slate-900 tabular-nums whitespace-nowrap">
-              Ksh {salePrice.toLocaleString()}
-            </p>
-            {discountLabel && (
-              <p className="hidden sm:block text-[9px] font-black uppercase text-rose-500">{discountLabel}</p>
-            )}
-            <p className={`text-[9px] font-black uppercase sm:hidden ${isOut ? 'text-rose-500' : isLow ? 'text-amber-600' : 'text-emerald-600'}`}>
-              {isOut ? 'Out' : `${stock} left`}
-            </p>
-          </div>
-          <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors flex-shrink-0 ${
-            isOut ? 'bg-slate-200 text-slate-400' : 'bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white'
-          }`}>
-            <MaterialIcon name={isOut ? 'block' : 'add'} style={{ fontSize: '18px' }} />
-          </div>
-        </div>
-      </div>
-    </button>
-  );
-}
-
-interface CartLineItemProps {
-  key?: React.Key;
-  item: CartItem;
-  onRemove: (id: string) => void;
-  onDecrease: (id: string) => void;
-  onIncrease: (id: string) => void;
-  onQuantityChange: (id: string, quantity: number) => void;
-  compact?: boolean;
-}
-
-function CartLineItem({ item, onRemove, onDecrease, onIncrease, onQuantityChange, compact = false }: CartLineItemProps) {
-  const quantity = Number(item.cartQuantity) || 0;
-  const unitPrice = Number(item.sellingPrice) || 0;
-  const unitDiscount = productUnitDiscount(item);
-  const unitSalePrice = productSalePrice(item);
-  const lineTotal = unitSalePrice * quantity;
-  const initials = item.name.split(' ').map((word: string) => word[0]).join('').slice(0, 2).toUpperCase();
-
-  return (
-    <div className={`border border-slate-100 bg-white shadow-sm ${compact ? 'rounded-2xl p-3' : 'rounded-[1.15rem] p-4 sm:p-5'}`}>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-        <div className={`grid min-w-0 items-center gap-3 ${compact ? 'grid-cols-[2.25rem_minmax(0,1fr)]' : 'grid-cols-[2.75rem_minmax(0,1fr)]'}`}>
-          <div className={`${compact ? 'h-9 w-9 rounded-xl text-[11px]' : 'h-11 w-11 rounded-2xl text-xs'} ${colorFor(item.name)} flex flex-shrink-0 items-center justify-center font-black text-white shadow-sm`}>
-            {initials}
-          </div>
-          <div className="stable-row-copy">
-            <p className={`${compact ? 'text-[13px]' : 'text-sm sm:text-base'} stable-title-2 font-black leading-tight text-slate-900`}>{item.name}</p>
-            <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              <span className="flex-shrink-0">Ksh {unitSalePrice.toLocaleString()} each</span>
-              {unitDiscount > 0 && <span className="flex-shrink-0 text-rose-500">was Ksh {unitPrice.toLocaleString()}</span>}
-              {item.unit && <span className="flex-shrink-0">{item.unit}</span>}
-            </div>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => onRemove(item.id)}
-          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-500 transition-colors hover:bg-rose-500 hover:text-white"
-          aria-label={`Remove ${item.name}`}
-        >
-          <MaterialIcon name="close" style={{ fontSize: '16px' }} />
-        </button>
-      </div>
-
-      <div className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
-        <div className="stable-actions flex items-center gap-1 rounded-xl bg-slate-50 p-1">
-          <button
-            type="button"
-            onClick={() => onDecrease(item.id)}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-100 bg-white text-slate-600"
-            aria-label={`Reduce ${item.name}`}
-          >
-            <MaterialIcon name="remove" style={{ fontSize: '16px' }} />
-          </button>
-          <input
-            type="number"
-            step="any"
-            value={item.cartQuantity}
-            onChange={event => onQuantityChange(item.id, Number(event.target.value))}
-            className={`${compact ? 'w-14' : 'w-16'} bg-transparent text-center text-sm font-black text-slate-900 outline-none`}
-            aria-label={`${item.name} quantity`}
-          />
-          <button
-            type="button"
-            onClick={() => onIncrease(item.id)}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-100 bg-white text-slate-600"
-            aria-label={`Add one ${item.name}`}
-          >
-            <MaterialIcon name="add" style={{ fontSize: '16px' }} />
-          </button>
-        </div>
-        <div className="stable-actions text-right">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Line total</p>
-          <p className={`${compact ? 'text-sm' : 'text-base sm:text-lg'} whitespace-nowrap font-black tabular-nums text-slate-900`}>
-            Ksh {lineTotal.toLocaleString()}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-type CheckoutOptions = {
-  subtotal?: number;
-  total?: number;
-  discountAmount?: number;
-  discountType?: 'FIXED' | 'PERCENT' | 'PRODUCT';
-  amountTendered?: number;
-  changeGiven?: number;
-  mpesaRef?: string;
-  mpesaCustomer?: string;
-  mpesaCheckoutRequestId?: string;
-  pdqRef?: string;
-  paymentReference?: string;
-  customerId?: string;
-  customerName?: string;
-  splitPayments?: {
-    cashAmount: number;
-    secondaryAmount: number;
-    secondaryMethod: 'MPESA' | 'PDQ' | 'CREDIT';
-    secondaryReference?: string;
-  };
-};
-
-function SalePanel({
-  onCheckout,
-  isCheckingOut,
-  className = '',
-  onCheckoutSuccess,
-  showCartItems = true,
+export default function RegisterTab({
+  toggleCart,
+  handleCheckout,
 }: {
-  onCheckout: (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => Promise<any>;
-  isCheckingOut: boolean;
-  className?: string;
-  onCheckoutSuccess?: () => void;
-  showCartItems?: boolean;
+  toggleCart?: (value: boolean) => void;
+  handleCheckout?: (status: 'PAID' | 'UNPAID', method: string, mpesaRef?: string, customerName?: string, splitData?: any) => Promise<any>;
 }) {
-  const { cart, removeFromCart, updateQuantity, setQuantity, clearCart } = useStore();
-  const activeBusinessId = useStore((state) => state.activeBusinessId);
-  const activeBranchId = useStore((state) => state.activeBranchId);
-  const { warning, error, success } = useToast();
-  const [checkoutStep, setCheckoutStep] = useState<'ITEMS' | 'PAYMENT' | 'REVIEW'>('ITEMS');
-  const [paymentMode, setPaymentMode] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT'>('CASH');
-  const [paymentWindow, setPaymentWindow] = useState<'CASH' | 'MPESA' | 'PDQ' | 'SPLIT' | 'CREDIT' | null>(null);
-  const [cashTendered, setCashTendered] = useState('');
-  const [mpesaRef, setMpesaRef] = useState('');
-  const [mpesaPhone, setMpesaPhone] = useState('');
-  const [mpesaVerification, setMpesaVerification] = useState<any | null>(null);
-  const [isVerifyingMpesa, setIsVerifyingMpesa] = useState(false);
-  const [mpesaState, setMpesaState] = useState<'IDLE' | 'PUSHING' | 'POLLING' | 'SUCCESS' | 'FAILED'>('IDLE');
-  const [pdqRef, setPdqRef] = useState('');
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
-  const [splitCash, setSplitCash] = useState('');
-  const [splitSecondaryMethod, setSplitSecondaryMethod] = useState<'MPESA' | 'PDQ' | 'CREDIT'>('MPESA');
-  const [splitSecondaryRef, setSplitSecondaryRef] = useState('');
-  const checkoutLockRef = useRef(false);
-  // Tracks the active M-Pesa polling interval so it can be cleared on unmount
-  const mpesaIntervalRef = useRef<ReturnType<typeof window.setInterval> | null>(null);
-
-  const customers = useLiveQuery(
-    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveBranch(c, activeBranchId)).sortBy('name') : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
-    []
-  );
-
-  const { subtotal, discountAmount, total } = calculateCartTotals(cart);
-  const discountType = 'PRODUCT' as const;
-  const discountValue = '';
-  const setDiscountType = (_value: 'FIXED' | 'PERCENT') => {};
-  const setDiscountValue = (_value: string) => {};
-  const itemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
-  const tendered = Number(cashTendered) || 0;
-  const changeDue = Math.max(0, tendered - total);
-  const splitCashAmount = Math.min(Math.max(Number(splitCash) || 0, 0), total);
-  const splitSecondaryAmount = Math.max(0, total - splitCashAmount);
-  const selectedCustomer = customers?.find((customer) => customer.id === selectedCustomerId);
-
-  const paymentOptions = [
-    { id: 'CASH' as const, label: 'Cash', icon: Banknote, desc: 'Cash received and change due' },
-    { id: 'MPESA' as const, label: 'M-Pesa', icon: Smartphone, desc: 'Phone request or receipt code' },
-    { id: 'PDQ' as const, label: 'Card', icon: CreditCard, desc: 'Card machine reference' },
-    { id: 'SPLIT' as const, label: 'Split', icon: Split, desc: 'Cash plus another method' },
-    { id: 'CREDIT' as const, label: 'Credit', icon: UserRound, desc: 'Save as customer debt' },
-  ];
-  const checkoutSteps = [
-    { id: 'ITEMS', label: 'Items' },
-    { id: 'PAYMENT', label: 'Payment' },
-    { id: 'REVIEW', label: 'Review' },
-  ] as const;
-  const normaliseMpesaCode = (value: string) => value.replace(/\s+/g, '').trim().toUpperCase();
-  const mpesaIsWaiting = mpesaState === 'PUSHING' || mpesaState === 'POLLING';
-
-  const baseOptions = (): CheckoutOptions => ({
-    subtotal,
-    total,
-    discountAmount,
-    discountType: 'PRODUCT',
-    customerId: selectedCustomer?.id,
-    customerName: selectedCustomer?.name,
-  });
-
-  const runCheckout = async (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => {
-    const result = await onCheckout(status, method, options);
-    if (result) {
-      setPaymentMode('CASH');
-      setPaymentWindow(null);
-      setCashTendered('');
-      setMpesaRef('');
-      setMpesaPhone('');
-      setMpesaVerification(null);
-      setMpesaState('IDLE');
-      setPdqRef('');
-      setSelectedCustomerId('');
-      setSplitCash('');
-      setSplitSecondaryMethod('MPESA');
-      setSplitSecondaryRef('');
-      onCheckoutSuccess?.();
-    }
-    return result;
-  };
-
-  React.useEffect(() => {
-    if (cart.length === 0) {
-      setCheckoutStep('ITEMS');
-      setPaymentWindow(null);
-    }
-  }, [cart.length]);
-
-  React.useEffect(() => {
-    setMpesaVerification(null);
-  }, [mpesaRef, splitSecondaryRef, total]);
-
-  // M-2: Clear M-Pesa polling interval when user navigates away from Register tab
-  React.useEffect(() => {
-    return () => {
-      if (mpesaIntervalRef.current !== null) {
-        window.clearInterval(mpesaIntervalRef.current);
-        mpesaIntervalRef.current = null;
-      }
-    };
-  }, []);
-
-  const verifyMpesaCode = async (rawCode = mpesaRef, expectedAmount = total) => {
-    if (!activeBusinessId || !activeBranchId) {
-      error('Select a branch before verifying M-Pesa.');
-      return null;
-    }
-    const code = normaliseMpesaCode(rawCode);
-    if (!code) {
-      warning('Enter the M-Pesa receipt code first.');
-      return null;
-    }
-
-    setIsVerifyingMpesa(true);
-    try {
-      const res = await MpesaService.verifyPayment(code, expectedAmount, activeBusinessId, activeBranchId);
-      setMpesaVerification(res);
-      if (res.usable) {
-        success(`M-Pesa verified: ${res.receiptNumber || code}`);
-      } else {
-        warning(res.message || res.error || 'M-Pesa payment is not ready to use.');
-      }
-      return res;
-    } finally {
-      setIsVerifyingMpesa(false);
-    }
-  };
-
-  const ensureMpesaUsable = async (rawCode: string, expectedAmount: number) => {
-    const code = normaliseMpesaCode(rawCode);
-    const verifiedCode = normaliseMpesaCode(mpesaVerification?.receiptNumber || mpesaVerification?.checkoutRequestId || '');
-    if (mpesaVerification?.usable && verifiedCode === code && Number(mpesaVerification.expectedAmount || expectedAmount) === expectedAmount) {
-      return mpesaVerification;
-    }
-    return verifyMpesaCode(code, expectedAmount);
-  };
-
-  const pollMpesaAndComplete = (requestId: string) => {
-    // M-2: Store interval in a ref so it can be cleared on component unmount
-    if (mpesaIntervalRef.current !== null) {
-      window.clearInterval(mpesaIntervalRef.current);
-    }
-    let attempts = 0;
-    const maxAttempts = 48;
-    mpesaIntervalRef.current = window.setInterval(async () => {
-      attempts++;
-      if (attempts > maxAttempts) {
-        window.clearInterval(mpesaIntervalRef.current!);
-        mpesaIntervalRef.current = null;
-        setMpesaState('FAILED');
-        error('M-Pesa request timed out. Check if the customer paid.');
-        return;
-      }
-
-      const res = await MpesaService.checkStatus(requestId);
-      const resultCode = Number(res.resultCode);
-      const isPending = !Number.isFinite(resultCode) || resultCode === 999 || String(res.resultDesc || '').toUpperCase() === 'PENDING';
-      if (res.found && resultCode === 0) {
-        window.clearInterval(mpesaIntervalRef.current!);
-        mpesaIntervalRef.current = null;
-        const receipt = res.receiptNumber || requestId;
-        setMpesaRef(receipt);
-        setMpesaVerification({
-          found: true,
-          paid: true,
-          usable: true,
-          utilizationStatus: 'UNUTILIZED',
-          paymentStatus: 'PAID',
-          receiptNumber: receipt,
-          checkoutRequestId: requestId,
-          amount: Number(res.amount || total),
-          expectedAmount: total,
-          amountOk: true,
-          phoneNumber: res.phoneNumber,
-        });
-        setMpesaState('SUCCESS');
-        await runCheckout('PAID', 'MPESA', {
-          ...baseOptions(),
-          mpesaRef: receipt,
-          paymentReference: receipt,
-          mpesaCheckoutRequestId: requestId,
-          mpesaCustomer: res.phoneNumber,
-        });
-        success(`M-Pesa confirmed: ${receipt}`);
-      } else if (res.found && !isPending) {
-        window.clearInterval(mpesaIntervalRef.current!);
-        mpesaIntervalRef.current = null;
-        setMpesaState('FAILED');
-        error(res.resultDesc || 'M-Pesa payment was not completed.');
-      }
-    }, 5000);
-  };
-
-  const sendMpesaPrompt = async () => {
-    if (!activeBusinessId || !activeBranchId) return error('Select a branch before sending an M-Pesa request.');
-    if (!mpesaPhone.trim()) return warning('Enter the customer phone number for the M-Pesa request.');
-    if (cart.length === 0 || total <= 0 || mpesaState === 'PUSHING' || mpesaState === 'POLLING') return;
-
-    setMpesaState('PUSHING');
-    const res = await MpesaService.triggerStkPush(mpesaPhone.trim(), total, `SALE-${Date.now()}`, activeBusinessId, activeBranchId);
-    if (res.success && res.checkoutRequestId) {
-      setMpesaState('POLLING');
-      success('M-Pesa request sent. Waiting up to 4 minutes for payment.');
-      pollMpesaAndComplete(res.checkoutRequestId);
-    } else {
-      setMpesaState('FAILED');
-      error(res.error || 'Could not send M-Pesa request.');
-    }
-  };
-
-  const submitCheckout = async () => {
-    if (cart.length === 0 || isCheckingOut || checkoutLockRef.current) return;
-    checkoutLockRef.current = true;
-
-    try {
-      if ((paymentMode === 'CREDIT' || (paymentMode === 'SPLIT' && splitSecondaryMethod === 'CREDIT')) && !selectedCustomer) {
-        warning('Choose a registered customer before putting any amount on credit.');
-        return;
-      }
-
-      if (paymentMode === 'CASH') {
-        if (!cashTendered.trim()) {
-          warning('Enter the cash amount received before completing a cash sale.');
-          return;
-        }
-        const paid = tendered;
-        if (paid < total) {
-          warning('Amount received must cover the sale total.');
-          return;
-        }
-        await runCheckout('PAID', 'CASH', { ...baseOptions(), amountTendered: paid, changeGiven: Math.max(0, paid - total) });
-        return;
-      }
-
-      if (paymentMode === 'MPESA') {
-        const verified = await ensureMpesaUsable(mpesaRef, total);
-        if (!verified?.usable) return;
-        const receipt = verified.receiptNumber || normaliseMpesaCode(mpesaRef);
-        await runCheckout('PAID', 'MPESA', {
-          ...baseOptions(),
-          mpesaRef: receipt,
-          paymentReference: receipt,
-          mpesaCustomer: verified.phoneNumber,
-          mpesaCheckoutRequestId: verified.checkoutRequestId,
-        });
-        return;
-      }
-
-      if (paymentMode === 'PDQ') {
-        await runCheckout('PAID', 'PDQ', { ...baseOptions(), pdqRef: pdqRef.trim(), paymentReference: pdqRef.trim() });
-        return;
-      }
-
-      if (paymentMode === 'SPLIT') {
-        if (splitCashAmount <= 0 || splitCashAmount >= total) {
-          warning('Enter the cash part so the balance can go to M-Pesa, card, or credit.');
-          return;
-        }
-        let verifiedMpesa: any | null = null;
-        if (splitSecondaryMethod === 'MPESA') {
-          verifiedMpesa = await ensureMpesaUsable(splitSecondaryRef, splitSecondaryAmount);
-          if (!verifiedMpesa?.usable) return;
-        }
-        const secondaryReference = splitSecondaryMethod === 'MPESA'
-          ? (verifiedMpesa?.receiptNumber || normaliseMpesaCode(splitSecondaryRef))
-          : splitSecondaryRef.trim();
-        await runCheckout(splitSecondaryMethod === 'CREDIT' ? 'UNPAID' : 'PAID', 'SPLIT', {
-          ...baseOptions(),
-          amountTendered: splitCashAmount,
-          changeGiven: 0,
-          mpesaRef: splitSecondaryMethod === 'MPESA' ? secondaryReference : undefined,
-          pdqRef: splitSecondaryMethod === 'PDQ' ? secondaryReference : undefined,
-          paymentReference: secondaryReference,
-          mpesaCustomer: verifiedMpesa?.phoneNumber,
-          mpesaCheckoutRequestId: verifiedMpesa?.checkoutRequestId,
-          splitPayments: {
-            cashAmount: splitCashAmount,
-            secondaryAmount: splitSecondaryAmount,
-            secondaryMethod: splitSecondaryMethod,
-            secondaryReference,
-          },
-        });
-        return;
-      }
-
-      await runCheckout('UNPAID', 'CREDIT', baseOptions());
-    } finally {
-      checkoutLockRef.current = false;
-    }
-  };
-
-  const goToReview = async () => {
-    if (cart.length === 0) return false;
-    if ((paymentMode === 'CREDIT' || (paymentMode === 'SPLIT' && splitSecondaryMethod === 'CREDIT')) && !selectedCustomer) {
-      warning('Choose a registered customer before putting any amount on credit.');
-      return false;
-    }
-    if (paymentMode === 'CASH') {
-      if (!cashTendered.trim()) {
-        warning('Enter the cash amount received before completing a cash sale.');
-        return false;
-      }
-      if (tendered < total) {
-        warning('Amount received must cover the sale total.');
-        return false;
-      }
-    }
-    if (paymentMode === 'MPESA') {
-      const verified = await ensureMpesaUsable(mpesaRef, total);
-      if (!verified?.usable) return false;
-    }
-    if (paymentMode === 'SPLIT') {
-      if (splitCashAmount <= 0 || splitCashAmount >= total) {
-        warning('Enter the cash part so the balance can go to M-Pesa, card, or credit.');
-        return false;
-      }
-      if (splitSecondaryMethod === 'MPESA') {
-        const verified = await ensureMpesaUsable(splitSecondaryRef, splitSecondaryAmount);
-        if (!verified?.usable) return false;
-      }
-    }
-    setCheckoutStep('REVIEW');
-    return true;
-  };
-
-  const continueFromPaymentWindow = async () => {
-    const ready = await goToReview();
-    if (ready) setPaymentWindow(null);
-  };
-
-  const selectedPaymentOption = paymentOptions.find(option => option.id === paymentWindow) || paymentOptions.find(option => option.id === paymentMode) || paymentOptions[0];
-  const SelectedPaymentIcon = selectedPaymentOption.icon;
-  const paymentLabel = (method: string) => method === 'MPESA' ? 'M-Pesa' : method === 'PDQ' ? 'Card' : method;
-  const mainPaymentOptions = paymentOptions;
-  const checkoutBusy = isCheckingOut || isVerifyingMpesa || mpesaState === 'PUSHING' || mpesaState === 'POLLING';
-  const cashTenderedEntered = cashTendered.trim().length > 0;
-  const cashPaymentReady = paymentMode !== 'CASH' || (cashTenderedEntered && tendered >= total);
-  const canCompleteSale = cart.length > 0 && !checkoutBusy && cashPaymentReady;
-  const completeSaleLabel = paymentMode === 'CASH'
-    ? 'Complete cash sale'
-    : paymentMode === 'MPESA'
-      ? 'Verify and complete'
-      : paymentMode === 'PDQ'
-        ? 'Complete card sale'
-        : paymentMode === 'SPLIT'
-          ? 'Complete split sale'
-          : 'Save credit sale';
-
-  return (
-    <aside className={`flex h-full min-h-0 flex-col rounded-2xl border border-slate-100 bg-white shadow-sm ${showCartItems ? 'overflow-hidden' : 'overflow-y-auto no-scrollbar'} ${className}`}>
-      <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
-        <div>
-          <h3 className="text-sm font-black text-slate-900">Current sale</h3>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{itemCount.toLocaleString()} item{itemCount === 1 ? '' : 's'}</p>
-        </div>
-        {cart.length > 0 && (
-          <button onClick={clearCart} className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:text-rose-700">
-            Clear
-          </button>
-        )}
-      </div>
-
-      {showCartItems && (
-        <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar p-3 space-y-2">
-          {cart.length === 0 ? (
-            <div className="h-full min-h-52 flex flex-col items-center justify-center text-center text-slate-400">
-              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
-                <MaterialIcon name="shopping_cart" style={{ fontSize: '28px' }} />
-              </div>
-              <p className="text-sm font-black">Tap an item to add it here</p>
-            </div>
-          ) : cart.map(item => (
-            <CartLineItem
-              key={item.id}
-              item={item}
-              onRemove={removeFromCart}
-              onDecrease={(id) => updateQuantity(id, -1)}
-              onIncrease={(id) => updateQuantity(id, 1)}
-              onQuantityChange={setQuantity}
-              compact
-            />
-          ))}
-        </div>
-      )}
-
-      <div className="sticky bottom-0 z-20 max-h-[72dvh] shrink-0 overflow-y-auto border-t border-slate-100 bg-white p-4 space-y-3 shadow-[0_-18px_30px_rgba(15,23,42,0.08)] lg:max-h-none lg:overflow-visible">
-        <div className="rounded-2xl bg-slate-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Amount due</p>
-              <p className="mt-1 text-3xl font-black tabular-nums">Ksh {total.toLocaleString()}</p>
-            </div>
-            <div className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400">
-              <p>{itemCount.toLocaleString()} item{itemCount === 1 ? '' : 's'}</p>
-              {discountAmount > 0 && <p className="mt-1 text-rose-300">Total discount Ksh {discountAmount.toLocaleString()}</p>}
-            </div>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-            <div className="rounded-xl bg-white/10 px-3 py-2">
-              <p>Subtotal</p>
-              <p className="mt-0.5 text-sm text-white">Ksh {subtotal.toLocaleString()}</p>
-            </div>
-            <div className="rounded-xl bg-white/10 px-3 py-2">
-              <p>Method</p>
-              <p className="mt-0.5 text-sm text-white">{paymentLabel(paymentMode)}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-          {mainPaymentOptions.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => {
-                setPaymentMode(id);
-                setPaymentWindow(null);
-              }}
-              data-testid={`payment-${id.toLowerCase()}`}
-              className={`min-h-16 rounded-2xl border px-2 py-3 text-center transition-all ${
-                paymentMode === id
-                  ? 'border-primary bg-primary text-white shadow-sm'
-                  : 'border-slate-200 bg-white text-slate-700 hover:border-primary/40'
-              }`}
-            >
-              <Icon className="mx-auto mb-1 h-5 w-5" strokeWidth={2.4} />
-              <span className="block text-[10px] font-black uppercase tracking-widest">{label}</span>
-            </button>
-          ))}
-        </div>
-
-        {paymentMode === 'CASH' && (
-          <div className="space-y-2">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-              <label className="relative min-w-0">
-                <Calculator className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="number"
-                  min="0"
-                  value={cashTendered}
-                  onChange={(event) => setCashTendered(event.target.value)}
-                  placeholder="Cash received"
-                  data-testid="cash-received"
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() => setCashTendered(String(total))}
-                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-widest text-slate-600"
-              >
-                Exact
-              </button>
-            </div>
-            {(!cashTenderedEntered || cashTendered || tendered > total) && (
-              <div className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
-                tendered >= total ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
-              }`}>
-                {!cashTenderedEntered ? 'Enter cash received to enable sale' : tendered >= total ? `Change: Ksh ${changeDue.toLocaleString()}` : `Short by Ksh ${(total - tendered).toLocaleString()}`}
-              </div>
-            )}
-          </div>
-        )}
-
-        {paymentMode === 'MPESA' && (
-          <div className="space-y-2">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <input
-                value={mpesaPhone}
-                onChange={(event) => setMpesaPhone(event.target.value)}
-                placeholder="Customer phone for STK"
-                data-testid="mpesa-phone"
-                className="h-11 rounded-xl border border-emerald-100 bg-emerald-50 px-3 text-sm font-bold outline-none focus:border-emerald-500"
-              />
-              <button
-                type="button"
-                onClick={sendMpesaPrompt}
-                disabled={mpesaIsWaiting || isCheckingOut}
-                aria-busy={mpesaIsWaiting}
-                data-busy={mpesaIsWaiting ? 'true' : undefined}
-                data-testid="mpesa-prompt"
-                className="h-11 rounded-xl bg-emerald-600 px-4 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
-              >
-                {mpesaIsWaiting ? 'Waiting' : 'Send STK'}
-              </button>
-            </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <input
-                value={mpesaRef}
-                onChange={(event) => setMpesaRef(event.target.value.toUpperCase())}
-                placeholder="Or receipt code"
-                data-testid="mpesa-reference"
-                className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold uppercase outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-              />
-              <button
-                type="button"
-                onClick={() => verifyMpesaCode(mpesaRef, total)}
-                disabled={isVerifyingMpesa || !mpesaRef.trim()}
-                aria-busy={isVerifyingMpesa}
-                data-busy={isVerifyingMpesa ? 'true' : undefined}
-                className="flex h-11 items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 text-[10px] font-black uppercase tracking-widest text-blue-700 disabled:opacity-50"
-              >
-                {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-                Verify
-              </button>
-            </div>
-            {mpesaState !== 'IDLE' && (
-              <p className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${mpesaState === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : mpesaState === 'FAILED' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
-                {mpesaState === 'PUSHING' ? 'Sending request' : mpesaState === 'POLLING' ? 'Waiting for PIN' : mpesaState === 'SUCCESS' ? 'Payment received' : 'Request failed or timed out'}
-              </p>
-            )}
-            {mpesaVerification && (
-              <p className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${mpesaVerification.usable ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
-                {mpesaVerification.message || (mpesaVerification.usable ? 'M-Pesa code verified' : 'M-Pesa code not usable')}
-              </p>
-            )}
-          </div>
-        )}
-
-        {paymentMode === 'PDQ' && (
-          <label className="relative block">
-            <CreditCard className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              value={pdqRef}
-              onChange={(event) => setPdqRef(event.target.value)}
-              placeholder="Card reference optional"
-              data-testid="pdq-reference"
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-            />
-          </label>
-        )}
-
-        {(paymentMode === 'CREDIT' || paymentMode === 'SPLIT') && (
-          <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-3">
-            {paymentMode === 'CREDIT' && (
-              <div className="space-y-2">
-                <select
-                  value={selectedCustomerId}
-                  onChange={(event) => setSelectedCustomerId(event.target.value)}
-                  data-testid="customer-select"
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                >
-                  <option value="">Select registered customer</option>
-                  {customers?.map((customer) => (
-                    <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` - ${customer.phone}` : ''}</option>
-                  ))}
-                </select>
-                <p className="rounded-xl bg-amber-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-amber-700">
-                  Credit amount: Ksh {total.toLocaleString()}
-                </p>
-              </div>
-            )}
-
-            {paymentMode === 'SPLIT' && (
-              <div className="space-y-2">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max={total}
-                    value={splitCash}
-                    onChange={(event) => setSplitCash(event.target.value)}
-                    placeholder="Cash part"
-                    data-testid="split-cash"
-                    className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  />
-                  <select
-                    value={splitSecondaryMethod}
-                    onChange={(event) => setSplitSecondaryMethod(event.target.value as 'MPESA' | 'PDQ' | 'CREDIT')}
-                    data-testid="split-method"
-                    className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  >
-                    <option value="MPESA">M-Pesa balance</option>
-                    <option value="PDQ">Card balance</option>
-                    <option value="CREDIT">Credit balance</option>
-                  </select>
-                </div>
-                <p className="rounded-xl bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  Balance: Ksh {splitSecondaryAmount.toLocaleString()}
-                </p>
-                {splitSecondaryMethod === 'CREDIT' ? (
-                  <select
-                    value={selectedCustomerId}
-                    onChange={(event) => setSelectedCustomerId(event.target.value)}
-                    data-testid="customer-select"
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  >
-                    <option value="">Select registered customer</option>
-                    {customers?.map((customer) => (
-                      <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` - ${customer.phone}` : ''}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                    <input
-                      value={splitSecondaryRef}
-                      onChange={(event) => setSplitSecondaryRef(splitSecondaryMethod === 'MPESA' ? event.target.value.toUpperCase() : event.target.value)}
-                      placeholder={`${splitSecondaryMethod} reference`}
-                      data-testid="split-reference"
-                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                    />
-                    {splitSecondaryMethod === 'MPESA' && (
-                      <button
-                        type="button"
-                        onClick={() => verifyMpesaCode(splitSecondaryRef, splitSecondaryAmount)}
-                        disabled={isVerifyingMpesa || !splitSecondaryRef.trim()}
-                        aria-busy={isVerifyingMpesa}
-                        data-busy={isVerifyingMpesa ? 'true' : undefined}
-                        className="flex h-11 items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 text-[10px] font-black uppercase tracking-widest text-blue-700 disabled:opacity-50"
-                      >
-                        {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-                        Verify
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        <button
-          onClick={submitCheckout}
-          disabled={!canCompleteSale}
-          aria-busy={checkoutBusy}
-          data-busy={checkoutBusy ? 'true' : undefined}
-          data-testid="complete-sale"
-          className="flex min-h-[3.25rem] w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-4 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <MaterialIcon name="payments" style={{ fontSize: '18px' }} />
-          {checkoutBusy ? 'Working...' : completeSaleLabel}
-        </button>
-      </div>
-
-      {false && (
-        <>
-      <div className="border-t border-slate-100 p-4 space-y-3 bg-white">
-        <div className="grid grid-cols-3 gap-2">
-          {checkoutSteps.map((step, index) => {
-            const active = checkoutStep === step.id;
-            const done = checkoutSteps.findIndex(item => item.id === checkoutStep) > index;
-            return (
-              <button
-                key={step.id}
-                type="button"
-                onClick={() => {
-                  if (step.id === 'ITEMS') setCheckoutStep('ITEMS');
-                  if (step.id === 'PAYMENT' && cart.length > 0) setCheckoutStep('PAYMENT');
-                }}
-                className={`h-9 rounded-xl border text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${
-                  active ? 'border-primary bg-primary/10 text-primary' : done ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-400'
-                }`}
-              >
-                {done ? <CheckCircle2 size={13} /> : <span>{index + 1}</span>}
-                {step.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {checkoutStep === 'ITEMS' && (
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sale total</p>
-              <div className="mt-1 flex items-end justify-between gap-3">
-                <span className="text-2xl font-black text-slate-950 tabular-nums">Ksh {total.toLocaleString()}</span>
-                <span className="text-[10px] font-black text-slate-500">{itemCount.toLocaleString()} item{itemCount === 1 ? '' : 's'}</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setCheckoutStep('PAYMENT')}
-              disabled={cart.length === 0}
-              className="w-full py-3.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              Choose payment <ArrowRight size={16} />
-            </button>
-          </div>
-        )}
-
-        {checkoutStep === 'PAYMENT' && (
-          <>
-        <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 min-w-0">
-            <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Subtotal</span>
-            <span className="block text-sm font-black text-slate-900 tabular-nums truncate">Ksh {subtotal.toLocaleString()}</span>
-          </div>
-          <div className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 min-w-0">
-            <span className="block text-[9px] font-black text-rose-500 uppercase tracking-widest">Total discount</span>
-            <span className="block text-sm font-black text-rose-700 tabular-nums truncate">Ksh {discountAmount.toLocaleString()}</span>
-          </div>
-          <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 min-w-0">
-            <span className="block text-[9px] font-black text-emerald-700 uppercase tracking-widest">To Pay</span>
-            <span className="block text-sm font-black text-emerald-950 tabular-nums truncate">Ksh {total.toLocaleString()}</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-2">
-          <label className="relative min-w-0">
-            <Percent className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="number"
-              min="0"
-              value={discountValue}
-              onChange={(event) => setDiscountValue(event.target.value)}
-              placeholder="Discount"
-              data-testid="checkout-discount"
-              className="w-full h-11 pl-9 pr-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-            />
-          </label>
-          <select
-            value={discountType}
-            onChange={(event) => setDiscountType(event.target.value as 'FIXED' | 'PERCENT')}
-            className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-2 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-          >
-            <option value="FIXED">Ksh</option>
-            <option value="PERCENT">%</option>
-          </select>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {paymentOptions.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => {
-                setPaymentMode(id);
-                setPaymentWindow(id);
-              }}
-              data-testid={`payment-${id.toLowerCase()}`}
-              className={`min-h-16 rounded-2xl border px-3 py-3 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 text-left transition-colors ${
-                paymentMode === id
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-              }`}
-            >
-              <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${paymentMode === id ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600'}`}>
-                <Icon className="w-5 h-5" strokeWidth={2.4} />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-black text-slate-900">{label}</span>
-                <span className="block truncate text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-                  {paymentOptions.find(option => option.id === id)?.desc}
-                </span>
-              </span>
-              <ArrowRight size={15} />
-            </button>
-          ))}
-        </div>
-        <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Selected method</p>
-          <div className="mt-1 flex items-center justify-between gap-3">
-            <span className="text-sm font-black text-blue-950">{paymentLabel(paymentMode)}</span>
-            <button
-              type="button"
-              onClick={() => setPaymentWindow(paymentMode)}
-              className="rounded-xl bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-blue-700"
-            >
-              Open details
-            </button>
-          </div>
-        </div>
-
-          </>
-        )}
-
-        {checkoutStep === 'REVIEW' && (
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Payment</span>
-                <span className="text-xs font-black text-slate-900">{paymentLabel(paymentMode)}</span>
-              </div>
-              {selectedCustomer && (
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Customer</span>
-                  <span className="text-xs font-black text-slate-900 truncate">{selectedCustomer.name}</span>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200">
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Subtotal</p>
-                  <p className="text-sm font-black text-slate-900 tabular-nums">Ksh {subtotal.toLocaleString()}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">To Pay</p>
-                  <p className="text-lg font-black text-emerald-700 tabular-nums">Ksh {total.toLocaleString()}</p>
-                </div>
-              </div>
-              {paymentMode === 'CASH' && (
-                <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 border border-slate-100">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Change</span>
-                  <span className="text-sm font-black text-slate-900">Ksh {changeDue.toLocaleString()}</span>
-                </div>
-              )}
-              {(paymentMode === 'MPESA' || (paymentMode === 'SPLIT' && splitSecondaryMethod === 'MPESA')) && (
-                <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 border border-emerald-100 text-emerald-700">
-                  <ShieldCheck size={16} />
-                  <span className="text-[10px] font-black uppercase tracking-widest truncate">
-                    M-Pesa {mpesaVerification?.receiptNumber || mpesaRef || splitSecondaryRef || 'verified'}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {checkoutStep === 'PAYMENT' && (
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
-            <button
-              type="button"
-              onClick={() => setCheckoutStep('ITEMS')}
-              className="h-12 px-4 rounded-xl border border-slate-200 bg-white text-slate-600 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
-            >
-              <ArrowLeft size={15} /> Items
-            </button>
-            <button
-              type="button"
-              onClick={() => void goToReview()}
-              disabled={cart.length === 0 || isVerifyingMpesa}
-              aria-busy={isVerifyingMpesa}
-              data-busy={isVerifyingMpesa ? 'true' : undefined}
-              className="h-12 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              Review sale <ArrowRight size={15} />
-            </button>
-          </div>
-        )}
-
-        {checkoutStep === 'REVIEW' && (
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
-            <button
-              type="button"
-              onClick={() => setCheckoutStep('PAYMENT')}
-              className="h-12 px-4 rounded-xl border border-slate-200 bg-white text-slate-600 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
-            >
-              <ArrowLeft size={15} /> Edit
-            </button>
-            <button
-              onClick={submitCheckout}
-              disabled={cart.length === 0 || isCheckingOut}
-              aria-busy={isCheckingOut}
-              data-busy={isCheckingOut ? 'true' : undefined}
-              data-testid="complete-sale"
-              className="h-12 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              <MaterialIcon name="payments" style={{ fontSize: '18px' }} />
-              {isCheckingOut ? 'Saving sale...' : 'Complete and print'}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {paymentWindow && checkoutStep === 'PAYMENT' && (
-        <div className="fixed inset-0 z-[180] flex items-end justify-center bg-slate-950/65 p-3 backdrop-blur-sm sm:items-center">
-          <div className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-white">
-                  <SelectedPaymentIcon size={21} strokeWidth={2.4} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Payment method</p>
-                  <h3 className="truncate text-lg font-black text-slate-950">{selectedPaymentOption.label}</h3>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPaymentWindow(null)}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-slate-500"
-                aria-label="Close payment window"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-4 overflow-y-auto p-5">
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-3">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Subtotal</p>
-                  <p className="mt-1 truncate text-sm font-black text-slate-900">Ksh {subtotal.toLocaleString()}</p>
-                </div>
-                <div className="rounded-2xl border border-rose-100 bg-rose-50 px-3 py-3">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Total discount</p>
-                  <p className="mt-1 truncate text-sm font-black text-rose-700">Ksh {discountAmount.toLocaleString()}</p>
-                </div>
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-3">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700">To Pay</p>
-                  <p className="mt-1 truncate text-sm font-black text-emerald-950">Ksh {total.toLocaleString()}</p>
-                </div>
-              </div>
-
-              {paymentWindow === 'CASH' && (
-                <div className="space-y-3">
-                  <label className="block">
-                    <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Cash received</span>
-                    <div className="relative mt-2">
-                      <Calculator className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="number"
-                        min="0"
-                        value={cashTendered}
-                        onChange={(event) => setCashTendered(event.target.value)}
-                        placeholder={`Ksh ${total.toLocaleString()}`}
-                        data-testid="cash-received"
-                        className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                      />
-                    </div>
-                  </label>
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Change due</p>
-                    <p className="mt-1 text-2xl font-black text-slate-950">Ksh {changeDue.toLocaleString()}</p>
-                  </div>
-                </div>
-              )}
-
-              {paymentWindow === 'MPESA' && (
-                <div className="space-y-3">
-                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">M-Pesa phone request</p>
-                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                      <input
-                        value={mpesaPhone}
-                        onChange={(event) => setMpesaPhone(event.target.value)}
-                        placeholder="Customer phone"
-                        data-testid="mpesa-phone"
-                        className="h-12 w-full rounded-2xl border border-emerald-100 bg-white px-4 text-sm font-bold outline-none focus:border-emerald-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={sendMpesaPrompt}
-                        disabled={mpesaIsWaiting || isCheckingOut}
-                        aria-busy={mpesaIsWaiting}
-                        data-busy={mpesaIsWaiting ? 'true' : undefined}
-                        data-testid="mpesa-prompt"
-                        className="h-12 rounded-2xl bg-emerald-600 px-5 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
-                      >
-                        {mpesaIsWaiting ? 'Waiting' : 'Send request'}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">M-Pesa receipt code</p>
-                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                      <input
-                        value={mpesaRef}
-                        onChange={(event) => setMpesaRef(event.target.value.toUpperCase())}
-                        placeholder="Receipt code"
-                        data-testid="mpesa-reference"
-                        className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold uppercase outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => verifyMpesaCode(mpesaRef, total)}
-                        disabled={isVerifyingMpesa || !mpesaRef.trim()}
-                        aria-busy={isVerifyingMpesa}
-                        data-busy={isVerifyingMpesa ? 'true' : undefined}
-                        className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-5 text-[10px] font-black uppercase tracking-widest text-blue-700 disabled:opacity-50"
-                      >
-                        {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-                        Verify
-                      </button>
-                    </div>
-                  </div>
-
-                  {mpesaState !== 'IDLE' && (
-                    <p className={`rounded-2xl px-4 py-3 text-[10px] font-black uppercase tracking-widest ${mpesaState === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : mpesaState === 'FAILED' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
-                      {mpesaState === 'PUSHING' ? 'Sending request' : mpesaState === 'POLLING' ? 'Waiting for customer PIN' : mpesaState === 'SUCCESS' ? 'Payment received' : 'Request failed or timed out'}
-                    </p>
-                  )}
-                  {mpesaVerification && (
-                    <p className={`rounded-2xl px-4 py-3 text-[10px] font-black uppercase tracking-widest ${mpesaVerification.usable ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
-                      {mpesaVerification.message || (mpesaVerification.usable ? 'M-Pesa code verified' : 'M-Pesa code not usable')}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {paymentWindow === 'PDQ' && (
-                <label className="block">
-                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Card machine reference</span>
-                  <div className="relative mt-2">
-                    <CreditCard className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      value={pdqRef}
-                      onChange={(event) => setPdqRef(event.target.value)}
-                      placeholder="Terminal reference"
-                      data-testid="pdq-reference"
-                      className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                    />
-                  </div>
-                </label>
-              )}
-
-              {paymentWindow === 'CREDIT' && (
-                <div className="space-y-3">
-                  <label className="block">
-                  <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Customer</span>
-                    <select
-                      value={selectedCustomerId}
-                      onChange={(event) => setSelectedCustomerId(event.target.value)}
-                      data-testid="customer-select"
-                      className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                    >
-                      <option value="">Select registered customer</option>
-                      {customers?.map((customer) => (
-                        <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` - ${customer.phone}` : ''}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Credit amount</p>
-                    <p className="mt-1 text-2xl font-black text-amber-950">Ksh {total.toLocaleString()}</p>
-                  </div>
-                </div>
-              )}
-
-              {paymentWindow === 'SPLIT' && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Cash part</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max={total}
-                        value={splitCash}
-                        onChange={(event) => setSplitCash(event.target.value)}
-                        placeholder="Cash amount"
-                        data-testid="split-cash"
-                        className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Balance method</span>
-                      <select
-                        value={splitSecondaryMethod}
-                        onChange={(event) => setSplitSecondaryMethod(event.target.value as 'MPESA' | 'PDQ' | 'CREDIT')}
-                        data-testid="split-method"
-                        className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-black text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                      >
-                        <option value="MPESA">M-Pesa</option>
-                        <option value="PDQ">Card</option>
-                        <option value="CREDIT">Credit</option>
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Balance</p>
-                    <p className="mt-1 text-xl font-black text-slate-950">Ksh {splitSecondaryAmount.toLocaleString()}</p>
-                  </div>
-
-                  {splitSecondaryMethod === 'CREDIT' && (
-                    <select
-                      value={selectedCustomerId}
-                      onChange={(event) => setSelectedCustomerId(event.target.value)}
-                      data-testid="customer-select"
-                      className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                    >
-                      <option value="">Select registered customer</option>
-                      {customers?.map((customer) => (
-                        <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` - ${customer.phone}` : ''}</option>
-                      ))}
-                    </select>
-                  )}
-
-                  {splitSecondaryMethod !== 'CREDIT' && (
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                      <input
-                        value={splitSecondaryRef}
-                        onChange={(event) => setSplitSecondaryRef(splitSecondaryMethod === 'MPESA' ? event.target.value.toUpperCase() : event.target.value)}
-                        placeholder={`${splitSecondaryMethod} reference`}
-                        data-testid="split-reference"
-                        className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                      />
-                      {splitSecondaryMethod === 'MPESA' && (
-                        <button
-                          type="button"
-                          onClick={() => verifyMpesaCode(splitSecondaryRef, splitSecondaryAmount)}
-                          disabled={isVerifyingMpesa || !splitSecondaryRef.trim()}
-                          aria-busy={isVerifyingMpesa}
-                          data-busy={isVerifyingMpesa ? 'true' : undefined}
-                          className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-5 text-[10px] font-black uppercase tracking-widest text-blue-700 disabled:opacity-50"
-                        >
-                          {isVerifyingMpesa ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-                          Verify
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 border-t border-slate-100 bg-slate-50 p-4">
-              <button
-                type="button"
-                onClick={() => setPaymentWindow(null)}
-                className="h-12 rounded-2xl border border-slate-200 bg-white px-5 text-[10px] font-black uppercase tracking-widest text-slate-600"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={() => void continueFromPaymentWindow()}
-                disabled={isVerifyingMpesa}
-                aria-busy={isVerifyingMpesa}
-                data-busy={isVerifyingMpesa ? 'true' : undefined}
-                className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-primary px-5 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
-              >
-                {isVerifyingMpesa ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />}
-                Continue to Review
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-        </>
-      )}
-    </aside>
-  );
-}
-
-export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart?: (val: boolean) => void; handleCheckout?: (status: 'PAID' | 'UNPAID', method: string, mpesaRef?: string, customerName?: string, splitData?: any) => Promise<any> }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isMobileCheckoutOpen, setIsMobileCheckoutOpen] = useState(false);
+  const [isHeldOrdersOpen, setIsHeldOrdersOpen] = useState(false);
   const [lastReceipt, setLastReceipt] = useState<(Transaction & { recordType: 'SALE' }) | null>(null);
-  const { warning, error } = useToast();
-
-  // ✅ Only require activeBusinessId — branch does not filter products
-  const { addToCart, removeFromCart, updateQuantity, setQuantity, clearCart, activeBusinessId, activeBranchId, cart } = useStore();
+  const { warning, error, success } = useToast();
+  const {
+    addToCart,
+    removeFromCart,
+    updateQuantity,
+    setQuantity,
+    clearCart,
+    holdCurrentOrder,
+    resumeHeldOrder,
+    deleteHeldOrder,
+    activeBusinessId,
+    activeShopId,
+    activeShift,
+    currentUser,
+    setActiveShift,
+    cart,
+    heldOrders,
+  } = useStore();
+  const [selectedTillId, setSelectedTillId] = useState('');
+  const [openingCashAmount, setOpeningCashAmount] = useState('');
+  const [isOpeningShift, setIsOpeningShift] = useState(false);
 
   const products = useLiveQuery(
     () => {
       const term = searchQuery.trim().toLowerCase();
       if (!activeBusinessId || !term) return Promise.resolve([]);
-      const query = db.products.where('businessId').equals(activeBusinessId);
-      return query.filter(p =>
-        belongsToActiveBranch(p, activeBranchId) &&
-        (String(p.name || '').toLowerCase().includes(term) || String(p.barcode || '').toLowerCase().includes(term))
+      return db.products.where('businessId').equals(activeBusinessId).filter(product =>
+        belongsToActiveShop(product, activeShopId) &&
+        (String(product.name || '').toLowerCase().includes(term) || String(product.barcode || '').toLowerCase().includes(term))
       ).toArray();
     },
-    [searchQuery, activeBusinessId, activeBranchId],
+    [searchQuery, activeBusinessId, activeShopId],
     []
   );
-
   const productIngredients = useLiveQuery(
     () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId], []
+    [activeBusinessId],
+    []
   );
   const scannerProductsRaw = useLiveQuery(
-    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveBranch(p, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId], []
+    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(product => belongsToActiveShop(product, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
+    []
   );
-  const businessSettings = useLiveQuery(
-    () => getBusinessSettings(activeBusinessId),
+  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId], null);
+  const salesTillRows = useLiveQuery(
+    () => activeBusinessId
+      ? db.salesTills.where('businessId').equals(activeBusinessId).toArray()
+      : Promise.resolve([]),
     [activeBusinessId],
-    null
+    []
   );
-  const activeBranch = useLiveQuery(
-    () => activeBranchId ? db.branches.get(activeBranchId) : Promise.resolve(undefined),
-    [activeBranchId],
-    undefined
+  const shopShifts = useLiveQuery(
+    () => activeBusinessId && activeShopId
+      ? db.shifts.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
+    []
   );
+  const activeShop = {
+    id: activeShopId,
+    name: businessSettings?.storeName || 'Main shop',
+    location: businessSettings?.location || '',
+    tillNumber: businessSettings?.tillNumber || '',
+  };
 
   const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
   const scannerProducts = enrichProductsWithBundleStock(scannerProductsRaw || [], productIngredients || []);
-
-  // Sort: in-stock → low-stock → out-of-stock
-  const sorted = [...displayProducts].sort((a, b) => {
-    const score = (p: any) => {
-      const q = p.stockQuantity || 0;
-      if (q <= 0) return 2;
-      if (q <= (p.reorderPoint || 5)) return 1;
+  const sortedProducts = [...displayProducts].sort((a, b) => {
+    const score = (product: any) => {
+      const quantity = product.stockQuantity || 0;
+      if (quantity <= 0) return 2;
+      if (quantity <= (product.reorderPoint || 5)) return 1;
       return 0;
     };
     return score(a) - score(b);
   });
+  const scopedHeldOrders = heldOrders.filter(order =>
+    (!activeBusinessId || order.businessId === activeBusinessId) &&
+    (!activeShopId || order.shopId === activeShopId)
+  );
+  const configuredTills = React.useMemo(() => {
+    const tableTills = parseSalesTillRows(salesTillRows);
+    return tableTills.length ? tableTills : parseSalesTills(businessSettings);
+  }, [businessSettings, salesTillRows]);
+  const openTillIds = new Set((shopShifts || [])
+    .filter(shift => String(shift.status || '').toUpperCase() === 'OPEN')
+    .map(shift => String(shift.tillId || ''))
+    .filter(Boolean));
+  const availableTills = configuredTills.filter(till => !openTillIds.has(till.id));
+  const selectedTill = configuredTills.find(till => till.id === selectedTillId) || availableTills[0] || configuredTills[0];
+  const defaultOpeningFloat = getDefaultOpeningFloat(businessSettings);
+  const shiftBelongsToCurrentUser = React.useCallback((shift: any) => {
+    if (!shift || !currentUser) return false;
+    const userId = String(currentUser.id || '').trim();
+    const userName = String(currentUser.name || '').trim().toLowerCase();
+    const cashierId = String(shift.cashierId || '').trim();
+    const cashierName = String(shift.cashierName || '').trim().toLowerCase();
+    return (userId && cashierId === userId)
+      || (userName && cashierName === userName)
+      || (userId && String(shift.id || '').includes(`_${userId}`));
+  }, [currentUser]);
+  const shiftInActiveScope = React.useCallback((shift: any) => (
+    shift
+    && String(shift.shopId || activeShopId || '') === String(activeShopId || '')
+    && String(shift.businessId || activeBusinessId || '') === String(activeBusinessId || '')
+  ), [activeShopId, activeBusinessId]);
+  const localOpenShift = String(activeShift?.status || '').toUpperCase() === 'OPEN'
+    && shiftInActiveScope(activeShift)
+    && shiftBelongsToCurrentUser(activeShift)
+    ? activeShift
+    : null;
+  const sharedOwnOpenShift = (shopShifts || []).find(shift => String(shift.status || '').toUpperCase() === 'OPEN' && shiftBelongsToCurrentUser(shift));
+  const ownOpenShift = localOpenShift || sharedOwnOpenShift || null;
+  const canOperateOwnShift = !!ownOpenShift;
 
-  const handleAddToCart = (product: any) => {
+  const pushRegisterBackLayer = React.useCallback((layer: RegisterBackLayer) => {
+    if (typeof window === 'undefined') return;
+    if (window.history.state?.[REGISTER_BACK_LAYER] === layer) return;
+    window.history.pushState({ ...(window.history.state || {}), mtaaniTab: true, tab: 'REGISTER', [REGISTER_BACK_LAYER]: layer }, '');
+  }, []);
+
+  const dismissRegisterBackLayer = React.useCallback((layer: RegisterBackLayer, close: () => void) => {
+    close();
+    if (typeof window !== 'undefined' && window.history.state?.[REGISTER_BACK_LAYER] === layer) {
+      window.history.back();
+    }
+  }, []);
+
+  const openScanner = React.useCallback(() => {
+    pushRegisterBackLayer('SCANNER');
+    setIsScannerOpen(true);
+  }, [pushRegisterBackLayer]);
+
+  const closeScanner = React.useCallback(() => {
+    dismissRegisterBackLayer('SCANNER', () => setIsScannerOpen(false));
+  }, [dismissRegisterBackLayer]);
+
+  const toggleScanner = React.useCallback(() => {
+    if (isScannerOpen) closeScanner();
+    else openScanner();
+  }, [closeScanner, isScannerOpen, openScanner]);
+
+  const handleSearchQueryChange = React.useCallback((value: string) => {
+    const hadQuery = searchQuery.trim().length > 0;
+    const hasQuery = value.trim().length > 0;
+
+    if (!hadQuery && hasQuery) pushRegisterBackLayer('PRODUCT_SEARCH');
+    if (hadQuery && !hasQuery) {
+      dismissRegisterBackLayer('PRODUCT_SEARCH', () => setSearchQuery(''));
+      return;
+    }
+
+    setSearchQuery(value);
+  }, [dismissRegisterBackLayer, pushRegisterBackLayer, searchQuery]);
+
+  const closeProductSearch = React.useCallback(() => {
+    dismissRegisterBackLayer('PRODUCT_SEARCH', () => setSearchQuery(''));
+  }, [dismissRegisterBackLayer]);
+
+  const openHeldOrders = React.useCallback(() => {
+    pushRegisterBackLayer('HELD_ORDERS');
+    setIsHeldOrdersOpen(true);
+  }, [pushRegisterBackLayer]);
+
+  const closeHeldOrders = React.useCallback(() => {
+    dismissRegisterBackLayer('HELD_ORDERS', () => setIsHeldOrdersOpen(false));
+  }, [dismissRegisterBackLayer]);
+
+  const handleAddToCart = React.useCallback((product: any) => {
     if ((product.stockQuantity || 0) <= 0) {
       warning(isBundleProduct(product) ? 'This bulk item has no ingredient stock available.' : 'This item is out of stock.');
       return;
     }
     addToCart(product);
-    setSearchQuery('');
+    closeProductSearch();
     toggleCart?.(true);
     setRecentlyAdded(prev => new Set([...prev, product.id]));
-    setTimeout(() => setRecentlyAdded(prev => { const n = new Set(prev); n.delete(product.id); return n; }), 600);
+    window.setTimeout(() => setRecentlyAdded(prev => {
+      const next = new Set(prev);
+      next.delete(product.id);
+      return next;
+    }), 600);
+  }, [addToCart, closeProductSearch, toggleCart, warning]);
+
+  const handleHoldOrder = () => {
+    if (cart.length === 0) {
+      warning('Add products before holding an order.');
+      return;
+    }
+    const held = holdCurrentOrder(`Held order ${scopedHeldOrders.length + 1}`);
+    if (held) success(`${held.name} saved. You can resume it from Held Orders.`);
+  };
+
+  const handleResumeHeldOrder = (orderId: string) => {
+    if (cart.length > 0) {
+      warning('Hold or clear the current sale before resuming another order.');
+      return;
+    }
+    const resumed = resumeHeldOrder(orderId);
+    if (resumed) {
+      closeHeldOrders();
+      success(`${resumed.name} resumed.`);
+    }
+  };
+
+  const handleDeleteHeldOrder = (orderId: string) => {
+    if (typeof window !== 'undefined' && !window.confirm('Delete this held order?')) return;
+    deleteHeldOrder(orderId);
   };
 
   const handleBarcodeScan = React.useCallback((barcode: string) => {
     const code = barcode.trim();
     if (!code) return;
-    const product = scannerProducts.find(prod => String(prod.barcode || '').trim() === code);
+    const product = scannerProducts.find(item => String(item.barcode || '').trim() === code);
     if (!product) {
-      setSearchQuery(code);
+      handleSearchQueryChange(code);
       warning(`No product found for barcode ${code}.`);
       return;
     }
     handleAddToCart(product);
-    setSearchQuery('');
-    setIsScannerOpen(false);
-  }, [scannerProducts, warning]);
+    closeScanner();
+  }, [closeScanner, handleAddToCart, handleSearchQueryChange, scannerProducts, warning]);
 
   useHardwareBarcodeScanner(handleBarcodeScan, {
-    enabled: !!activeBusinessId,
+    enabled: !!activeBusinessId && canOperateOwnShift,
     onError: warning,
   });
+
+  React.useEffect(() => {
+    if (sharedOwnOpenShift && !localOpenShift) setActiveShift(sharedOwnOpenShift);
+  }, [localOpenShift, setActiveShift, sharedOwnOpenShift]);
+
+  React.useEffect(() => {
+    if (canOperateOwnShift) return;
+    const nextTill = availableTills[0] || configuredTills[0];
+    if (nextTill && !configuredTills.some(till => till.id === selectedTillId)) {
+      setSelectedTillId(nextTill.id);
+    }
+    if (!openingCashAmount) setOpeningCashAmount(String(defaultOpeningFloat || 0));
+  }, [availableTills, canOperateOwnShift, configuredTills, defaultOpeningFloat, openingCashAmount, selectedTillId]);
+
+  const confirmRegisterOpenShift = React.useCallback(async () => {
+    if (!activeBusinessId || !activeShopId || !currentUser || isOpeningShift) return;
+    if (canOperateOwnShift) {
+      success('Your shift is already open.');
+      return;
+    }
+    const till = selectedTill || availableTills[0] || configuredTills[0];
+    if (!till) {
+      warning('Set up at least one till in Settings before opening a shift.');
+      return;
+    }
+    const tillBusy = (shopShifts || []).some(shift => String(shift.status || '').toUpperCase() === 'OPEN' && String(shift.tillId || '') === till.id);
+    if (tillBusy) {
+      warning(`${till.name} is already open.`);
+      return;
+    }
+
+    const now = Date.now();
+    const openingCash = Math.max(0, Number(openingCashAmount) || 0);
+    const nextShift = {
+      id: createRegisterShiftId(activeShopId, till.id, currentUser.id, now),
+      startTime: now,
+      cashierId: currentUser.id,
+      cashierName: currentUser.name,
+      tillId: till.id,
+      tillName: till.name,
+      openingCash,
+      status: 'OPEN',
+      shopId: activeShopId,
+      businessId: activeBusinessId,
+      updated_at: now,
+    };
+
+    setIsOpeningShift(true);
+    try {
+      const result = await ShiftService.openShift(nextShift as any);
+      await db.shifts.reload().catch(() => {});
+      setActiveShift(result.shift || nextShift);
+      success(result.idempotent ? 'Your shift is already open.' : `${till.name} shift opened.`);
+    } catch (err: any) {
+      error(err?.message || 'Could not open shift.');
+    } finally {
+      setIsOpeningShift(false);
+    }
+  }, [
+    activeShopId,
+    activeBusinessId,
+    availableTills,
+    shopShifts,
+    canOperateOwnShift,
+    configuredTills,
+    currentUser,
+    error,
+    isOpeningShift,
+    openingCashAmount,
+    selectedTill,
+    setActiveShift,
+    success,
+    warning,
+  ]);
 
   const maybeAutoPrintReceipt = React.useCallback(async (receipt: Transaction & { recordType?: 'SALE' }) => {
     const profile = getHardwareProfile();
     const assignedPrinter = getAssignedHardware('RECEIPT_PRINTER');
     if (!profile.autoPrintReceipt) return;
-
     if (!assignedPrinter || assignedPrinter.transport === 'BROWSER_PRINT') {
       window.setTimeout(() => window.print(), 350);
       return;
     }
-
     const hasCashDrawerEvent = receipt.paymentMethod === 'CASH' || Number(receipt.splitPayments?.cashAmount || 0) > 0;
     const result = await printReceiptViaAssignedPrinter(receipt, {
       storeName: businessSettings?.storeName || 'Mtaani POS',
@@ -1491,19 +364,20 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
     if (!handleCheckout || cart.length === 0 || isCheckingOut) return null;
     setIsCheckingOut(true);
     try {
-      const result = await handleCheckout(status, method, options?.mpesaRef || options?.pdqRef || options?.paymentReference, options?.customerName, options);
+      const paymentReference = options?.mpesaRef || options?.pdqRef || options?.paymentReference;
+      const result = await handleCheckout(status, method, paymentReference, options?.customerName, options);
       if (result) {
         setIsMobileCheckoutOpen(false);
         const receipt = {
-          ...result,
+          ...(result as any),
           recordType: 'SALE' as const,
-          branchName: activeBranch?.name || result.branchName,
-          tillNumber: activeBranch?.tillNumber || businessSettings?.tillNumber || result.tillNumber,
-          businessAddress: activeBranch?.location || businessSettings?.location || result.businessAddress,
-          receiptFooter: businessSettings?.receiptFooter || result.receiptFooter,
+          shopName: activeShop?.name || (result as any).shopName,
+          tillNumber: activeShop?.tillNumber || businessSettings?.tillNumber || (result as any).tillNumber,
+          businessAddress: activeShop?.location || businessSettings?.location || (result as any).businessAddress,
+          receiptFooter: businessSettings?.receiptFooter || (result as any).receiptFooter,
         };
-        setLastReceipt(receipt);
-        void maybeAutoPrintReceipt(receipt);
+        setLastReceipt(receipt as any);
+        void maybeAutoPrintReceipt(receipt as any);
       }
       return result;
     } catch (err: any) {
@@ -1517,278 +391,132 @@ export default function RegisterTab({ toggleCart, handleCheckout }: { toggleCart
   const saleTotal = calculateCartTotals(cart).total;
   const saleItemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
   const selectedProductCount = cart.length;
-  const selectedProductLabel = selectedProductCount === 1 ? 'product selected for sale' : 'products selected for sale';
-  const isAddingProducts = searchQuery.trim().length > 0;
+  const isProductSearchOpen = searchQuery.trim().length > 0;
+
   React.useEffect(() => {
     if (cart.length === 0) setIsMobileCheckoutOpen(false);
   }, [cart.length]);
 
   React.useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
-      if (isMobileCheckoutOpen && !event.state?.mobileCheckout) {
-        setIsMobileCheckoutOpen(false);
-      }
+      const layer = event.state?.[REGISTER_BACK_LAYER] as RegisterBackLayer | undefined;
+      if (isScannerOpen && layer !== 'SCANNER') setIsScannerOpen(false);
+      if (isMobileCheckoutOpen && layer !== 'MOBILE_CHECKOUT') setIsMobileCheckoutOpen(false);
+      if (isHeldOrdersOpen && layer !== 'HELD_ORDERS') setIsHeldOrdersOpen(false);
+      if (isProductSearchOpen && layer !== 'PRODUCT_SEARCH') setSearchQuery('');
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [isMobileCheckoutOpen]);
+  }, [isHeldOrdersOpen, isMobileCheckoutOpen, isProductSearchOpen, isScannerOpen]);
 
   const openMobileCheckout = (event?: React.SyntheticEvent) => {
     event?.preventDefault();
-    if (!isMobileCheckoutOpen) {
-      window.history.pushState({ ...(window.history.state || {}), mobileCheckout: true }, '');
-    }
+    if (!isMobileCheckoutOpen) pushRegisterBackLayer('MOBILE_CHECKOUT');
     setIsMobileCheckoutOpen(true);
+  };
+
+  const closeMobileCheckout = () => {
+    dismissRegisterBackLayer('MOBILE_CHECKOUT', () => setIsMobileCheckoutOpen(false));
   };
 
   const handleReceiptRefund = async () => {
     warning('Open Documents to refund a completed receipt.');
   };
 
-  return (
-    <div className="flex h-full min-h-0 flex-col animate-in fade-in bg-slate-100 md:bg-transparent">
-
-      <div className="z-30 flex-shrink-0 border-b border-slate-200/70 bg-slate-100/95 px-3 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-slate-100/85 sm:px-4 md:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1440px] space-y-3">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-black text-slate-900">Register</h2>
-          <p className="text-[11px] text-slate-500 font-medium">
-            {selectedProductCount.toLocaleString()} {selectedProductLabel}
-            {saleItemCount > 0 && (
-              <span className="text-primary"> · {saleItemCount.toLocaleString()} item{saleItemCount === 1 ? '' : 's'} · Ksh {saleTotal.toLocaleString()}</span>
-            )}
+  if (!canOperateOwnShift) {
+    return (
+      <div className="relative flex h-full min-h-0 flex-col items-center justify-center bg-slate-50 p-4 text-center">
+        <div className="max-w-sm rounded-lg border-2 border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-[11px] font-black uppercase tracking-widest text-blue-700">Register locked</p>
+          <h2 className="mt-2 text-2xl font-black text-slate-950">Open a shift first</h2>
+          <p className="mt-2 text-sm font-semibold text-slate-600">
+            Sales are attached to a till session, so the register stays closed until your shift is open.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Search */}
-          <div className="relative group flex-1 md:w-64">
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors">
-              <MaterialIcon name="search" style={{ fontSize: '18px' }} />
-            </div>
-            <input
-              type="text"
-              placeholder="Name or barcode..."
-              className="w-full pl-10 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/15 focus:border-primary outline-none shadow-sm"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              onKeyDown={e => {
-                if (e.key !== 'Enter') return;
-                const code = searchQuery.trim();
-                const product = scannerProducts.find(prod => String(prod.barcode || '').trim() === code);
-                if (product) {
-                  e.preventDefault();
-                  handleBarcodeScan(code);
-                }
-              }}
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                <MaterialIcon name="close" style={{ fontSize: '16px' }} />
-              </button>
-            )}
-          </div>
-
-          {/* Scan */}
-          <button
-            onClick={() => setIsScannerOpen(v => !v)}
-            className={`p-2.5 rounded-xl border flex-shrink-0 transition-all ${isScannerOpen ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-white text-slate-600 border-slate-200 hover:border-primary/30 hover:text-primary'}`}
-            title="Barcode Scanner"
-          >
-            <MaterialIcon name="barcode_scanner" style={{ fontSize: '20px' }} />
-          </button>
-        </div>
+        <OpenShiftModal
+          open={!!activeBusinessId && !!activeShopId && !!currentUser}
+          title="Open shift to use Register"
+          description="Choose your till and opening cash to start selling."
+          notice="You cannot open the register until you open a shift."
+          allowClose={false}
+          onClose={() => {}}
+          configuredTills={configuredTills}
+          availableTills={availableTills}
+          selectedTillId={selectedTillId}
+          setSelectedTillId={setSelectedTillId}
+          openingCashAmount={openingCashAmount}
+          setOpeningCashAmount={setOpeningCashAmount}
+          isOpeningShift={isOpeningShift}
+          confirmOpenShift={confirmRegisterOpenShift}
+        />
       </div>
+    );
+  }
 
-      </div>
-      </div>
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-slate-50 animate-in fade-in">
+      <RegisterHeader
+        searchQuery={searchQuery}
+        setSearchQuery={handleSearchQueryChange}
+        selectedProductCount={selectedProductCount}
+        saleItemCount={saleItemCount}
+        saleTotal={saleTotal}
+        scannerProducts={scannerProducts}
+        handleBarcodeScan={handleBarcodeScan}
+        isScannerOpen={isScannerOpen}
+        onToggleScanner={toggleScanner}
+      />
 
-      {/* Scanner */}
-      {isScannerOpen && (
-        <div className="mx-auto w-full max-w-[1440px] flex-shrink-0 px-3 pt-4 sm:px-4 md:px-6 lg:px-8">
-          <div className="bg-slate-950 rounded-2xl overflow-hidden">
-            <div className="relative aspect-video max-h-44">
-              <BarcodeScanner onScan={barcode => {
-                handleBarcodeScan(barcode);
-              }} />
-              <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-primary/60 shadow-[0_0_10px_rgba(37,99,235,0.8)] animate-pulse pointer-events-none" />
-            </div>
-            <div className="flex items-center justify-between px-4 py-2 border-t border-slate-800">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Point at barcode</p>
-              <button onClick={() => setIsScannerOpen(false)} className="text-[10px] font-bold text-slate-500 hover:text-rose-400 flex items-center gap-1">
-                <MaterialIcon name="close" style={{ fontSize: '14px' }} /> Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RegisterScannerPanel
+        open={isScannerOpen}
+        onScan={handleBarcodeScan}
+        onClose={closeScanner}
+      />
 
-      {/* Empty state */}
-      {!activeBusinessId && (
-        <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-3">
-            <MaterialIcon name="store_mall_directory" className="text-slate-300" style={{ fontSize: '32px' }} />
-          </div>
-          <p className="text-sm font-bold text-slate-400">No business selected</p>
-          <p className="text-xs text-slate-400 mt-1">Please log in with a valid business code.</p>
-        </div>
-      )}
+      <ProductSearchModal
+        open={!!activeBusinessId && isProductSearchOpen}
+        query={searchQuery}
+        products={sortedProducts}
+        recentlyAdded={recentlyAdded}
+        onAdd={handleAddToCart}
+        onClose={closeProductSearch}
+      />
 
-      {activeBusinessId && (
-        <div className="mx-auto w-full max-w-[1440px] flex-1 min-h-0 px-3 pb-24 pt-4 sm:px-4 md:px-6 md:pb-6 lg:px-8">
-          <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          {/* Current sale rows */}
-          <div className="h-full min-h-0 overflow-y-auto no-scrollbar">
-            {isAddingProducts ? (
-              <div className="space-y-3">
-                <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-sm font-black text-slate-900">Add products</p>
-                    <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                      {sorted.length.toLocaleString()} match{sorted.length === 1 ? '' : 'es'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchQuery('');
-                    }}
-                    className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-[10px] font-black uppercase tracking-widest text-slate-600 transition-colors hover:border-primary/30 hover:text-primary"
-                  >
-                    View sale
-                  </button>
-                </div>
+      <RegisterDesktop
+        activeBusinessId={activeBusinessId}
+        cart={cart}
+        selectedProductCount={selectedProductCount}
+        saleItemCount={saleItemCount}
+        saleTotal={saleTotal}
+        heldOrders={scopedHeldOrders}
+        isCheckingOut={isCheckingOut}
+        onCheckout={completeCheckout}
+        onHoldOrder={handleHoldOrder}
+        onOpenHeldOrders={openHeldOrders}
+        clearCart={clearCart}
+        removeFromCart={removeFromCart}
+        updateQuantity={updateQuantity}
+        setQuantity={setQuantity}
+      />
 
-                {sorted.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-20 text-center">
-                    <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-3">
-                      <MaterialIcon name="inventory" className="text-slate-300" style={{ fontSize: '32px' }} />
-                    </div>
-                    <p className="text-sm font-bold text-slate-400">No products found</p>
-                    <p className="text-xs text-slate-400 mt-1 font-medium">
-                      {`No results for "${searchQuery}"`}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchQuery('');
-                      }}
-                      className="mt-4 px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl"
-                    >
-                      View sale
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {sorted.map(p => (
-                      <ProductTile key={p.id} product={p} onAdd={handleAddToCart} recentlyAdded={recentlyAdded.has(p.id)} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : cart.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-3">
-                  <MaterialIcon name="shopping_cart" className="text-slate-300" style={{ fontSize: '32px' }} />
-                </div>
-                <p className="text-sm font-bold text-slate-400">No items selected</p>
-                <p className="text-xs text-slate-400 mt-1 font-medium">
-                  Search or scan to add products. Selected items will appear here.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-sm font-black text-slate-900">Items in cart</p>
-                    <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                      {selectedProductCount.toLocaleString()} product{selectedProductCount === 1 ? '' : 's'} · {saleItemCount.toLocaleString()} item{saleItemCount === 1 ? '' : 's'} · Ksh {saleTotal.toLocaleString()}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={clearCart}
-                    className="h-10 rounded-xl border border-rose-100 bg-rose-50 px-4 text-[10px] font-black uppercase tracking-widest text-rose-600 transition-colors hover:bg-rose-500 hover:text-white"
-                  >
-                    Clear sale
-                  </button>
-                </div>
+      <HeldOrdersModal
+        open={isHeldOrdersOpen}
+        orders={scopedHeldOrders}
+        onClose={closeHeldOrders}
+        onResume={handleResumeHeldOrder}
+        onDelete={handleDeleteHeldOrder}
+      />
 
-                {cart.map(item => (
-                  <CartLineItem
-                    key={item.id}
-                    item={item}
-                    onRemove={removeFromCart}
-                    onDecrease={(id) => updateQuantity(id, -1)}
-                    onIncrease={(id) => updateQuantity(id, 1)}
-                    onQuantityChange={setQuantity}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="hidden h-full min-h-0 lg:block">
-            <SalePanel onCheckout={completeCheckout} isCheckingOut={isCheckingOut} showCartItems={false} />
-          </div>
-          </div>
-        </div>
-      )}
-
-      {cart.length > 0 && (
-        <div className="lg:hidden fixed left-3 right-3 bottom-20 z-40 bg-slate-950 text-white rounded-2xl shadow-2xl p-3 flex items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{saleItemCount.toLocaleString()} item{saleItemCount === 1 ? '' : 's'} in sale</p>
-            <p className="text-lg font-black tabular-nums truncate">Ksh {saleTotal.toLocaleString()}</p>
-          </div>
-          <button 
-            onMouseDown={openMobileCheckout}
-            onClick={openMobileCheckout}
-            onPointerDown={openMobileCheckout}
-            onTouchStart={openMobileCheckout}
-            disabled={isCheckingOut}
-            aria-busy={isCheckingOut}
-            data-busy={isCheckingOut ? 'true' : undefined}
-            data-testid="mobile-checkout"
-            className="px-4 py-3 bg-primary rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
-          >
-            {isCheckingOut ? 'Saving' : 'Checkout'}
-          </button>
-        </div>
-      )}
-
-      {isMobileCheckoutOpen && (
-        <div className="lg:hidden fixed inset-0 z-[90] bg-slate-950/60 backdrop-blur-sm flex items-end" data-testid="mobile-checkout-sheet">
-          <div className="flex w-full max-h-[calc(100dvh-0.75rem)] flex-col bg-white rounded-t-3xl shadow-2xl overflow-hidden pb-safe">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-              <div className="min-w-0">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Checkout</p>
-                <p className="text-sm font-black text-slate-900 truncate">{saleItemCount.toLocaleString()} item{saleItemCount === 1 ? '' : 's'} - Ksh {saleTotal.toLocaleString()}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (window.history.state?.mobileCheckout) window.history.back();
-                  else setIsMobileCheckoutOpen(false);
-                }}
-                className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center"
-                aria-label="Close checkout"
-              >
-                <X className="w-5 h-5" strokeWidth={2.4} />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 p-3 pb-3">
-              <SalePanel
-                onCheckout={completeCheckout}
-                onCheckoutSuccess={() => setIsMobileCheckoutOpen(false)}
-                isCheckingOut={isCheckingOut}
-                className="h-full max-h-full min-h-0 border-0 shadow-none rounded-2xl"
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <RegisterMobile
+        cart={cart}
+        saleItemCount={saleItemCount}
+        saleTotal={saleTotal}
+        isCheckingOut={isCheckingOut}
+        isMobileCheckoutOpen={isMobileCheckoutOpen}
+        onOpenMobileCheckout={openMobileCheckout}
+        onCloseMobileCheckout={closeMobileCheckout}
+        onCheckout={completeCheckout}
+      />
 
       <DocumentDetailsModal
         selectedRecord={lastReceipt}

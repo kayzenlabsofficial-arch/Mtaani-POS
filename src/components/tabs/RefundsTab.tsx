@@ -44,21 +44,21 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
   const [isSaving, setIsSaving] = useState(false);
   const { success, error } = useToast();
 
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
   const allTransactions = useLiveQuery(
-    () => activeBusinessId && activeBranchId
-      ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.businessId === activeBusinessId).toArray()
+    () => activeBusinessId && activeShopId
+      ? db.transactions.where('shopId').equals(activeShopId).and(t => t.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    [activeBusinessId, activeShopId],
     [],
   );
   const allRefunds = useLiveQuery(
-    () => activeBusinessId && activeBranchId
-      ? db.refunds.where('branchId').equals(activeBranchId).and(r => r.businessId === activeBusinessId).toArray()
+    () => activeBusinessId && activeShopId
+      ? db.refunds.where('shopId').equals(activeShopId).and(r => r.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    [activeBusinessId, activeShopId],
     [],
   );
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
@@ -108,10 +108,10 @@ export default function RefundsTab({ setActiveTab }: RefundsTabProps) {
     setIsSaving(true);
     try {
         const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
-        if (autoApprove && activeBranchId && activeBusinessId) {
+        if (autoApprove && activeShopId && activeBusinessId) {
           await approveRefundTransaction(t, itemsToReturn, {
             approvedBy: currentUser?.name || 'Owner',
-            activeBranchId,
+            activeShopId,
             activeBusinessId
           });
         } else {

@@ -9,7 +9,7 @@ interface Env {
 const MANAGER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -27,7 +27,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json().catch(() => null) as any;
     const action = String(body?.action || 'SAVE').toUpperCase();
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || auth.principal.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim() || null;
     if (!businessId || !canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
     const now = Date.now();
     if (action === 'DELETE') {
@@ -42,9 +41,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const name = trimText(category.name, 120);
     if (!name) return json({ error: 'Category name is required.' }, 400);
     const id = trimText(category.id || body?.categoryId, 160) || crypto.randomUUID();
-    const saved = { id, name, iconName: trimText(category.iconName, 80) || 'Package', color: trimText(category.color, 40) || 'slate', businessId, branchId, updated_at: now };
-    await env.DB.prepare(`INSERT OR REPLACE INTO categories (id, name, iconName, color, businessId, branchId, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .bind(saved.id, saved.name, saved.iconName, saved.color, businessId, branchId, now)
+    const saved = { id, name, iconName: trimText(category.iconName, 80) || 'Package', color: trimText(category.color, 40) || 'slate', businessId, updated_at: now };
+    await env.DB.prepare(`INSERT OR REPLACE INTO categories (id, name, iconName, color, businessId, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .bind(saved.id, saved.name, saved.iconName, saved.color, businessId, now)
       .run();
     return json({ success: true, category: saved });
   } catch (err: any) {
@@ -52,4 +51,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: err?.message || 'Could not update category.' }, status);
   }
 };
-

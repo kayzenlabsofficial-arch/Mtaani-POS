@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +10,7 @@ const PRODUCT_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -73,7 +73,6 @@ async function ensureSchema(db: D1Database) {
       isBundle INTEGER DEFAULT 0,
       components TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -95,7 +94,6 @@ async function ensureSchema(db: D1Database) {
       quantity REAL NOT NULL,
       timestamp INTEGER NOT NULL,
       reference TEXT,
-      branchId TEXT,
       businessId TEXT,
       shiftId TEXT,
       expiryDate INTEGER,
@@ -114,7 +112,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -133,7 +130,6 @@ async function ensureSchema(db: D1Database) {
     'isBundle INTEGER DEFAULT 0',
     'components TEXT',
     'businessId TEXT',
-    'branchId TEXT',
     'updated_at INTEGER',
   ];
   for (const column of productColumns) {
@@ -158,9 +154,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json().catch(() => null) as any;
     const productInput = body?.product || body || {};
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || productInput.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || productInput.branchId || '').trim();
-    if (!businessId || !branchId) return json({ error: 'Business and branch are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!businessId) return json({ error: 'Business is required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
@@ -175,7 +170,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(productId, businessId).first<any>();
-    if (existing?.branchId && existing.branchId !== branchId) throw new PolicyError('Product belongs to another branch.', 403);
 
     const isBundle = isTruthy(productInput.isBundle);
     const ingredients = Array.isArray(body?.ingredients)
@@ -199,25 +193,23 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     for (const ingredient of cleanIngredients) {
       const ingredientProduct = await env.DB.prepare(`
-        SELECT id, branchId
+        SELECT id
         FROM products
         WHERE id = ? AND businessId = ?
         LIMIT 1
       `).bind(ingredient.ingredientProductId, businessId).first<any>();
       if (!ingredientProduct) throw new PolicyError('A selected ingredient was not found.', 404);
-      if (ingredientProduct.branchId && ingredientProduct.branchId !== branchId) throw new PolicyError('A selected ingredient belongs to another branch.', 403);
     }
 
     const supplierIds = parseSupplierIds(productInput.supplierIds, productInput.supplierId);
     for (const supplierId of supplierIds) {
       const supplier = await env.DB.prepare(`
-        SELECT id, branchId
+        SELECT id
         FROM suppliers
         WHERE id = ? AND businessId = ?
         LIMIT 1
       `).bind(supplierId, businessId).first<any>();
       if (!supplier) throw new PolicyError('A selected supplier was not found.', 404);
-      if (supplier.branchId && supplier.branchId !== branchId) throw new PolicyError('A selected supplier belongs to another branch.', 403);
     }
 
     const now = Date.now();
@@ -244,7 +236,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       expiryDate,
       isBundle: isBundle ? 1 : 0,
       components: isBundle ? cleanIngredients.map((row: any) => ({ productId: row.ingredientProductId, quantity: row.quantity })) : [],
-      branchId: existing?.branchId || branchId,
       businessId,
       updated_at: now,
     };
@@ -256,8 +247,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(`
-        INSERT OR REPLACE INTO products (id, name, category, sellingPrice, costPrice, discountType, discountValue, taxCategory, stockQuantity, unit, barcode, reorderPoint, supplierIds, expiryTracking, expiryDate, isBundle, components, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO products (id, name, category, sellingPrice, costPrice, discountType, discountValue, taxCategory, stockQuantity, unit, barcode, reorderPoint, supplierIds, expiryTracking, expiryDate, isBundle, components, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         product.id,
         product.name,
@@ -277,7 +268,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         product.isBundle,
         JSON.stringify(product.components),
         businessId,
-        product.branchId,
         now,
       ),
       env.DB.prepare(`DELETE FROM productIngredients WHERE productId = ? AND businessId = ?`).bind(product.id, businessId),
@@ -297,8 +287,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!existing && !isBundle && product.stockQuantity > 0) {
       statements.push(
         env.DB.prepare(`
-          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, expiryDate, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, expiryDate, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
           product.id,
@@ -306,7 +296,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           product.stockQuantity,
           now,
           'Opening stock',
-          product.branchId,
           businessId,
           null,
           product.expiryDate,
@@ -317,8 +306,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     statements.push(
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         now,
@@ -329,9 +318,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         product.id,
         'INFO',
         `${existing ? 'Updated' : 'Created'} product ${product.name}.`,
-        businessId,
-        branchId,
-        now,
+        businessId, now,
       )
     );
 

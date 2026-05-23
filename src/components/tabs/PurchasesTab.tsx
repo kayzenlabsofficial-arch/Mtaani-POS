@@ -6,7 +6,7 @@ import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { SearchableSelect } from '../shared/SearchableSelect';
-import { belongsToActiveBranch } from '../../utils/branchScope';
+import { belongsToActiveShop } from '../../utils/shopScope';
 import { PurchaseService } from '../../services/purchases';
 import { productsForSupplier } from '../../utils/supplierProducts';
 import { reloadBestEffort } from '../../utils/reloads';
@@ -37,18 +37,18 @@ export default function PurchasesTab() {
   const [receiveSellingPrices, setReceiveSellingPrices] = useState<{ [productId: string]: number }>({});
   const [isSaving, setIsSaving] = useState(false);
 
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   
-  const allPurchaseOrders = useLiveQuery(() => activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  const allPurchaseOrders = useLiveQuery(() => activeShopId ? db.purchaseOrders.where('shopId').equals(activeShopId).toArray() : Promise.resolve([]), [activeShopId], []) ;
   const allSuppliers = useLiveQuery(
-    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
     []
   );
   const allProducts = useLiveQuery(
-    () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveBranch(p, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    () => activeBusinessId && activeShopId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveShop(p, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
     []
   );
   const supplierProducts = productsForSupplier(allProducts || [], allPurchaseOrders || [], poForm.supplierId);
@@ -81,7 +81,7 @@ export default function PurchasesTab() {
 
   const handleSavePO = async () => {
       if (!poForm.supplierId || poItems.length === 0) return;
-      if (!activeBusinessId || !activeBranchId) return error("Select a branch before saving a purchase order.");
+      if (!activeBusinessId || !activeShopId) return error("The shop is still loading. Try again.");
       if (isSaving) return;
       setIsSaving(true);
       try {
@@ -94,7 +94,7 @@ export default function PurchasesTab() {
             unitCost: item.unitCost,
           })),
           preparedBy: selectedPOToEdit?.preparedBy || currentUser?.name || 'Staff',
-          branchId: activeBranchId,
+          shopId: activeShopId,
           businessId: activeBusinessId,
         });
         await reloadBestEffort([() => db.purchaseOrders.reload()]);
@@ -149,7 +149,7 @@ export default function PurchasesTab() {
       if (isSaving) return;
       const invoiceNumber = receiveInvoices[selectedPO.id];
       if (!invoiceNumber) return error("Invoice number is required");
-      if (!activeBusinessId || !activeBranchId) return error("Business and branch are required.");
+      if (!activeBusinessId || !activeShopId) return error("The shop is still loading. Try again.");
       const underCostLine = selectedPO.items.find(item => {
           const product = allProducts?.find(p => p.id === item.productId);
           const unitCost = Number(receiveUnitCosts[item.productId] ?? item.unitCost) || 0;
@@ -180,7 +180,7 @@ export default function PurchasesTab() {
             invoiceNumber,
             receivedBy: currentUser?.name || 'Staff',
             businessId: activeBusinessId!,
-            branchId: activeBranchId!,
+            shopId: activeShopId!,
             items: updatedItems.map(item => ({
                 productId: item.productId,
                 receivedQuantity: item.receivedQuantity,

@@ -8,6 +8,8 @@ import {
   upsertSyncState,
 } from './localdb';
 
+const SINGLE_SHOP_ID = 'single-shop';
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -23,8 +25,7 @@ export async function sendHeartbeat(args?: { cashierName?: string }): Promise<vo
   if (!navigator.onLine) return;
 
   const businessId = useStore.getState().activeBusinessId;
-  const branchId = useStore.getState().activeBranchId;
-  if (!businessId || !branchId) return;
+  if (!businessId) return;
 
   const apiKey = await getApiKey();
   const res = await fetch('/api/sync/heartbeat', {
@@ -33,7 +34,6 @@ export async function sendHeartbeat(args?: { cashierName?: string }): Promise<vo
       'Content-Type': 'application/json',
       'X-API-Key': apiKey,
       'X-Business-ID': businessId,
-      'X-Branch-ID': branchId,
     },
     credentials: 'same-origin',
     cache: 'no-store',
@@ -58,11 +58,11 @@ export async function flushOutboxNow(): Promise<{ flushed: number }> {
   if (!navigator.onLine) return { flushed: 0 };
 
   const businessId = useStore.getState().activeBusinessId;
-  const branchId = useStore.getState().activeBranchId;
   const cashierName = useStore.getState().currentUser?.name;
-  if (!businessId || !branchId) return { flushed: 0 };
+  if (!businessId) return { flushed: 0 };
+  const shopId = SINGLE_SHOP_ID;
 
-  const pending = await getPendingOutbox({ businessId, branchId, limit: 25 });
+  const pending = await getPendingOutbox({ businessId, shopId, limit: 25 });
   if (pending.length === 0) return { flushed: 0 };
 
   const apiKey = await getApiKey();
@@ -78,7 +78,6 @@ export async function flushOutboxNow(): Promise<{ flushed: number }> {
           'Content-Type': 'application/json',
           'X-API-Key': apiKey,
           'X-Business-ID': businessId,
-          'X-Branch-ID': branchId,
         },
         credentials: 'same-origin',
         cache: 'no-store',
@@ -122,7 +121,7 @@ export async function flushOutboxNow(): Promise<{ flushed: number }> {
     const deviceId = getDeviceId();
     await upsertSyncState({
       businessId,
-      branchId,
+      shopId,
       deviceId,
       cashierName,
       lastSuccessfulSyncAt: Date.now(),
@@ -137,4 +136,3 @@ export async function flushOutboxNow(): Promise<{ flushed: number }> {
 
   return { flushed };
 }
-

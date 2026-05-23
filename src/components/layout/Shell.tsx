@@ -1,8 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   BarChart3,
-  Check,
-  ChevronDown,
   CircleDollarSign,
   LayoutDashboard,
   LogOut,
@@ -26,8 +24,6 @@ const MaterialIcon = ({ name, className = "", style = {} }: { name: string, clas
     const icons: Record<string, React.ElementType> = {
       storefront: Store,
       store: Store,
-      expand_more: ChevronDown,
-      check: Check,
       sync: RefreshCw,
       dashboard: LayoutDashboard,
       point_of_sale: ShoppingCart,
@@ -55,17 +51,14 @@ const MaterialIcon = ({ name, className = "", style = {} }: { name: string, clas
 
 export function TopHeader({ 
   activeBusiness, 
-  activeBranch, 
-  branches, 
-  onBranchChange, 
+  activeShop, 
   isSyncing, 
   onSync, 
   isOnline, 
   onOpenProfile,
   currentUser
 }: any) {
-  const isAdmin = currentUser?.role === 'ADMIN';
-  const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
+  const shopName = String(activeShop?.name || 'Main shop');
 
   return (
     <header className="w-full top-0 sticky z-50 bg-white/95 backdrop-blur-xl border-b border-slate-200/80">
@@ -81,50 +74,9 @@ export function TopHeader({
                <span className="text-[11px] md:text-xs font-black text-slate-900 uppercase tracking-widest leading-none truncate">
                  {activeBusiness?.name || 'Mtaani POS'}
                </span>
-               
-               {isAdmin && branches?.length > 1 ? (
-                 <div className="relative">
-                   <button
-                     onClick={() => setBranchDropdownOpen(v => !v)}
-                     className="flex items-center gap-1 mt-0.5 group max-w-full"
-                   >
-                     <span className="text-[10px] font-bold text-primary truncate">
-                       {activeBranch?.name || 'Select branch'}
-                     </span>
-                     <MaterialIcon 
-                       name="expand_more" 
-                       className={`text-primary transition-transform duration-200 ${branchDropdownOpen ? 'rotate-180' : ''}`}
-                       style={{ fontSize: '14px' }} 
-                     />
-                   </button>
-                   
-                   {branchDropdownOpen && (
-                     <>
-                       <div className="fixed inset-0 z-40" onClick={() => setBranchDropdownOpen(false)} />
-                       <div className="absolute top-full left-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 min-w-[200px] overflow-hidden">
-                         <div className="p-2">
-                           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-3 py-2">Switch branch</p>
-                           {branches.map((b: any) => (
-                             <button
-                               key={b.id}
-                               onClick={() => { onBranchChange(b.id); setBranchDropdownOpen(false); }}
-                               className={`w-full grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${activeBranch?.id === b.id ? 'bg-primary text-white' : 'hover:bg-slate-50 text-slate-800'}`}
-                             >
-                               <MaterialIcon name="store" style={{ fontSize: '16px' }} />
-                               <span className="text-[11px] font-bold stable-title">{b.name}</span>
-                               {activeBranch?.id === b.id && <MaterialIcon name="check" className="ml-auto" style={{ fontSize: '14px' }} />}
-                             </button>
-                           ))}
-                         </div>
-                       </div>
-                     </>
-                   )}
-                 </div>
-               ) : (
-                 <span className="text-[10px] font-semibold text-slate-500 truncate mt-0.5">
-                   {activeBranch?.name || 'Main shop'}
-                 </span>
-               )}
+               <span className="text-[10px] font-semibold text-slate-500 truncate mt-0.5">
+                 {shopName}
+               </span>
              </div>
           </div>
 
@@ -167,6 +119,7 @@ export function MobileNav({ activeTab, onTabChange, onToggleMore, isMoreMenuOpen
   const tabs = [
     { id: 'DASHBOARD', label: 'Dash', icon: 'dashboard' },
     { id: 'REGISTER', label: 'Sale', icon: 'point_of_sale' },
+    { id: 'TILLS', label: 'Tills', icon: 'store' },
     { id: 'INVENTORY', label: 'Stock', icon: 'inventory_2' },
     { id: 'MORE', label: 'More', icon: 'more_horiz' },
   ];
@@ -210,6 +163,7 @@ export function MoreOptionsMenu({ onTabChange, onLogout, onClose, currentUser }:
   const isAdmin = role === 'ADMIN';
   const isAdminOrManager = role === 'ADMIN' || role === 'MANAGER';
   const quickAccess = [
+    { id: 'TILLS', label: 'Tills', icon: 'store', color: 'bg-blue-600' },
     { id: 'CUSTOMERS', label: 'Customers', icon: 'group', color: 'bg-blue-500' },
     { id: 'INVOICES', label: 'Invoices', icon: 'receipt_long', color: 'bg-cyan-600' },
     { id: 'EXPENSES', label: 'Expenses', icon: 'payments', color: 'bg-rose-500' },
@@ -229,7 +183,7 @@ export function MoreOptionsMenu({ onTabChange, onLogout, onClose, currentUser }:
   });
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end">
+    <div className="fixed inset-0 z-[100] flex items-end md:hidden">
       <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full bg-white rounded-t-[2rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-300 max-h-[85vh] flex flex-col">
         

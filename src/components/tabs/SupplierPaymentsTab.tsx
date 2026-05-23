@@ -6,7 +6,7 @@ import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import SupplierPaymentModal from '../modals/SupplierPaymentModal';
 import { settleSupplierPayment, type SupplierPaymentInput } from '../../utils/supplierLedger';
-import { belongsToActiveBranch } from '../../utils/branchScope';
+import { belongsToActiveShop } from '../../utils/shopScope';
 import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSession';
 import { getTodayStartMs } from '../../utils/cashDrawer';
 
@@ -22,18 +22,18 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
   const paymentSupplierId = useStore(state => state.paymentSupplierId);
   const setPaymentSupplierId = useStore(state => state.setPaymentSupplierId);
 
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const activeShift = useStore(state => state.activeShift);
   const currentUser = useStore(state => state.currentUser);
   
   const allSuppliers = useLiveQuery(
-    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
     []
   );
-  const allPayments = useLiveQuery(() => activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
-  const allCreditNotes = useLiveQuery(() => activeBranchId ? db.creditNotes.where('branchId').equals(activeBranchId).toArray() : Promise.resolve([]), [activeBranchId], []) ;
+  const allPayments = useLiveQuery(() => activeShopId ? db.supplierPayments.where('shopId').equals(activeShopId).toArray() : Promise.resolve([]), [activeShopId], []) ;
+  const allCreditNotes = useLiveQuery(() => activeShopId ? db.creditNotes.where('shopId').equals(activeShopId).toArray() : Promise.resolve([]), [activeShopId], []) ;
 
   const pendingCredits = allCreditNotes.filter(cn => !cn.status || cn.status === 'PENDING');
   const totalPendingCredit = pendingCredits.reduce((sum, cn) => sum + cn.amount, 0);
@@ -72,10 +72,10 @@ export default function SupplierPaymentsTab({ financialAccounts }: { financialAc
         await settleSupplierPayment({
           supplier: selectedSupplierForPayment,
           payment,
-          activeBranchId: activeBranchId!,
+          activeShopId: activeShopId!,
           activeBusinessId: activeBusinessId!,
           preparedBy: currentUser?.name || 'Staff',
-          shiftId: getCurrentShiftId(activeShift, activeBranchId, currentUser?.id),
+          shiftId: getCurrentShiftId(activeShift, activeShopId, currentUser?.id),
           shiftStart: getCurrentShiftStart(activeShift, getTodayStartMs()),
         });
         success("Payment recorded successfully.");

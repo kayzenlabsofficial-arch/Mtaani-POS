@@ -15,26 +15,26 @@ export const CustomerService = {
     customer?: Partial<Customer> & { id?: string };
     customerId?: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<{ success: boolean; customer: Customer }>('/api/customers/profile', {
       method: 'POST',
       body: { action: 'SAVE', ...input },
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 
   deleteProfile(input: {
     customerId: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<{ success: boolean; customerId: string }>('/api/customers/profile', {
       method: 'POST',
       body: { action: 'DELETE', ...input },
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 
@@ -46,14 +46,15 @@ export const CustomerService = {
     transactionCode?: string;
     allocations?: CustomerPayment['allocations'];
     preparedBy?: string;
+    shiftId?: string;
     businessId: string;
-    branchId: string;
+    shopId: string;
   }) {
     return apiRequest<CustomerPaymentResponse>('/api/customers/payment', {
       method: 'POST',
       body: { payment: input },
       businessId: input.businessId,
-      branchId: input.branchId,
+      shopId: input.shopId,
     });
   },
 };

@@ -16,7 +16,7 @@ import { db } from '../../db';
 import { useStore } from '../../store';
 import { canPerform } from '../../utils/accessControl';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
-import { belongsToActiveBranch } from '../../utils/branchScope';
+import { belongsToActiveShop } from '../../utils/shopScope';
 import { getBusinessSettings } from '../../utils/settings';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
@@ -218,7 +218,7 @@ export default function ReportsTab() {
   const [hourlyChartRef, hourlyChartSize] = useChartSize();
   const [cashierChartRef, cashierChartSize] = useChartSize();
   
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
 
@@ -248,10 +248,10 @@ export default function ReportsTab() {
   }
 
   // Core Data Queries
-  const allTransactions = useLiveQuery(() => activeBusinessId && activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
+  const allTransactions = useLiveQuery(() => activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
   const allProducts = useLiveQuery(
-    () => activeBusinessId && activeBranchId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveBranch(p, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    () => activeBusinessId && activeShopId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveShop(p, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
     []
   );
   const productIngredients = useLiveQuery(
@@ -259,10 +259,10 @@ export default function ReportsTab() {
     [activeBusinessId],
     []
   );
-  const allExpenses = useLiveQuery(() => activeBusinessId && activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const allSuppliers = useLiveQuery(() => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const allPurchases = useLiveQuery(() => activeBusinessId && activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).and(po => po.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const allSalesInvoices = useLiveQuery(() => activeBusinessId && activeBranchId ? db.salesInvoices.where('branchId').equals(activeBranchId).and(invoice => invoice.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
+  const allExpenses = useLiveQuery(() => activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const allSuppliers = useLiveQuery(() => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const allPurchases = useLiveQuery(() => activeBusinessId && activeShopId ? db.purchaseOrders.where('shopId').equals(activeShopId).and(po => po.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const allSalesInvoices = useLiveQuery(() => activeBusinessId && activeShopId ? db.salesInvoices.where('shopId').equals(activeShopId).and(invoice => invoice.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId], null);
 
   if (!allTransactions || !allProducts || !allExpenses || !allSuppliers || !allSalesInvoices) {

@@ -8,7 +8,7 @@ export type OfflineCacheTable =
   | 'serviceItems'
   | 'suppliers'
   | 'settings'
-  | 'branches'
+  | 'salesTills'
   | 'users'
   | 'financialAccounts'
   | 'expenseAccounts'
@@ -17,10 +17,10 @@ export type OfflineCacheTable =
 export type OfflineOutboxOp = 'UPSERT';
 
 export interface CachedRows {
-  id: string; // `${table}|${businessId}|${branchId ?? ''}`
+  id: string; // `${table}|${businessId}|${shopId ?? ''}`
   table: OfflineCacheTable;
   businessId: string;
-  branchId?: string;
+  shopId?: string;
   rows: any[];
   updatedAt: number;
 }
@@ -28,7 +28,7 @@ export interface CachedRows {
 export interface OutboxItem {
   id: string; // uuid
   businessId: string;
-  branchId: string;
+  shopId: string;
   table: 'transactions';
   op: OfflineOutboxOp;
   idempotencyKey: string; // uuid; for transactions we use tx.id
@@ -41,9 +41,9 @@ export interface OutboxItem {
 }
 
 export interface SyncStateRow {
-  id: string; // `${businessId}|${branchId}|${deviceId}`
+  id: string; // `${businessId}|${shopId}|${deviceId}`
   businessId: string;
-  branchId: string;
+  shopId: string;
   deviceId: string;
   cashierName?: string;
   lastSuccessfulSyncAt?: number;
@@ -56,11 +56,11 @@ class OfflineDexie extends Dexie {
   syncState!: Table<SyncStateRow, string>;
 
   constructor() {
-    super('mtaani_pos_offline_v1');
+    super('mtaani_pos_offline_v2');
     this.version(1).stores({
-      cachedRows: 'id, table, businessId, branchId, updatedAt',
-      outbox: 'id, businessId, branchId, table, createdAt, ackedAt, idempotencyKey',
-      syncState: 'id, businessId, branchId, deviceId, updatedAt',
+      cachedRows: 'id, table, businessId, shopId, updatedAt',
+      outbox: 'id, businessId, shopId, table, createdAt, ackedAt, idempotencyKey',
+      syncState: 'id, businessId, shopId, deviceId, updatedAt',
     });
   }
 }
@@ -87,23 +87,23 @@ export function getDeviceId(): string {
   return v;
 }
 
-function cacheKey(table: OfflineCacheTable, businessId: string, branchId?: string) {
-  return `${table}|${businessId}|${branchId ?? ''}`;
+function cacheKey(table: OfflineCacheTable, businessId: string, shopId?: string) {
+  return `${table}|${businessId}|${shopId ?? ''}`;
 }
 
 export async function cacheTableRows(args: {
   table: OfflineCacheTable;
   businessId: string;
-  branchId?: string;
+  shopId?: string;
   rows: any[];
   updatedAt?: number;
 }): Promise<void> {
   const updatedAt = args.updatedAt ?? Date.now();
   await offlineDb.cachedRows.put({
-    id: cacheKey(args.table, args.businessId, args.branchId),
+    id: cacheKey(args.table, args.businessId, args.shopId),
     table: args.table,
     businessId: args.businessId,
-    branchId: args.branchId,
+    shopId: args.shopId,
     rows: args.rows ?? [],
     updatedAt,
   });
@@ -112,9 +112,9 @@ export async function cacheTableRows(args: {
 export async function readCachedTableRows(args: {
   table: OfflineCacheTable;
   businessId: string;
-  branchId?: string;
+  shopId?: string;
 }): Promise<any[]> {
-  const row = await offlineDb.cachedRows.get(cacheKey(args.table, args.businessId, args.branchId));
+  const row = await offlineDb.cachedRows.get(cacheKey(args.table, args.businessId, args.shopId));
   return row?.rows ?? [];
 }
 
@@ -123,7 +123,7 @@ export async function enqueueOutbox(item: Omit<OutboxItem, 'id' | 'createdAt' | 
   await offlineDb.outbox.put({
     id,
     businessId: item.businessId,
-    branchId: item.branchId,
+    shopId: item.shopId,
     table: item.table,
     op: item.op,
     idempotencyKey: item.idempotencyKey,
@@ -146,22 +146,22 @@ export async function markOutboxAcked(id: string): Promise<void> {
   await offlineDb.outbox.update(id, { ackedAt: Date.now(), error: undefined });
 }
 
-export async function getPendingOutbox(args: { businessId: string; branchId: string; limit?: number }): Promise<OutboxItem[]> {
+export async function getPendingOutbox(args: { businessId: string; shopId: string; limit?: number }): Promise<OutboxItem[]> {
   const limit = args.limit ?? 50;
   return offlineDb.outbox
     .where('businessId')
     .equals(args.businessId)
-    .filter((x) => x.branchId === args.branchId && !x.ackedAt)
+    .filter((x) => x.shopId === args.shopId && !x.ackedAt)
     .sortBy('createdAt')
     .then((arr) => arr.slice(0, limit));
 }
 
 export async function upsertSyncState(args: Omit<SyncStateRow, 'id' | 'updatedAt'> & { lastSuccessfulSyncAt?: number }): Promise<void> {
-  const id = `${args.businessId}|${args.branchId}|${args.deviceId}`;
+  const id = `${args.businessId}|${args.shopId}|${args.deviceId}`;
   await offlineDb.syncState.put({
     id,
     businessId: args.businessId,
-    branchId: args.branchId,
+    shopId: args.shopId,
     deviceId: args.deviceId,
     cashierName: args.cashierName,
     lastSuccessfulSyncAt: args.lastSuccessfulSyncAt,
@@ -169,7 +169,6 @@ export async function upsertSyncState(args: Omit<SyncStateRow, 'id' | 'updatedAt
   });
 }
 
-export async function readSyncState(args: { businessId: string; branchId: string; deviceId: string }): Promise<SyncStateRow | undefined> {
-  return offlineDb.syncState.get(`${args.businessId}|${args.branchId}|${args.deviceId}`);
+export async function readSyncState(args: { businessId: string; shopId: string; deviceId: string }): Promise<SyncStateRow | undefined> {
+  return offlineDb.syncState.get(`${args.businessId}|${args.shopId}|${args.deviceId}`);
 }
-

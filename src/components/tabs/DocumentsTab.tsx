@@ -54,18 +54,18 @@ export default function DocumentsTab() {
   const scrollRef = useHorizontalScroll();
   const { success, error } = useToast();
 
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
-  const allTransactions = useLiveQuery(() => activeBusinessId && activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []) ;
-  const allRefunds = useLiveQuery(() => activeBusinessId && activeBranchId ? db.refunds.where('branchId').equals(activeBranchId).and(r => r.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const allExpenses = useLiveQuery(() => activeBusinessId && activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const allSupplierPayments = useLiveQuery(() => activeBusinessId && activeBranchId ? db.supplierPayments.where('branchId').equals(activeBranchId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const allCreditNotes = useLiveQuery(() => activeBusinessId && activeBranchId ? db.creditNotes.where('branchId').equals(activeBranchId).and(cn => cn.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const allSalesInvoices = useLiveQuery(() => activeBusinessId && activeBranchId ? db.salesInvoices.where('branchId').equals(activeBranchId).and(i => i.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const allPurchaseOrders = useLiveQuery(() => activeBusinessId && activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).and(po => po.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const allReports = useLiveQuery(() => activeBusinessId && activeBranchId ? db.endOfDayReports.where('branchId').equals(activeBranchId).and(r => r.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const allDailySummaries = useLiveQuery(() => activeBusinessId && activeBranchId ? db.dailySummaries.where('branchId').equals(activeBranchId).and(ds => ds.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
+  const allTransactions = useLiveQuery(() => activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
+  const allRefunds = useLiveQuery(() => activeBusinessId && activeShopId ? db.refunds.where('shopId').equals(activeShopId).and(r => r.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const allExpenses = useLiveQuery(() => activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const allSupplierPayments = useLiveQuery(() => activeBusinessId && activeShopId ? db.supplierPayments.where('shopId').equals(activeShopId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const allCreditNotes = useLiveQuery(() => activeBusinessId && activeShopId ? db.creditNotes.where('shopId').equals(activeShopId).and(cn => cn.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const allSalesInvoices = useLiveQuery(() => activeBusinessId && activeShopId ? db.salesInvoices.where('shopId').equals(activeShopId).and(i => i.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const allPurchaseOrders = useLiveQuery(() => activeBusinessId && activeShopId ? db.purchaseOrders.where('shopId').equals(activeShopId).and(po => po.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const allReports = useLiveQuery(() => activeBusinessId && activeShopId ? db.endOfDayReports.where('shopId').equals(activeShopId).and(r => r.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const allDailySummaries = useLiveQuery(() => activeBusinessId && activeShopId ? db.dailySummaries.where('shopId').equals(activeShopId).and(ds => ds.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
 
   const unifiedRecords: any[] = [
@@ -117,16 +117,16 @@ export default function DocumentsTab() {
       error('You do not have permission to request refunds.');
       return;
     }
-    if (!activeBusinessId || !activeBranchId) {
-      error('Select a branch before processing a refund.');
+    if (!activeBusinessId || !activeShopId) {
+      error('The shop is still loading. Try again.');
       return;
     }
     const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
     try {
-      if (autoApprove && activeBranchId && activeBusinessId) {
+      if (autoApprove && activeShopId && activeBusinessId) {
         await approveRefundTransaction(t, itemsToReturn, {
           approvedBy: currentUser?.name || 'Owner',
-          activeBranchId,
+          activeShopId,
           activeBusinessId
         });
       } else {
@@ -199,7 +199,7 @@ export default function DocumentsTab() {
   }, [docSearch, filterType, dateMode, dateStart, dateEnd, mpesaView]);
 
   useEffect(() => {
-    if (filterType !== 'MPESA' || !activeBusinessId || !activeBranchId) return;
+    if (filterType !== 'MPESA' || !activeBusinessId || !activeShopId) return;
     let cancelled = false;
     const loadMpesaRows = async () => {
       setIsMpesaLoading(true);
@@ -222,7 +222,7 @@ export default function DocumentsTab() {
         do {
           const res = await MpesaService.listTransactions({
             businessId: activeBusinessId,
-            branchId: activeBranchId,
+            shopId: activeShopId,
             from,
             to,
             search: docSearch,
@@ -248,7 +248,7 @@ export default function DocumentsTab() {
     };
     loadMpesaRows();
     return () => { cancelled = true; };
-  }, [filterType, activeBusinessId, activeBranchId, dateMode, dateStart, dateEnd, docSearch, todayInput]);
+  }, [filterType, activeBusinessId, activeShopId, dateMode, dateStart, dateEnd, docSearch, todayInput]);
 
   return (
     <div className="pb-24 animate-in fade-in w-full">

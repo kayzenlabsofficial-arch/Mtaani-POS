@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -11,7 +11,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -39,7 +39,6 @@ async function ensureCloseDaySchema(db: D1Database) {
       totalRefunds REAL,
       totalVariance REAL NOT NULL DEFAULT 0,
       timestamp INTEGER NOT NULL,
-      branchId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -56,7 +55,6 @@ async function ensureCloseDaySchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -67,10 +65,9 @@ async function ensureCloseDaySchema(db: D1Database) {
     'ALTER TABLE dailySummaries ADD COLUMN totalPicks REAL',
     'ALTER TABLE dailySummaries ADD COLUMN totalRefunds REAL',
     'ALTER TABLE dailySummaries ADD COLUMN totalVariance REAL',
-    'ALTER TABLE dailySummaries ADD COLUMN branchId TEXT',
     'ALTER TABLE dailySummaries ADD COLUMN businessId TEXT',
     'ALTER TABLE dailySummaries ADD COLUMN updated_at INTEGER',
-    'CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_branch_date ON dailySummaries(businessId, branchId, date)',
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_date ON dailySummaries(businessId, date)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
@@ -85,8 +82,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!auth.service && !CLOSE_DAY_ROLES.has(auth.principal.role)) throw new PolicyError('You are not allowed to close the business day.', 403);
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
-    if (!businessId || !branchId || !canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) return json({ error: 'Access denied.' }, 403);
+    if (!businessId || !canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
     await ensureCloseDaySchema(env.DB);
     const now = Date.now();
     const summary = body?.summary || {};
@@ -96,19 +92,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       SELECT id
       FROM dailySummaries
       WHERE businessId = ?
-        AND branchId = ?
         AND date > ?
         AND date < ?
       LIMIT 1
-    `).bind(businessId, branchId, summaryDate - DAY_MS, summaryDate + DAY_MS).first<any>();
+    `).bind(businessId, summaryDate - DAY_MS, summaryDate + DAY_MS).first<any>();
     if (existing) {
       return json({
-        error: `This branch already has a daily close report for ${new Date(summaryDate).toLocaleDateString('en-KE')}.`,
+        error: `This business already has a daily close report for ${new Date(summaryDate).toLocaleDateString('en-KE')}.`,
         summaryId: existing.id,
       }, 409);
     }
 
-    const id = String(body?.summaryId || `day_${businessId}_${branchId}_${new Date(summaryDate).toISOString().slice(0, 10)}`).trim();
+    const id = String(body?.summaryId || `day_${businessId}_${new Date(summaryDate).toISOString().slice(0, 10)}`).trim();
     const totalSales = nonNegative(summary.totalSales);
     const grossSales = nonNegative(summary.grossSales);
     const taxTotal = nonNegative(summary.taxTotal);
@@ -117,12 +112,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const totalRefunds = nonNegative(summary.totalRefunds);
     const totalVariance = n(summary.totalVariance);
     await env.DB.prepare(`
-      INSERT INTO dailySummaries (id, date, shiftIds, totalSales, grossSales, taxTotal, totalExpenses, totalPicks, totalRefunds, totalVariance, timestamp, branchId, businessId, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(id, summaryDate, JSON.stringify(Array.isArray(summary.shiftIds) ? summary.shiftIds : []), totalSales, grossSales, taxTotal, totalExpenses, totalPicks, totalRefunds, totalVariance, now, branchId, businessId, now).run();
+      INSERT INTO dailySummaries (id, date, shiftIds, totalSales, grossSales, taxTotal, totalExpenses, totalPicks, totalRefunds, totalVariance, timestamp, businessId, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(id, summaryDate, JSON.stringify(Array.isArray(summary.shiftIds) ? summary.shiftIds : []), totalSales, grossSales, taxTotal, totalExpenses, totalPicks, totalRefunds, totalVariance, now, businessId, now).run();
     await env.DB.prepare(`
-      INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       crypto.randomUUID(),
       now,
@@ -133,14 +128,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       id,
       totalVariance === 0 ? 'INFO' : 'WARN',
       `Closed business day ${new Date(summaryDate).toISOString().slice(0, 10)} with sales Ksh ${totalSales.toLocaleString()} and variance Ksh ${totalVariance.toLocaleString()}.`,
-      businessId,
-      branchId,
-      now,
+      businessId, now,
     ).run();
     return json({ success: true, summaryId: id, idempotent: false });
   } catch (err: any) {
     if (/unique|constraint/i.test(String(err?.message || ''))) {
-      return json({ error: 'This branch already has a daily close report for that day.' }, 409);
+      return json({ error: 'This business already has a daily close report for that day.' }, 409);
     }
     const status = err instanceof PolicyError ? err.status : 500;
     return json({ error: err?.message || 'Could not close day.' }, status);

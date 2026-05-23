@@ -12,7 +12,6 @@ export class PolicyError extends Error {
 type ProductRow = {
   id: string;
   name: string;
-  branchId?: string | null;
   category?: string;
   sellingPrice?: number;
   costPrice?: number;
@@ -28,7 +27,6 @@ type ProductRow = {
 type HardenOptions = {
   db: D1Database;
   businessId: string;
-  branchId: string;
   principal: Principal;
   service: boolean;
   sourceLabel?: string;
@@ -106,7 +104,7 @@ async function loadProducts(db: D1Database, businessId: string, ids: string[]): 
     const chunk = uniqueIds.slice(i, i + CHUNK_SIZE);
     const placeholders = chunk.map(() => '?').join(',');
     const { results } = await db.prepare(
-      `SELECT id, name, branchId, category, sellingPrice, costPrice, taxCategory, unit, isBundle, components, stockQuantity
+      `SELECT id, name, category, sellingPrice, costPrice, taxCategory, unit, isBundle, components, stockQuantity
        FROM products
        WHERE businessId = ? AND id IN (${placeholders})`
     ).bind(businessId, ...chunk).all();
@@ -118,7 +116,7 @@ async function loadProducts(db: D1Database, businessId: string, ids: string[]): 
   return products;
 }
 
-async function loadExistingTransactions(db: D1Database, businessId: string, branchId: string, ids: string[]) {
+async function loadExistingTransactions(db: D1Database, businessId: string, ids: string[]) {
   const existing = new Map<string, Record<string, any>>();
   const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
   if (uniqueIds.length === 0) return existing;
@@ -130,8 +128,8 @@ async function loadExistingTransactions(db: D1Database, businessId: string, bran
     const { results } = await db.prepare(
       `SELECT *
        FROM transactions
-       WHERE businessId = ? AND branchId = ? AND id IN (${placeholders})`
-    ).bind(businessId, branchId, ...chunk).all();
+       WHERE businessId = ? AND id IN (${placeholders})`
+    ).bind(businessId, ...chunk).all();
     (results as any[]).forEach((row) => {
       const clean = deserializeRow(row);
       existing.set(String(clean.id), clean);
@@ -197,19 +195,13 @@ function addDeduction(deductions: Map<string, number>, productId: string, quanti
   deductions.set(productId, (deductions.get(productId) || 0) + quantity);
 }
 
-function assertProductBranch(product: ProductRow, branchId: string) {
-  if (product.branchId && product.branchId !== branchId) {
-    throw new PolicyError(`Product "${product.name}" belongs to another branch.`, 403);
-  }
-}
-
 export async function hardenTransactionBatch(options: HardenOptions, transactions: any[]): Promise<D1PreparedStatement[]> {
-  const { db, businessId, branchId, principal, service, sourceLabel = 'Sale' } = options;
+  const { db, businessId, principal, service, sourceLabel = 'Sale' } = options;
   if (transactions.length > 100) throw new PolicyError('Too many sales in one request. Send fewer at a time.', 413);
 
   const now = Date.now();
   const transactionIds = transactions.map((tx) => String(tx?.id || '').trim()).filter(Boolean);
-  const existing = await loadExistingTransactions(db, businessId, branchId, transactionIds);
+  const existing = await loadExistingTransactions(db, businessId, transactionIds);
 
   const saleProductIds: string[] = [];
   for (const tx of transactions) {
@@ -254,7 +246,6 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
     }
 
     tx.businessId = businessId;
-    tx.branchId = branchId;
     tx.status = desiredStatus;
     tx.timestamp = clamp(asNumber(tx.timestamp, now), 0, now + 5 * 60 * 1000);
     tx.updated_at = now;
@@ -300,7 +291,6 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
       const productId = String(item?.productId || item?.id || '').trim();
       const product = productId ? products.get(productId) : null;
       if (!product) throw new PolicyError('Sale includes an item that does not exist.', 400);
-      assertProductBranch(product, branchId);
       const quantity = clamp(asNumber(item?.quantity ?? item?.cartQuantity), 0, 1_000_000);
       if (quantity <= 0) throw new PolicyError('Sale item quantity must be more than zero.');
       return {
@@ -378,7 +368,6 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
       for (const [productId, quantity] of txDeductions.entries()) {
         const product = products.get(productId);
         if (!product) throw new PolicyError('Sale refers to a stock item that does not exist.');
-        assertProductBranch(product, branchId);
         const alreadyPlanned = plannedDeductions.get(productId) || 0;
         if (asNumber(product.stockQuantity) < alreadyPlanned + quantity) {
           throw new PolicyError(`Insufficient stock for ${product.name}.`, 409);
@@ -392,8 +381,8 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
         );
         sideEffects.push(
           db.prepare(
-            `INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
           ).bind(
             crypto.randomUUID(),
             productId,
@@ -401,7 +390,6 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
             quantity,  // Positive value — type='OUT' already conveys the direction
             tx.timestamp,
             `${sourceLabel} #${txRef}`,
-            branchId,
             businessId,
             tx.shiftId || null,
             now,

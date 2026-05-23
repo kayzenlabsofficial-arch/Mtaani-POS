@@ -585,7 +585,7 @@ export function buildEscPosReceipt(record: any, storeName = 'Mtaani POS', locati
   const rows: string[] = [
     center(storeName.toUpperCase()),
     center(address),
-    center(`Branch: ${record?.branchName || 'Main'}`),
+    center(`Shop: ${String(record?.shopName || 'Main')}`),
     line(),
     leftRight('Receipt', ref),
     leftRight('Date', createdAt.toLocaleDateString('en-KE')),

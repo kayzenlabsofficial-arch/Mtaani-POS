@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 import { ensureRefundSchema, prepareRefundApproval } from './refundOps';
 
@@ -9,7 +9,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -29,16 +29,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const transactionId = String(body?.transactionId || body?.id || '').trim();
-    if (!businessId || !branchId || !transactionId) return json({ error: 'Business, branch and receipt are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) return json({ error: 'Access denied.' }, 403);
+    if (!businessId || !transactionId) return json({ error: 'Business and receipt are required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
 
     await ensureRefundSchema(env.DB);
     const prepared = await prepareRefundApproval(env.DB, {
-      businessId,
-      branchId,
-      principal: auth.principal,
+      businessId, principal: auth.principal,
       service: auth.service,
       transactionId,
       itemsToReturn: body?.itemsToReturn,

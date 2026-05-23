@@ -55,7 +55,6 @@ export async function ensureExpenseActionSchema(db: D1Database) {
       preparedBy TEXT,
       approvedBy TEXT,
       shiftId TEXT,
-      branchId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -67,7 +66,6 @@ export async function ensureExpenseActionSchema(db: D1Database) {
       type TEXT NOT NULL,
       balance REAL NOT NULL DEFAULT 0,
       businessId TEXT,
-      branchId TEXT,
       accountNumber TEXT,
       updated_at INTEGER
     )
@@ -90,7 +88,6 @@ export async function ensureExpenseActionSchema(db: D1Database) {
       isBundle INTEGER DEFAULT 0,
       components TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -106,7 +103,6 @@ export async function ensureExpenseActionSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -118,7 +114,6 @@ export async function ensureExpenseActionSchema(db: D1Database) {
       quantity REAL NOT NULL,
       timestamp INTEGER NOT NULL,
       reference TEXT,
-      branchId TEXT,
       businessId TEXT,
       shiftId TEXT,
       updated_at INTEGER
@@ -132,18 +127,14 @@ export async function ensureExpenseActionSchema(db: D1Database) {
     'ALTER TABLE expenses ADD COLUMN preparedBy TEXT',
     'ALTER TABLE expenses ADD COLUMN approvedBy TEXT',
     'ALTER TABLE expenses ADD COLUMN shiftId TEXT',
-    'ALTER TABLE expenses ADD COLUMN branchId TEXT',
     'ALTER TABLE expenses ADD COLUMN businessId TEXT',
     'ALTER TABLE expenses ADD COLUMN updated_at INTEGER',
-    'ALTER TABLE financialAccounts ADD COLUMN branchId TEXT',
     'ALTER TABLE financialAccounts ADD COLUMN accountNumber TEXT',
     'ALTER TABLE financialAccounts ADD COLUMN updated_at INTEGER',
     'ALTER TABLE products ADD COLUMN businessId TEXT',
-    'ALTER TABLE products ADD COLUMN branchId TEXT',
     'ALTER TABLE products ADD COLUMN expiryTracking INTEGER DEFAULT 0',
     'ALTER TABLE products ADD COLUMN expiryDate INTEGER',
     'ALTER TABLE products ADD COLUMN updated_at INTEGER',
-    'ALTER TABLE stockMovements ADD COLUMN branchId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN businessId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
@@ -163,7 +154,6 @@ function sameExpenseIdentity(existing: Record<string, any>, next: Record<string,
 function auditStatement(db: D1Database, args: {
   principal: Principal;
   businessId: string;
-  branchId: string;
   expenseId: string;
   action: string;
   severity: 'INFO' | 'WARN' | 'CRITICAL';
@@ -171,8 +161,8 @@ function auditStatement(db: D1Database, args: {
 }) {
   const now = Date.now();
   return db.prepare(`
-    INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     crypto.randomUUID(),
     now,
@@ -184,15 +174,38 @@ function auditStatement(db: D1Database, args: {
     args.severity,
     args.details,
     args.businessId,
-    args.branchId,
     now,
   );
+}
+
+function pickedCashAccountId(businessId: string) {
+  return trimText(`picked_cash_${businessId}`, 160);
+}
+
+async function ensurePickedCashAccount(db: D1Database, businessId: string) {
+  const id = pickedCashAccountId(businessId);
+  const now = Date.now();
+  await db.prepare(`
+    INSERT OR IGNORE INTO financialAccounts (id, name, type, balance, businessId, accountNumber, updated_at)
+    VALUES (?, 'Picked cash account', 'CASH', 0, ?, 'PICKED-CASH', ?)
+  `).bind(id, businessId, now).run();
+  await db.prepare(`
+    UPDATE financialAccounts
+    SET name = 'Picked cash account', type = 'CASH', accountNumber = 'PICKED-CASH',
+        updated_at = ?
+    WHERE id = ? AND businessId = ?
+  `).bind(now, id, businessId).run();
+  return db.prepare(`
+    SELECT id, name, balance
+    FROM financialAccounts
+    WHERE id = ? AND businessId = ?
+    LIMIT 1
+  `).bind(id, businessId).first<any>();
 }
 
 async function effectStatementsForApprovedExpense(
   db: D1Database,
   businessId: string,
-  branchId: string,
   expense: Record<string, any>,
 ): Promise<D1PreparedStatement[]> {
   const source = String(expense.source || 'TILL').toUpperCase();
@@ -200,16 +213,9 @@ async function effectStatementsForApprovedExpense(
   const now = Date.now();
 
   if (source === 'ACCOUNT') {
-    const accountId = trimText(expense.accountId, 120);
-    if (!accountId) throw new PolicyError('Select the account paying this expense.', 400);
-    const account = await db.prepare(`
-      SELECT id, name, balance, branchId
-      FROM financialAccounts
-      WHERE id = ? AND businessId = ?
-      LIMIT 1
-    `).bind(accountId, businessId).first<any>();
+    const accountId = pickedCashAccountId(businessId);
+    const account = await ensurePickedCashAccount(db, businessId);
     if (!account) throw new PolicyError('Selected payment account was not found.', 404);
-    if (account.branchId && account.branchId !== branchId) throw new PolicyError('Selected account belongs to another branch.', 403);
     if (asNumber(account.balance) < amount) {
       throw new PolicyError(`Insufficient funds in ${account.name}.`, 409);
     }
@@ -224,21 +230,20 @@ async function effectStatementsForApprovedExpense(
     const quantity = Math.max(0, asNumber(expense.quantity, 1));
     if (!productId || quantity <= 0) throw new PolicyError('Select the stock item and quantity being expensed.', 400);
     const product = await db.prepare(`
-      SELECT id, name, stockQuantity, branchId
+      SELECT id, name, stockQuantity
       FROM products
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(productId, businessId).first<any>();
     if (!product) throw new PolicyError('Selected shop item was not found.', 404);
-    if (product.branchId && product.branchId !== branchId) throw new PolicyError('Selected stock item belongs to another branch.', 403);
     if (asNumber(product.stockQuantity) < quantity) throw new PolicyError(`Insufficient stock for ${product.name}.`, 409);
 
     return [
       db.prepare(`UPDATE products SET stockQuantity = stockQuantity - ?, updated_at = ? WHERE id = ? AND businessId = ?`)
         .bind(quantity, now, productId, businessId),
       db.prepare(`
-        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         productId,
@@ -246,7 +251,6 @@ async function effectStatementsForApprovedExpense(
         quantity,
         now,
         `Expense: ${trimText(expense.description || 'Shop Use', 120)}`,
-        branchId,
         businessId,
         expense.shiftId || null,
         now,
@@ -260,7 +264,6 @@ async function effectStatementsForApprovedExpense(
 async function amountForStockExpense(
   db: D1Database,
   businessId: string,
-  branchId: string,
   expense: Record<string, any>,
 ): Promise<number> {
   const productId = trimText(expense.productId, 120);
@@ -268,13 +271,12 @@ async function amountForStockExpense(
   if (!productId || quantity <= 0) throw new PolicyError('Select the stock item and quantity being expensed.', 400);
 
   const product = await db.prepare(`
-    SELECT id, name, stockQuantity, costPrice, branchId
+    SELECT id, name, stockQuantity, costPrice
     FROM products
     WHERE id = ? AND businessId = ?
     LIMIT 1
   `).bind(productId, businessId).first<any>();
   if (!product) throw new PolicyError('Selected shop item was not found.', 404);
-  if (product.branchId && product.branchId !== branchId) throw new PolicyError('Selected stock item belongs to another branch.', 403);
   if (asNumber(product.stockQuantity) < quantity) throw new PolicyError(`Insufficient stock for ${product.name}.`, 409);
 
   const costPrice = asNumber(product.costPrice);
@@ -286,21 +288,23 @@ export async function prepareExpenseSubmit(
   db: D1Database,
   args: {
     businessId: string;
-    branchId: string;
     principal: Principal;
     service: boolean;
     expense: Record<string, any>;
   },
 ) {
-  const { businessId, branchId, principal, service } = args;
+  const { businessId, principal, service } = args;
   if (!service && !STAFF_ROLES.has(principal.role)) throw new PolicyError('Staff access required.', 403);
 
   const now = Date.now();
   const expense = { ...(args.expense || {}) };
   expense.id = trimText(expense.id || crypto.randomUUID(), 120);
-  expense.source = String(expense.source || 'TILL').toUpperCase();
+  expense.source = String(expense.source || 'TILL').toUpperCase() === 'ACCOUNT' ? 'ACCOUNT' : 'TILL';
+  expense.accountId = expense.source === 'ACCOUNT' ? pickedCashAccountId(businessId) : null;
+  expense.productId = null;
+  expense.quantity = null;
   expense.amount = expense.source === 'SHOP'
-    ? await amountForStockExpense(db, businessId, branchId, expense)
+    ? await amountForStockExpense(db, businessId, expense)
     : Math.round(asNumber(expense.amount) * 100) / 100;
   if (expense.amount <= 0) throw new PolicyError('Expense amount must be more than zero.', 400);
   expense.category = trimText(expense.category || 'General', 120);
@@ -309,7 +313,6 @@ export async function prepareExpenseSubmit(
   expense.userName = trimText(expense.userName || principal.userName, 120);
   expense.preparedBy = trimText(expense.preparedBy || principal.userName, 120);
   expense.businessId = businessId;
-  expense.branchId = branchId;
   expense.updated_at = now;
 
   const requestedApproved = String(expense.status || '').toUpperCase() === 'APPROVED';
@@ -321,9 +324,9 @@ export async function prepareExpenseSubmit(
   const existing = await db.prepare(`
     SELECT *
     FROM expenses
-    WHERE id = ? AND businessId = ? AND branchId = ?
+    WHERE id = ? AND businessId = ?
     LIMIT 1
-  `).bind(expense.id, businessId, branchId).first<any>();
+  `).bind(expense.id, businessId).first<any>();
   if (existing) {
     const clean = deserializeRow(existing);
     if (!sameExpenseIdentity(clean, expense)) {
@@ -333,12 +336,10 @@ export async function prepareExpenseSubmit(
   }
 
   const statements = [await insertStatement(db, 'expenses', expense)];
-  if (approved) statements.push(...await effectStatementsForApprovedExpense(db, businessId, branchId, expense));
+  if (approved) statements.push(...await effectStatementsForApprovedExpense(db, businessId, expense));
   statements.push(auditStatement(db, {
     principal,
-    businessId,
-    branchId,
-    expenseId: expense.id,
+    businessId, expenseId: expense.id,
     action: approved ? 'expense.create.approved' : 'expense.create.pending',
     severity: approved ? 'INFO' : 'WARN',
     details: `${approved ? 'Approved' : 'Created pending'} expense for Ksh ${expense.amount.toLocaleString()} (${expense.category}).`,
@@ -351,28 +352,27 @@ export async function prepareExpenseApproval(
   db: D1Database,
   args: {
     businessId: string;
-    branchId: string;
     principal: Principal;
     service: boolean;
     expenseId: string;
     approvedBy?: string;
   },
 ) {
-  const { businessId, branchId, principal, service } = args;
+  const { businessId, principal, service } = args;
   if (!service && !APPROVER_ROLES.has(principal.role)) throw new PolicyError('You are not allowed to approve expenses.', 403);
 
   const expense = await db.prepare(`
     SELECT *
     FROM expenses
-    WHERE id = ? AND businessId = ? AND branchId = ?
+    WHERE id = ? AND businessId = ?
     LIMIT 1
-  `).bind(args.expenseId, businessId, branchId).first<any>();
+  `).bind(args.expenseId, businessId).first<any>();
   if (!expense) throw new PolicyError('Expense was not found.', 404);
   const clean = deserializeRow(expense);
   if (clean.status === 'APPROVED') return { expense: clean, statements: [], idempotent: true };
   if (clean.status !== 'PENDING') throw new PolicyError('This expense has already been processed.', 409);
   if (String(clean.source || '').toUpperCase() === 'SHOP') {
-    clean.amount = await amountForStockExpense(db, businessId, branchId, clean);
+    clean.amount = await amountForStockExpense(db, businessId, clean);
   }
 
   clean.status = 'APPROVED';
@@ -380,14 +380,12 @@ export async function prepareExpenseApproval(
   clean.updated_at = Date.now();
 
   const statements = [
-    db.prepare(`UPDATE expenses SET status = 'APPROVED', approvedBy = ?, amount = ?, updated_at = ? WHERE id = ? AND businessId = ? AND branchId = ?`)
-      .bind(clean.approvedBy, clean.amount, clean.updated_at, clean.id, businessId, branchId),
-    ...await effectStatementsForApprovedExpense(db, businessId, branchId, clean),
+    db.prepare(`UPDATE expenses SET status = 'APPROVED', approvedBy = ?, amount = ?, updated_at = ? WHERE id = ? AND businessId = ?`)
+      .bind(clean.approvedBy, clean.amount, clean.updated_at, clean.id, businessId),
+    ...await effectStatementsForApprovedExpense(db, businessId, clean),
     auditStatement(db, {
       principal,
-      businessId,
-      branchId,
-      expenseId: clean.id,
+      businessId, expenseId: clean.id,
       action: 'expense.approve',
       severity: 'INFO',
       details: `Approved expense for Ksh ${asNumber(clean.amount).toLocaleString()} (${clean.category || 'General'}).`,

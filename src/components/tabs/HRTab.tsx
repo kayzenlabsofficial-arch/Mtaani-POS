@@ -344,7 +344,7 @@ function InfoRow({ label, value }: { label: string; value?: string | number }) {
 
 export default function HRTab() {
   const activeBusinessId = useStore(state => state.activeBusinessId);
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
   const currentUser = useStore(state => state.currentUser);
   const { success, error } = useToast();
   const canManageHR = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
@@ -365,34 +365,34 @@ export default function HRTab() {
   const [isSaving, setIsSaving] = useState(false);
 
   const staffRows = useLiveQuery(
-    () => activeBusinessId && activeBranchId
-      ? db.hrStaff.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+    () => activeBusinessId && activeShopId
+      ? db.hrStaff.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    [activeBusinessId, activeShopId],
     [],
   ) || [];
 
   const documentRows = useLiveQuery(
-    () => activeBusinessId && activeBranchId
-      ? db.hrStaffDocuments.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+    () => activeBusinessId && activeShopId
+      ? db.hrStaffDocuments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    [activeBusinessId, activeShopId],
     [],
   ) || [];
 
   const attendanceRows = useLiveQuery(
-    () => activeBusinessId && activeBranchId
-      ? db.hrAttendance.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+    () => activeBusinessId && activeShopId
+      ? db.hrAttendance.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    [activeBusinessId, activeShopId],
     [],
   ) || [];
 
   const payrollRows = useLiveQuery(
-    () => activeBusinessId && activeBranchId
-      ? db.hrPayrollAdjustments.where('branchId').equals(activeBranchId).and(row => row.businessId === activeBusinessId).toArray()
+    () => activeBusinessId && activeShopId
+      ? db.hrPayrollAdjustments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    [activeBusinessId, activeShopId],
     [],
   ) || [];
 
@@ -491,7 +491,7 @@ export default function HRTab() {
   const handleSaveStaff = async (event: React.FormEvent) => {
     event.preventDefault();
     if (isSaving) return;
-    if (!activeBusinessId || !activeBranchId) return error('Select a branch before saving HR records.');
+    if (!activeBusinessId || !activeShopId) return error('The shop is still loading. Try again.');
     if (!staffForm.fullName.trim()) return error('Staff name is required.');
     if (!staffForm.roleTitle.trim()) return error('Job title is required.');
 
@@ -514,7 +514,7 @@ export default function HRTab() {
         payCycle: staffForm.payCycle,
         emergencyContact: staffForm.emergencyContact.trim(),
         notes: staffForm.notes.trim(),
-        branchId: activeBranchId,
+        shopId: activeShopId,
         businessId: activeBusinessId,
         updated_at: Date.now(),
       };
@@ -556,7 +556,7 @@ export default function HRTab() {
   const handleAddDocument = async (event: React.FormEvent) => {
     event.preventDefault();
     if (isSaving || !selectedStaff) return;
-    if (!activeBusinessId || !activeBranchId) return error('Select a branch before saving HR records.');
+    if (!activeBusinessId || !activeShopId) return error('The shop is still loading. Try again.');
     if (!documentForm.name.trim()) return error('Document name is required.');
 
     setIsSaving(true);
@@ -572,7 +572,7 @@ export default function HRTab() {
         fileName: documentForm.fileName.trim(),
         fileUrl: documentForm.fileUrl.trim(),
         notes: documentForm.notes.trim(),
-        branchId: activeBranchId,
+        shopId: activeShopId,
         businessId: activeBusinessId,
         updated_at: Date.now(),
       };
@@ -588,7 +588,7 @@ export default function HRTab() {
 
   const attendancePayload = (staffId: string, form: AttendanceForm, existing?: HRAttendance): HRAttendance | null => {
     const date = parseDateInput(form.date);
-    if (!date || !activeBusinessId || !activeBranchId) return null;
+    if (!date || !activeBusinessId || !activeShopId) return null;
     const status = form.status;
     const hours = Number(form.hoursWorked) || calculateHours(form.checkIn, form.checkOut, status);
     return {
@@ -600,7 +600,7 @@ export default function HRTab() {
       status,
       hoursWorked: hours,
       notes: form.notes.trim(),
-      branchId: activeBranchId,
+      shopId: activeShopId,
       businessId: activeBusinessId,
       updated_at: Date.now(),
     };
@@ -609,7 +609,7 @@ export default function HRTab() {
   const handleSaveAttendance = async (event: React.FormEvent) => {
     event.preventDefault();
     if (isSaving || !selectedStaff) return;
-    if (!activeBusinessId || !activeBranchId) return error('Select a branch before saving HR records.');
+    if (!activeBusinessId || !activeShopId) return error('The shop is still loading. Try again.');
     if (!parseDateInput(attendanceForm.date)) return error('Attendance date is required.');
 
     setIsSaving(true);
@@ -630,7 +630,7 @@ export default function HRTab() {
   const handleBulkAttendance = async (event: React.FormEvent) => {
     event.preventDefault();
     if (isSaving) return;
-    if (!activeBusinessId || !activeBranchId) return error('Select a branch before saving HR records.');
+    if (!activeBusinessId || !activeShopId) return error('The shop is still loading. Try again.');
     if (!parseDateInput(bulkAttendanceForm.date)) return error('Attendance date is required.');
     if (bulkSelectedStaffIds.length === 0) return error('Select at least one worker.');
 
@@ -655,7 +655,7 @@ export default function HRTab() {
   const handleAddPayroll = async (event: React.FormEvent) => {
     event.preventDefault();
     if (isSaving || !selectedStaff) return;
-    if (!activeBusinessId || !activeBranchId) return error('Select a branch before saving HR records.');
+    if (!activeBusinessId || !activeShopId) return error('The shop is still loading. Try again.');
     const amount = Number(payrollForm.amount);
     const effectiveDate = parseDateInput(payrollForm.effectiveDate);
     if (!payrollForm.label.trim()) return error('Payroll label is required.');
@@ -674,7 +674,7 @@ export default function HRTab() {
         recurring: payrollForm.recurring ? 1 : 0,
         status: payrollForm.status,
         notes: payrollForm.notes.trim(),
-        branchId: activeBranchId,
+        shopId: activeShopId,
         businessId: activeBusinessId,
         updated_at: Date.now(),
       };
@@ -722,13 +722,13 @@ export default function HRTab() {
     );
   }
 
-  if (!activeBusinessId || !activeBranchId) {
+  if (!activeBusinessId || !activeShopId) {
     return (
       <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-center">
         <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
           <FolderOpen size={26} />
         </div>
-        <p className="text-sm font-black text-slate-900">Select a branch to manage HR.</p>
+        <p className="text-sm font-black text-slate-900">The shop is still loading.</p>
       </div>
     );
   }

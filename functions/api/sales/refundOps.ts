@@ -78,7 +78,6 @@ export async function ensureRefundSchema(db: D1Database) {
       approvedBy TEXT,
       pendingRefundItems TEXT,
       shiftId TEXT,
-      branchId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -101,7 +100,6 @@ export async function ensureRefundSchema(db: D1Database) {
       isBundle INTEGER DEFAULT 0,
       components TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -122,7 +120,6 @@ export async function ensureRefundSchema(db: D1Database) {
       type TEXT NOT NULL,
       balance REAL NOT NULL DEFAULT 0,
       businessId TEXT,
-      branchId TEXT,
       accountNumber TEXT,
       updated_at INTEGER
     )
@@ -142,7 +139,6 @@ export async function ensureRefundSchema(db: D1Database) {
       approvedBy TEXT,
       status TEXT NOT NULL DEFAULT 'APPROVED',
       shiftId TEXT,
-      branchId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -151,7 +147,6 @@ export async function ensureRefundSchema(db: D1Database) {
     CREATE TABLE IF NOT EXISTS idempotencyKeys (
       id TEXT PRIMARY KEY,
       businessId TEXT NOT NULL,
-      branchId TEXT NOT NULL,
       idempotencyKey TEXT NOT NULL,
       operation TEXT NOT NULL,
       deviceId TEXT,
@@ -172,7 +167,6 @@ export async function ensureRefundSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -184,7 +178,6 @@ export async function ensureRefundSchema(db: D1Database) {
       quantity REAL NOT NULL,
       timestamp INTEGER NOT NULL,
       reference TEXT,
-      branchId TEXT,
       businessId TEXT,
       shiftId TEXT,
       updated_at INTEGER
@@ -193,12 +186,10 @@ export async function ensureRefundSchema(db: D1Database) {
   for (const sql of [
     'ALTER TABLE transactions ADD COLUMN approvedBy TEXT',
     'ALTER TABLE transactions ADD COLUMN pendingRefundItems TEXT',
-    'ALTER TABLE transactions ADD COLUMN branchId TEXT',
     'ALTER TABLE transactions ADD COLUMN businessId TEXT',
     'ALTER TABLE transactions ADD COLUMN shiftId TEXT',
     'ALTER TABLE transactions ADD COLUMN updated_at INTEGER',
     'ALTER TABLE products ADD COLUMN businessId TEXT',
-    'ALTER TABLE products ADD COLUMN branchId TEXT',
     'ALTER TABLE products ADD COLUMN expiryTracking INTEGER DEFAULT 0',
     'ALTER TABLE products ADD COLUMN expiryDate INTEGER',
     'ALTER TABLE products ADD COLUMN isBundle INTEGER DEFAULT 0',
@@ -206,11 +197,9 @@ export async function ensureRefundSchema(db: D1Database) {
     'ALTER TABLE products ADD COLUMN updated_at INTEGER',
     'ALTER TABLE productIngredients ADD COLUMN businessId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN reference TEXT',
-    'ALTER TABLE stockMovements ADD COLUMN branchId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN businessId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
-    'ALTER TABLE financialAccounts ADD COLUMN branchId TEXT',
     'ALTER TABLE financialAccounts ADD COLUMN accountNumber TEXT',
     'ALTER TABLE financialAccounts ADD COLUMN updated_at INTEGER',
     'ALTER TABLE refunds ADD COLUMN cashAmount REAL DEFAULT 0',
@@ -222,24 +211,23 @@ export async function ensureRefundSchema(db: D1Database) {
     'ALTER TABLE refunds ADD COLUMN approvedBy TEXT',
     "ALTER TABLE refunds ADD COLUMN status TEXT DEFAULT 'APPROVED'",
     'ALTER TABLE refunds ADD COLUMN shiftId TEXT',
-    'ALTER TABLE refunds ADD COLUMN branchId TEXT',
     'ALTER TABLE refunds ADD COLUMN businessId TEXT',
     'ALTER TABLE refunds ADD COLUMN updated_at INTEGER',
     'ALTER TABLE idempotencyKeys ADD COLUMN transactionId TEXT',
-    'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, branchId, idempotencyKey)',
-    'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_transaction ON idempotencyKeys(businessId, branchId, transactionId)',
+    'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, idempotencyKey)',
+    'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_transaction ON idempotencyKeys(businessId, transactionId)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
 }
 
-async function loadTransaction(db: D1Database, businessId: string, branchId: string, transactionId: string) {
+async function loadTransaction(db: D1Database, businessId: string, transactionId: string) {
   const row = await db.prepare(`
     SELECT *
     FROM transactions
-    WHERE id = ? AND businessId = ? AND branchId = ?
+    WHERE id = ? AND businessId = ?
     LIMIT 1
-  `).bind(transactionId, businessId, branchId).first<any>();
+  `).bind(transactionId, businessId).first<any>();
   if (!row) throw new PolicyError('Receipt was not found.', 404);
   return deserializeRow(row);
 }
@@ -340,44 +328,41 @@ function sameRefundLines(left: RefundLine[], right: RefundLine[]) {
 async function loadIdempotentRefundTransaction(
   db: D1Database,
   businessId: string,
-  branchId: string,
   idempotencyKey?: string,
 ) {
   const cleanKey = trimText(idempotencyKey, 240);
   if (!cleanKey) return null;
-  const rowId = `${businessId}|${branchId}|${cleanKey}`;
+  const rowId = `${businessId}|${cleanKey}`;
   const row = await db.prepare(`
     SELECT operation, transactionId
     FROM idempotencyKeys
-    WHERE id = ? AND businessId = ? AND branchId = ?
+    WHERE id = ? AND businessId = ?
     LIMIT 1
-  `).bind(rowId, businessId, branchId).first<any>();
+  `).bind(rowId, businessId).first<any>();
   if (!row) return null;
   if (row.operation !== 'sales.refund.approve') {
     throw new PolicyError('Refund retry key is already used for another operation.', 409);
   }
   const transactionId = trimText(row.transactionId, 120);
   if (!transactionId) throw new PolicyError('Refund retry key is already used.', 409);
-  return loadTransaction(db, businessId, branchId, transactionId);
+  return loadTransaction(db, businessId, transactionId);
 }
 
 function idempotencyStatement(db: D1Database, args: {
   businessId: string;
-  branchId: string;
   transactionId: string;
   idempotencyKey?: string;
   cashierName?: string | null;
 }) {
   const cleanKey = trimText(args.idempotencyKey, 240);
   if (!cleanKey) return null;
-  const rowId = `${args.businessId}|${args.branchId}|${cleanKey}`;
+  const rowId = `${args.businessId}|${cleanKey}`;
   return db.prepare(`
-    INSERT INTO idempotencyKeys (id, businessId, branchId, idempotencyKey, operation, deviceId, cashierName, transactionId, createdAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO idempotencyKeys (id, businessId, idempotencyKey, operation, deviceId, cashierName, transactionId, createdAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     rowId,
     args.businessId,
-    args.branchId,
     cleanKey,
     'sales.refund.approve',
     null,
@@ -393,7 +378,7 @@ function isBundle(product: any) {
 
 async function productById(db: D1Database, businessId: string, productId: string) {
   const row = await db.prepare(`
-    SELECT id, name, branchId, stockQuantity, isBundle, components
+    SELECT id, name, stockQuantity, isBundle, components
     FROM products
     WHERE id = ? AND businessId = ?
     LIMIT 1
@@ -428,7 +413,6 @@ async function loadBundleComponents(db: D1Database, businessId: string, product:
 function auditStatement(db: D1Database, args: {
   principal: Principal;
   businessId: string;
-  branchId: string;
   transactionId: string;
   action: string;
   severity: 'INFO' | 'WARN' | 'CRITICAL';
@@ -436,8 +420,8 @@ function auditStatement(db: D1Database, args: {
 }) {
   const now = Date.now();
   return db.prepare(`
-    INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     crypto.randomUUID(),
     now,
@@ -449,19 +433,17 @@ function auditStatement(db: D1Database, args: {
     args.severity,
     args.details,
     args.businessId,
-    args.branchId,
     now,
   );
 }
 
 export async function prepareRefundRequest(db: D1Database, args: {
   businessId: string;
-  branchId: string;
   principal: Principal;
   transactionId: string;
   itemsToReturn?: RefundLine[];
 }) {
-  const tx = await loadTransaction(db, args.businessId, args.branchId, args.transactionId);
+  const tx = await loadTransaction(db, args.businessId, args.transactionId);
   if (tx.status === 'PENDING_REFUND') {
     const pendingLines = normalizeRefundLines(asArray(tx.pendingRefundItems));
     const requestedLines = args.itemsToReturn?.length
@@ -487,12 +469,11 @@ export async function prepareRefundRequest(db: D1Database, args: {
     db.prepare(`
       UPDATE transactions
       SET status = 'PENDING_REFUND', pendingRefundItems = ?, updated_at = ?
-      WHERE id = ? AND businessId = ? AND branchId = ?
-    `).bind(JSON.stringify(lines), now, tx.id, args.businessId, args.branchId),
+      WHERE id = ? AND businessId = ?
+    `).bind(JSON.stringify(lines), now, tx.id, args.businessId),
     auditStatement(db, {
       principal: args.principal,
       businessId: args.businessId,
-      branchId: args.branchId,
       transactionId: tx.id,
       action: 'sale.refund.request',
       severity: 'WARN',
@@ -504,7 +485,6 @@ export async function prepareRefundRequest(db: D1Database, args: {
 
 export async function prepareRefundApproval(db: D1Database, args: {
   businessId: string;
-  branchId: string;
   principal: Principal;
   service: boolean;
   transactionId: string;
@@ -523,14 +503,13 @@ export async function prepareRefundApproval(db: D1Database, args: {
   const idempotentTransaction = await loadIdempotentRefundTransaction(
     db,
     args.businessId,
-    args.branchId,
     args.idempotencyKey,
   );
   if (idempotentTransaction) {
     return { transaction: idempotentTransaction, refund: null, statements: [], idempotent: true };
   }
 
-  const tx = await loadTransaction(db, args.businessId, args.branchId, args.transactionId);
+  const tx = await loadTransaction(db, args.businessId, args.transactionId);
   if (tx.status !== 'PENDING_REFUND' && tx.status !== 'PAID' && tx.status !== 'PARTIAL_REFUND') {
     throw new PolicyError('This receipt is not waiting for refund approval.', 409);
   }
@@ -549,7 +528,6 @@ export async function prepareRefundApproval(db: D1Database, args: {
   const now = Date.now();
   const idemStatement = idempotencyStatement(db, {
     businessId: args.businessId,
-    branchId: args.branchId,
     transactionId: tx.id,
     idempotencyKey: args.idempotencyKey,
     cashierName: args.principal.userName || null,
@@ -561,12 +539,11 @@ export async function prepareRefundApproval(db: D1Database, args: {
       SELECT id, balance
       FROM financialAccounts
       WHERE businessId = ?
-        AND branchId = ?
         AND type = 'CASH'
         AND COALESCE(accountNumber, '') <> 'PICKED-CASH'
         AND id NOT LIKE 'picked_cash_%'
       LIMIT 1
-    `).bind(args.businessId, args.branchId).first<any>();
+    `).bind(args.businessId).first<any>();
     if (cashAccount) {
       if (asNumber(cashAccount.balance) < cashRefundAmount) throw new PolicyError('Insufficient cash account balance for this refund.', 409);
       statements.push(
@@ -580,7 +557,6 @@ export async function prepareRefundApproval(db: D1Database, args: {
   for (const line of lines) {
     const product = await productById(db, args.businessId, line.productId);
     if (!product) continue;
-    if (product.branchId && product.branchId !== args.branchId) throw new PolicyError('Refund item belongs to another branch.', 403);
 
     if (isBundle(product)) {
       const components = await loadBundleComponents(db, args.businessId, product);
@@ -601,8 +577,8 @@ export async function prepareRefundApproval(db: D1Database, args: {
     );
     statements.push(
       db.prepare(`
-        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, branchId, businessId, shiftId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         productId,
@@ -610,7 +586,6 @@ export async function prepareRefundApproval(db: D1Database, args: {
         quantity,
         now,
         `Return #${txRef}`,
-        args.branchId,
         args.businessId,
         tx.shiftId || null,
         now,
@@ -645,7 +620,6 @@ export async function prepareRefundApproval(db: D1Database, args: {
     approvedBy: tx.approvedBy,
     status: 'APPROVED',
     shiftId: tx.shiftId || null,
-    branchId: args.branchId,
     businessId: args.businessId,
     updated_at: now,
   };
@@ -654,13 +628,13 @@ export async function prepareRefundApproval(db: D1Database, args: {
     db.prepare(`
       UPDATE transactions
       SET status = ?, items = ?, pendingRefundItems = NULL, approvedBy = ?, updated_at = ?
-      WHERE id = ? AND businessId = ? AND branchId = ?
-    `).bind(tx.status, JSON.stringify(updatedItems), tx.approvedBy, now, tx.id, args.businessId, args.branchId)
+      WHERE id = ? AND businessId = ?
+    `).bind(tx.status, JSON.stringify(updatedItems), tx.approvedBy, now, tx.id, args.businessId)
   );
   statements.push(
     db.prepare(`
-      INSERT INTO refunds (id, originalTransactionId, receiptNumber, amount, cashAmount, paymentMethod, source, items, timestamp, cashierName, approvedBy, status, shiftId, branchId, businessId, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO refunds (id, originalTransactionId, receiptNumber, amount, cashAmount, paymentMethod, source, items, timestamp, cashierName, approvedBy, status, shiftId, businessId, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       refundDocument.id,
       refundDocument.originalTransactionId,
@@ -675,7 +649,6 @@ export async function prepareRefundApproval(db: D1Database, args: {
       refundDocument.approvedBy,
       refundDocument.status,
       refundDocument.shiftId,
-      refundDocument.branchId,
       refundDocument.businessId,
       refundDocument.updated_at,
     )
@@ -683,7 +656,6 @@ export async function prepareRefundApproval(db: D1Database, args: {
   statements.push(auditStatement(db, {
     principal: args.principal,
     businessId: args.businessId,
-    branchId: args.branchId,
     transactionId: tx.id,
     action: 'sale.refund.approve',
     severity: 'INFO',

@@ -33,7 +33,7 @@ const COLOR_OPTIONS = [
 export default function CategoryManagementModal({ isOpen, onClose }: CategoryManagementModalProps) {
   const { success, error, warning } = useToast();
   const activeBusinessId = useStore(state => state.activeBusinessId);
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
   const categories = useLiveQuery(
     () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],
@@ -56,7 +56,7 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
       await CategoryService.save({
         category: { id: editingId || undefined, ...form },
         businessId: activeBusinessId,
-        branchId: activeBranchId,
+        shopId: activeShopId,
       });
       await db.categories.reload();
       success(editingId ? "Category updated successfully." : "New category created.");
@@ -70,7 +70,7 @@ export default function CategoryManagementModal({ isOpen, onClose }: CategoryMan
     if (confirm(`Are you sure you want to delete "${name}"? Products in this category will need to be reassigned.`)) {
       try {
         if (!activeBusinessId) return error("Please log in again.");
-        await CategoryService.delete({ categoryId: id, businessId: activeBusinessId, branchId: activeBranchId });
+        await CategoryService.delete({ categoryId: id, businessId: activeBusinessId, shopId: activeShopId });
         await db.categories.reload();
         success("Category removed.");
       } catch (err: any) {

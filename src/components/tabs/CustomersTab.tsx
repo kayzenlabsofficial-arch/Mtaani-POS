@@ -6,8 +6,9 @@ import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { MpesaService } from '../../services/mpesa';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
-import { belongsToActiveBranch } from '../../utils/branchScope';
+import { belongsToActiveShop } from '../../utils/shopScope';
 import { CustomerService } from '../../services/customers';
+import { getCurrentShiftId } from '../../utils/shiftSession';
 
 type DebtSourceType = 'SALE' | 'INVOICE';
 type DebtAllocation = { sourceType: DebtSourceType; sourceId: string; amount: number };
@@ -74,8 +75,10 @@ export default function CustomersTab() {
   const [isSaving, setIsSaving] = useState(false);
   const isAdmin = useStore(state => state.isAdmin);
   const activeBusinessId = useStore(state => state.activeBusinessId);
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
   const currentUser = useStore(state => state.currentUser);
+  const activeShift = useStore(state => state.activeShift);
+  const currentShiftId = getCurrentShiftId(activeShift, activeShopId, currentUser?.id);
   const { success, error, info } = useToast();
 
   const [mpesaState, setMpesaState] = useState<'IDLE' | 'PUSHING' | 'POLLING' | 'SUCCESS' | 'FAILED'>('IDLE');
@@ -93,29 +96,29 @@ export default function CustomersTab() {
   }, [statementCustomerId]);
 
   const allCustomers = useLiveQuery(
-    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveBranch(c, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveShop(c, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
     []
   );
   const statementSales = useLiveQuery(
-    () => statementCustomerId && activeBusinessId && activeBranchId
-      ? db.transactions.where('branchId').equals(activeBranchId).and(t => t.businessId === activeBusinessId && t.customerId === statementCustomerId).toArray()
+    () => statementCustomerId && activeBusinessId && activeShopId
+      ? db.transactions.where('shopId').equals(activeShopId).and(t => t.businessId === activeBusinessId && t.customerId === statementCustomerId).toArray()
       : Promise.resolve([]),
-    [statementCustomerId, activeBusinessId, activeBranchId],
+    [statementCustomerId, activeBusinessId, activeShopId],
     []
   );
   const statementPayments = useLiveQuery(
-    () => statementCustomerId && activeBusinessId && activeBranchId
-      ? db.customerPayments.where('branchId').equals(activeBranchId).and(p => p.businessId === activeBusinessId && p.customerId === statementCustomerId).toArray()
+    () => statementCustomerId && activeBusinessId && activeShopId
+      ? db.customerPayments.where('shopId').equals(activeShopId).and(p => p.businessId === activeBusinessId && p.customerId === statementCustomerId).toArray()
       : Promise.resolve([]),
-    [statementCustomerId, activeBusinessId, activeBranchId],
+    [statementCustomerId, activeBusinessId, activeShopId],
     []
   );
   const statementInvoices = useLiveQuery(
-    () => statementCustomerId && activeBusinessId && activeBranchId
-      ? db.salesInvoices.where('branchId').equals(activeBranchId).and(i => i.businessId === activeBusinessId && i.customerId === statementCustomerId && i.status !== 'CANCELLED').toArray()
+    () => statementCustomerId && activeBusinessId && activeShopId
+      ? db.salesInvoices.where('shopId').equals(activeShopId).and(i => i.businessId === activeBusinessId && i.customerId === statementCustomerId && i.status !== 'CANCELLED').toArray()
       : Promise.resolve([]),
-    [statementCustomerId, activeBusinessId, activeBranchId],
+    [statementCustomerId, activeBusinessId, activeShopId],
     []
   );
 
@@ -353,14 +356,14 @@ export default function CustomersTab() {
 
   const handleSaveCustomer = async () => {
       if (isSaving) return;
-      if (!activeBusinessId || !activeBranchId) return error("Select a branch before saving a customer.");
+      if (!activeBusinessId || !activeShopId) return error("The shop is still loading. Try again.");
       setIsSaving(true);
       try {
         await CustomerService.saveProfile({
             customerId: editingCustomer?.id,
             customer: customerForm,
             businessId: activeBusinessId,
-            branchId: activeBranchId,
+            shopId: activeShopId,
         });
         await db.customers.reload();
         success(editingCustomer ? "Customer updated." : "Customer added.");
@@ -374,14 +377,14 @@ export default function CustomersTab() {
 
   const handleDeleteCustomer = async () => {
     if (isSaving) return;
-    if (!activeBusinessId || !activeBranchId) return error("Select a branch before deleting a customer.");
+    if (!activeBusinessId || !activeShopId) return error("The shop is still loading. Try again.");
     if (editingCustomer && confirm(`Are you sure you want to delete ${editingCustomer.name}?`)) {
       setIsSaving(true);
       try {
         await CustomerService.deleteProfile({
           customerId: editingCustomer.id,
           businessId: activeBusinessId,
-          branchId: activeBranchId,
+          shopId: activeShopId,
         });
         await db.customers.reload();
         setIsCustomerModalOpen(false);
@@ -399,11 +402,11 @@ export default function CustomersTab() {
     const amount = Number(repaymentAmount);
     if (isNaN(amount) || amount <= 0) return error("Invalid amount");
 
-    const activeBranchId = useStore.getState().activeBranchId;
+    const activeShopId = useStore.getState().activeShopId;
 
     setMpesaState('PUSHING');
     try {
-      const res = await MpesaService.triggerStkPush(editingCustomer.phone, amount, `REPAY-${editingCustomer.name.substring(0,5)}`, activeBusinessId!, activeBranchId!);
+      const res = await MpesaService.triggerStkPush(editingCustomer.phone, amount, `REPAY-${editingCustomer.name.substring(0,5)}`, activeBusinessId!, activeShopId!);
       if (res.success && res.checkoutRequestId) {
         setMpesaRequestId(res.checkoutRequestId);
         setMpesaState('POLLING');
@@ -444,7 +447,8 @@ export default function CustomersTab() {
               reference: `M-Pesa repayment from ${editingCustomer.name}`,
               allocations: statementCustomerId === editingCustomer.id ? buildPaymentAllocations(amount) : [],
               preparedBy: currentUser?.name,
-              branchId: activeBranchId!,
+              shiftId: currentShiftId,
+              shopId: activeShopId!,
               businessId: activeBusinessId!,
             });
             await Promise.allSettled([
@@ -475,7 +479,7 @@ export default function CustomersTab() {
     if (!statementCustomer || isSaving) return;
     const amount = Number(paymentForm.amount);
     if (!Number.isFinite(amount) || amount <= 0) return error("Enter a valid payment amount.");
-    if (!activeBusinessId || !activeBranchId) return error("Select a branch before recording payment.");
+    if (!activeBusinessId || !activeShopId) return error("The shop is still loading. Try again.");
     if (amount > (statementCustomer.balance || 0) + 0.01) return error("Payment cannot exceed the customer balance.");
 
     setIsSaving(true);
@@ -489,8 +493,9 @@ export default function CustomersTab() {
         reference: `${paymentForm.method} payment from ${statementCustomer.name}`,
         allocations,
         preparedBy: currentUser?.name,
+        shiftId: currentShiftId,
         businessId: activeBusinessId,
-        branchId: activeBranchId,
+        shopId: activeShopId,
       });
       await Promise.allSettled([
         db.customerPayments.reload(),

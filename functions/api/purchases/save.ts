@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +10,7 @@ const PURCHASE_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -70,7 +70,6 @@ async function ensureSchema(db: D1Database) {
       preparedBy TEXT,
       approvedBy TEXT,
       receivedBy TEXT,
-      branchId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -87,7 +86,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -102,7 +100,6 @@ async function ensureSchema(db: D1Database) {
     'preparedBy TEXT',
     'approvedBy TEXT',
     'receivedBy TEXT',
-    'branchId TEXT',
     'businessId TEXT',
     'updated_at INTEGER',
   ];
@@ -112,14 +109,14 @@ async function ensureSchema(db: D1Database) {
   try { await db.prepare('ALTER TABLE products ADD COLUMN supplierIds TEXT').run(); } catch {}
 }
 
-async function nextPoNumber(db: D1Database, businessId: string, branchId: string) {
+async function nextPoNumber(db: D1Database, businessId: string) {
   const { results } = await db.prepare(`
     SELECT poNumber
     FROM purchaseOrders
-    WHERE businessId = ? AND branchId = ? AND poNumber LIKE 'PO-%'
+    WHERE businessId = ? AND poNumber LIKE 'PO-%'
     ORDER BY orderDate DESC
     LIMIT 500
-  `).bind(businessId, branchId).all();
+  `).bind(businessId).all();
   const max = ((results || []) as any[]).reduce((highest, row) => {
     const match = String(row.poNumber || '').match(/PO-(\d+)/i);
     const num = match ? Number(match[1]) : 0;
@@ -141,22 +138,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const supplierId = String(body?.supplierId || '').trim();
-    if (!businessId || !branchId || !supplierId) return json({ error: 'Business, branch and supplier are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!businessId || !supplierId) return json({ error: 'Business and supplier are required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
     await ensureSchema(env.DB);
     const supplier = await env.DB.prepare(`
-      SELECT id, branchId
+      SELECT id
       FROM suppliers
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(supplierId, businessId).first<any>();
     if (!supplier) throw new PolicyError('Supplier was not found.', 404);
-    if (supplier.branchId && supplier.branchId !== branchId) throw new PolicyError('Supplier belongs to another branch.', 403);
 
     const rawItems = Array.isArray(body?.items) ? body.items : [];
     if (rawItems.length === 0) throw new PolicyError('Add at least one item to the purchase order.', 400);
@@ -166,13 +161,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const expectedQuantity = asNumber(raw?.expectedQuantity);
       if (!productId || expectedQuantity <= 0) throw new PolicyError('Purchase order line items are invalid.', 400);
       const product = await env.DB.prepare(`
-        SELECT id, name, branchId, costPrice, sellingPrice, supplierIds
+        SELECT id, name, costPrice, sellingPrice, supplierIds
         FROM products
         WHERE id = ? AND businessId = ?
         LIMIT 1
       `).bind(productId, businessId).first<any>();
       if (!product) throw new PolicyError('Purchase order includes a product that was not found.', 404);
-      if (product.branchId && product.branchId !== branchId) throw new PolicyError(`Product "${product.name}" belongs to another branch.`, 403);
       const linkedSuppliers = parseSupplierIds(product.supplierIds);
       if (linkedSuppliers.length > 0 && !linkedSuppliers.includes(supplierId)) {
         throw new PolicyError(`Product "${product.name}" is not linked to this supplier.`, 400);
@@ -193,9 +187,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       ? await env.DB.prepare(`
           SELECT *
           FROM purchaseOrders
-          WHERE id = ? AND businessId = ? AND branchId = ?
+          WHERE id = ? AND businessId = ?
           LIMIT 1
-        `).bind(purchaseOrderId, businessId, branchId).first<any>()
+        `).bind(purchaseOrderId, businessId).first<any>()
       : null;
     if (purchaseOrderId && !existing) throw new PolicyError('Purchase order was not found.', 404);
     if (existing?.status === 'RECEIVED') throw new PolicyError('Received purchase orders cannot be edited.', 409);
@@ -207,8 +201,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const autoApprove = canUseOwnerMode && settingFlag(settings?.ownerModeEnabled, false) && settingFlag(settings?.autoApproveOwnerActions, true);
 
     const now = Date.now();
-    const id = purchaseOrderId || `po_${businessId}_${branchId}_${crypto.randomUUID()}`;
-    const poNumber = existing?.poNumber || await nextPoNumber(env.DB, businessId, branchId);
+    const id = purchaseOrderId || `po_${businessId}_${crypto.randomUUID()}`;
+    const poNumber = existing?.poNumber || await nextPoNumber(env.DB, businessId);
     const totalAmount = roundMoney(items.reduce((sum, item) => sum + (item.expectedQuantity * item.unitCost), 0));
     const approvalStatus = autoApprove ? 'APPROVED' : 'PENDING';
     const preparedBy = trimText(existing?.preparedBy || body?.preparedBy || auth.principal.userName, 120) || 'Staff';
@@ -229,15 +223,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       preparedBy,
       approvedBy: autoApprove ? (auth.principal.userName || preparedBy) : existing?.approvedBy || null,
       receivedBy: existing?.receivedBy || null,
-      branchId,
       businessId,
       updated_at: now,
     };
 
     await env.DB.batch([
       env.DB.prepare(`
-        INSERT OR REPLACE INTO purchaseOrders (id, supplierId, items, totalAmount, status, approvalStatus, paymentStatus, paidAmount, orderDate, expectedDate, receivedDate, invoiceNumber, poNumber, preparedBy, approvedBy, receivedBy, branchId, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO purchaseOrders (id, supplierId, items, totalAmount, status, approvalStatus, paymentStatus, paidAmount, orderDate, expectedDate, receivedDate, invoiceNumber, poNumber, preparedBy, approvedBy, receivedBy, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         purchaseOrder.id,
         supplierId,
@@ -255,13 +248,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         preparedBy,
         purchaseOrder.approvedBy,
         purchaseOrder.receivedBy,
-        branchId,
         businessId,
         now,
       ),
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         now,
@@ -272,9 +264,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         id,
         autoApprove ? 'INFO' : 'WARN',
         `${existing ? 'Updated' : 'Created'} ${poNumber}.`,
-        businessId,
-        branchId,
-        now,
+        businessId, now,
       ),
     ]);
 

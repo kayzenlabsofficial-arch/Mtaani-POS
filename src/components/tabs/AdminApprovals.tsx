@@ -6,7 +6,7 @@ import { useStore } from '../../store';
 import { Check, X, Package, Banknote, Clock, AlertCircle, FileMinus, RotateCcw, ClipboardList, PackagePlus, Eye, ChevronRight } from 'lucide-react';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { approveExpenseRequest, approveRefundTransaction } from '../../utils/approvalWorkflows';
-import { belongsToActiveBranch } from '../../utils/branchScope';
+import { belongsToActiveShop } from '../../utils/shopScope';
 import { StockService } from '../../services/stock';
 import { PurchaseService } from '../../services/purchases';
 import { ExpenseService } from '../../services/expenses';
@@ -15,17 +15,17 @@ import { CashService } from '../../services/operations';
 
 export default function AdminApprovals() {
   const currentUser = useStore(state => state.currentUser);
-  const activeBranchId = useStore(state => state.activeBranchId);
+  const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
 
-  const pendingAdjustments = useLiveQuery(() => activeBusinessId && activeBranchId ? db.stockAdjustmentRequests.where('branchId').equals(activeBranchId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const pendingPicks = useLiveQuery(() => activeBusinessId && activeBranchId ? db.cashPicks.where('branchId').equals(activeBranchId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const pendingExpenses = useLiveQuery(() => activeBusinessId && activeBranchId ? db.expenses.where('branchId').equals(activeBranchId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const pendingRefunds = useLiveQuery(() => activeBusinessId && activeBranchId ? db.transactions.where('branchId').equals(activeBranchId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING_REFUND').toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
-  const pendingPOs = useLiveQuery(() => activeBusinessId && activeBranchId ? db.purchaseOrders.where('branchId').equals(activeBranchId).and(x => x.businessId === activeBusinessId && x.approvalStatus === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeBranchId], []);
+  const pendingAdjustments = useLiveQuery(() => activeBusinessId && activeShopId ? db.stockAdjustmentRequests.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const pendingPicks = useLiveQuery(() => activeBusinessId && activeShopId ? db.cashPicks.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const pendingExpenses = useLiveQuery(() => activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const pendingRefunds = useLiveQuery(() => activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING_REFUND').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const pendingPOs = useLiveQuery(() => activeBusinessId && activeShopId ? db.purchaseOrders.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.approvalStatus === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
   const allSuppliers = useLiveQuery(
-    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveBranch(s, activeBranchId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeBranchId],
+    () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]),
+    [activeBusinessId, activeShopId],
     []
   );
   
@@ -36,11 +36,11 @@ export default function AdminApprovals() {
   const handleApproveAdjustment = async (req: any) => {
     // ── FIX C7: Use DELTA (newQty - oldQty) applied to CURRENT stock, not absolute newQty.
     // This protects against stale snapshots when sales happened after the request was created.
-    if (!activeBranchId || !activeBusinessId) return;
+    if (!activeShopId || !activeBusinessId) return;
     try {
       await StockService.approveAdjustment({
         requestId: req.id,
-        branchId: activeBranchId,
+        shopId: activeShopId,
         businessId: activeBusinessId,
         approvedBy: currentUser?.name || 'Administrator',
       });
@@ -56,11 +56,11 @@ export default function AdminApprovals() {
   };
 
   const handleApproveExpense = async (e: any) => {
-    if (!activeBranchId || !activeBusinessId) return;
+    if (!activeShopId || !activeBusinessId) return;
     try {
       await approveExpenseRequest(e, {
         approvedBy: currentUser?.name || 'Administrator',
-        activeBranchId,
+        activeShopId,
         activeBusinessId
       });
       success("Expense approved.");
@@ -70,13 +70,13 @@ export default function AdminApprovals() {
   };
 
   const handleApprovePO = async (id: string) => {
-    if (!activeBranchId || !activeBusinessId) return;
+    if (!activeShopId || !activeBusinessId) return;
     try {
       await PurchaseService.setApproval({
         purchaseOrderId: id,
         action: 'APPROVE',
         approvedBy: currentUser?.name || 'Administrator',
-        branchId: activeBranchId,
+        shopId: activeShopId,
         businessId: activeBusinessId,
       });
       await db.purchaseOrders.reload();
@@ -87,11 +87,11 @@ export default function AdminApprovals() {
   };
 
   const handleRejectExpense = async (id: string) => {
-    if (!activeBranchId || !activeBusinessId) return;
+    if (!activeShopId || !activeBusinessId) return;
     try {
       await ExpenseService.reject({
         expenseId: id,
-        branchId: activeBranchId,
+        shopId: activeShopId,
         businessId: activeBusinessId,
       });
       await db.expenses.reload();
@@ -102,12 +102,12 @@ export default function AdminApprovals() {
   };
 
   const handleRejectPO = async (id: string) => {
-    if (!activeBranchId || !activeBusinessId) return;
+    if (!activeShopId || !activeBusinessId) return;
     try {
       await PurchaseService.setApproval({
         purchaseOrderId: id,
         action: 'REJECT',
-        branchId: activeBranchId,
+        shopId: activeShopId,
         businessId: activeBusinessId,
       });
       await db.purchaseOrders.reload();
@@ -118,11 +118,11 @@ export default function AdminApprovals() {
   };
 
   const handleApproveRefund = async (t: Transaction) => {
-    if (!activeBranchId || !activeBusinessId) return;
+    if (!activeShopId || !activeBusinessId) return;
     try {
       await approveRefundTransaction(t, undefined, {
         approvedBy: currentUser?.name || 'Administrator',
-        activeBranchId,
+        activeShopId,
         activeBusinessId
       });
       success("Refund approved and stock returned.");
@@ -132,11 +132,11 @@ export default function AdminApprovals() {
   };
 
   const handleRejectAdjustment = async (id: string) => {
-    if (!activeBranchId || !activeBusinessId) return;
+    if (!activeShopId || !activeBusinessId) return;
     try {
       await StockService.rejectAdjustment({
         requestId: id,
-        branchId: activeBranchId,
+        shopId: activeShopId,
         businessId: activeBusinessId,
       });
       await db.stockAdjustmentRequests.reload();
@@ -147,11 +147,11 @@ export default function AdminApprovals() {
   };
 
   const handleRejectRefund = async (id: string) => {
-    if (!activeBranchId || !activeBusinessId) return;
+    if (!activeShopId || !activeBusinessId) return;
     try {
       await SalesService.rejectRefund({
         transactionId: id,
-        branchId: activeBranchId,
+        shopId: activeShopId,
         businessId: activeBusinessId,
       });
       await db.transactions.reload();
@@ -162,9 +162,9 @@ export default function AdminApprovals() {
   };
 
   const handleConfirmBanking = async (id: string) => {
-    if (!activeBranchId || !activeBusinessId) return;
+    if (!activeShopId || !activeBusinessId) return;
     try {
-      await CashService.approvePick({ cashPickId: id, businessId: activeBusinessId, branchId: activeBranchId });
+      await CashService.approvePick({ cashPickId: id, businessId: activeBusinessId, shopId: activeShopId });
       await Promise.allSettled([db.cashPicks.reload(), db.financialAccounts.reload()]);
       success("Cash deposit confirmed.");
     } catch (err: any) {

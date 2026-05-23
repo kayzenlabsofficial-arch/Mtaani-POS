@@ -1,4 +1,4 @@
-import { authorizeRequest, canAccessBranch, canAccessBusiness } from '../authUtils';
+import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +10,7 @@ const SUPPLIER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Branch-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -35,7 +35,6 @@ async function ensureSchema(db: D1Database) {
       address TEXT,
       kraPin TEXT,
       balance REAL DEFAULT 0,
-      branchId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -52,7 +51,6 @@ async function ensureSchema(db: D1Database) {
       severity TEXT NOT NULL,
       details TEXT,
       businessId TEXT,
-      branchId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -61,7 +59,6 @@ async function ensureSchema(db: D1Database) {
     'address TEXT',
     'kraPin TEXT',
     'balance REAL DEFAULT 0',
-    'branchId TEXT',
     'businessId TEXT',
     'updated_at INTEGER',
   ];
@@ -84,10 +81,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json().catch(() => null) as any;
     const action = String(body?.action || 'SAVE').trim().toUpperCase();
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const branchId = String(request.headers.get('X-Branch-ID') || body?.branchId || '').trim();
     const supplierId = trimText(body?.supplierId || body?.supplier?.id, 160);
-    if (!businessId || !branchId) return json({ error: 'Business and branch are required.' }, 400);
-    if (!canAccessBusiness(auth.principal, businessId) || !canAccessBranch(auth.principal, branchId)) {
+    if (!businessId) return json({ error: 'Business is required.' }, 400);
+    if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
 
@@ -97,13 +93,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (action === 'DELETE') {
       if (!supplierId) return json({ error: 'Supplier is required.' }, 400);
       const supplier = await env.DB.prepare(`
-        SELECT id, company, balance, branchId
+        SELECT id, company, balance
         FROM suppliers
         WHERE id = ? AND businessId = ?
         LIMIT 1
       `).bind(supplierId, businessId).first<any>();
       if (!supplier) throw new PolicyError('Supplier was not found.', 404);
-      if (supplier.branchId && supplier.branchId !== branchId) throw new PolicyError('Supplier belongs to another branch.', 403);
       if (Number(supplier.balance || 0) > 0.01) throw new PolicyError('Suppliers with an outstanding balance cannot be deleted.', 409);
       const refs = await env.DB.prepare(`
         SELECT
@@ -116,9 +111,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await env.DB.batch([
         env.DB.prepare(`DELETE FROM suppliers WHERE id = ? AND businessId = ?`).bind(supplierId, businessId),
         env.DB.prepare(`
-          INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(crypto.randomUUID(), now, auth.principal.userId || null, auth.principal.userName || null, 'supplier.delete', 'supplier', supplierId, 'WARN', `Deleted supplier ${supplier.company}.`, businessId, branchId, now),
+          INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(crypto.randomUUID(), now, auth.principal.userId || null, auth.principal.userName || null, 'supplier.delete', 'supplier', supplierId, 'WARN', `Deleted supplier ${supplier.company}.`, businessId, now),
       ]);
       return json({ success: true, supplierId });
     }
@@ -133,7 +128,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(id, businessId).first<any>();
-    if (existing?.branchId && existing.branchId !== branchId) throw new PolicyError('Supplier belongs to another branch.', 403);
 
     const savedSupplier = {
       id,
@@ -144,20 +138,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       address: trimText(supplier.address, 240),
       kraPin: trimText(supplier.kraPin, 40),
       balance: Number(existing?.balance || 0),
-      branchId: existing?.branchId || branchId,
       businessId,
       updated_at: now,
     };
 
     await env.DB.batch([
       env.DB.prepare(`
-        INSERT OR REPLACE INTO suppliers (id, name, company, phone, email, address, kraPin, balance, branchId, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(savedSupplier.id, savedSupplier.name, savedSupplier.company, savedSupplier.phone, savedSupplier.email, savedSupplier.address, savedSupplier.kraPin, savedSupplier.balance, savedSupplier.branchId, savedSupplier.businessId, now),
+        INSERT OR REPLACE INTO suppliers (id, name, company, phone, email, address, kraPin, balance, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(savedSupplier.id, savedSupplier.name, savedSupplier.company, savedSupplier.phone, savedSupplier.email, savedSupplier.address, savedSupplier.kraPin, savedSupplier.balance, savedSupplier.businessId, now),
       env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, branchId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(crypto.randomUUID(), now, auth.principal.userId || null, auth.principal.userName || null, existing ? 'supplier.update' : 'supplier.create', 'supplier', id, 'INFO', `${existing ? 'Updated' : 'Created'} supplier ${company}.`, businessId, branchId, now),
+        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(crypto.randomUUID(), now, auth.principal.userId || null, auth.principal.userName || null, existing ? 'supplier.update' : 'supplier.create', 'supplier', id, 'INFO', `${existing ? 'Updated' : 'Created'} supplier ${company}.`, businessId, now),
     ]);
 
     return json({ success: true, supplier: savedSupplier });
