@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS whatsappContacts;
 DROP TABLE IF EXISTS aiUsage;
 DROP TABLE IF EXISTS idempotencyKeys;
 DROP TABLE IF EXISTS deviceSyncStatus;
+DROP TABLE IF EXISTS financialAccountAdjustments;
 DROP TABLE IF EXISTS financialAccounts;
 DROP TABLE IF EXISTS expenseAccounts;
 DROP TABLE IF EXISTS mpesaCallbacks;

@@ -125,11 +125,11 @@ export default function ExpensesTabDesktop() {
           return;
       }
       if (expenseSource === 'ACCOUNT' && amount > Number(financialAccounts[0]?.balance || 0)) {
-          error("Insufficient balance in the picked cash account.");
+          error("Insufficient balance in the Main account.");
           return;
       }
       if (!currentUser) return;
-      if (!canPerform(currentUser, 'expense.create')) {
+      if (!canPerform(currentUser, 'expense.create', businessSettings)) {
           error("You do not have permission to create expenses.");
           return;
       }
@@ -207,7 +207,7 @@ export default function ExpensesTabDesktop() {
 
   const sourceBadge = (source?: string) => {
     if (source === 'TILL') return { label: 'Till', className: 'bg-slate-50 text-slate-700 border-slate-200' };
-    return { label: 'Picked account', className: 'bg-slate-50 text-slate-700 border-slate-200' };
+    return { label: 'Main account', className: 'bg-slate-50 text-slate-700 border-slate-200' };
   };
 
   const statusBadge = (status?: string) => {
@@ -270,7 +270,7 @@ export default function ExpensesTabDesktop() {
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
             <h2 className="text-2xl font-black text-slate-950">Expenses</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-500">Track till and picked-account spending.</p>
+            <p className="mt-1 text-sm font-semibold text-slate-500">Track till and Main account spending.</p>
           </div>
           <button
             onClick={() => setIsExpenseModalOpen(true)}
@@ -286,7 +286,7 @@ export default function ExpensesTabDesktop() {
             <p className="mt-1 text-xl font-black tabular-nums text-slate-950">Ksh {todayTillExpenses.toLocaleString()}</p>
           </div>
           <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Picked account</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Main account</p>
             <p className="mt-1 text-xl font-black tabular-nums text-slate-950">Ksh {todayAccountExpenses.toLocaleString()}</p>
           </div>
           <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
@@ -374,7 +374,7 @@ export default function ExpensesTabDesktop() {
             >
               <option value="ALL">All sources</option>
               <option value="TILL">Till</option>
-              <option value="ACCOUNT">Picked account</option>
+              <option value="ACCOUNT">Main account</option>
             </select>
             <select
               value={expenseStatusFilter}

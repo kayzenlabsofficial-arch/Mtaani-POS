@@ -35,6 +35,23 @@ function flag(value: unknown, fallback: number) {
   return fallback;
 }
 
+function jsonText(value: unknown, fallback = '', max = 12000) {
+  if (value === undefined || value === null || value === '') return text(fallback, '', max);
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return JSON.stringify(parsed).slice(0, max);
+    } catch {
+      return text(fallback, '', max);
+    }
+  }
+  try {
+    return JSON.stringify(value).slice(0, max);
+  } catch {
+    return text(fallback, '', max);
+  }
+}
+
 async function ensureSchema(db: D1Database) {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -50,6 +67,7 @@ async function ensureSchema(db: D1Database) {
       cashDrawerLimit REAL DEFAULT 5000,
       salesTills TEXT,
       defaultOpeningFloat REAL DEFAULT 0,
+      accessControl TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -68,6 +86,7 @@ async function ensureSchema(db: D1Database) {
     ['mpesaEnv', "TEXT DEFAULT 'sandbox'"],
     ['mpesaType', "TEXT DEFAULT 'paybill'"],
     ['mpesaStoreNumber', 'TEXT'],
+    ['accessControl', 'TEXT'],
     ['businessId', 'TEXT'],
     ['updated_at', 'INTEGER'],
   ];
@@ -120,6 +139,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       mpesaEnv: fallback.mpesaEnv || 'sandbox',
       mpesaType: fallback.mpesaType || 'paybill',
       mpesaStoreNumber: fallback.mpesaStoreNumber || null,
+      accessControl: jsonText(settings.accessControl, fallback.accessControl || ''),
       businessId,
       updated_at: now,
     };
@@ -130,9 +150,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         ownerModeEnabled, autoApproveOwnerActions, cashSweepEnabled, cashDrawerLimit,
         salesTills, defaultOpeningFloat,
         mpesaConsumerKey, mpesaConsumerSecret, mpesaPasskey, mpesaEnv, mpesaType, mpesaStoreNumber,
-        businessId, updated_at
+        accessControl, businessId, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       saved.id,
       saved.storeName,
@@ -152,6 +172,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       saved.mpesaEnv,
       saved.mpesaType,
       saved.mpesaStoreNumber,
+      saved.accessControl,
       businessId,
       now,
     ).run();

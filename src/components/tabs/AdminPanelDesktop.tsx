@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { KeyRound, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
+import { KeyRound, LockKeyhole, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { getApiKey } from '../../runtimeConfig';
 
 import AdminApprovals from './AdminApprovals';
+import AccessControlPanel from '../admin/AccessControlPanel';
 import { useToast } from '../../context/ToastContext';
 import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import { recordAuditEvent } from '../../utils/auditLog';
@@ -13,6 +14,7 @@ import { StaffService } from '../../services/admin';
 
 const ADMIN_TABS = [
   { id: 'USERS', label: 'Staff', icon: Users },
+  { id: 'ACCESS', label: 'Access', icon: LockKeyhole },
   { id: 'APPROVALS', label: 'Approvals', icon: ShieldCheck },
 ] as const;
 
@@ -28,11 +30,52 @@ function AdminSectionHeader({ title, description, action }: { title: string; des
   );
 }
 
+function AdminDrawer({
+  title,
+  description,
+  onClose,
+  children,
+  footer,
+}: {
+  title: string;
+  description?: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  footer: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-[120] flex justify-end bg-slate-950/45 backdrop-blur-sm">
+      <section className="flex h-full w-full flex-col bg-white shadow-2xl sm:max-w-xl sm:border-l-2 sm:border-slate-200">
+        <header className="flex items-start justify-between gap-4 border-b-2 border-slate-200 px-4 py-4 sm:px-5">
+          <div className="min-w-0">
+            <h3 className="text-lg font-black text-slate-950">{title}</h3>
+            {description && <p className="mt-1 text-xs font-bold leading-relaxed text-slate-500">{description}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-slate-200 bg-white text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+            aria-label="Close admin editor"
+          >
+            <X size={18} />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+          {children}
+        </div>
+        <footer className="border-t-2 border-slate-200 bg-slate-50 p-4 sm:p-5">
+          {footer}
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 export default function AdminPanelDesktop() {
-  const [activeAdminTab, setActiveAdminTab] = useState<'APPROVALS' | 'USERS'>(() => {
+  const [activeAdminTab, setActiveAdminTab] = useState<'APPROVALS' | 'USERS' | 'ACCESS'>(() => {
     const requested = sessionStorage.getItem('mtaani_admin_tab');
     sessionStorage.removeItem('mtaani_admin_tab');
-    return ['APPROVALS', 'USERS'].includes(requested || '')
+    return ['APPROVALS', 'USERS', 'ACCESS'].includes(requested || '')
       ? requested as any
       : 'USERS';
   });
@@ -165,6 +208,8 @@ export default function AdminPanelDesktop() {
     success("Password updated successfully.");
   };
 
+  const editingUser = users?.find(user => user.id === editingUserId);
+
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5 pb-24 animate-in fade-in">
       
@@ -200,6 +245,7 @@ export default function AdminPanelDesktop() {
       <div className="space-y-5 animate-in slide-in-from-bottom-4 duration-500">
          
          {activeAdminTab === 'APPROVALS' && <AdminApprovals />}
+         {activeAdminTab === 'ACCESS' && <AccessControlPanel />}
          
          {activeAdminTab === 'USERS' && (
             <div className="space-y-5">
@@ -216,51 +262,22 @@ export default function AdminPanelDesktop() {
                 )}
               />
 
-              {isAddingUser && (
-                 <div className="rounded-lg border-2 border-slate-200 bg-white p-5 shadow-sm animate-in zoom-in-95">
-                    <h3 className="text-base font-bold text-slate-900 mb-6 flex items-center gap-2"> <Users className="text-blue-600" /> Add staff member</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                       <div>
-                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Full name</label>
-                          <input type="text" className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" placeholder="e.g. Samuel Karanja" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
-                       </div>
-                       <div>
-                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Password</label>
-                          <input type="password" className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" placeholder="Minimum 4 characters" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
-                       </div>
-                       <div>
-                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 ml-2">Staff role</label>
-                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                             <button onClick={() => setNewUser({...newUser, role: 'CASHIER'})} className={`rounded-lg border-2 py-3 text-[10px] font-black uppercase tracking-widest transition-all ${newUser.role === 'CASHIER' ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200 hover:text-blue-700'}`}>
-                                Cashier
-                            </button>
-                             <button onClick={() => setNewUser({...newUser, role: 'MANAGER'})} className={`rounded-lg border-2 py-3 text-[10px] font-black uppercase tracking-widest transition-all ${newUser.role === 'MANAGER' ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200 hover:text-blue-700'}`}>
-                                Manager
-                            </button>
-                             <button onClick={() => setNewUser({...newUser, role: 'ADMIN'})} className={`rounded-lg border-2 py-3 text-[10px] font-black uppercase tracking-widest transition-all ${newUser.role === 'ADMIN' ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200 hover:text-blue-700'}`}>
-                                Admin
-                            </button>
-                         </div>
-                       </div>
-                    </div>
-                    <div className="flex gap-4">
-                       <button onClick={() => {setIsAddingUser(false); setNewUser({ name: '', password: '', role: 'CASHIER' });}} className="flex-1 rounded-lg border-2 border-slate-200 bg-white py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 press">Cancel</button>
-                       <button onClick={handleAddUser} disabled={!newUser.name || newUser.password.length < 4} className="flex-[2] rounded-lg border-2 border-blue-700 bg-blue-700 py-3 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-blue-800 disabled:opacity-50 press">Save staff member</button>
-                    </div>
+               <div className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-sm">
+                 <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
+                   <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Staff profile</p>
+                   <p className="mt-1 text-sm font-bold text-slate-500">{users?.length || 0} active account{(users?.length || 0) === 1 ? '' : 's'}</p>
                  </div>
-              )}
-
-               <div className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-sm divide-y divide-slate-100">
+                 <div className="divide-y divide-slate-200">
                  {users?.map(user => (
-                    <div key={user.id} className="group relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 sm:px-5 hover:bg-blue-50/30 transition-all overflow-hidden">
+                    <div key={user.id} className="group relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-4 transition-all hover:bg-blue-50/20 sm:px-5">
                        <div className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3">
-                           <div className={`flex h-10 w-10 items-center justify-center rounded-lg border-2 font-black text-sm ${user.role === 'ADMIN' ? 'border-blue-100 bg-blue-50 text-blue-700' : user.role === 'MANAGER' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
+                           <div className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-black text-slate-900">
                              {user.name.charAt(0).toUpperCase()}
                           </div>
                           <div className="stable-row-copy">
                              <h4 className="stable-title text-sm font-black text-slate-900 leading-tight">{user.name}</h4>
                              <div className="flex min-w-0 items-center gap-2 mt-1 overflow-hidden">
-                                 <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${user.role === 'ADMIN' ? 'bg-blue-50 text-blue-700' : user.role === 'MANAGER' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
+                                 <span className="flex-shrink-0 text-[10px] font-black uppercase tracking-widest text-slate-500">
                                    {user.role === 'ADMIN' ? 'Admin' : user.role === 'MANAGER' ? 'Manager' : user.role === 'CASHIER' ? 'Cashier' : user.role}
                                 </span>
                              </div>
@@ -268,37 +285,110 @@ export default function AdminPanelDesktop() {
                        </div>
 
                        <div className="stable-actions flex items-center gap-1">
-                           <button onClick={() => { setEditingUserId(editingUserId === user.id ? null : user.id); setEditingPassword(''); }} className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-slate-200 bg-white text-slate-500 transition-all hover:border-blue-200 hover:text-blue-700">
+                           <button onClick={() => { setEditingUserId(user.id); setEditingPassword(''); }} className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-slate-200 bg-white text-slate-500 transition-all hover:border-blue-200 hover:text-blue-700">
                              <KeyRound size={17} />
                           </button>
                            <button onClick={() => handleDeleteUser(user.id)} className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-rose-100 bg-white text-rose-600 transition-all hover:bg-rose-50">
                              <Trash2 size={17} />
                           </button>
                        </div>
-
-                       {editingUserId === user.id && (
-                           <div className="absolute inset-0 z-20 flex flex-col justify-center bg-white p-4 animate-in fade-in duration-300">
-                             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Reset access key</h4>
-                             <input 
-                               type="password" 
-                               autoFocus
-                               className="mb-4 w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" 
-                               placeholder="Min 4 characters"
-                               value={editingPassword}
-                               onChange={e => setEditingPassword(e.target.value)}
-                             />
-                             <div className="flex gap-2">
-                                 <button onClick={() => setEditingUserId(null)} className="flex-1 rounded-lg border-2 border-slate-200 bg-white py-3 text-[10px] font-black uppercase text-slate-500">Cancel</button>
-                                 <button onClick={() => handlePasswordUpdate(user.id)} disabled={editingPassword.length < 4} className="flex-[2] rounded-lg border-2 border-blue-700 bg-blue-700 py-3 text-[10px] font-black uppercase text-white disabled:opacity-40">Confirm update</button>
-                             </div>
-                          </div>
-                       )}
                     </div>
                  ))}
+                 </div>
               </div>
            </div>
          )}
        </div>
+
+      {isAddingUser && (
+        <AdminDrawer
+          title="Add staff member"
+          description="Create one login for a cashier, manager, or admin."
+          onClose={() => { setIsAddingUser(false); setNewUser({ name: '', password: '', role: 'CASHIER' }); }}
+          footer={(
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => { setIsAddingUser(false); setNewUser({ name: '', password: '', role: 'CASHIER' }); }}
+                className="h-12 flex-1 rounded-lg border-2 border-slate-200 bg-white px-4 text-[10px] font-black uppercase tracking-widest text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAddUser}
+                disabled={!newUser.name || newUser.password.length < 4 || isSaving}
+                className="h-12 flex-[2] rounded-lg border-2 border-blue-700 bg-blue-700 px-5 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-blue-800 disabled:opacity-50"
+              >
+                {isSaving ? 'Saving...' : 'Save staff member'}
+              </button>
+            </div>
+          )}
+        >
+          <div className="space-y-5">
+            <div>
+              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-500">Full name</label>
+              <input type="text" className="w-full rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" placeholder="e.g. Samuel Karanja" value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} />
+            </div>
+            <div>
+              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-500">Password</label>
+              <input type="password" className="w-full rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" placeholder="Minimum 4 characters" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
+            </div>
+            <div>
+              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-500">Staff role</label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {(['CASHIER', 'MANAGER', 'ADMIN'] as const).map(role => (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => setNewUser({ ...newUser, role })}
+                    className={`rounded-lg border-2 py-3 text-[10px] font-black uppercase tracking-widest transition ${newUser.role === role ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700'}`}
+                  >
+                    {role === 'CASHIER' ? 'Cashier' : role === 'MANAGER' ? 'Manager' : 'Admin'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </AdminDrawer>
+      )}
+
+      {editingUser && (
+        <AdminDrawer
+          title="Reset password"
+          description={`Set a new access key for ${editingUser.name}.`}
+          onClose={() => { setEditingUserId(null); setEditingPassword(''); }}
+          footer={(
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => { setEditingUserId(null); setEditingPassword(''); }}
+                className="h-12 flex-1 rounded-lg border-2 border-slate-200 bg-white px-4 text-[10px] font-black uppercase tracking-widest text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePasswordUpdate(editingUser.id)}
+                disabled={editingPassword.length < 4}
+                className="h-12 flex-[2] rounded-lg border-2 border-blue-700 bg-blue-700 px-5 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-blue-800 disabled:opacity-50"
+              >
+                Confirm update
+              </button>
+            </div>
+          )}
+        >
+          <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-500">New password</label>
+          <input
+            type="password"
+            autoFocus
+            className="w-full rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            placeholder="Minimum 4 characters"
+            value={editingPassword}
+            onChange={e => setEditingPassword(e.target.value)}
+          />
+        </AdminDrawer>
+      )}
     </div>
   );
 }

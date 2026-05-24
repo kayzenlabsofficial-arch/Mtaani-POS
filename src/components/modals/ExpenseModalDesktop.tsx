@@ -1,7 +1,7 @@
 import React from 'react';
 import { FileMinus, Landmark, Loader2, Wallet } from 'lucide-react';
 import { SearchableSelect } from '../shared/SearchableSelectDesktop';
-import { PICKED_CASH_ACCOUNT_NAME } from '../../utils/financeAccount';
+import { MAIN_ACCOUNT_NAME } from '../../utils/financeAccount';
 
 type ExpenseSource = 'TILL' | 'ACCOUNT';
 
@@ -72,7 +72,7 @@ export default function ExpenseModalDesktop({
           <div className="grid grid-cols-2 gap-2 rounded-lg border-2 border-slate-200 bg-slate-50 p-1.5">
             {[
               { source: 'TILL' as const, label: 'Till', Icon: Wallet },
-              { source: 'ACCOUNT' as const, label: 'Picked account', Icon: Landmark },
+              { source: 'ACCOUNT' as const, label: 'Main account', Icon: Landmark },
             ].map(({ source, label, Icon }) => (
               <button
                 key={source}
@@ -108,7 +108,7 @@ export default function ExpenseModalDesktop({
               />
             </div>
             {tillOverdrawn && <p className="mt-1 text-[10px] font-bold text-red-500">Exceeds cash sales in this shift.</p>}
-            {accountOverdrawn && <p className="mt-1 text-[10px] font-bold text-red-500">Exceeds the picked cash account balance.</p>}
+            {accountOverdrawn && <p className="mt-1 text-[10px] font-bold text-red-500">Exceeds the Main account balance.</p>}
           </div>
 
           <div>
@@ -118,7 +118,7 @@ export default function ExpenseModalDesktop({
 
           <div className="rounded-lg border-2 border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-              {expenseForm.source === 'TILL' ? 'Till available' : PICKED_CASH_ACCOUNT_NAME}
+              {expenseForm.source === 'TILL' ? 'Till available' : MAIN_ACCOUNT_NAME}
             </p>
             <p className="text-lg font-black text-slate-900">
               Ksh {Number(expenseForm.source === 'TILL' ? actualCashDrawer : pickedAccount?.balance || 0).toLocaleString()}

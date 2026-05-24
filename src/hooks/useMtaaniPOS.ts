@@ -16,7 +16,7 @@ const shiftBelongsToUser = (shift: any, user: any) => {
 const SINGLE_SHOP_ID = 'single-shop';
 
 export function useMtaaniPOS() {
-  const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'TILLS' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'HR' | 'REPORTS' | 'SETTINGS' | 'ADMIN_PANEL'>('REGISTER');
+  const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'TILLS' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'HR' | 'REPORTS' | 'SETTINGS' | 'ADMIN_PANEL'>('DASHBOARD');
   const activeTabRef = useRef(activeTab);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
@@ -172,6 +172,11 @@ export function useMtaaniPOS() {
             return null;
           });
       if (loginShift) setActiveShift(loginShift);
+      activeTabRef.current = 'DASHBOARD';
+      setActiveTab('DASHBOARD');
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({ ...(window.history.state || {}), mtaaniTab: true, tab: 'DASHBOARD' }, '');
+      }
       setPassword('');
       success(`Welcome back, ${authData.user?.name || 'there'}!`);
     } catch (err: any) {
@@ -221,10 +226,6 @@ export function useMtaaniPOS() {
     const role = currentUser?.role;
     if ((nextTab === 'ADMIN_PANEL' || nextTab === 'SETTINGS') && role !== 'ADMIN') {
       error("Only administrators can open admin controls.");
-      return;
-    }
-    if ((nextTab === 'REPORTS' || nextTab === 'SUPPLIERS' || nextTab === 'HR') && role !== 'ADMIN' && role !== 'MANAGER') {
-      error("You do not have permission to open that section.");
       return;
     }
     if (typeof window !== 'undefined' && activeTabRef.current !== nextTab) {

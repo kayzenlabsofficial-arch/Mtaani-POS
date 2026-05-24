@@ -501,6 +501,20 @@ export interface FinancialAccount {
   updated_at?: number;
 }
 
+export interface FinancialAccountAdjustment {
+  id: string;
+  accountId: string;
+  amount: number;
+  direction: 'IN' | 'OUT' | 'SET';
+  balanceBefore: number;
+  balanceAfter: number;
+  reason?: string;
+  userName?: string;
+  timestamp: number;
+  businessId: string;
+  updated_at?: number;
+}
+
 export interface ExpenseAccount {
   id: string;
   name: string;
@@ -529,6 +543,7 @@ export interface BusinessSettings {
   mpesaEnv?: 'sandbox' | 'production';
   mpesaType?: 'paybill' | 'buygoods';
   mpesaStoreNumber?: string;
+  accessControl?: string | Record<string, any>;
   businessId: string;
   updated_at?: number;
 }
@@ -623,6 +638,7 @@ class MtaaniCloudDB {
   categories          = new CloudTable<Category>('categories');
   expenseAccounts     = new CloudTable<ExpenseAccount>('expenseAccounts');
   financialAccounts   = new CloudTable<FinancialAccount>('financialAccounts');
+  financialAccountAdjustments = new CloudTable<FinancialAccountAdjustment>('financialAccountAdjustments');
   auditLogs           = new CloudTable<AuditLog>('auditLogs');
 
   /**
@@ -661,6 +677,7 @@ class MtaaniCloudDB {
     this.categories.reset();
     this.expenseAccounts.reset();
     this.financialAccounts.reset();
+    this.financialAccountAdjustments.reset();
     this.loginAttempts.reset();
     this.auditLogs.reset();
 
@@ -708,7 +725,8 @@ class MtaaniCloudDB {
         () => this.creditNotes.reload(),
         () => this.categories.reload(),
         () => this.expenseAccounts.reload(),
-        () => this.financialAccounts.reload()
+        () => this.financialAccounts.reload(),
+        () => this.financialAccountAdjustments.reload()
 
       );
 

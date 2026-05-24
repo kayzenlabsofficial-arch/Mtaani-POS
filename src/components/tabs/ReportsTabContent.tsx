@@ -223,6 +223,7 @@ export default function ReportsTabContent() {
   const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
+  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId], null);
 
   React.useEffect(() => {
     setProductTablePage(1);
@@ -235,7 +236,7 @@ export default function ReportsTabContent() {
     selectedProductGroups,
   ]);
 
-  if (!canPerform(currentUser, 'report.view')) {
+  if (!canPerform(currentUser, 'report.view', businessSettings)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 px-4">
         <div className="flex h-16 w-16 items-center justify-center rounded-lg border-2 border-rose-100 bg-rose-50 text-rose-600">
@@ -265,8 +266,6 @@ export default function ReportsTabContent() {
   const allSuppliers = useLiveQuery(() => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
   const allPurchases = useLiveQuery(() => activeBusinessId && activeShopId ? db.purchaseOrders.where('shopId').equals(activeShopId).and(po => po.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
   const allSalesInvoices = useLiveQuery(() => activeBusinessId && activeShopId ? db.salesInvoices.where('shopId').equals(activeShopId).and(invoice => invoice.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId], null);
-
   if (!allTransactions || !allProducts || !allExpenses || !allSuppliers || !allSalesInvoices) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">

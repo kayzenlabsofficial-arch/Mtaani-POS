@@ -200,11 +200,11 @@ async function ensurePickedCashAccount(db: D1Database, businessId: string): Prom
   const now = Date.now();
   await db.prepare(`
     INSERT OR IGNORE INTO financialAccounts (id, name, type, balance, businessId, accountNumber, updated_at)
-    VALUES (?, 'Picked cash account', 'CASH', 0, ?, 'PICKED-CASH', ?)
+    VALUES (?, 'Main account', 'CASH', 0, ?, 'PICKED-CASH', ?)
   `).bind(id, businessId, now).run();
   await db.prepare(`
     UPDATE financialAccounts
-    SET name = 'Picked cash account', type = 'CASH', accountNumber = 'PICKED-CASH',
+    SET name = 'Main account', type = 'CASH', accountNumber = 'PICKED-CASH',
         updated_at = ?
     WHERE id = ? AND businessId = ?
   `).bind(now, id, businessId).run();

@@ -11,10 +11,8 @@ import { getAssignedHardware, getHardwareProfile, printReceiptViaAssignedPrinter
 import { getBusinessSettings } from '../../utils/settings';
 import { belongsToActiveShop } from '../../utils/shopScope';
 import { calculateCartTotals } from '../../utils/productPricing';
-import { getDefaultOpeningFloat, parseSalesTillRows, parseSalesTills } from '../../utils/tills';
-import { ShiftService } from '../../services/operations';
+import { canPerform } from '../../utils/accessControl';
 import HeldOrdersModal from '../register/HeldOrdersModal';
-import OpenShiftModal from '../shift/OpenShiftModal';
 import ProductSearchModal from '../register/ProductSearchModal';
 import RegisterDesktop from '../register/RegisterDesktop';
 import RegisterHeader from '../register/RegisterHeader';
@@ -24,15 +22,15 @@ import type { CheckoutOptions } from '../register/types';
 
 type RegisterBackLayer = 'SCANNER' | 'MOBILE_CHECKOUT' | 'HELD_ORDERS' | 'PRODUCT_SEARCH';
 const REGISTER_BACK_LAYER = 'registerBackLayer';
-const createRegisterShiftId = (shopId: string, tillId: string, userId: string, timestamp = Date.now()) =>
-  `shift_${shopId}_${new Date(timestamp).toISOString().slice(0, 10)}_${tillId}_${userId}_${timestamp}`;
 
 export default function RegisterTab({
   toggleCart,
   handleCheckout,
+  setActiveTab,
 }: {
   toggleCart?: (value: boolean) => void;
   handleCheckout?: (status: 'PAID' | 'UNPAID', method: string, mpesaRef?: string, customerName?: string, splitData?: any) => Promise<any>;
+  setActiveTab?: (tab: string) => void;
 }) {
   const isPhoneUi = usePhoneUi();
   const [searchQuery, setSearchQuery] = useState('');
@@ -60,9 +58,6 @@ export default function RegisterTab({
     cart,
     heldOrders,
   } = useStore();
-  const [selectedTillId, setSelectedTillId] = useState('');
-  const [openingCashAmount, setOpeningCashAmount] = useState('');
-  const [isOpeningShift, setIsOpeningShift] = useState(false);
   const canSeeShiftList = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER' || currentUser?.role === 'ROOT';
 
   const products = useLiveQuery(
@@ -88,13 +83,6 @@ export default function RegisterTab({
     []
   );
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId], null);
-  const salesTillRows = useLiveQuery(
-    () => activeBusinessId
-      ? db.salesTills.where('businessId').equals(activeBusinessId).toArray()
-      : Promise.resolve([]),
-    [activeBusinessId],
-    []
-  );
   const shopShifts = useLiveQuery(
     () => canSeeShiftList && activeBusinessId && activeShopId
       ? db.shifts.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
@@ -124,17 +112,6 @@ export default function RegisterTab({
     (!activeBusinessId || order.businessId === activeBusinessId) &&
     (!activeShopId || order.shopId === activeShopId)
   );
-  const configuredTills = React.useMemo(() => {
-    const tableTills = parseSalesTillRows(salesTillRows);
-    return tableTills.length ? tableTills : parseSalesTills(businessSettings);
-  }, [businessSettings, salesTillRows]);
-  const openTillIds = new Set((shopShifts || [])
-    .filter(shift => String(shift.status || '').toUpperCase() === 'OPEN')
-    .map(shift => String(shift.tillId || ''))
-    .filter(Boolean));
-  const availableTills = configuredTills.filter(till => !openTillIds.has(till.id));
-  const selectedTill = configuredTills.find(till => till.id === selectedTillId) || availableTills[0] || configuredTills[0];
-  const defaultOpeningFloat = getDefaultOpeningFloat(businessSettings);
   const shiftBelongsToCurrentUser = React.useCallback((shift: any) => {
     if (!shift || !currentUser) return false;
     const userId = String(currentUser.id || '').trim();
@@ -276,77 +253,6 @@ export default function RegisterTab({
     if (sharedOwnOpenShift && !localOpenShift) setActiveShift(sharedOwnOpenShift);
   }, [localOpenShift, setActiveShift, sharedOwnOpenShift]);
 
-  React.useEffect(() => {
-    if (canOperateOwnShift) return;
-    const nextTill = availableTills[0] || configuredTills[0];
-    if (nextTill && !configuredTills.some(till => till.id === selectedTillId)) {
-      setSelectedTillId(nextTill.id);
-    }
-    if (!openingCashAmount) setOpeningCashAmount(String(defaultOpeningFloat || 0));
-  }, [availableTills, canOperateOwnShift, configuredTills, defaultOpeningFloat, openingCashAmount, selectedTillId]);
-
-  const confirmRegisterOpenShift = React.useCallback(async () => {
-    if (!activeBusinessId || !activeShopId || !currentUser || isOpeningShift) return;
-    if (canOperateOwnShift) {
-      success('Your shift is already open.');
-      return;
-    }
-    const till = selectedTill || availableTills[0] || configuredTills[0];
-    if (!till) {
-      warning('Set up at least one till in Settings before opening a shift.');
-      return;
-    }
-    const tillBusy = (shopShifts || []).some(shift => String(shift.status || '').toUpperCase() === 'OPEN' && String(shift.tillId || '') === till.id);
-    if (tillBusy) {
-      warning(`${till.name} is already open.`);
-      return;
-    }
-
-    const now = Date.now();
-    const openingCash = Math.max(0, Number(openingCashAmount) || 0);
-    const nextShift = {
-      id: createRegisterShiftId(activeShopId, till.id, currentUser.id, now),
-      startTime: now,
-      cashierId: currentUser.id,
-      cashierName: currentUser.name,
-      tillId: till.id,
-      tillName: till.name,
-      openingCash,
-      status: 'OPEN',
-      shopId: activeShopId,
-      businessId: activeBusinessId,
-      updated_at: now,
-    };
-
-    setIsOpeningShift(true);
-    try {
-      const result = await ShiftService.openShift(nextShift as any);
-      if (canSeeShiftList) await db.shifts.reload().catch(() => {});
-      setActiveShift(result.shift || nextShift);
-      success(result.idempotent ? 'Your shift is already open.' : `${till.name} shift opened.`);
-    } catch (err: any) {
-      error(err?.message || 'Could not open shift.');
-    } finally {
-      setIsOpeningShift(false);
-    }
-  }, [
-    activeShopId,
-    activeBusinessId,
-    availableTills,
-    shopShifts,
-    canOperateOwnShift,
-    canSeeShiftList,
-    configuredTills,
-    currentUser,
-    error,
-    isOpeningShift,
-    openingCashAmount,
-    selectedTill,
-    setActiveShift,
-    success,
-    warning,
-  ]);
-
   const maybeAutoPrintReceipt = React.useCallback(async (receipt: Transaction & { recordType?: 'SALE' }) => {
     const profile = getHardwareProfile();
     const assignedPrinter = getAssignedHardware('RECEIPT_PRINTER');
@@ -366,6 +272,10 @@ export default function RegisterTab({
 
   const completeCheckout = async (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => {
     if (!handleCheckout || cart.length === 0 || isCheckingOut) return null;
+    if (!canPerform(currentUser, 'sale.checkout', businessSettings)) {
+      error('Completing sales is locked for this account.');
+      return null;
+    }
     setIsCheckingOut(true);
     try {
       const paymentReference = options?.mpesaRef || options?.pdqRef || options?.paymentReference;
@@ -434,25 +344,16 @@ export default function RegisterTab({
           <p className="text-[11px] font-black uppercase tracking-widest text-blue-700">Register locked</p>
           <h2 className="mt-2 text-2xl font-black text-slate-950">Open a shift first</h2>
           <p className="mt-2 text-sm font-semibold text-slate-600">
-            Sales are attached to a till session, so the register stays closed until your shift is open.
+            Sales are attached to a till session. Open your shift from the Dashboard, then come back to Register.
           </p>
+          <button
+            type="button"
+            onClick={() => setActiveTab?.('DASHBOARD')}
+            className="mt-5 h-11 w-full rounded-lg border-2 border-blue-700 bg-blue-700 text-sm font-black text-white transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200"
+          >
+            Go to Dashboard
+          </button>
         </div>
-        <OpenShiftModal
-          open={!!activeBusinessId && !!activeShopId && !!currentUser}
-          title="Open shift to use Register"
-          description="Choose your till and opening cash to start selling."
-          notice="You cannot open the register until you open a shift."
-          allowClose={false}
-          onClose={() => {}}
-          configuredTills={configuredTills}
-          availableTills={availableTills}
-          selectedTillId={selectedTillId}
-          setSelectedTillId={setSelectedTillId}
-          openingCashAmount={openingCashAmount}
-          setOpeningCashAmount={setOpeningCashAmount}
-          isOpeningShift={isOpeningShift}
-          confirmOpenShift={confirmRegisterOpenShift}
-        />
       </div>
     );
   }

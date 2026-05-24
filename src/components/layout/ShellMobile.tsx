@@ -2,6 +2,7 @@ import React from 'react';
 import {
   BarChart3,
   CircleDollarSign,
+  Landmark,
   LayoutDashboard,
   LogOut,
   MoreHorizontal,
@@ -20,6 +21,7 @@ import {
   Users,
 } from 'lucide-react';
 import MobileModal from '../shared/MobileModal';
+import { canOpenTab } from '../../utils/accessControl';
 
 const MaterialIcon = ({ name, className = '', style = {} }: { name: string; className?: string; style?: any }) => {
   const icons: Record<string, React.ElementType> = {
@@ -27,6 +29,7 @@ const MaterialIcon = ({ name, className = '', style = {} }: { name: string; clas
     add: Plus,
     admin_panel_settings: ShieldCheck,
     analytics: BarChart3,
+    account_balance: Landmark,
     badge: UserRound,
     dashboard: LayoutDashboard,
     group: Users,
@@ -103,14 +106,14 @@ export function TopHeaderMobile({
   );
 }
 
-export function MobileNav({ activeTab, onTabChange, onToggleMore, isMoreMenuOpen }: any) {
+export function MobileNav({ activeTab, onTabChange, onToggleMore, isMoreMenuOpen, currentUser, businessSettings }: any) {
   const tabs = [
     { id: 'DASHBOARD', label: 'Dash', icon: 'dashboard' },
     { id: 'REGISTER', label: 'Sale', icon: 'point_of_sale' },
     { id: 'TILLS', label: 'Tills', icon: 'store' },
     { id: 'INVENTORY', label: 'Stock', icon: 'inventory_2' },
     { id: 'MORE', label: 'More', icon: 'more_horiz' },
-  ];
+  ].filter(item => item.id === 'MORE' || canOpenTab(currentUser, businessSettings, item.id));
 
   return (
     <nav className="keyboard-hide-when-open fixed bottom-0 left-0 z-50 w-full">
@@ -143,18 +146,18 @@ export function MobileNav({ activeTab, onTabChange, onToggleMore, isMoreMenuOpen
   );
 }
 
-export function MoreOptionsMenu({ onTabChange, onLogout, onClose, currentUser }: any) {
+export function MoreOptionsMenu({ onTabChange, onLogout, onClose, currentUser, businessSettings }: any) {
   const role = currentUser?.role;
   const isAdmin = role === 'ADMIN';
-  const isAdminOrManager = role === 'ADMIN' || role === 'MANAGER';
   const quickAccess = [
     { id: 'TILLS', label: 'Tills', icon: 'store', color: 'bg-blue-600' },
     { id: 'CUSTOMERS', label: 'Customers', icon: 'group', color: 'bg-blue-500' },
     { id: 'INVOICES', label: 'Invoices', icon: 'receipt_long', color: 'bg-cyan-600' },
     { id: 'EXPENSES', label: 'Expenses', icon: 'payments', color: 'bg-rose-500' },
+    { id: 'MAIN_ACCOUNT', label: 'Main account', icon: 'account_balance', color: 'bg-blue-700' },
     { id: 'REFUNDS', label: 'Returns', icon: 'keyboard_return', color: 'bg-amber-500' },
     { id: 'DOCUMENTS', label: 'Receipts', icon: 'receipt_long', color: 'bg-violet-500' },
-  ];
+  ].filter(item => canOpenTab(currentUser, businessSettings, item.id));
   const management = [
     { id: 'SUPPLIERS', label: 'Suppliers', icon: 'local_shipping', color: 'bg-teal-500' },
     { id: 'PURCHASES', label: 'LPOs', icon: 'shopping_bag', color: 'bg-indigo-500' },
@@ -164,8 +167,7 @@ export function MoreOptionsMenu({ onTabChange, onLogout, onClose, currentUser }:
     { id: 'ADMIN_PANEL', label: 'Admin', icon: 'admin_panel_settings', color: 'bg-slate-800' },
   ].filter(item => {
     if (item.id === 'ADMIN_PANEL' || item.id === 'SETTINGS') return isAdmin;
-    if (item.id === 'SUPPLIERS' || item.id === 'REPORTS' || item.id === 'HR') return isAdminOrManager;
-    return true;
+    return canOpenTab(currentUser, businessSettings, item.id);
   });
 
   return (

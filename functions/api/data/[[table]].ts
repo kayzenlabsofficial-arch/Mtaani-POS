@@ -12,7 +12,7 @@ const ALLOWED_TABLES = new Set([
   'customerPayments', 'serviceItems', 'salesInvoices', 'suppliers', 'supplierPayments',
   'creditNotes', 'dailySummaries', 'stockAdjustmentRequests', 'purchaseOrders',
   'settings', 'salesTills', 'categories', 'businesses', 'system', 'expenseAccounts',
-  'financialAccounts', 'productIngredients', 'loginAttempts', 'auditLogs',
+  'financialAccounts', 'financialAccountAdjustments', 'productIngredients', 'loginAttempts', 'auditLogs',
   'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments',
   'mpesaCallbacks', 'deviceSyncStatus', 'idempotencyKeys',
 ]);
@@ -55,6 +55,7 @@ const COMMAND_ONLY_WRITE_TABLES = new Set([
   'salesInvoices',
   'expenses',
   'financialAccounts',
+  'financialAccountAdjustments',
   'cashPicks',
   'refunds',
   'shifts',
@@ -118,11 +119,12 @@ CREATE TABLE IF NOT EXISTS dailySummaries (id TEXT PRIMARY KEY, date INTEGER NOT
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_date ON dailySummaries(businessId, date);
 CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (id TEXT PRIMARY KEY, productId TEXT NOT NULL, productName TEXT, oldQty REAL, newQty REAL, requestedQuantity REAL, reason TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, preparedBy TEXT, approvedBy TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS purchaseOrders (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, items TEXT NOT NULL, totalAmount REAL NOT NULL, status TEXT NOT NULL, approvalStatus TEXT NOT NULL, paymentStatus TEXT, paidAmount REAL, orderDate INTEGER NOT NULL, expectedDate INTEGER, receivedDate INTEGER, invoiceNumber TEXT, poNumber TEXT, preparedBy TEXT, approvedBy TEXT, receivedBy TEXT, businessId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, storeName TEXT NOT NULL, location TEXT, tillNumber TEXT, kraPin TEXT, receiptFooter TEXT, ownerModeEnabled INTEGER DEFAULT 0, autoApproveOwnerActions INTEGER DEFAULT 1, cashSweepEnabled INTEGER DEFAULT 1, cashDrawerLimit REAL DEFAULT 5000, salesTills TEXT, defaultOpeningFloat REAL DEFAULT 0, mpesaConsumerKey TEXT, mpesaConsumerSecret TEXT, mpesaPasskey TEXT, mpesaEnv TEXT DEFAULT 'sandbox', mpesaType TEXT DEFAULT 'paybill', mpesaStoreNumber TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, storeName TEXT NOT NULL, location TEXT, tillNumber TEXT, kraPin TEXT, receiptFooter TEXT, ownerModeEnabled INTEGER DEFAULT 0, autoApproveOwnerActions INTEGER DEFAULT 1, cashSweepEnabled INTEGER DEFAULT 1, cashDrawerLimit REAL DEFAULT 5000, salesTills TEXT, defaultOpeningFloat REAL DEFAULT 0, mpesaConsumerKey TEXT, mpesaConsumerSecret TEXT, mpesaPasskey TEXT, mpesaEnv TEXT DEFAULT 'sandbox', mpesaType TEXT DEFAULT 'paybill', mpesaStoreNumber TEXT, accessControl TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS salesTills (id TEXT PRIMARY KEY, name TEXT NOT NULL, isActive INTEGER DEFAULT 1, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, iconName TEXT NOT NULL, color TEXT NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS expenseAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS financialAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, balance REAL NOT NULL DEFAULT 0, businessId TEXT, accountNumber TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS financialAccountAdjustments (id TEXT PRIMARY KEY, accountId TEXT NOT NULL, amount REAL NOT NULL, direction TEXT NOT NULL, balanceBefore REAL NOT NULL, balanceAfter REAL NOT NULL, reason TEXT, userName TEXT, timestamp INTEGER NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS mpesaCallbacks (checkoutRequestId TEXT PRIMARY KEY, merchantRequestId TEXT, resultCode INTEGER, resultDesc TEXT, amount REAL, receiptNumber TEXT, phoneNumber TEXT, businessId TEXT, timestamp INTEGER, utilizedTransactionId TEXT, utilizedCustomerId TEXT, utilizedCustomerName TEXT, utilizedAt INTEGER);
 CREATE TABLE IF NOT EXISTS deviceSyncStatus (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, deviceId TEXT NOT NULL, cashierName TEXT, lastSyncAt INTEGER, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS idempotencyKeys (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, idempotencyKey TEXT NOT NULL, operation TEXT NOT NULL, deviceId TEXT, cashierName TEXT, transactionId TEXT, createdAt INTEGER NOT NULL);
@@ -194,17 +196,36 @@ async function ensureHrSchema(db: D1Database): Promise<void> {
 }
 
 async function ensurePickedCashAccount(db: D1Database, businessId: string) {
+  await db.prepare('CREATE TABLE IF NOT EXISTS financialAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, balance REAL NOT NULL DEFAULT 0, businessId TEXT, accountNumber TEXT, updated_at INTEGER)').run();
   const id = `picked_cash_${businessId}`;
   const now = Date.now();
   await db.prepare(`
     INSERT OR IGNORE INTO financialAccounts (id, name, type, balance, businessId, accountNumber, updated_at)
-    VALUES (?, 'Picked cash account', 'CASH', 0, ?, 'PICKED-CASH', ?)
+    VALUES (?, 'Main account', 'CASH', 0, ?, 'PICKED-CASH', ?)
   `).bind(id, businessId, now).run();
   await db.prepare(`
     UPDATE financialAccounts
-    SET name = 'Picked cash account', type = 'CASH', accountNumber = 'PICKED-CASH', updated_at = ?
+    SET name = 'Main account', type = 'CASH', accountNumber = 'PICKED-CASH', updated_at = ?
     WHERE id = ? AND businessId = ?
   `).bind(now, id, businessId).run();
+}
+
+async function ensureFinancialAccountAdjustmentSchema(db: D1Database) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS financialAccountAdjustments (
+      id TEXT PRIMARY KEY,
+      accountId TEXT NOT NULL,
+      amount REAL NOT NULL,
+      direction TEXT NOT NULL,
+      balanceBefore REAL NOT NULL,
+      balanceAfter REAL NOT NULL,
+      reason TEXT,
+      userName TEXT,
+      timestamp INTEGER NOT NULL,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
 }
 
 function asNumber(value: unknown, fallback = 0): number {
@@ -443,6 +464,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     if (HR_TABLES.has(table)) await ensureHrSchema(env.DB);
     if (table === 'financialAccounts' && businessId) await ensurePickedCashAccount(env.DB, businessId);
+    if (table === 'financialAccountAdjustments') await ensureFinancialAccountAdjustmentSchema(env.DB);
     if (table === 'loginAttempts') {
       await env.DB.prepare('CREATE TABLE IF NOT EXISTS loginAttempts (id TEXT PRIMARY KEY, count INTEGER DEFAULT 0, lockedUntil INTEGER, updated_at INTEGER)').run();
     }
@@ -528,7 +550,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           .first<any>();
         items.splice(0, items.length, {
           id: `picked_cash_${businessId}`,
-          name: 'Picked cash account',
+          name: 'Main account',
           type: 'CASH',
           accountNumber: 'PICKED-CASH',
           balance: existing ? asNumber(existing.balance) : 0,
@@ -616,7 +638,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           }
         }
         if (table === 'financialAccounts') {
-          return new Response(JSON.stringify({ error: 'The picked cash account is built in and cannot be deleted.' }), { status: 409, headers: jsonHeaders() });
+          return new Response(JSON.stringify({ error: 'The Main account is built in and cannot be deleted.' }), { status: 409, headers: jsonHeaders() });
         }
         if (table === 'users' && !service && principal.role !== 'ROOT') {
           if (id === principal.userId) {

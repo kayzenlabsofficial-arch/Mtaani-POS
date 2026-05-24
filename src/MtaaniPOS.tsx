@@ -5,7 +5,7 @@ import { useMtaaniPOS } from './hooks/useMtaaniPOS';
 import { usePhoneUi } from './hooks/usePhoneUi';
 import { useVisualViewport } from './hooks/useVisualViewport';
 import { useToast } from './context/ToastContext';
-import { canPerform } from './utils/accessControl';
+import { canOpenTab, canPerform, shouldBlurFeature } from './utils/accessControl';
 import { recordAuditEvent } from './utils/auditLog';
 import { submitExpenseRecord } from './utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from './utils/ownerMode';
@@ -22,6 +22,7 @@ import InventoryTab from './components/tabs/InventoryTab';
 import CustomersTab from './components/tabs/CustomersTab';
 import SuppliersTab from './components/tabs/SuppliersTab';
 import ExpensesTab from './components/tabs/ExpensesTab';
+import MainAccountTab from './components/tabs/MainAccountTab';
 import RefundsTab from './components/tabs/RefundsTab';
 import PurchasesTab from './components/tabs/PurchasesTab';
 import SalesInvoicesTab from './components/tabs/SalesInvoicesTab';
@@ -79,7 +80,17 @@ export default function MtaaniPOS() {
   }), [activeBusiness?.name, businessSettings]);
   const activeShift = useStore(state => state.activeShift);
   const isRegisterTab = activeTab === 'REGISTER';
-  const canSeeSalesData = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER' || currentUser?.role === 'ROOT';
+  const canSeeSalesData = currentUser?.role === 'ADMIN' || currentUser?.role === 'ROOT'
+    || (canOpenTab(currentUser, businessSettings, 'DASHBOARD') && !shouldBlurFeature(currentUser, businessSettings, 'dashboard.moneyBreakdown'));
+
+  const openAllowedTab = React.useCallback((tab: any) => {
+    if (!canOpenTab(currentUser, businessSettings, String(tab))) {
+      error('This window is locked for this account.');
+      return;
+    }
+    navigateToTab(tab);
+  }, [businessSettings, currentUser, error, navigateToTab]);
+  const activeTabLocked = !!currentUser && !canOpenTab(currentUser, businessSettings, activeTab);
 
   React.useEffect(() => {
     if (activeBusinessId && !activeShopId) setActiveShopId(SINGLE_SHOP_ID);
@@ -172,10 +183,10 @@ export default function MtaaniPOS() {
     const expenseSource = expenseForm.source === 'ACCOUNT' ? 'ACCOUNT' : 'TILL';
     const amount = Number(expenseForm.amount);
     if (amount <= 0) return error("Invalid amount.");
-    if (!canPerform(currentUser, 'expense.create')) return error("You do not have permission to create expenses.");
+    if (!canPerform(currentUser, 'expense.create', businessSettings)) return error("You do not have permission to create expenses.");
     if (expenseSource === 'TILL' && !currentShiftId) return error("Open a till shift before paying expenses from the till.");
     if (expenseSource === 'TILL' && canSeeSalesData && amount > shiftCashAvailable) return error("Insufficient cash sales in this shift.");
-    if (expenseSource === 'ACCOUNT' && amount > Number(financialAccounts[0]?.balance || 0)) return error("Insufficient balance in the picked cash account.");
+    if (expenseSource === 'ACCOUNT' && amount > Number(financialAccounts[0]?.balance || 0)) return error("Insufficient balance in the Main account.");
 
     setIsSavingExpense(true);
     try {
@@ -239,11 +250,12 @@ export default function MtaaniPOS() {
       {!isPhoneUi && (
         <Sidebar
           activeTab={activeTab}
-          onTabChange={navigateToTab}
+          onTabChange={openAllowedTab}
           onLogout={handleLogout}
           onSync={handleSync}
           isSyncing={isSyncing}
           currentUser={currentUser}
+          businessSettings={businessSettings}
           onOpenProfile={() => setIsProfileModalOpen(true)}
         />
       )}
@@ -273,46 +285,62 @@ export default function MtaaniPOS() {
 
         <main className={`flex-1 main-scroll app-safe-scroll relative ${isPhoneUi ? 'bg-slate-100' : 'bg-transparent'} ${isRegisterTab ? 'overflow-y-auto p-0' : isPhoneUi ? 'overflow-y-auto p-3 pb-28 sm:p-4 sm:pb-28' : 'overflow-y-auto p-8 pb-6'}`}>
           <div className={isRegisterTab ? 'h-full min-h-0' : 'max-w-[1440px] mx-auto min-h-full'}>
-            {activeTab === 'REGISTER' && <RegisterTab toggleCart={toggleCart} handleCheckout={handleCheckout} />}
-            {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={navigateToTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}
-            {activeTab === 'TILLS' && <TillsTab />}
-            {activeTab === 'INVENTORY' && <InventoryTab />}
-            {activeTab === 'CUSTOMERS' && <CustomersTab />}
-            {activeTab === 'SUPPLIERS' && <SuppliersTab setActiveTab={navigateToTab} />}
-            {activeTab === 'PURCHASES' && <PurchasesTab />}
-            {activeTab === 'INVOICES' && <SalesInvoicesTab />}
-            {activeTab === 'EXPENSES' && <ExpensesTab />}
-            {activeTab === 'SUPPLIER_PAYMENTS' && <SupplierPaymentsTab financialAccounts={financialAccounts || []} />}
-            {activeTab === 'REFUNDS' && <RefundsTab setActiveTab={navigateToTab} />}
-            {activeTab === 'DOCUMENTS' && <DocumentsTab />}
-            {activeTab === 'HR' && <HRTab />}
-            {activeTab === 'REPORTS' && <ReportsTab />}
-            {activeTab === 'SETTINGS' && <SettingsTab updateServiceWorker={updateServiceWorker} needRefresh={needRefresh} />}
-            {activeTab === 'ADMIN_PANEL' && <AdminPanel />}
+            {activeTabLocked ? (
+              <div className="flex min-h-[60vh] items-center justify-center p-4 text-center">
+                <div className="max-w-sm rounded-lg border-2 border-slate-200 bg-white p-6 shadow-sm">
+                  <p className="text-[11px] font-black uppercase tracking-widest text-rose-600">Window locked</p>
+                  <h2 className="mt-2 text-xl font-black text-slate-950">Admin has locked this window</h2>
+                  <p className="mt-2 text-sm font-semibold text-slate-500">Ask an admin to open Access controls if this account needs it.</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {activeTab === 'REGISTER' && <RegisterTab toggleCart={toggleCart} handleCheckout={handleCheckout} setActiveTab={openAllowedTab} />}
+                {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={openAllowedTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}
+                {activeTab === 'TILLS' && <TillsTab />}
+                {activeTab === 'INVENTORY' && <InventoryTab />}
+                {activeTab === 'CUSTOMERS' && <CustomersTab />}
+                {activeTab === 'SUPPLIERS' && <SuppliersTab setActiveTab={openAllowedTab} />}
+                {activeTab === 'PURCHASES' && <PurchasesTab />}
+                {activeTab === 'INVOICES' && <SalesInvoicesTab />}
+                {activeTab === 'EXPENSES' && <ExpensesTab />}
+                {activeTab === 'MAIN_ACCOUNT' && <MainAccountTab />}
+                {activeTab === 'SUPPLIER_PAYMENTS' && <SupplierPaymentsTab financialAccounts={financialAccounts || []} />}
+                {activeTab === 'REFUNDS' && <RefundsTab setActiveTab={openAllowedTab} />}
+                {activeTab === 'DOCUMENTS' && <DocumentsTab />}
+                {activeTab === 'HR' && <HRTab />}
+                {activeTab === 'REPORTS' && <ReportsTab />}
+                {activeTab === 'SETTINGS' && <SettingsTab updateServiceWorker={updateServiceWorker} needRefresh={needRefresh} />}
+                {activeTab === 'ADMIN_PANEL' && <AdminPanel />}
+              </>
+            )}
           </div>
         </main>
 
         {isPhoneUi && (
           <MobileNav
             activeTab={activeTab}
-            onTabChange={navigateToTab}
+            onTabChange={openAllowedTab}
             onToggleMore={setIsMoreMenuOpen}
             isMoreMenuOpen={isMoreMenuOpen}
+            currentUser={currentUser}
+            businessSettings={businessSettings}
           />
         )}
 
-        {isPhoneUi && activeTab !== 'REGISTER' && (
-          <MobileRegisterFab onClick={() => navigateToTab('REGISTER')} />
+        {isPhoneUi && activeTab !== 'REGISTER' && canOpenTab(currentUser, businessSettings, 'REGISTER') && (
+          <MobileRegisterFab onClick={() => openAllowedTab('REGISTER')} />
         )}
 
       </div>
 
       {isPhoneUi && isMoreMenuOpen && (
         <MoreOptionsMenu 
-          onTabChange={navigateToTab}
+          onTabChange={openAllowedTab}
           onLogout={handleLogout}
           onClose={() => setIsMoreMenuOpen(false)}
           currentUser={currentUser}
+          businessSettings={businessSettings}
         />
       )}
 

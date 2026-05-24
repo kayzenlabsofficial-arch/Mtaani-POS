@@ -112,7 +112,7 @@ export default function DocumentsTabMobile() {
 
   const handleRefund = async (t: Transaction, itemsToReturn?: { productId: string, quantity: number }[]) => {
     if (t.status !== 'PAID' && t.status !== 'PARTIAL_REFUND') return;
-    if (!canPerform(currentUser, 'sale.refund.request')) {
+    if (!canPerform(currentUser, 'sale.refund.request', businessSettings)) {
       error('You do not have permission to request refunds.');
       return;
     }

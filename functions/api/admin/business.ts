@@ -70,7 +70,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       env.DB.prepare(`INSERT INTO users (id, name, password, role, businessId, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
         .bind(userId, 'admin', await hashPassword(adminPassword), 'ADMIN', businessId, now),
       env.DB.prepare(`INSERT INTO financialAccounts (id, name, type, balance, businessId, accountNumber, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .bind(`picked_cash_${businessId}`, 'Picked cash account', 'CASH', 0, businessId, 'PICKED-CASH', now),
+        .bind(`picked_cash_${businessId}`, 'Main account', 'CASH', 0, businessId, 'PICKED-CASH', now),
     ]);
 
     return json({ success: true, businessId, adminPassword });

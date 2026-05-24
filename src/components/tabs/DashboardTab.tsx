@@ -12,6 +12,8 @@ import { generateAndShareDocument } from '../../utils/shareUtils';
 import { getDefaultOpeningFloat, parseSalesTillRows, parseSalesTills } from '../../utils/tills';
 import { belongsToActiveShop } from '../../utils/shopScope';
 import { CashService, ClosingService, ShiftService } from '../../services/operations';
+import { apiRequest } from '../../services/apiClient';
+import { canAccessFeature, shouldBlurFeature } from '../../utils/accessControl';
 import { usePhoneUi } from '../../hooks/usePhoneUi';
 import DashboardDesktop from '../dashboard/DashboardDesktop';
 import DashboardMobile from '../dashboard/DashboardMobile';
@@ -116,6 +118,14 @@ type ShiftClosePreview = {
   recoveredAfterClosedShift?: boolean;
 };
 
+type CashierDashboardMetrics = {
+  lowStockCount: number;
+  customersServed: number;
+  previousCustomersServed: number;
+  totalExpenses: number;
+  previousExpenses: number;
+};
+
 const createShiftSessionId = (shopId: string, userId: string, timestamp = Date.now()) =>
   `shift_${shopId}_${new Date(timestamp).toISOString().slice(0, 10)}_${userId}_${timestamp}`;
 
@@ -141,7 +151,16 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const setActiveShift = useStore(state => state.setActiveShift);
   const { success, error, warning } = useToast();
   const isCashier = currentUser?.role === 'CASHIER';
-  const canSeeSalesData = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER' || currentUser?.role === 'ROOT';
+  const todayStart = getTodayStartMs();
+  const yesterdayStart = todayStart - DAY_MS;
+  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
+  const dailySalesModeOpen = canAccessFeature(currentUser, businessSettings, 'dashboard.dailySales')
+    && !shouldBlurFeature(currentUser, businessSettings, 'dashboard.dailySales');
+  const moneyBreakdownModeOpen = canAccessFeature(currentUser, businessSettings, 'dashboard.moneyBreakdown')
+    && !shouldBlurFeature(currentUser, businessSettings, 'dashboard.moneyBreakdown');
+  const salesTrendModeOpen = canAccessFeature(currentUser, businessSettings, 'dashboard.salesTrend')
+    && !shouldBlurFeature(currentUser, businessSettings, 'dashboard.salesTrend');
+  const canSeeSalesData = currentUser?.role === 'ADMIN' || currentUser?.role === 'ROOT' || dailySalesModeOpen || moneyBreakdownModeOpen || salesTrendModeOpen;
   const canLoadDashboardTotals = canSeeSalesData;
 
   const products = useLiveQuery(
@@ -156,7 +175,16 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       : Promise.resolve([]),
     [activeBusinessId, canLoadDashboardTotals], []
   );
-  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
+  const cashierDashboardMetrics = useLiveQuery<CashierDashboardMetrics | null>(
+    () => isCashier && activeBusinessId
+      ? apiRequest<CashierDashboardMetrics>(`/api/dashboard/metrics?todayStart=${todayStart}`, {
+          businessId: activeBusinessId,
+          requireOnline: false,
+        }).catch(() => null)
+      : Promise.resolve(null),
+    [activeBusinessId, isCashier, todayStart],
+    null
+  );
   const activeShop = {
     id: activeShopId,
     name: businessSettings?.storeName || 'Main shop',
@@ -258,8 +286,6 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
   const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
   const lowStockItems = displayProducts.filter(p => (p.stockQuantity || 0) <= (p.reorderPoint || 5)).slice(0, 5) || [];
-  const todayStart = getTodayStartMs();
-  const yesterdayStart = todayStart - DAY_MS;
   const todaysDailySummary = (shopDailySummaries || []).find(summary => {
     const summaryDate = Number(summary.date || summary.timestamp || 0);
     return summaryDate >= todayStart && summaryDate < todayStart + DAY_MS;
@@ -974,6 +1000,43 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     { label: 'Total expenses', value: 'Ksh 00,000', sub: '', icon: 'credit_card', locked: true },
   ];
 
+  const cashierDashboardCards = [
+    { label: 'Daily sales', value: 'Ksh 00,000', sub: '', icon: 'payments', locked: true },
+    {
+      label: 'Customers served',
+      value: Number(cashierDashboardMetrics?.customersServed || 0),
+      sub: '',
+      trend: percentChange(
+        Number(cashierDashboardMetrics?.customersServed || 0),
+        Number(cashierDashboardMetrics?.previousCustomersServed || 0)
+      ),
+      icon: 'group',
+    },
+    {
+      label: 'Low stock products',
+      value: Number(cashierDashboardMetrics?.lowStockCount || 0),
+      sub: '',
+      icon: 'warning',
+    },
+    {
+      label: 'Total expenses',
+      value: money(Number(cashierDashboardMetrics?.totalExpenses || 0)),
+      sub: '',
+      trend: percentChange(
+        Number(cashierDashboardMetrics?.totalExpenses || 0),
+        Number(cashierDashboardMetrics?.previousExpenses || 0)
+      ),
+      icon: 'credit_card',
+    },
+  ];
+
+  const accessControlledDashboardMetrics = [
+    dailySalesModeOpen ? dashboardMetrics[0] : lockedDashboardMetrics[0],
+    canLoadDashboardTotals ? dashboardMetrics[1] : cashierDashboardCards[1],
+    canLoadDashboardTotals ? dashboardMetrics[2] : cashierDashboardCards[2],
+    canLoadDashboardTotals ? dashboardMetrics[3] : cashierDashboardCards[3],
+  ];
+
   const lockedMoneyBreakdown = [
     {
       label: 'Till cash',
@@ -1025,9 +1088,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     handleBankExcessCash,
     adminShiftRows: canSeeSalesData ? adminShiftRows : [],
     adminShiftTotals: canSeeSalesData ? adminShiftTotals : {},
-    metrics: canSeeSalesData ? dashboardMetrics : lockedDashboardMetrics,
-    moneyBreakdown: canSeeSalesData ? dashboardMoneyBreakdown : lockedMoneyBreakdown,
-    salesTrendData: canSeeSalesData ? salesTrendData : [],
+    metrics: accessControlledDashboardMetrics,
+    moneyBreakdown: moneyBreakdownModeOpen ? dashboardMoneyBreakdown : lockedMoneyBreakdown,
+    salesTrendData: salesTrendModeOpen ? salesTrendData : [],
     trendView,
     setTrendView,
     quickActions: dashboardQuickActions,

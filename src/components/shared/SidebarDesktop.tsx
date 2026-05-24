@@ -4,6 +4,7 @@ import {
   CircleDollarSign,
   FileText,
   LayoutDashboard,
+  Landmark,
   LogOut,
   Package,
   RefreshCw,
@@ -17,6 +18,7 @@ import {
   UserRound,
   Users,
 } from 'lucide-react';
+import { canOpenTab } from '../../utils/accessControl';
 
 interface SidebarProps {
   activeTab: string;
@@ -25,6 +27,7 @@ interface SidebarProps {
   onSync: () => void;
   isSyncing: boolean;
   currentUser: any;
+  businessSettings?: any;
   onOpenProfile: () => void;
 }
 
@@ -44,6 +47,7 @@ const navItems: Array<{
   { id: 'SUPPLIERS', label: 'Suppliers', icon: Truck, adminOnly: true, managerAllowed: true },
   { id: 'PURCHASES', label: 'Purchases', icon: ShoppingBag },
   { id: 'EXPENSES', label: 'Expenses', icon: CircleDollarSign },
+  { id: 'MAIN_ACCOUNT', label: 'Main account', icon: Landmark },
   { id: 'REFUNDS', label: 'Refunds', icon: RotateCcw },
   { id: 'REPORTS', label: 'Reports', icon: BarChart3, adminOnly: true, managerAllowed: true },
   { id: 'DOCUMENTS', label: 'Documents', icon: FileText },
@@ -59,15 +63,14 @@ export default function SidebarDesktop({
   onSync,
   isSyncing,
   currentUser,
+  businessSettings,
   onOpenProfile,
 }: SidebarProps) {
-  const isAdminOrManager = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
   const isAdmin = currentUser?.role === 'ADMIN';
   const userInitial = currentUser?.name?.charAt(0)?.toUpperCase() || 'U';
   const visibleItems = navItems.filter(item => {
     if (item.id === 'ADMIN_PANEL' || item.id === 'SETTINGS') return isAdmin;
-    if (item.adminOnly) return isAdmin || (item.managerAllowed && isAdminOrManager);
-    return true;
+    return canOpenTab(currentUser, businessSettings, item.id);
   });
 
   return (

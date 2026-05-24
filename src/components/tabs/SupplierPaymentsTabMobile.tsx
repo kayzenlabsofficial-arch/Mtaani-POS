@@ -23,7 +23,7 @@ import { settleSupplierPayment, type SupplierPaymentInput } from '../../utils/su
 import { belongsToActiveShop } from '../../utils/shopScope';
 import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSession';
 import { getTodayStartMs } from '../../utils/cashDrawer';
-import { PICKED_CASH_ACCOUNT_NAME } from '../../utils/financeAccount';
+import { MAIN_ACCOUNT_NAME } from '../../utils/financeAccount';
 
 type PaySource = 'TILL' | 'ACCOUNT';
 type InvoiceAllocation = { purchaseOrderId: string; amount: number };
@@ -37,7 +37,7 @@ const moneyInput = (value: number) => {
 const invoiceDue = (invoice: any) => roundMoney(Math.max(0, Number(invoice.totalAmount || 0) - Number(invoice.paidAmount || 0)));
 const invoiceRef = (invoice: any) => invoice.invoiceNumber || invoice.poNumber || invoice.id?.split('-')?.[0]?.toUpperCase() || 'Invoice';
 const paymentMethodLabel = (method: string, source?: string) => {
-  if (source === 'ACCOUNT' || method === 'BANK') return 'Picked account';
+  if (source === 'ACCOUNT' || method === 'BANK') return MAIN_ACCOUNT_NAME;
   if (method === 'CASH') return 'Till cash';
   return method === 'MPESA' ? 'M-Pesa' : method || 'Payment';
 };
@@ -416,12 +416,12 @@ export default function SupplierPaymentsTabMobile({ financialAccounts }: { finan
                   onClick={() => setPaySource('ACCOUNT')}
                   className={`h-12 rounded-lg border-2 px-2 text-xs font-black ${paySource === 'ACCOUNT' ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-300 bg-white text-slate-700'}`}
                 >
-                  <Landmark size={16} className="mx-auto mb-0.5" /> Account
+                  <Landmark size={16} className="mx-auto mb-0.5" /> Main account
                 </button>
               </div>
               {paySource === 'ACCOUNT' && (
                 <div className="mt-2 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{PICKED_CASH_ACCOUNT_NAME}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{MAIN_ACCOUNT_NAME}</p>
                   <p className="mt-1 text-sm font-black tabular-nums text-slate-950">{money(pickedAccount?.balance)}</p>
                 </div>
               )}

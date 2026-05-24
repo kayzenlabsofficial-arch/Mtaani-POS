@@ -445,6 +445,7 @@ CREATE TABLE IF NOT EXISTS settings (
     mpesaEnv TEXT DEFAULT 'sandbox',
     mpesaType TEXT DEFAULT 'paybill',
     mpesaStoreNumber TEXT,
+    accessControl TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -503,6 +504,20 @@ CREATE TABLE IF NOT EXISTS financialAccounts (
     balance REAL NOT NULL DEFAULT 0,
     businessId TEXT,
     accountNumber TEXT,
+    updated_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS financialAccountAdjustments (
+    id TEXT PRIMARY KEY,
+    accountId TEXT NOT NULL,
+    amount REAL NOT NULL,
+    direction TEXT NOT NULL,
+    balanceBefore REAL NOT NULL,
+    balanceAfter REAL NOT NULL,
+    reason TEXT,
+    userName TEXT,
+    timestamp INTEGER NOT NULL,
+    businessId TEXT,
     updated_at INTEGER
 );
 
