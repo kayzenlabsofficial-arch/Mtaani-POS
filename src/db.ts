@@ -688,6 +688,8 @@ class MtaaniCloudDB {
     // Lazy import to break the circular dependency: db → store → db
     const { useStore } = await import('./store');
     const state = useStore.getState();
+    const role = state.currentUser?.role;
+    const canSyncSalesData = role === 'ROOT' || role === 'ADMIN' || role === 'MANAGER';
     const reloads: Array<() => Promise<void>> = [
       () => this.businesses.reload(),
       () => this.users.reload(),
@@ -699,28 +701,33 @@ class MtaaniCloudDB {
       reloads.push(
         () => this.products.reload(),
         () => this.productIngredients.reload(),
-        () => this.transactions.reload(),
-        () => this.refunds.reload(),
-        () => this.cashPicks.reload(),
-        () => this.endOfDayReports.reload(),
         () => this.stockMovements.reload(),
         () => this.customers.reload(),
-        () => this.customerPayments.reload(),
         () => this.serviceItems.reload(),
-        () => this.salesInvoices.reload(),
         () => this.suppliers.reload(),
-        () => this.supplierPayments.reload(),
-        () => this.expenses.reload(),
-        () => this.purchaseOrders.reload(),
-        () => this.stockAdjustmentRequests.reload(),
-        () => this.shifts.reload(),
-        () => this.dailySummaries.reload(),
         () => this.creditNotes.reload(),
         () => this.categories.reload(),
         () => this.expenseAccounts.reload(),
         () => this.financialAccounts.reload()
 
       );
+
+      if (canSyncSalesData) {
+        reloads.push(
+          () => this.transactions.reload(),
+          () => this.refunds.reload(),
+          () => this.cashPicks.reload(),
+          () => this.endOfDayReports.reload(),
+          () => this.customerPayments.reload(),
+          () => this.salesInvoices.reload(),
+          () => this.supplierPayments.reload(),
+          () => this.expenses.reload(),
+          () => this.purchaseOrders.reload(),
+          () => this.stockAdjustmentRequests.reload(),
+          () => this.shifts.reload(),
+          () => this.dailySummaries.reload(),
+        );
+      }
 
       if (state.currentUser?.role === 'ADMIN' || state.currentUser?.role === 'MANAGER') {
         reloads.push(

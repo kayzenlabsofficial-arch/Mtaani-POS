@@ -5,13 +5,14 @@ import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { canUseOwnerMode, getCashDrawerLimit, isOwnerCashSweepEnabled, isOwnerModeEnabled, shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
-import { calculateCashDrawer, calculateShiftCashFromSales, getTodayStartMs } from '../../utils/cashDrawer';
+import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
 import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSession';
 import { getBusinessSettings } from '../../utils/settings';
 import { generateAndShareDocument } from '../../utils/shareUtils';
 import { getDefaultOpeningFloat, parseSalesTillRows, parseSalesTills } from '../../utils/tills';
 import { belongsToActiveShop } from '../../utils/shopScope';
 import { CashService, ClosingService, ShiftService } from '../../services/operations';
+import { usePhoneUi } from '../../hooks/usePhoneUi';
 import DashboardDesktop from '../dashboard/DashboardDesktop';
 import DashboardMobile from '../dashboard/DashboardMobile';
 import DashboardModals from '../dashboard/DashboardModals';
@@ -111,7 +112,7 @@ type ShiftClosePreview = {
   since: number;
   until: number;
   shiftId: string;
-  stats: ClosureStats;
+  stats?: ClosureStats;
   recoveredAfterClosedShift?: boolean;
 };
 
@@ -119,6 +120,7 @@ const createShiftSessionId = (shopId: string, userId: string, timestamp = Date.n
   `shift_${shopId}_${new Date(timestamp).toISOString().slice(0, 10)}_${userId}_${timestamp}`;
 
 export default function DashboardTab({ setActiveTab, openExpenseModal }: DashboardTabProps) {
+  const isPhoneUi = usePhoneUi();
   const [trendView, setTrendView] = useState<'DAY' | 'WEEK'>('DAY');
   const [isBankingExcess, setIsBankingExcess] = useState(false);
   const [isCashPickModalOpen, setIsCashPickModalOpen] = useState(false);
@@ -140,14 +142,19 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const { success, error, warning } = useToast();
   const isCashier = currentUser?.role === 'CASHIER';
   const canSeeSalesData = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER' || currentUser?.role === 'ROOT';
+  const canLoadDashboardTotals = canSeeSalesData;
 
   const products = useLiveQuery(
-    () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveShop(p, activeShopId)).toArray() : [],
-    [activeBusinessId, activeShopId], []
+    () => activeBusinessId && canLoadDashboardTotals
+      ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveShop(p, activeShopId)).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, activeShopId, canLoadDashboardTotals, currentUser?.id, currentUser?.name], []
   );
   const productIngredients = useLiveQuery(
-    () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId], []
+    () => activeBusinessId && canLoadDashboardTotals
+      ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray()
+      : Promise.resolve([]),
+    [activeBusinessId, canLoadDashboardTotals], []
   );
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   const activeShop = {
@@ -164,79 +171,82 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     []
   );
   const shopTransactions = useLiveQuery(
-    () => activeBusinessId && activeShopId
+    () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.transactions.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
   );
   const shopRefunds = useLiveQuery(
-    () => activeBusinessId && activeShopId
+    () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.refunds.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
   );
   const shopSalesInvoices = useLiveQuery(
-    () => activeBusinessId && activeShopId
+    () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.salesInvoices.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
   );
   const shopExpenses = useLiveQuery(
-    () => activeBusinessId && activeShopId
+    () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.expenses.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
   );
   const shopCashPicks = useLiveQuery(
-    () => activeBusinessId && activeShopId
+    () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.cashPicks.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
   );
   const shopPurchaseOrders = useLiveQuery(
-    () => activeBusinessId && activeShopId
+    () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.purchaseOrders.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
   );
   const shopStockAdjustmentRequests = useLiveQuery(
-    () => activeBusinessId && activeShopId
+    () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.stockAdjustmentRequests.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
   );
   const shopSupplierPayments = useLiveQuery(
-    () => activeBusinessId && activeShopId
+    () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.supplierPayments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
   );
   const shopCustomerPayments = useLiveQuery(
-    () => activeBusinessId && activeShopId
+    () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.customerPayments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
   );
   const shopReports = useLiveQuery(
-    () => activeBusinessId && activeShopId
+    () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.endOfDayReports.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
   );
   const shopShifts = useLiveQuery(
-    () => activeBusinessId && activeShopId
-      ? db.shifts.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
-      : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    () => {
+      if (!activeBusinessId || !activeShopId) return Promise.resolve([]);
+      if (!canLoadDashboardTotals) return Promise.resolve([]);
+      const base = db.shifts.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId);
+      return base.toArray();
+    },
+    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
   );
   const shopDailySummaries = useLiveQuery(
-    () => activeBusinessId && activeShopId
+    () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.dailySummaries.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
   );
   const pendingApprovalCount = useLiveQuery(async () => {
-    if (!activeBusinessId || !activeShopId) return 0;
+    if (!canLoadDashboardTotals || !activeBusinessId || !activeShopId) return 0;
     const [expenses, refunds, purchaseOrders, picks] = await Promise.all([
       db.expenses.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId && row.status === 'PENDING').toArray(),
       db.transactions.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId && row.status === 'PENDING_REFUND').toArray(),
@@ -244,7 +254,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       db.cashPicks.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId && row.status === 'PENDING').toArray(),
     ]);
     return expenses.length + refunds.length + purchaseOrders.length + picks.length;
-  }, [activeBusinessId, activeShopId], 0);
+  }, [activeBusinessId, activeShopId, canLoadDashboardTotals], 0);
 
   const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
   const lowStockItems = displayProducts.filter(p => (p.stockQuantity || 0) <= (p.reorderPoint || 5)).slice(0, 5) || [];
@@ -359,7 +369,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const currentShiftStart = canOperateOwnShift ? getCurrentShiftStart(ownOpenShift, getTodayStartMs()) : getTodayStartMs();
   const currentOpeningCash = Number(ownOpenShift?.openingCash || 0);
 
-  const drawerBreakdown = canOperateOwnShift ? calculateCashDrawer({
+  const drawerBreakdown = canLoadDashboardTotals && canOperateOwnShift ? calculateCashDrawer({
     transactions: shopTransactions || [],
     expenses: shopExpenses || [],
     cashPicks: shopCashPicks || [],
@@ -380,16 +390,6 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     actualCashDrawer: 0,
   };
   const actualCashDrawer = Math.max(0, drawerBreakdown.actualCashDrawer);
-  const cashPickAvailable = canOperateOwnShift ? calculateShiftCashFromSales({
-    transactions: shopTransactions || [],
-    expenses: shopExpenses || [],
-    cashPicks: shopCashPicks || [],
-    refunds: shopRefunds || [],
-    supplierPayments: shopSupplierPayments || [],
-    customerPayments: shopCustomerPayments || [],
-    since: currentShiftStart,
-    shiftId: currentShiftId,
-  }).availableCashSales : 0;
   const sweepAmount = Math.max(0, actualCashDrawer - cashDrawerLimit);
   const shouldSweepCash = canOperateOwnShift && cashSweepActive && actualCashDrawer > cashDrawerLimit && sweepAmount > 0;
   const cashPickValue = Number(cashPickAmount) || 0;
@@ -411,7 +411,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         shopId: activeShopId,
         businessId: activeBusinessId,
       });
-      await db.cashPicks.reload();
+      if (canLoadDashboardTotals) await db.cashPicks.reload();
       success(`Banked Ksh ${sweepAmount.toLocaleString()} from the drawer.`);
     } catch (err: any) {
       error(err.message || 'Cash sweep failed.');
@@ -424,12 +424,6 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     if (!activeShopId || !activeBusinessId || !currentUser || isPickingCash) return;
     if (!canOperateOwnShift || !currentShiftId) return warning('Open your own shift before picking cash.');
     if (cashPickValue <= 0) return warning('Enter the cash amount to pick.');
-    if (cashPickValue > cashPickAvailable) {
-      return error(canSeeSalesData
-        ? `Only Ksh ${cashPickAvailable.toLocaleString()} cash sales are available in this shift.`
-        : 'Cash pick amount is above the shift limit.'
-      );
-    }
 
     setIsPickingCash(true);
     try {
@@ -443,7 +437,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         shopId: activeShopId,
         businessId: activeBusinessId,
       });
-      await db.cashPicks.reload();
+      if (canLoadDashboardTotals) await db.cashPicks.reload();
       setCashPickAmount('');
       setIsCashPickModalOpen(false);
       success(status === 'APPROVED'
@@ -694,7 +688,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     setIsOpeningShift(true);
     try {
       const result = await ShiftService.openShift(nextShift as any);
-      await db.shifts.reload().catch(() => {});
+      if (canLoadDashboardTotals) await db.shifts.reload().catch(() => {});
       setActiveShift(result.shift || nextShift);
       setIsOpenShiftModalOpen(false);
       success(result.idempotent ? 'Your shift is already open.' : `${till.name} shift opened.`);
@@ -718,33 +712,44 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       warning(`Resolve pending ${pending.join(', ')} for this shift before closing.`);
       return;
     }
-    const stats = getClosureStats(since, until, currentShiftId);
-    setShiftClosingCash(String(Math.round(stats.expectedCash * 100) / 100));
+    setShiftClosingCash('');
     setShiftClosePreview({
       since,
       until,
       shiftId: currentShiftId,
-      stats,
+      ...(canLoadDashboardTotals ? { stats: getClosureStats(since, until, currentShiftId) } : {}),
     });
   };
 
   const confirmCloseShift = async () => {
     if (!activeShopId || !activeBusinessId || !currentUser || isClosingShift || !shiftClosePreview) return;
     const { since, shiftId, stats } = shiftClosePreview;
-    const pending = pendingShiftItems(shiftId, since, Date.now());
+    const pending = canLoadDashboardTotals ? pendingShiftItems(shiftId, since, Date.now()) : [];
     if (pending.length) {
       warning(`Resolve pending ${pending.join(', ')} for this shift before closing.`);
+      return;
+    }
+    if (!String(shiftClosingCash).trim()) {
+      warning('Enter the counted closing cash before closing the shift.');
       return;
     }
     setIsClosingShift(true);
     try {
       const now = Date.now();
       const closingCash = Math.max(0, Number(shiftClosingCash) || 0);
-      const difference = Math.round((closingCash - stats.expectedCash) * 100) / 100;
-      const closeRecord = {
+      const difference = stats ? Math.round((closingCash - stats.expectedCash) * 100) / 100 : 0;
+      const baseCloseRecord = {
         timestamp: now,
         tillId: ownOpenShift?.tillId,
         tillName: ownOpenShift?.tillName,
+        reportedCash: closingCash,
+        closingCash,
+        difference,
+        cashierId: ownOpenShift?.cashierId || currentUser.id,
+        cashierName: ownOpenShift?.cashierName || currentUser.name,
+      };
+      const closeRecord = stats ? {
+        ...baseCloseRecord,
         openingCash: stats.openingCash,
         totalSales: stats.totalSales,
         grossSales: stats.grossSales,
@@ -761,11 +766,6 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         totalRefunds: stats.totalRefunds,
         cashRefunds: stats.cashRefunds,
         expectedCash: stats.expectedCash,
-        reportedCash: closingCash,
-        closingCash,
-        difference,
-        cashierId: ownOpenShift?.cashierId || currentUser.id,
-        cashierName: ownOpenShift?.cashierName || currentUser.name,
         closeBreakdown: {
           receipts: stats.txs.length,
           invoices: stats.invoices.length,
@@ -776,7 +776,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           cashRefunds: stats.cashRefunds,
           cashPicks: stats.totalPicks,
         },
-      };
+      } : baseCloseRecord;
       const result = await ClosingService.closeShift({
         shiftId,
         startTime: since,
@@ -784,7 +784,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         shopId: activeShopId,
         businessId: activeBusinessId,
       });
-      await Promise.allSettled([
+      await Promise.allSettled(canLoadDashboardTotals ? [
         db.endOfDayReports.reload(),
         db.shifts.reload(),
         db.transactions.reload(),
@@ -794,18 +794,24 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         db.expenses.reload(),
         db.supplierPayments.reload(),
         db.dailySummaries.reload(),
-      ]);
+      ] : []);
       setActiveShift(null);
       setShiftClosePreview(null);
       setShiftClosingCash('');
+      const savedCloseRecord = result.report ? {
+        ...result.report,
+        id: result.reportId || result.report.id,
+        shiftId,
+        recordType: 'CLOSE_DAY_REPORT',
+      } : {
+        ...closeRecord,
+        id: result.reportId || `shift-report-${shiftId}`,
+        shiftId,
+        recordType: 'CLOSE_DAY_REPORT',
+      };
       await generateAndShareDocument(
-        {
-          ...closeRecord,
-          id: result.reportId || `shift-report-${shiftId}`,
-          shiftId,
-          recordType: 'CLOSE_DAY_REPORT',
-        },
-        `Shift-${(closeRecord.tillName || 'Till').replace(/\s+/g, '-')}-${new Date(now).toISOString().slice(0, 10)}`,
+        savedCloseRecord,
+        `Shift-${(savedCloseRecord.tillName || 'Till').replace(/\s+/g, '-')}-${new Date(now).toISOString().slice(0, 10)}`,
         undefined,
         true,
         businessSettings?.storeName || 'Mtaani POS',
@@ -890,37 +896,11 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       fn: canOperateOwnShift ? handleCloseShift : handleOpenShift,
       label: canOperateOwnShift ? 'Close shift' : 'Open shift',
       icon: canOperateOwnShift ? 'assignment_turned_in' : 'event_available',
-      color: 'bg-blue-600',
       busy: isClosingShift,
     },
-    { fn: () => setIsCashPickModalOpen(true), label: 'Pick cash', icon: 'payments', color: 'bg-emerald-600' },
-    { fn: handleCloseDay, label: 'Close day', icon: 'event_available', color: 'bg-slate-900', busy: isClosingDay },
+    { fn: () => setIsCashPickModalOpen(true), label: 'Pick cash', icon: 'payments' },
+    { fn: handleCloseDay, label: 'Close day', icon: 'event_available', busy: isClosingDay },
   ];
-
-  const shiftPreviewStats = shiftClosePreview?.stats;
-  const shiftPreviewSaleCount = shiftPreviewStats ? shiftPreviewStats.txs.length + shiftPreviewStats.invoices.length : 0;
-  const countedClosingCash = Math.max(0, Number(shiftClosingCash) || 0);
-  const shiftPreviewVariance = shiftPreviewStats ? Math.round((countedClosingCash - shiftPreviewStats.expectedCash) * 100) / 100 : 0;
-  const shiftPreviewVarianceClass = !shiftPreviewStats || shiftPreviewVariance === 0
-    ? 'bg-slate-50 text-slate-700 border-slate-100'
-    : shiftPreviewVariance > 0
-      ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-      : 'bg-rose-50 text-rose-700 border-rose-100';
-  const shiftPreviewRows = shiftPreviewStats && canSeeSalesData ? [
-    { label: 'Opening cash', value: money(shiftPreviewStats.openingCash), tone: 'text-slate-900' },
-    { label: 'Total sales', value: money(shiftPreviewStats.totalSales), tone: 'text-slate-900' },
-    { label: 'Cash sales', value: money(shiftPreviewStats.cashSales), tone: 'text-emerald-700' },
-    { label: 'Customer cash payments', value: money(shiftPreviewStats.customerCashPayments), tone: 'text-emerald-700' },
-    { label: 'M-Pesa sales', value: money(shiftPreviewStats.mpesaSales), tone: 'text-green-700' },
-    { label: 'Swipe sales', value: money(shiftPreviewStats.pdqSales), tone: 'text-indigo-700' },
-    { label: 'Till expenses', value: money(shiftPreviewStats.totalExpenses), tone: 'text-rose-700' },
-    { label: 'Supplier till payments', value: money(shiftPreviewStats.supplierPaymentsTotal), tone: 'text-amber-700' },
-    { label: 'Refunds', value: money(shiftPreviewStats.totalRefunds), tone: 'text-rose-700' },
-    { label: 'Till refunds', value: money(shiftPreviewStats.cashRefunds), tone: 'text-rose-700' },
-    { label: 'Cash picked', value: money(shiftPreviewStats.totalPicks), tone: 'text-slate-900' },
-    { label: 'Expected closing cash', value: money(shiftPreviewStats.expectedCash), tone: 'text-slate-900' },
-  ] : [];
-
 
   const openOwnerSettings = () => {
     setActiveTab('SETTINGS');
@@ -929,7 +909,6 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const dashboardQuickActions = quickActions.map((action: any) => ({
     label: action.label,
     icon: action.icon,
-    color: action.color,
     busy: action.busy,
     onClick: () => action.fn ? action.fn() : setActiveTab(action.id),
   }));
@@ -988,6 +967,48 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     },
   ];
 
+  const lockedDashboardMetrics = [
+    { label: 'Daily sales', value: 'Ksh 00,000', sub: '', icon: 'payments', locked: true },
+    { label: 'Customers served', value: '000', sub: '', icon: 'group', locked: true },
+    { label: 'Low stock products', value: '00', sub: '', icon: 'warning', locked: true },
+    { label: 'Total expenses', value: 'Ksh 00,000', sub: '', icon: 'credit_card', locked: true },
+  ];
+
+  const lockedMoneyBreakdown = [
+    {
+      label: 'Till cash',
+      value: 'Ksh 00,000',
+      detail: 'Sales + repayments hidden',
+      icon: 'payments',
+      tone: 'border-slate-300 bg-slate-50 text-slate-500',
+      locked: true,
+    },
+    {
+      label: 'M-Pesa',
+      value: 'Ksh 00,000',
+      detail: 'Sales + repayments hidden',
+      icon: 'smartphone',
+      tone: 'border-slate-300 bg-slate-50 text-slate-500',
+      locked: true,
+    },
+    {
+      label: 'Credit',
+      value: 'Ksh 00,000',
+      detail: 'Sales + invoices hidden',
+      icon: 'credit_card',
+      tone: 'border-slate-300 bg-slate-50 text-slate-500',
+      locked: true,
+    },
+  ];
+
+  const publicShiftClosePreview = shiftClosePreview
+    ? {
+        since: shiftClosePreview.since,
+        until: shiftClosePreview.until,
+        shiftId: shiftClosePreview.shiftId,
+      }
+    : null;
+
   const dashboardModel = {
     currentUser,
     activeShop,
@@ -995,18 +1016,18 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     isCashier,
     ownerModeActive,
     pendingApprovalCount: Number(pendingApprovalCount || 0),
-    actualCashDrawer,
-    cashDrawerLimit,
-    shouldSweepCash,
-    sweepAmount,
+    actualCashDrawer: canSeeSalesData ? actualCashDrawer : 0,
+    cashDrawerLimit: canSeeSalesData ? cashDrawerLimit : 0,
+    shouldSweepCash: canSeeSalesData ? shouldSweepCash : false,
+    sweepAmount: canSeeSalesData ? sweepAmount : 0,
     isBankingExcess,
     openOwnerSettings,
     handleBankExcessCash,
-    adminShiftRows,
-    adminShiftTotals,
-    metrics: dashboardMetrics,
-    moneyBreakdown: dashboardMoneyBreakdown,
-    salesTrendData,
+    adminShiftRows: canSeeSalesData ? adminShiftRows : [],
+    adminShiftTotals: canSeeSalesData ? adminShiftTotals : {},
+    metrics: canSeeSalesData ? dashboardMetrics : lockedDashboardMetrics,
+    moneyBreakdown: canSeeSalesData ? dashboardMoneyBreakdown : lockedMoneyBreakdown,
+    salesTrendData: canSeeSalesData ? salesTrendData : [],
     trendView,
     setTrendView,
     quickActions: dashboardQuickActions,
@@ -1031,24 +1052,16 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         cashPickAmount={cashPickAmount}
         setCashPickAmount={setCashPickAmount}
         cashPickValue={cashPickValue}
-        cashPickAvailable={cashPickAvailable}
-        canSeeSalesData={canSeeSalesData}
         canOperateOwnShift={canOperateOwnShift}
         handleCreateCashPick={handleCreateCashPick}
-        shiftClosePreview={shiftClosePreview}
-        shiftPreviewStats={shiftPreviewStats}
-        shiftPreviewSaleCount={shiftPreviewSaleCount}
-        shiftPreviewRows={shiftPreviewRows}
-        shiftPreviewVarianceClass={shiftPreviewVarianceClass}
-        shiftPreviewVariance={shiftPreviewVariance}
+        shiftClosePreview={publicShiftClosePreview}
         shiftClosingCash={shiftClosingCash}
         setShiftClosingCash={setShiftClosingCash}
         isClosingShift={isClosingShift}
         setShiftClosePreview={setShiftClosePreview}
         confirmCloseShift={confirmCloseShift}
       />
-      <DashboardDesktop model={dashboardModel} />
-      <DashboardMobile model={dashboardModel} />
+      {isPhoneUi ? <DashboardMobile model={dashboardModel} /> : <DashboardDesktop model={dashboardModel} />}
     </div>
   );
 }

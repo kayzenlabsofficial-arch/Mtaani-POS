@@ -20,6 +20,51 @@ function n(value: unknown, fallback = 0) { const x = Number(value); return Numbe
 function s(value: unknown, max = 160) { return String(value ?? '').trim().slice(0, max); }
 function nonNegative(value: unknown) { return Math.max(0, n(value)); }
 
+function parseMaybeJson(value: unknown): any {
+  if (!value) return null;
+  if (typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch { return null; }
+}
+
+function splitDetails(record: any) {
+  return parseMaybeJson(record?.splitPayments) || parseMaybeJson(record?.splitData)?.splitPayments || parseMaybeJson(record?.splitData) || null;
+}
+
+function paymentAmount(record: any, method: 'CASH' | 'MPESA' | 'PDQ' | 'CREDIT') {
+  const paymentMethod = String(record?.paymentMethod || '').toUpperCase();
+  if (paymentMethod === method) return n(record?.total);
+  if (paymentMethod !== 'SPLIT') return 0;
+  const split = splitDetails(record);
+  if (method === 'CASH') return n(split?.cashAmount);
+  return String(split?.secondaryMethod || '').toUpperCase() === method ? n(split?.secondaryAmount) : 0;
+}
+
+function recordInShift(record: any, since: number, until: number, shiftId?: string | null) {
+  if (shiftId && record?.shiftId) return String(record.shiftId) === String(shiftId);
+  const ts = n(record?.timestamp || record?.issueDate);
+  return ts >= since && ts <= until;
+}
+
+function cashRefundAmount(record: any) {
+  if (String(record?.status || 'APPROVED').toUpperCase() === 'REJECTED') return 0;
+  const source = String(record?.source || '').toUpperCase();
+  if (source === 'TILL' || source === 'MIXED') return n(record?.cashAmount ?? record?.amount);
+  return n(record?.cashAmount);
+}
+
+function ownsShift(shift: any, userId: string, userName: string) {
+  const cashierId = s(shift?.cashierId, 160);
+  const cashierName = s(shift?.cashierName, 160).toLowerCase();
+  return (userId && cashierId === userId)
+    || (userName && cashierName === userName.toLowerCase())
+    || (userId && String(shift?.id || '').includes(`_${userId}`));
+}
+
+async function safeRows(db: D1Database, sql: string, binds: unknown[] = []) {
+  const result = await db.prepare(sql).bind(...binds).all<any>().catch(() => ({ results: [] }));
+  return (result.results || []) as any[];
+}
+
 const END_OF_DAY_REPORTS_SCHEMA = `
     CREATE TABLE IF NOT EXISTS endOfDayReports (
       id TEXT PRIMARY KEY,
@@ -247,6 +292,130 @@ async function pendingShiftApprovals(db: D1Database, businessId: string, shiftId
   return checks.filter(Boolean) as string[];
 }
 
+async function buildServerShiftReport(
+  db: D1Database,
+  businessId: string,
+  shiftId: string,
+  startTime: number,
+  until: number,
+  clientReport: any,
+  principal: any,
+  service: boolean,
+) {
+  const shift = await db.prepare(`
+    SELECT *
+    FROM shifts
+    WHERE id = ? AND businessId = ?
+    LIMIT 1
+  `).bind(shiftId, businessId).first<any>().catch(() => null);
+
+  if (shift && !service && String(principal?.role || '').toUpperCase() === 'CASHIER') {
+    const userId = s(principal?.userId, 160);
+    const userName = s(principal?.userName, 120);
+    if (!ownsShift(shift, userId, userName)) throw new PolicyError('You can only close your own shift.', 403);
+  }
+  if (shift && String(shift.status || '').toUpperCase() !== 'OPEN') {
+    throw new PolicyError('Only open shifts can be closed.', 409);
+  }
+
+  const since = n(shift?.startTime || startTime, startTime);
+  const [
+    transactions,
+    invoices,
+    expenses,
+    picks,
+    refunds,
+    supplierPayments,
+    customerPayments,
+  ] = await Promise.all([
+    safeRows(db, `SELECT total, subtotal, tax, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT total, subtotal, tax, balance, issueDate, timestamp, status, shiftId FROM salesInvoices WHERE businessId = ? AND COALESCE(issueDate, timestamp, 0) >= ? AND COALESCE(issueDate, timestamp, 0) <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+  ]);
+
+  const txs = transactions.filter(row => recordInShift(row, since, until, shiftId) && !['VOIDED', 'QUOTE'].includes(String(row.status || '').toUpperCase()));
+  const invoiceRows = invoices.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || '').toUpperCase() !== 'CANCELLED');
+  const expenseRows = expenses.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED');
+  const pickRows = picks.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED');
+  const refundRows = refunds.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || 'APPROVED').toUpperCase() !== 'REJECTED');
+  const supplierRows = supplierPayments.filter(row => recordInShift(row, since, until, shiftId));
+  const customerRows = customerPayments.filter(row => recordInShift(row, since, until, shiftId));
+
+  const openingCash = nonNegative(shift?.openingCash ?? clientReport?.openingCash);
+  const cashSales = txs.reduce((sum, row) => sum + paymentAmount(row, 'CASH'), 0);
+  const mpesaSales = txs.reduce((sum, row) => sum + paymentAmount(row, 'MPESA'), 0);
+  const pdqSales = txs.reduce((sum, row) => sum + paymentAmount(row, 'PDQ'), 0);
+  const customerCashPayments = customerRows
+    .filter(row => String(row.paymentMethod || '').toUpperCase() === 'CASH')
+    .reduce((sum, row) => sum + n(row.amount), 0);
+  const customerMpesaPayments = customerRows
+    .filter(row => String(row.paymentMethod || '').toUpperCase() === 'MPESA')
+    .reduce((sum, row) => sum + n(row.amount), 0);
+  const grossSales = txs.reduce((sum, row) => sum + n(row.subtotal ?? row.total), 0)
+    + invoiceRows.reduce((sum, row) => sum + n(row.subtotal ?? row.total), 0);
+  const totalSales = txs.reduce((sum, row) => sum + n(row.total), 0)
+    + invoiceRows.reduce((sum, row) => sum + n(row.total), 0);
+  const taxTotal = txs.reduce((sum, row) => sum + n(row.tax), 0)
+    + invoiceRows.reduce((sum, row) => sum + n(row.tax), 0);
+  const totalExpenses = expenseRows
+    .filter(row => String(row.source || '').toUpperCase() === 'TILL')
+    .reduce((sum, row) => sum + n(row.amount), 0);
+  const supplierPaymentsTotal = supplierRows
+    .filter(row => String(row.source || '').toUpperCase() === 'TILL')
+    .reduce((sum, row) => sum + n(row.amount), 0);
+  const remittanceTotal = totalExpenses + supplierPaymentsTotal;
+  const totalPicks = pickRows.reduce((sum, row) => sum + n(row.amount), 0);
+  const totalRefunds = refundRows.reduce((sum, row) => sum + n(row.amount), 0);
+  const cashRefunds = refundRows.reduce((sum, row) => sum + cashRefundAmount(row), 0);
+  const closingCash = nonNegative(clientReport?.closingCash ?? clientReport?.reportedCash);
+  const expectedBeforePicks = Math.round((openingCash + cashSales + customerCashPayments - remittanceTotal - cashRefunds) * 100) / 100;
+  const expectedCash = Math.max(0, Math.round((expectedBeforePicks - totalPicks) * 100) / 100);
+  const reportedCash = nonNegative(clientReport?.reportedCash ?? closingCash);
+  const difference = Math.round((reportedCash + totalPicks - expectedBeforePicks) * 100) / 100;
+
+  return {
+    timestamp: until,
+    tillId: s(shift?.tillId || clientReport?.tillId, 160) || null,
+    tillName: s(shift?.tillName || clientReport?.tillName, 120) || null,
+    openingCash,
+    totalSales,
+    grossSales,
+    taxTotal,
+    cashSales,
+    customerCashPayments,
+    customerMpesaPayments,
+    mpesaSales,
+    pdqSales,
+    totalExpenses,
+    supplierPaymentsTotal,
+    remittanceTotal,
+    totalPicks,
+    totalRefunds,
+    cashRefunds,
+    expectedCash,
+    reportedCash,
+    closingCash,
+    difference,
+    cashierId: s(shift?.cashierId || clientReport?.cashierId || principal?.userId, 160) || null,
+    cashierName: s(shift?.cashierName || clientReport?.cashierName || principal?.userName, 120) || 'Staff',
+    closeBreakdown: {
+      receipts: txs.length,
+      invoices: invoiceRows.length,
+      customerCashPayments,
+      customerMpesaPayments,
+      tillExpenses: totalExpenses,
+      supplierTillPayments: supplierPaymentsTotal,
+      cashRefunds,
+      cashPicks: totalPicks,
+      cashExpectedBeforePicks: expectedBeforePicks,
+    },
+  };
+}
+
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {
@@ -276,29 +445,30 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const reportId = s(body?.reportId, 160) || `eod_${businessId}_${shiftId}`;
-    const cashierName = s(report.cashierName || body?.cashierName || auth.principal.userName, 120) || 'Staff';
-    const cashierId = s(report.cashierId || auth.principal.userId, 160) || null;
-    const tillId = s(report.tillId, 160) || null;
-    const tillName = s(report.tillName, 120) || null;
-    const totalSales = nonNegative(report.totalSales);
-    const grossSales = nonNegative(report.grossSales);
-    const taxTotal = nonNegative(report.taxTotal);
-    const cashSales = nonNegative(report.cashSales);
-    const customerCashPayments = nonNegative(report.customerCashPayments);
-    const mpesaSales = nonNegative(report.mpesaSales);
-    const pdqSales = nonNegative(report.pdqSales);
-    const totalExpenses = nonNegative(report.totalExpenses);
-    const supplierPaymentsTotal = nonNegative(report.supplierPaymentsTotal);
-    const remittanceTotal = nonNegative(report.remittanceTotal ?? (totalExpenses + supplierPaymentsTotal));
-    const totalPicks = nonNegative(report.totalPicks);
-    const totalRefunds = nonNegative(report.totalRefunds);
-    const cashRefunds = nonNegative(report.cashRefunds);
-    const openingCash = nonNegative(report.openingCash);
-    const closingCash = nonNegative(report.closingCash ?? report.reportedCash);
-    const expectedCash = nonNegative(report.expectedCash);
-    const reportedCash = nonNegative(report.reportedCash ?? closingCash);
-    const difference = n(report.difference, reportedCash - expectedCash);
-    const closeBreakdown = report.closeBreakdown ? JSON.stringify(report.closeBreakdown).slice(0, 5000) : null;
+    const serverReport = await buildServerShiftReport(env.DB, businessId, shiftId, startTime, now, report, auth.principal, auth.service);
+    const cashierName = serverReport.cashierName;
+    const cashierId = serverReport.cashierId;
+    const tillId = serverReport.tillId;
+    const tillName = serverReport.tillName;
+    const totalSales = nonNegative(serverReport.totalSales);
+    const grossSales = nonNegative(serverReport.grossSales);
+    const taxTotal = nonNegative(serverReport.taxTotal);
+    const cashSales = nonNegative(serverReport.cashSales);
+    const customerCashPayments = nonNegative(serverReport.customerCashPayments);
+    const mpesaSales = nonNegative(serverReport.mpesaSales);
+    const pdqSales = nonNegative(serverReport.pdqSales);
+    const totalExpenses = nonNegative(serverReport.totalExpenses);
+    const supplierPaymentsTotal = nonNegative(serverReport.supplierPaymentsTotal);
+    const remittanceTotal = nonNegative(serverReport.remittanceTotal);
+    const totalPicks = nonNegative(serverReport.totalPicks);
+    const totalRefunds = nonNegative(serverReport.totalRefunds);
+    const cashRefunds = nonNegative(serverReport.cashRefunds);
+    const openingCash = nonNegative(serverReport.openingCash);
+    const closingCash = nonNegative(serverReport.closingCash ?? serverReport.reportedCash);
+    const expectedCash = nonNegative(serverReport.expectedCash);
+    const reportedCash = nonNegative(serverReport.reportedCash ?? closingCash);
+    const difference = n(serverReport.difference, reportedCash - expectedCash);
+    const closeBreakdown = serverReport.closeBreakdown ? JSON.stringify(serverReport.closeBreakdown).slice(0, 5000) : null;
     await env.DB.batch([
       env.DB.prepare(`
         INSERT INTO endOfDayReports (id, shiftId, tillId, tillName, timestamp, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, closingCash, expectedCash, reportedCash, difference, cashierId, cashierName, closeBreakdown, businessId, updated_at)
@@ -339,7 +509,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         now,
       ),
     ]);
-    return json({ success: true, reportId, shiftId, idempotent: false });
+    return json({
+      success: true,
+      reportId,
+      shiftId,
+      idempotent: false,
+      report: {
+        ...serverReport,
+        id: reportId,
+        shiftId,
+        recordType: 'CLOSE_DAY_REPORT',
+      },
+    });
   } catch (err: any) {
     const status = err instanceof PolicyError ? err.status : 500;
     return json({ error: err?.message || 'Could not close shift.' }, status);

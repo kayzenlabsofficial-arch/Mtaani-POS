@@ -1,17 +1,11 @@
-import BarcodeScanner from '../shared/BarcodeScanner';
+import { type ComponentProps } from 'react';
+import { usePhoneUi } from '../../hooks/usePhoneUi';
+import RegisterScannerPanelDesktop from './RegisterScannerPanelDesktop';
+import RegisterScannerPanelMobile from './RegisterScannerPanelMobile';
 
-export default function RegisterScannerPanel({
-  open,
-  onScan,
-  onClose,
-}: {
-  open: boolean;
-  onScan: (barcode: string) => void;
-  onClose: () => void;
-}) {
-  if (!open) return null;
+type RegisterScannerPanelProps = ComponentProps<typeof RegisterScannerPanelDesktop>;
 
-  return (
-    <BarcodeScanner onScan={barcode => onScan(barcode)} onClose={onClose} />
-  );
+export default function RegisterScannerPanel(props: RegisterScannerPanelProps) {
+  const isPhoneUi = usePhoneUi();
+  return isPhoneUi ? <RegisterScannerPanelMobile {...props} /> : <RegisterScannerPanelDesktop {...props} />;
 }

@@ -1,7 +1,6 @@
 export type DashboardQuickAction = {
   label: string;
   icon: string;
-  color: string;
   busy?: boolean;
   onClick: () => void;
 };
@@ -12,6 +11,7 @@ export type DashboardMetric = {
   sub: string;
   trend?: number;
   icon: string;
+  locked?: boolean;
 };
 
 export type DashboardShiftRow = {
@@ -47,6 +47,13 @@ export type DashboardMoneyBreakdown = {
   detail: string;
   icon: string;
   tone: string;
+  locked?: boolean;
+};
+
+export type DashboardShiftClosePreviewPublic = {
+  since: number;
+  until: number;
+  shiftId: string;
 };
 
 export type DashboardModel = {
@@ -90,16 +97,9 @@ export type DashboardModalsProps = {
   cashPickAmount: string;
   setCashPickAmount: (value: string) => void;
   cashPickValue: number;
-  cashPickAvailable: number;
-  canSeeSalesData: boolean;
   canOperateOwnShift: boolean;
   handleCreateCashPick: () => void;
-  shiftClosePreview: any;
-  shiftPreviewStats: any;
-  shiftPreviewSaleCount: number;
-  shiftPreviewRows: Array<{ label: string; value: string; tone: string }>;
-  shiftPreviewVarianceClass: string;
-  shiftPreviewVariance: number;
+  shiftClosePreview: DashboardShiftClosePreviewPublic | null;
   shiftClosingCash: string;
   setShiftClosingCash: (value: string) => void;
   isClosingShift: boolean;

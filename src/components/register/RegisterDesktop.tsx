@@ -1,7 +1,7 @@
 import { Archive } from 'lucide-react';
 import type { CartItem, HeldOrder } from '../../store';
-import RegisterPaymentPanel from './RegisterPaymentPanel';
-import { CartLineItem, MaterialIcon } from './RegisterShared';
+import RegisterPaymentPanel from './RegisterPaymentPanelDesktop';
+import { CartLineItem, MaterialIcon } from './RegisterSharedDesktop';
 import type { RegisterCheckoutHandler } from './types';
 
 export default function RegisterDesktop({

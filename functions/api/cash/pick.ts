@@ -237,7 +237,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const shift = await requireOwnOpenShift(env.DB, businessId, shiftId, auth.principal, auth.service);
       const shiftStart = await resolveShiftStart(env.DB, businessId, shiftId, body?.shiftStart || shift.startTime);
       const availableCash = await availableCashForPick(env.DB, businessId, shiftStart, shiftId);
-      if (amount > availableCash + 0.01) throw new PolicyError(`Cash pick exceeds cash sales available in this shift. Available: Ksh ${availableCash.toLocaleString()}.`, 409);
+      const varianceAmount = Math.max(0, Math.round((amount - availableCash) * 100) / 100);
       const pickedAccount = status === 'APPROVED' ? await ensurePickedCashAccount(env.DB, businessId) : null;
       const cashPick = { id, amount, timestamp: now, status, userName: trimText(body?.userName || auth.principal.userName, 120), businessId, accountId: pickedAccount?.id || null, shiftId, updated_at: now };
       const statements: D1PreparedStatement[] = [
@@ -246,7 +246,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         env.DB.prepare(`
           INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(crypto.randomUUID(), now, auth.principal.userId || null, auth.principal.userName || null, status === 'APPROVED' ? 'cash.pick.owner_sweep' : 'cash.pick.request', 'cashPick', id, 'INFO', `Recorded cash pick of Ksh ${amount.toLocaleString()}.`, businessId, now),
+        `).bind(
+          crypto.randomUUID(),
+          now,
+          auth.principal.userId || null,
+          auth.principal.userName || null,
+          status === 'APPROVED' ? 'cash.pick.owner_sweep' : 'cash.pick.request',
+          'cashPick',
+          id,
+          varianceAmount > 0.01 ? 'WARN' : 'INFO',
+          varianceAmount > 0.01
+            ? `Recorded cash pick of Ksh ${amount.toLocaleString()}; counted cash was Ksh ${varianceAmount.toLocaleString()} above the system shift cash.`
+            : `Recorded cash pick of Ksh ${amount.toLocaleString()}.`,
+          businessId,
+          now,
+        ),
       ];
       if (pickedAccount) {
         statements.push(

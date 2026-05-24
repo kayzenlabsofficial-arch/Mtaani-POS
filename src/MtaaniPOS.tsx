@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { ShoppingCart } from 'lucide-react';
 import { useLiveQuery } from './clouddb';
 import { db } from './db';
 import { useMtaaniPOS } from './hooks/useMtaaniPOS';
+import { usePhoneUi } from './hooks/usePhoneUi';
+import { useVisualViewport } from './hooks/useVisualViewport';
 import { useToast } from './context/ToastContext';
 import { canPerform } from './utils/accessControl';
 import { recordAuditEvent } from './utils/auditLog';
@@ -34,7 +35,7 @@ import SettingsTab from './components/tabs/SettingsTab';
 
 // Layout & Shell
 import Sidebar from './components/shared/Sidebar';
-import { TopHeader, MobileNav, MoreOptionsMenu } from './components/layout/Shell';
+import { MobileNav, MobileRegisterFab, MoreOptionsMenu, TopHeaderDesktop, TopHeaderMobile } from './components/layout/Shell';
 import { LoginScreen } from './components/auth/LoginScreen';
 import SystemManagerDashboard from './components/admin/SystemManager';
 
@@ -42,12 +43,11 @@ import SystemManagerDashboard from './components/admin/SystemManager';
 import ProfileModal from './components/modals/ProfileModal';
 import ExpenseModal from './components/modals/ExpenseModal';
 
-const MaterialIcon = ({ name, className = "", style }: { name: string, className?: string, style?: React.CSSProperties }) => (
-  <ShoppingCart className={className} style={style} size={28} strokeWidth={2.4} aria-label={name} />
-);
 const SINGLE_SHOP_ID = 'single-shop';
 
 export default function MtaaniPOS() {
+  const isPhoneUi = usePhoneUi();
+  const visualViewport = useVisualViewport();
   const {
     activeTab, navigateToTab,
     isMoreMenuOpen, setIsMoreMenuOpen,
@@ -79,10 +79,25 @@ export default function MtaaniPOS() {
   }), [activeBusiness?.name, businessSettings]);
   const activeShift = useStore(state => state.activeShift);
   const isRegisterTab = activeTab === 'REGISTER';
+  const canSeeSalesData = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER' || currentUser?.role === 'ROOT';
 
   React.useEffect(() => {
     if (activeBusinessId && !activeShopId) setActiveShopId(SINGLE_SHOP_ID);
   }, [activeBusinessId, activeShopId, setActiveShopId]);
+
+  React.useEffect(() => {
+    const root = document.documentElement;
+    root.toggleAttribute('data-keyboard-open', isPhoneUi && visualViewport.isKeyboardOpen);
+    root.style.setProperty('--visual-viewport-height', visualViewport.height ? `${visualViewport.height}px` : '100dvh');
+    root.style.setProperty('--visual-viewport-offset-top', `${visualViewport.offsetTop || 0}px`);
+    root.style.setProperty('--visual-keyboard-inset', `${visualViewport.keyboardInset || 0}px`);
+    return () => {
+      root.removeAttribute('data-keyboard-open');
+      root.style.removeProperty('--visual-viewport-height');
+      root.style.removeProperty('--visual-viewport-offset-top');
+      root.style.removeProperty('--visual-keyboard-inset');
+    };
+  }, [isPhoneUi, visualViewport.height, visualViewport.isKeyboardOpen, visualViewport.keyboardInset, visualViewport.offsetTop]);
 
   const [expenseForm, setExpenseForm] = useState({
     description: '',
@@ -133,14 +148,14 @@ export default function MtaaniPOS() {
     () => singleFinanceAccount(rawFinancialAccounts || [], activeBusinessId),
     [rawFinancialAccounts, activeBusinessId]
   );
-  const transactions = useLiveQuery(() => activeShopId ? db.transactions.where('shopId').equals(activeShopId).toArray() : [], [activeShopId]);
-  const expenses = useLiveQuery(() => activeShopId ? db.expenses.where('shopId').equals(activeShopId).toArray() : [], [activeShopId]);
-  const cashPicks = useLiveQuery(() => activeShopId ? db.cashPicks.where('shopId').equals(activeShopId).toArray() : [], [activeShopId]);
-  const refunds = useLiveQuery(() => activeShopId ? db.refunds.where('shopId').equals(activeShopId).toArray() : [], [activeShopId]);
-  const supplierPayments = useLiveQuery(() => activeShopId ? db.supplierPayments.where('shopId').equals(activeShopId).toArray() : [], [activeShopId]);
-  const customerPayments = useLiveQuery(() => activeShopId ? db.customerPayments.where('shopId').equals(activeShopId).toArray() : [], [activeShopId]);
+  const transactions = useLiveQuery(() => canSeeSalesData && activeShopId ? db.transactions.where('shopId').equals(activeShopId).toArray() : [], [activeShopId, canSeeSalesData]);
+  const expenses = useLiveQuery(() => canSeeSalesData && activeShopId ? db.expenses.where('shopId').equals(activeShopId).toArray() : [], [activeShopId, canSeeSalesData]);
+  const cashPicks = useLiveQuery(() => canSeeSalesData && activeShopId ? db.cashPicks.where('shopId').equals(activeShopId).toArray() : [], [activeShopId, canSeeSalesData]);
+  const refunds = useLiveQuery(() => canSeeSalesData && activeShopId ? db.refunds.where('shopId').equals(activeShopId).toArray() : [], [activeShopId, canSeeSalesData]);
+  const supplierPayments = useLiveQuery(() => canSeeSalesData && activeShopId ? db.supplierPayments.where('shopId').equals(activeShopId).toArray() : [], [activeShopId, canSeeSalesData]);
+  const customerPayments = useLiveQuery(() => canSeeSalesData && activeShopId ? db.customerPayments.where('shopId').equals(activeShopId).toArray() : [], [activeShopId, canSeeSalesData]);
   const currentShiftId = getCurrentShiftId(activeShift, activeShopId, currentUser?.id);
-  const shiftCashAvailable = calculateShiftCashFromSales({
+  const shiftCashAvailable = canSeeSalesData ? calculateShiftCashFromSales({
     transactions: transactions || [],
     expenses: expenses || [],
     cashPicks: cashPicks || [],
@@ -149,7 +164,7 @@ export default function MtaaniPOS() {
     customerPayments: customerPayments || [],
     since: getCurrentShiftStart(activeShift, getTodayStartMs()),
     shiftId: currentShiftId,
-  }).availableCashSales;
+  }).availableCashSales : 0;
 
   const handleSaveExpense = async () => {
     if (isSavingExpense) return;
@@ -159,7 +174,7 @@ export default function MtaaniPOS() {
     if (amount <= 0) return error("Invalid amount.");
     if (!canPerform(currentUser, 'expense.create')) return error("You do not have permission to create expenses.");
     if (expenseSource === 'TILL' && !currentShiftId) return error("Open a till shift before paying expenses from the till.");
-    if (expenseSource === 'TILL' && amount > shiftCashAvailable) return error("Insufficient cash sales in this shift.");
+    if (expenseSource === 'TILL' && canSeeSalesData && amount > shiftCashAvailable) return error("Insufficient cash sales in this shift.");
     if (expenseSource === 'ACCOUNT' && amount > Number(financialAccounts[0]?.balance || 0)) return error("Insufficient balance in the picked cash account.");
 
     setIsSavingExpense(true);
@@ -220,29 +235,43 @@ export default function MtaaniPOS() {
   }
 
   return (
-    <div className="flex h-[100dvh] bg-slate-100 md:bg-slate-50 overflow-hidden font-hanken">
-      <Sidebar 
-        activeTab={activeTab} 
-        onTabChange={navigateToTab} 
-        onLogout={handleLogout}
-        onSync={handleSync}
-        isSyncing={isSyncing}
-        currentUser={currentUser}
-        onOpenProfile={() => setIsProfileModalOpen(true)}
-      />
+    <div className={`flex h-[100dvh] overflow-hidden font-hanken ${isPhoneUi ? 'bg-slate-100' : 'bg-slate-50'}`}>
+      {!isPhoneUi && (
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={navigateToTab}
+          onLogout={handleLogout}
+          onSync={handleSync}
+          isSyncing={isSyncing}
+          currentUser={currentUser}
+          onOpenProfile={() => setIsProfileModalOpen(true)}
+        />
+      )}
       
       <div className="flex-1 flex flex-col min-w-0 relative h-full">
-        <TopHeader 
-          activeBusiness={activeBusiness}
-          activeShop={activeShop}
-          isSyncing={isSyncing}
-          onSync={handleSync}
-          isOnline={isOnline}
-          onOpenProfile={() => setIsProfileModalOpen(true)}
-          currentUser={currentUser}
-        />
+        {isPhoneUi ? (
+          <TopHeaderMobile
+            activeBusiness={activeBusiness}
+            activeShop={activeShop}
+            isSyncing={isSyncing}
+            onSync={handleSync}
+            isOnline={isOnline}
+            onOpenProfile={() => setIsProfileModalOpen(true)}
+            currentUser={currentUser}
+          />
+        ) : (
+          <TopHeaderDesktop
+            activeBusiness={activeBusiness}
+            activeShop={activeShop}
+            isSyncing={isSyncing}
+            onSync={handleSync}
+            isOnline={isOnline}
+            onOpenProfile={() => setIsProfileModalOpen(true)}
+            currentUser={currentUser}
+          />
+        )}
 
-        <main className={`flex-1 main-scroll app-safe-scroll relative bg-slate-100 md:bg-transparent ${isRegisterTab ? 'overflow-y-auto p-0' : 'overflow-y-auto p-3 pb-28 sm:p-4 sm:pb-28 md:p-6 md:pb-6 lg:p-8'}`}>
+        <main className={`flex-1 main-scroll app-safe-scroll relative ${isPhoneUi ? 'bg-slate-100' : 'bg-transparent'} ${isRegisterTab ? 'overflow-y-auto p-0' : isPhoneUi ? 'overflow-y-auto p-3 pb-28 sm:p-4 sm:pb-28' : 'overflow-y-auto p-8 pb-6'}`}>
           <div className={isRegisterTab ? 'h-full min-h-0' : 'max-w-[1440px] mx-auto min-h-full'}>
             {activeTab === 'REGISTER' && <RegisterTab toggleCart={toggleCart} handleCheckout={handleCheckout} />}
             {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={navigateToTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}
@@ -263,25 +292,22 @@ export default function MtaaniPOS() {
           </div>
         </main>
 
-        <MobileNav 
-          activeTab={activeTab}
-          onTabChange={navigateToTab}
-          onToggleMore={setIsMoreMenuOpen}
-          isMoreMenuOpen={isMoreMenuOpen}
-        />
+        {isPhoneUi && (
+          <MobileNav
+            activeTab={activeTab}
+            onTabChange={navigateToTab}
+            onToggleMore={setIsMoreMenuOpen}
+            isMoreMenuOpen={isMoreMenuOpen}
+          />
+        )}
 
-        {activeTab !== 'REGISTER' && (
-          <button 
-            onClick={() => navigateToTab('REGISTER')}
-            className="fixed right-6 bottom-24 w-14 h-14 bg-primary text-white rounded-full shadow-2xl flex items-center justify-center active:scale-90 transition-transform md:hidden z-40"
-          >
-            <MaterialIcon name="add_shopping_cart" style={{ fontSize: '28px' }} />
-          </button>
+        {isPhoneUi && activeTab !== 'REGISTER' && (
+          <MobileRegisterFab onClick={() => navigateToTab('REGISTER')} />
         )}
 
       </div>
 
-      {isMoreMenuOpen && (
+      {isPhoneUi && isMoreMenuOpen && (
         <MoreOptionsMenu 
           onTabChange={navigateToTab}
           onLogout={handleLogout}

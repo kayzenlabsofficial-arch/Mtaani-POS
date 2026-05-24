@@ -4,6 +4,7 @@ import { db, type Transaction } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
+import { usePhoneUi } from '../../hooks/usePhoneUi';
 import { enrichProductsWithBundleStock, isBundleProduct } from '../../utils/bundleInventory';
 import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { getAssignedHardware, getHardwareProfile, printReceiptViaAssignedPrinter } from '../../utils/hardware';
@@ -33,6 +34,7 @@ export default function RegisterTab({
   toggleCart?: (value: boolean) => void;
   handleCheckout?: (status: 'PAID' | 'UNPAID', method: string, mpesaRef?: string, customerName?: string, splitData?: any) => Promise<any>;
 }) {
+  const isPhoneUi = usePhoneUi();
   const [searchQuery, setSearchQuery] = useState('');
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -61,6 +63,7 @@ export default function RegisterTab({
   const [selectedTillId, setSelectedTillId] = useState('');
   const [openingCashAmount, setOpeningCashAmount] = useState('');
   const [isOpeningShift, setIsOpeningShift] = useState(false);
+  const canSeeShiftList = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER' || currentUser?.role === 'ROOT';
 
   const products = useLiveQuery(
     () => {
@@ -93,10 +96,10 @@ export default function RegisterTab({
     []
   );
   const shopShifts = useLiveQuery(
-    () => activeBusinessId && activeShopId
+    () => canSeeShiftList && activeBusinessId && activeShopId
       ? db.shifts.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
+    [activeBusinessId, activeShopId, canSeeShiftList],
     []
   );
   const activeShop = {
@@ -318,7 +321,7 @@ export default function RegisterTab({
     setIsOpeningShift(true);
     try {
       const result = await ShiftService.openShift(nextShift as any);
-      await db.shifts.reload().catch(() => {});
+      if (canSeeShiftList) await db.shifts.reload().catch(() => {});
       setActiveShift(result.shift || nextShift);
       success(result.idempotent ? 'Your shift is already open.' : `${till.name} shift opened.`);
     } catch (err: any) {
@@ -332,6 +335,7 @@ export default function RegisterTab({
     availableTills,
     shopShifts,
     canOperateOwnShift,
+    canSeeShiftList,
     configuredTills,
     currentUser,
     error,
@@ -482,22 +486,35 @@ export default function RegisterTab({
         onClose={closeProductSearch}
       />
 
-      <RegisterDesktop
-        activeBusinessId={activeBusinessId}
-        cart={cart}
-        selectedProductCount={selectedProductCount}
-        saleItemCount={saleItemCount}
-        saleTotal={saleTotal}
-        heldOrders={scopedHeldOrders}
-        isCheckingOut={isCheckingOut}
-        onCheckout={completeCheckout}
-        onHoldOrder={handleHoldOrder}
-        onOpenHeldOrders={openHeldOrders}
-        clearCart={clearCart}
-        removeFromCart={removeFromCart}
-        updateQuantity={updateQuantity}
-        setQuantity={setQuantity}
-      />
+      {isPhoneUi ? (
+        <RegisterMobile
+          cart={cart}
+          saleItemCount={saleItemCount}
+          saleTotal={saleTotal}
+          isCheckingOut={isCheckingOut}
+          isMobileCheckoutOpen={isMobileCheckoutOpen}
+          onOpenMobileCheckout={openMobileCheckout}
+          onCloseMobileCheckout={closeMobileCheckout}
+          onCheckout={completeCheckout}
+        />
+      ) : (
+        <RegisterDesktop
+          activeBusinessId={activeBusinessId}
+          cart={cart}
+          selectedProductCount={selectedProductCount}
+          saleItemCount={saleItemCount}
+          saleTotal={saleTotal}
+          heldOrders={scopedHeldOrders}
+          isCheckingOut={isCheckingOut}
+          onCheckout={completeCheckout}
+          onHoldOrder={handleHoldOrder}
+          onOpenHeldOrders={openHeldOrders}
+          clearCart={clearCart}
+          removeFromCart={removeFromCart}
+          updateQuantity={updateQuantity}
+          setQuantity={setQuantity}
+        />
+      )}
 
       <HeldOrdersModal
         open={isHeldOrdersOpen}
@@ -505,17 +522,6 @@ export default function RegisterTab({
         onClose={closeHeldOrders}
         onResume={handleResumeHeldOrder}
         onDelete={handleDeleteHeldOrder}
-      />
-
-      <RegisterMobile
-        cart={cart}
-        saleItemCount={saleItemCount}
-        saleTotal={saleTotal}
-        isCheckingOut={isCheckingOut}
-        isMobileCheckoutOpen={isMobileCheckoutOpen}
-        onOpenMobileCheckout={openMobileCheckout}
-        onCloseMobileCheckout={closeMobileCheckout}
-        onCheckout={completeCheckout}
       />
 
       <DocumentDetailsModal

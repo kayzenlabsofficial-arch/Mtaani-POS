@@ -42,6 +42,9 @@
 :root {
   --background: #f8fafc;
   --on-background: #0f172a;
+  --visual-viewport-height: 100dvh;
+  --visual-viewport-offset-top: 0px;
+  --visual-keyboard-inset: 0px;
 }
 
 *, *::before, *::after {
@@ -360,6 +363,39 @@ button[data-busy="true"]:has(.animate-spin)::before {
 
   .bottom-safe-nav {
     padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  }
+
+  .keyboard-hide-when-open {
+    transition: opacity 0.18s ease, transform 0.18s ease;
+  }
+
+  .keyboard-lift-when-open {
+    transition: bottom 0.18s ease;
+  }
+
+  html[data-keyboard-open] .keyboard-hide-when-open {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(calc(100% + 1.5rem));
+  }
+
+  html[data-keyboard-open] .keyboard-lift-when-open {
+    bottom: var(--visual-keyboard-inset) !important;
+  }
+
+  .modal-scroll-padding {
+    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+
+  .mobile-vv-overlay {
+    top: var(--visual-viewport-offset-top) !important;
+    bottom: auto !important;
+    height: var(--visual-viewport-height) !important;
+    min-height: 0;
+  }
+
+  .mobile-vv-panel {
+    max-height: calc(var(--visual-viewport-height) - 0.75rem) !important;
   }
 
   /* ── Input focus glow ────────────────────────────────  */

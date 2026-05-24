@@ -1,7 +1,8 @@
 import type React from 'react';
 import { X } from 'lucide-react';
 import type { CartItem } from '../../store';
-import RegisterPaymentPanel from './RegisterPaymentPanel';
+import MobileModal from '../shared/MobileModal';
+import RegisterPaymentPanel from './RegisterPaymentPanelMobile';
 import type { RegisterCheckoutHandler } from './types';
 
 export default function RegisterMobile({
@@ -26,7 +27,7 @@ export default function RegisterMobile({
   return (
     <>
       {cart.length > 0 && (
-        <div className="fixed bottom-20 left-3 right-3 z-40 flex items-center gap-3 rounded-lg border-2 border-slate-300 bg-white p-3 text-slate-950 shadow-xl lg:hidden">
+        <div className="keyboard-hide-when-open fixed bottom-20 left-3 right-3 z-40 flex items-center gap-3 rounded-lg border-2 border-slate-300 bg-white p-3 text-slate-950 shadow-xl">
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{saleItemCount.toLocaleString()} item{saleItemCount === 1 ? '' : 's'} in sale</p>
             <p className="truncate text-lg font-black tabular-nums">Ksh {saleTotal.toLocaleString()}</p>
@@ -48,8 +49,15 @@ export default function RegisterMobile({
       )}
 
       {isMobileCheckoutOpen && (
-        <div className="fixed inset-0 z-[90] flex items-end bg-slate-950/60 backdrop-blur-sm lg:hidden" data-testid="mobile-checkout-sheet">
-          <div className="pb-safe flex max-h-[calc(100dvh-0.75rem)] w-full flex-col overflow-hidden rounded-t-lg border-t-2 border-slate-300 bg-white shadow-2xl">
+        <MobileModal
+          onClose={onCloseMobileCheckout}
+          closeOnBackdrop={!isCheckingOut}
+          zIndexClassName="z-[90]"
+          size="full"
+          dataTestId="mobile-checkout-sheet"
+          panelClassName="rounded-t-lg border-x-0 border-b-0 border-t-2 border-slate-300"
+          bodyClassName="p-3"
+          header={(
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Checkout</p>
@@ -64,7 +72,9 @@ export default function RegisterMobile({
                 <X className="h-5 w-5" strokeWidth={2.4} />
               </button>
             </div>
-            <div className="min-h-0 flex-1 p-3 pb-3">
+          )}
+        >
+            <div className="h-full min-h-[26rem]">
               <RegisterPaymentPanel
                 onCheckout={onCheckout}
                 onCheckoutSuccess={onCloseMobileCheckout}
@@ -73,8 +83,7 @@ export default function RegisterMobile({
                 className="h-full max-h-full min-h-0 rounded-lg border-0 shadow-none"
               />
             </div>
-          </div>
-        </div>
+        </MobileModal>
       )}
     </>
   );

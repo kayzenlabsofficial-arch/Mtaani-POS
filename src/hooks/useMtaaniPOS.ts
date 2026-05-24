@@ -73,6 +73,7 @@ export function useMtaaniPOS() {
 
   useEffect(() => {
     if (!currentUser || !activeBusinessId) return;
+    if (currentUser.role === 'CASHIER') return;
     const key = `${activeBusinessId}:${currentUser.id}`;
     if (ensuredShiftKeyRef.current === key) return;
     ensuredShiftKeyRef.current = key;
@@ -164,10 +165,12 @@ export function useMtaaniPOS() {
       }
       await new Promise(r => setTimeout(r, 0));
       login(authData.user, authData.token || null);
-      const loginShift = await findOpenShiftForUser(authData.user, authData.businessId).catch((err) => {
-        console.warn('Could not find open shift', err);
-        return null;
-      });
+      const loginShift = authData.user?.role === 'CASHIER'
+        ? null
+        : await findOpenShiftForUser(authData.user, authData.businessId).catch((err) => {
+            console.warn('Could not find open shift', err);
+            return null;
+          });
       if (loginShift) setActiveShift(loginShift);
       setPassword('');
       success(`Welcome back, ${authData.user?.name || 'there'}!`);
@@ -388,8 +391,9 @@ export function useMtaaniPOS() {
       setDiscountValue(0);
       success("Transaction completed successfully.");
 
+      const canSyncSalesData = currentUser?.role === 'ROOT' || currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
       void Promise.allSettled([
-        db.transactions.reload(),
+        ...(canSyncSalesData ? [db.transactions.reload()] : []),
         db.products.reload(),
         db.stockMovements.reload(),
         db.customers.reload(),

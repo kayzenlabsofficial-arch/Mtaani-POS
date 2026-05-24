@@ -58,7 +58,7 @@ export const ClosingService = {
     businessId: string;
     shopId: string;
   }) {
-    return apiRequest<{ success: boolean; reportId: string; shiftId: string; idempotent?: boolean }>('/api/close/shift', {
+    return apiRequest<{ success: boolean; reportId: string; shiftId: string; idempotent?: boolean; report?: any }>('/api/close/shift', {
       method: 'POST',
       body: input,
       businessId: input.businessId,
