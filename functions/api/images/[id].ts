@@ -2,6 +2,7 @@ import { authorizeRequest } from '../authUtils';
 
 interface Env {
   IMAGES_KV: KVNamespace;
+  DB?: D1Database;
   API_SECRET?: string;
 }
 
