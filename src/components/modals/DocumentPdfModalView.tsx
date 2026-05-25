@@ -95,6 +95,7 @@ export default function DocumentPdfModalView({
   const title = useMemo(() => `${documentLabel(selectedRecord).replace(/-/g, ' ')} PDF`, [selectedRecord]);
 
   const isSale = selectedRecord?.recordType === 'SALE';
+  const isReceiptSized = selectedRecord?.recordType === 'SALE' || selectedRecord?.recordType === 'EXPENSE';
   const isPO = selectedRecord?.recordType === 'PURCHASE_ORDER';
   const isPendingApproval = isAdmin && onApprove && onReject && (
     (selectedRecord?.recordType === 'PURCHASE_ORDER' && selectedRecord?.approvalStatus === 'PENDING') ||
@@ -188,7 +189,8 @@ export default function DocumentPdfModalView({
   if (!selectedRecord) return null;
 
   const close = () => setSelectedRecord(null);
-  const viewerUrl = objectUrl ? `${objectUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH` : '';
+  const viewerMode = isReceiptSized ? 'zoom=100' : 'view=FitH';
+  const viewerUrl = objectUrl ? `${objectUrl}#toolbar=0&navpanes=0&scrollbar=1&${viewerMode}` : '';
 
   const printPdf = () => {
     try {
@@ -245,7 +247,7 @@ export default function DocumentPdfModalView({
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-slate-950/70 p-0 backdrop-blur-sm sm:p-4">
       <button type="button" className="absolute inset-0 cursor-default" aria-label="Close PDF" onClick={close} />
 
-      <section className="relative z-10 flex h-full w-full max-w-6xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:h-[94vh] sm:rounded-lg">
+      <section className={`relative z-10 flex h-full w-full flex-col overflow-hidden bg-slate-50 shadow-2xl sm:h-[94vh] sm:rounded-lg ${isReceiptSized ? 'max-w-[38rem]' : 'max-w-6xl'}`}>
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700">
@@ -296,14 +298,16 @@ export default function DocumentPdfModalView({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 bg-slate-200 p-0 sm:p-3">
+        <div className={`min-h-0 flex-1 bg-slate-200 ${isReceiptSized ? 'overflow-auto p-3 sm:p-5' : 'p-0 sm:p-3'}`}>
           {viewerUrl ? (
-            <iframe
-              ref={iframeRef}
-              src={viewerUrl}
-              title={title}
-              className="h-full w-full border-0 bg-white sm:rounded-lg sm:shadow-sm"
-            />
+            <div className={isReceiptSized ? 'mx-auto h-full w-full max-w-[24rem]' : 'h-full w-full'}>
+              <iframe
+                ref={iframeRef}
+                src={viewerUrl}
+                title={title}
+                className="h-full w-full border-0 bg-white sm:rounded-lg sm:shadow-sm"
+              />
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center bg-white text-sm font-bold text-slate-500">
               {isPreparing ? 'Preparing PDF preview...' : 'PDF preview unavailable.'}

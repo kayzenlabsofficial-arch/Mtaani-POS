@@ -338,7 +338,7 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
           granted: true,
           assignedRole: 'RECEIPT_PRINTER',
         };
-        setHardwareMessage('Receipts will open Chrome printer destinations like your HP, Kyocera, PDF, and network printers.');
+        setHardwareMessage('Chrome printer uses the browser print dialog. For automatic silent receipt printing, connect a USB thermal or Serial printer.');
       }
       if (transport === 'USB') device = await requestUsbHardwareDevice(role);
       if (transport === 'SERIAL') device = await requestSerialHardwareDevice(role);
@@ -523,7 +523,7 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
   const assignedPrinter = hardwareAssignments.find(item => item.role === 'RECEIPT_PRINTER');
   const assignedDrawer = hardwareAssignments.find(item => item.role === 'CASH_DRAWER');
   const isChromePrinter = assignedPrinter?.transport === 'BROWSER_PRINT';
-  const directPrinterReady = !!assignedPrinter && !isChromePrinter;
+  const directPrinterReady = !!assignedPrinter && (assignedPrinter.transport === 'WEBUSB' || assignedPrinter.transport === 'WEBSERIAL');
 
   const updateTillCount = (value: string) => {
     setTillSettings(prev => {
@@ -886,7 +886,7 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
         Printer,
         'RECEIPT_PRINTER',
         <>
-          {secondaryHardwareButton('Chrome printer', isHardwareBusy, () => connectHardware('BROWSER_PRINT', 'RECEIPT_PRINTER'), true)}
+          {secondaryHardwareButton('Chrome print dialog', isHardwareBusy, () => connectHardware('BROWSER_PRINT', 'RECEIPT_PRINTER'), true)}
           {secondaryHardwareButton('USB thermal', isHardwareBusy || !hardwareSupport.webUsb, () => connectHardware('USB', 'RECEIPT_PRINTER'))}
           {secondaryHardwareButton('Serial', isHardwareBusy || !hardwareSupport.webSerial, () => connectHardware('SERIAL', 'RECEIPT_PRINTER'))}
           {secondaryHardwareButton('Bluetooth', isHardwareBusy || !hardwareSupport.webBluetooth, () => connectHardware('BLUETOOTH', 'RECEIPT_PRINTER'))}

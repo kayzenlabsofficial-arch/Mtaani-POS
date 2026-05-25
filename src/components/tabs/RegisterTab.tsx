@@ -22,6 +22,7 @@ import type { CheckoutOptions } from '../register/types';
 
 type RegisterBackLayer = 'SCANNER' | 'MOBILE_CHECKOUT' | 'HELD_ORDERS' | 'PRODUCT_SEARCH';
 const REGISTER_BACK_LAYER = 'registerBackLayer';
+const SILENT_RECEIPT_TRANSPORTS = new Set(['WEBUSB', 'WEBSERIAL']);
 
 export default function RegisterTab({
   toggleCart,
@@ -256,10 +257,14 @@ export default function RegisterTab({
   const maybeAutoPrintReceipt = React.useCallback(async (receipt: Transaction & { recordType?: 'SALE' }) => {
     const profile = getHardwareProfile();
     const assignedPrinter = getAssignedHardware('RECEIPT_PRINTER');
-    if (!profile.autoPrintReceipt) return;
-    if (!assignedPrinter || assignedPrinter.transport === 'BROWSER_PRINT') {
-      window.setTimeout(() => window.print(), 350);
-      return;
+    if (!profile.autoPrintReceipt || !assignedPrinter) return false;
+    if (!SILENT_RECEIPT_TRANSPORTS.has(assignedPrinter.transport)) {
+      if (assignedPrinter.transport === 'BROWSER_PRINT') {
+        warning('Silent receipt printing needs a USB or Serial thermal printer. Chrome printer would show a print prompt, so it was skipped.');
+      } else {
+        warning('This assigned receipt printer cannot print silently yet. Use USB thermal or Serial.');
+      }
+      return false;
     }
     const hasCashDrawerEvent = receipt.paymentMethod === 'CASH' || Number(receipt.splitPayments?.cashAmount || 0) > 0;
     const result = await printReceiptViaAssignedPrinter(receipt, {
@@ -268,6 +273,7 @@ export default function RegisterTab({
       openDrawer: profile.cashDrawerTrigger === 'RECEIPT_PRINT' && hasCashDrawerEvent,
     });
     if (!result.ok) warning(result.message);
+    return result.ok;
   }, [businessSettings?.location, businessSettings?.storeName, warning]);
 
   const completeCheckout = async (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => {
@@ -290,8 +296,15 @@ export default function RegisterTab({
           businessAddress: activeShop?.location || businessSettings?.location || (result as any).businessAddress,
           receiptFooter: businessSettings?.receiptFooter || (result as any).receiptFooter,
         };
-        setLastReceipt(receipt as any);
-        void maybeAutoPrintReceipt(receipt as any);
+        const profile = getHardwareProfile();
+        const assignedPrinter = getAssignedHardware('RECEIPT_PRINTER');
+        const shouldUseSilentReceipt = !!profile.autoPrintReceipt && !!assignedPrinter && SILENT_RECEIPT_TRANSPORTS.has(assignedPrinter.transport);
+        if (shouldUseSilentReceipt) {
+          void maybeAutoPrintReceipt(receipt as any);
+        } else {
+          setLastReceipt(receipt as any);
+          void maybeAutoPrintReceipt(receipt as any);
+        }
       }
       return result;
     } catch (err: any) {
