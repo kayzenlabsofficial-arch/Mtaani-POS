@@ -356,7 +356,7 @@ export default function DocumentPdfModalView({
 
         <div className={`min-h-0 flex-1 overflow-auto bg-slate-200 ${isReceiptSized ? 'p-3 sm:p-5' : 'p-0 sm:p-3'}`}>
           {viewerUrl ? (
-            <div className="flex min-h-full w-full flex-col">
+            <div className="flex h-full min-h-0 w-full flex-col">
               <div className="mb-2 flex items-center justify-center gap-1 sm:hidden">
                 <button
                   type="button"
@@ -395,7 +395,7 @@ export default function DocumentPdfModalView({
                   ref={iframeRef}
                   src={viewerUrl}
                   title={title}
-                  className="h-full min-h-[28rem] w-full border-0 bg-white sm:min-h-full sm:rounded-lg sm:shadow-sm"
+                  className="h-full w-full border-0 bg-white sm:rounded-lg sm:shadow-sm"
                 />
               </div>
             </div>
