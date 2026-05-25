@@ -8,6 +8,7 @@ interface Env {
 
 const CLOSE_DAY_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 const DAY_MS = 24 * 60 * 60 * 1000;
+const BUSINESS_DAY_OFFSET_MS = 3 * 60 * 60 * 1000;
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -22,9 +23,15 @@ function nonNegative(value: unknown) { return Math.max(0, n(value)); }
 function roundMoney(value: number) { return Math.round(value * 100) / 100; }
 function s(value: unknown, max = 160) { return String(value ?? '').trim().slice(0, max); }
 function dayStartMs(value = Date.now()) {
-  const date = new Date(value);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
+  return Math.floor((n(value, Date.now()) + BUSINESS_DAY_OFFSET_MS) / DAY_MS) * DAY_MS - BUSINESS_DAY_OFFSET_MS;
+}
+
+function businessDateKey(value: number) {
+  return new Date(dayStartMs(value) + BUSINESS_DAY_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+function businessDateLabel(value: number) {
+  return new Date(dayStartMs(value) + BUSINESS_DAY_OFFSET_MS).toLocaleDateString('en-KE', { timeZone: 'UTC' });
 }
 
 async function safeRows(db: D1Database, sql: string, binds: unknown[] = []) {
@@ -249,12 +256,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     `).bind(businessId, summaryDate, dayEnd).first<any>();
     if (existing) {
       return json({
-        error: `This business already has a daily close report for ${new Date(summaryDate).toLocaleDateString('en-KE')}.`,
+        error: `This business already has a daily close report for ${businessDateLabel(summaryDate)}.`,
         summaryId: existing.id,
       }, 409);
     }
 
-    const id = String(body?.summaryId || `day_${businessId}_${new Date(summaryDate).toISOString().slice(0, 10)}`).trim();
+    const id = String(body?.summaryId || `day_${businessId}_${businessDateKey(summaryDate)}`).trim();
     const serverSummary = await buildServerDaySummary(env.DB, businessId, summaryDate);
     const totalSales = nonNegative(serverSummary.totalSales);
     const grossSales = nonNegative(serverSummary.grossSales);
@@ -292,7 +299,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       'dailySummary',
       id,
       totalVariance === 0 ? 'INFO' : 'WARN',
-      `Closed business day ${new Date(summaryDate).toISOString().slice(0, 10)} with sales Ksh ${totalSales.toLocaleString()} and variance Ksh ${totalVariance.toLocaleString()}.`,
+      `Closed business day ${businessDateKey(summaryDate)} with sales Ksh ${totalSales.toLocaleString()} and variance Ksh ${totalVariance.toLocaleString()}.`,
         businessId, now,
       ).run();
     return json({
