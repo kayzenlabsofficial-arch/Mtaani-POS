@@ -77,6 +77,7 @@ const END_OF_DAY_REPORTS_SCHEMA = `
       taxTotal REAL NOT NULL DEFAULT 0,
       cashSales REAL NOT NULL DEFAULT 0,
       customerCashPayments REAL NOT NULL DEFAULT 0,
+      customerMpesaPayments REAL NOT NULL DEFAULT 0,
       mpesaSales REAL NOT NULL DEFAULT 0,
       pdqSales REAL NOT NULL DEFAULT 0,
       totalExpenses REAL NOT NULL DEFAULT 0,
@@ -130,6 +131,7 @@ const END_OF_DAY_REPORT_COLUMNS = [
   'taxTotal',
   'cashSales',
   'customerCashPayments',
+  'customerMpesaPayments',
   'mpesaSales',
   'pdqSales',
   'totalExpenses',
@@ -222,6 +224,7 @@ async function ensureCloseShiftSchema(db: D1Database) {
     'ALTER TABLE endOfDayReports ADD COLUMN tillId TEXT',
     'ALTER TABLE endOfDayReports ADD COLUMN tillName TEXT',
     'ALTER TABLE endOfDayReports ADD COLUMN customerCashPayments REAL DEFAULT 0',
+    'ALTER TABLE endOfDayReports ADD COLUMN customerMpesaPayments REAL DEFAULT 0',
     'ALTER TABLE endOfDayReports ADD COLUMN totalRefunds REAL',
     'ALTER TABLE endOfDayReports ADD COLUMN cashRefunds REAL DEFAULT 0',
     'ALTER TABLE endOfDayReports ADD COLUMN openingCash REAL DEFAULT 0',
@@ -455,6 +458,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const taxTotal = nonNegative(serverReport.taxTotal);
     const cashSales = nonNegative(serverReport.cashSales);
     const customerCashPayments = nonNegative(serverReport.customerCashPayments);
+    const customerMpesaPayments = nonNegative(serverReport.customerMpesaPayments);
     const mpesaSales = nonNegative(serverReport.mpesaSales);
     const pdqSales = nonNegative(serverReport.pdqSales);
     const totalExpenses = nonNegative(serverReport.totalExpenses);
@@ -471,9 +475,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const closeBreakdown = serverReport.closeBreakdown ? JSON.stringify(serverReport.closeBreakdown).slice(0, 5000) : null;
     await env.DB.batch([
       env.DB.prepare(`
-        INSERT INTO endOfDayReports (id, shiftId, tillId, tillName, timestamp, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, closingCash, expectedCash, reportedCash, difference, cashierId, cashierName, closeBreakdown, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(reportId, shiftId, tillId, tillName, now, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, closingCash, expectedCash, reportedCash, difference, cashierId, cashierName, closeBreakdown, businessId, now),
+        INSERT INTO endOfDayReports (id, shiftId, tillId, tillName, timestamp, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, customerMpesaPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, closingCash, expectedCash, reportedCash, difference, cashierId, cashierName, closeBreakdown, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(reportId, shiftId, tillId, tillName, now, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, customerMpesaPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, closingCash, expectedCash, reportedCash, difference, cashierId, cashierName, closeBreakdown, businessId, now),
       env.DB.prepare(`
         INSERT INTO shifts (id, startTime, endTime, cashierId, cashierName, tillId, tillName, openingCash, closingCash, expectedCash, cashVariance, closeBreakdown, status, businessId, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -8,6 +8,7 @@ interface ApprovalContext {
   approvedBy: string;
   activeShopId: string;
   activeBusinessId: string;
+  shiftId?: string;
 }
 
 type RefundLine = { productId: string; quantity: number };
@@ -122,6 +123,7 @@ export async function approveRefundTransaction(
   context: ApprovalContext
 ): Promise<void> {
   const lines = refundLinesFor(transaction, itemsToReturn);
+  if (!context.shiftId) throw new Error('Open a till shift before approving a cash refund.');
   await SalesService.approveRefund({
     transactionId: transaction.id,
     businessId: context.activeBusinessId,
@@ -129,6 +131,7 @@ export async function approveRefundTransaction(
     itemsToReturn,
     approvedBy: context.approvedBy,
     idempotencyKey: stableRefundApprovalKey(transaction, lines),
+    shiftId: context.shiftId,
   });
   await Promise.allSettled([
     db.transactions.reload(),

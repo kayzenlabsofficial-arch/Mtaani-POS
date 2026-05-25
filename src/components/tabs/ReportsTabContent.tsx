@@ -266,7 +266,8 @@ export default function ReportsTabContent() {
   const allSuppliers = useLiveQuery(() => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
   const allPurchases = useLiveQuery(() => activeBusinessId && activeShopId ? db.purchaseOrders.where('shopId').equals(activeShopId).and(po => po.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
   const allSalesInvoices = useLiveQuery(() => activeBusinessId && activeShopId ? db.salesInvoices.where('shopId').equals(activeShopId).and(invoice => invoice.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  if (!allTransactions || !allProducts || !allExpenses || !allSuppliers || !allSalesInvoices) {
+  const allCustomerPayments = useLiveQuery(() => activeBusinessId && activeShopId ? db.customerPayments.where('shopId').equals(activeShopId).and(payment => payment.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  if (!allTransactions || !allProducts || !allExpenses || !allSuppliers || !allSalesInvoices || !allCustomerPayments) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <div className="flex h-16 w-16 animate-spin-slow items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
@@ -330,6 +331,14 @@ export default function ReportsTabContent() {
   const filteredTransactions = allTransactions.filter(t => t.timestamp >= startTime && t.timestamp <= endTime && reportableTransaction(t));
   const filteredSalesInvoices = allSalesInvoices.filter(invoice => invoice.issueDate >= startTime && invoice.issueDate <= endTime && invoice.status !== 'CANCELLED');
   const filteredExpenses = allExpenses.filter(e => e.timestamp >= startTime && e.timestamp <= endTime && e.status === 'APPROVED');
+  const filteredCustomerPayments = allCustomerPayments.filter(payment => Number(payment.timestamp || 0) >= startTime && Number(payment.timestamp || 0) <= endTime);
+  const mpesaCreditCollections = filteredCustomerPayments
+    .filter(payment => String(payment.paymentMethod || '').toUpperCase() === 'MPESA')
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const cashCreditCollections = filteredCustomerPayments
+    .filter(payment => String(payment.paymentMethod || '').toUpperCase() === 'CASH')
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const totalCreditCollections = mpesaCreditCollections + cashCreditCollections;
   const displayProducts = enrichProductsWithBundleStock(allProducts || [], productIngredients || []);
   const productPeriodBounds = getPeriodBoundsFor(productDateRange, productSelectedMonth, productCustomStart, productCustomEnd);
   const productPeriodTransactions = allTransactions.filter(t => t.timestamp >= productPeriodBounds.start && t.timestamp <= productPeriodBounds.end && reportableTransaction(t));
@@ -1003,7 +1012,7 @@ export default function ReportsTabContent() {
         
         {/* Global Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard title="Total revenue" value={totalRevenue} icon={<TrendingUp size={24}/>} color="indigo" subtitle={`${salesDocumentCount} sales documents`} />
+          <StatCard title="Total revenue" value={totalRevenue} icon={<TrendingUp size={24}/>} color="indigo" subtitle={`${salesDocumentCount} sales documents - collections separate`} />
           <StatCard title="Net profit" value={netProfit} icon={<Target size={24}/>} color={netProfit >= 0 ? "emerald" : "rose"} subtitle={`After stock cost, expenses${deductTaxInPL ? ' and VAT' : ''}`} />
           <StatCard title="Profit margin" value={((grossProfit / (totalRevenue || 1)) * 100)} unit="%" icon={<Layers size={24}/>} color="blue" subtitle="Profit made from sales" />
           <StatCard title="Expense share" value={((totalExpenseAmount / (totalRevenue || 1)) * 100)} unit="%" icon={<Activity size={24}/>} color="amber" subtitle="Expenses compared to sales" />
@@ -1175,6 +1184,8 @@ export default function ReportsTabContent() {
                   <SummaryRow metric="Average sale" value={`Ksh ${Math.floor(averageBasket).toLocaleString()}`} target="Ksh 500+" ok={averageBasket >= 500} />
                   <SummaryRow metric="Low stock items" value={`${lowStockCount} items`} target="Less than 10" ok={lowStockCount < 10} />
                   <SummaryRow metric="Credit sales" value={`${creditTransactions} sales`} target="Under 15%" ok={salesDocumentCount === 0 || creditTransactions <= (salesDocumentCount * 0.15)} />
+                  <SummaryRow metric="M-Pesa credit collections" value={`Ksh ${Math.floor(mpesaCreditCollections).toLocaleString()}`} target="Not counted as sales" ok />
+                  <SummaryRow metric="Total credit collections" value={`Ksh ${Math.floor(totalCreditCollections).toLocaleString()}`} target={`${cashCreditCollections > 0 ? `Cash Ksh ${Math.floor(cashCreditCollections).toLocaleString()}` : 'No cash collections'}`} ok />
                 </tbody>
               </table>
             </div>

@@ -318,7 +318,6 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     .filter(invoice => invoice.status !== 'PAID')
     .reduce((sum, invoice) => sum + Number(invoice.balance || 0), 0);
   const todayTillTotal = todayCashSales + todayCashRepayments;
-  const todayMpesaTotal = todayMpesaSales + todayMpesaRepayments;
   const todayCreditTotal = todayCreditSales + todayInvoiceCredit;
   const salesTrendData = React.useMemo(() => {
     const txs = (shopTransactions || []).filter(t => t.status !== 'VOIDED' && t.status !== 'QUOTE');
@@ -561,6 +560,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         totalSales: Number(report.totalSales || 0),
         cashSales: Number(report.cashSales || 0),
         mpesaSales: Number(report.mpesaSales || 0),
+        customerMpesaPayments: Number(report.customerMpesaPayments || 0),
         pdqSales: Number(report.pdqSales || 0),
         totalExpenses: Number(report.totalExpenses || 0),
         supplierPaymentsTotal: Number(report.supplierPaymentsTotal || 0),
@@ -590,6 +590,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         totalSales: stats.totalSales,
         cashSales: stats.cashSales,
         mpesaSales: stats.mpesaSales,
+        customerMpesaPayments: stats.customerMpesaPayments,
         pdqSales: stats.pdqSales,
         totalExpenses: stats.totalExpenses,
         supplierPaymentsTotal: stats.supplierPaymentsTotal,
@@ -619,6 +620,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       totalSales: openShiftStats.totalSales,
       cashSales: openShiftStats.cashSales,
       mpesaSales: openShiftStats.mpesaSales,
+      customerMpesaPayments: openShiftStats.customerMpesaPayments,
       pdqSales: openShiftStats.pdqSales,
       totalExpenses: openShiftStats.totalExpenses,
       supplierPaymentsTotal: openShiftStats.supplierPaymentsTotal,
@@ -633,6 +635,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     totalSales: totals.totalSales + row.totalSales,
     cashSales: totals.cashSales + row.cashSales,
     mpesaSales: totals.mpesaSales + row.mpesaSales,
+    customerMpesaPayments: totals.customerMpesaPayments + Number(row.customerMpesaPayments || 0),
     pdqSales: totals.pdqSales + row.pdqSales,
     totalExpenses: totals.totalExpenses + row.totalExpenses,
     supplierPaymentsTotal: totals.supplierPaymentsTotal + row.supplierPaymentsTotal,
@@ -645,6 +648,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     totalSales: 0,
     cashSales: 0,
     mpesaSales: 0,
+    customerMpesaPayments: 0,
     pdqSales: 0,
     totalExpenses: 0,
     supplierPaymentsTotal: 0,
@@ -973,16 +977,23 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     {
       label: 'Till cash',
       value: money(todayTillTotal),
-      detail: `${money(todayCashSales)} sales + ${money(todayCashRepayments)} repayments`,
+      detail: `${money(todayCashSales)} sales + ${money(todayCashRepayments)} credit collections`,
       icon: 'payments',
       tone: 'border-emerald-200 bg-emerald-50 text-emerald-700',
     },
     {
-      label: 'M-Pesa',
-      value: money(todayMpesaTotal),
-      detail: `${money(todayMpesaSales)} sales + ${money(todayMpesaRepayments)} repayments`,
+      label: 'M-Pesa sales',
+      value: money(todayMpesaSales),
+      detail: 'Direct paid sales only',
       icon: 'smartphone',
       tone: 'border-blue-200 bg-blue-50 text-blue-700',
+    },
+    {
+      label: 'M-Pesa credit collections',
+      value: money(todayMpesaRepayments),
+      detail: 'Customer debt payments, not new sales',
+      icon: 'smartphone',
+      tone: 'border-cyan-200 bg-cyan-50 text-cyan-700',
     },
     {
       label: 'Credit',
@@ -1041,15 +1052,23 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     {
       label: 'Till cash',
       value: 'Ksh 00,000',
-      detail: 'Sales + repayments hidden',
+      detail: 'Sales + credit collections hidden',
       icon: 'payments',
       tone: 'border-slate-300 bg-slate-50 text-slate-500',
       locked: true,
     },
     {
-      label: 'M-Pesa',
+      label: 'M-Pesa sales',
       value: 'Ksh 00,000',
-      detail: 'Sales + repayments hidden',
+      detail: 'Direct paid sales hidden',
+      icon: 'smartphone',
+      tone: 'border-slate-300 bg-slate-50 text-slate-500',
+      locked: true,
+    },
+    {
+      label: 'M-Pesa credit collections',
+      value: 'Ksh 00,000',
+      detail: 'Customer debt payments hidden',
       icon: 'smartphone',
       tone: 'border-slate-300 bg-slate-50 text-slate-500',
       locked: true,

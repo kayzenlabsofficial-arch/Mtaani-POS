@@ -12,6 +12,7 @@ import { useToast } from '../../context/ToastContext';
 import { getBusinessSettings } from '../../utils/settings';
 import { MpesaService, type MpesaLedgerRow } from '../../services/mpesa';
 import { canPerform } from '../../utils/accessControl';
+import { getCurrentShiftId } from '../../utils/shiftSession';
 
 const sentenceValue = (value: unknown, fallback = '') => {
   const text = String(value || fallback).replace(/_/g, ' ').toLowerCase();
@@ -57,6 +58,7 @@ export default function DocumentsTabMobile() {
   const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
+  const activeShift = useStore(state => state.activeShift);
   const allTransactions = useLiveQuery(() => activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
   const allRefunds = useLiveQuery(() => activeBusinessId && activeShopId ? db.refunds.where('shopId').equals(activeShopId).and(r => r.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
   const allExpenses = useLiveQuery(() => activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
@@ -121,12 +123,14 @@ export default function DocumentsTabMobile() {
       return;
     }
     const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
+    const shiftId = getCurrentShiftId(activeShift, activeShopId, currentUser?.id);
     try {
       if (autoApprove && activeShopId && activeBusinessId) {
         await approveRefundTransaction(t, itemsToReturn, {
           approvedBy: currentUser?.name || 'Owner',
           activeShopId,
-          activeBusinessId
+          activeBusinessId,
+          shiftId
         });
       } else {
         await requestRefundApproval(t, itemsToReturn);
@@ -147,6 +151,7 @@ export default function DocumentsTabMobile() {
       r.reason,
       r.status,
       r.invoiceNumber,
+      r.refundNumber,
       r.receiptNumber,
       r.originalTransactionId,
       r.source,
@@ -512,7 +517,7 @@ export default function DocumentsTabMobile() {
                 <div className="flex-1 min-w-0">
                    <h4 className="text-sm font-black text-slate-900 truncate">
                      {isSale ? `Receipt #${shortId(r.id)}` :
-                      isRefund ? `Refund #${safeText(r.receiptNumber || shortId(r.originalTransactionId || r.id))}` :
+                      isRefund ? `Refund #${safeText(r.refundNumber || shortId(r.id))}` :
                       isExp ? `Expense: ${safeText(r.category || 'General')}` :
                       isPay ? 'Supplier payment' :
                       isCreditNote ? `Credit note #${safeText(r.reference || shortId(r.id))}` :

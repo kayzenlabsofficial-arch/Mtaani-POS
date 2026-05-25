@@ -42,6 +42,7 @@ export const SalesService = {
     itemsToReturn?: { productId: string; quantity: number }[];
     approvedBy?: string;
     idempotencyKey?: string;
+    shiftId?: string;
   }) {
     return apiRequest<CheckoutResponse>('/api/sales/refund-approve', {
       method: 'POST',

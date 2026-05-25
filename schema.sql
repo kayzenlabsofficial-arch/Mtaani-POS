@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS cashPicks (
 
 CREATE TABLE IF NOT EXISTS refunds (
     id TEXT PRIMARY KEY,
+    refundNumber TEXT,
     originalTransactionId TEXT NOT NULL,
     receiptNumber TEXT,
     amount REAL NOT NULL,
@@ -152,6 +153,7 @@ CREATE TABLE IF NOT EXISTS endOfDayReports (
     taxTotal REAL NOT NULL,
     cashSales REAL NOT NULL,
     customerCashPayments REAL DEFAULT 0,
+    customerMpesaPayments REAL DEFAULT 0,
     mpesaSales REAL NOT NULL,
     pdqSales REAL,
     totalExpenses REAL NOT NULL,

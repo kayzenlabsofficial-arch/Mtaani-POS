@@ -154,6 +154,7 @@ export interface Transaction {
 
 export interface RefundDocument {
   id: string;
+  refundNumber?: string;
   originalTransactionId: string;
   receiptNumber?: string;
   amount: number;
@@ -195,6 +196,7 @@ export interface EndOfDayReport {
   taxTotal: number;
   cashSales: number;
   customerCashPayments?: number;
+  customerMpesaPayments?: number;
   mpesaSales: number;
   pdqSales?: number;
   totalExpenses: number;

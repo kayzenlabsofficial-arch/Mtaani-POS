@@ -12,6 +12,7 @@ import { PurchaseService } from '../../services/purchases';
 import { ExpenseService } from '../../services/expenses';
 import { SalesService } from '../../services/sales';
 import { CashService } from '../../services/operations';
+import { getCurrentShiftId } from '../../utils/shiftSession';
 
 type ApprovalTabId = 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'STOCK' | 'CASH_PICKS';
 type ApprovalMode = 'desktop' | 'mobile';
@@ -47,6 +48,7 @@ export default function AdminApprovalsContent({ DocumentDetailsModal, mode }: Ad
   const currentUser = useStore(state => state.currentUser);
   const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  const activeShift = useStore(state => state.activeShift);
 
   const pendingAdjustments = useLiveQuery(() => activeBusinessId && activeShopId ? db.stockAdjustmentRequests.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
   const pendingPicks = useLiveQuery(() => activeBusinessId && activeShopId ? db.cashPicks.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
@@ -182,7 +184,8 @@ export default function AdminApprovalsContent({ DocumentDetailsModal, mode }: Ad
       await approveRefundTransaction(transaction, undefined, {
         approvedBy: currentUser?.name || 'Administrator',
         activeShopId,
-        activeBusinessId
+        activeBusinessId,
+        shiftId: getCurrentShiftId(activeShift, activeShopId, currentUser?.id)
       });
       success('Refund approved and stock returned.');
     } catch (err: any) {
@@ -291,6 +294,7 @@ export default function AdminApprovalsContent({ DocumentDetailsModal, mode }: Ad
                 <Eye size={13} className="text-slate-300 group-hover:text-blue-500" />
               </div>
               <p className="mt-1 text-xs font-semibold text-slate-500">Items: {transaction.items?.length || 0} / {formatDate(transaction.timestamp)}</p>
+              <p className="mt-1 text-[11px] font-black text-rose-600">Cash refund from till</p>
             </div>
             <div className="shrink-0 text-right">
               <p className="text-base font-black text-slate-950">{moneyText(transaction.total)}</p>

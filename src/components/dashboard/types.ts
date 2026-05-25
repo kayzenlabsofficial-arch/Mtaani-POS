@@ -27,6 +27,7 @@ export type DashboardShiftRow = {
   cashSales: number;
   pdqSales?: number;
   mpesaSales: number;
+  customerMpesaPayments?: number;
   totalExpenses: number;
   supplierPaymentsTotal: number;
   totalRefunds: number;

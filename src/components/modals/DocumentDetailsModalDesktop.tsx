@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ReceiptText, RotateCcw, Minus, Plus, Wallet, Landmark, DollarSign, Calendar, User, Hash, FileText, CheckCircle2, CreditCard, Banknote, ClipboardList, PackagePlus, Printer, Link, Loader2, Share2, CheckSquare } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction } from '../../db';
-import { generateAndShareDocument } from '../../utils/shareUtils';
+import { generateAndShareDocument, generateDocumentPdfBlob } from '../../utils/shareUtils';
 import { getAssignedHardware, printReceiptViaAssignedPrinter } from '../../utils/hardware';
 import { CalendarCheck, AlertTriangle, ArrowRight, TrendingUp, ShieldCheck } from 'lucide-react';
 import { useStore } from '../../store';
@@ -10,6 +10,8 @@ import AdminVerificationModal from './AdminVerificationModalDesktop';
 import { useToast } from '../../context/ToastContext';
 import { getBusinessSettings } from '../../utils/settings';
 import { canPerform } from '../../utils/accessControl';
+import PdfPreviewModal from './PdfPreviewModal';
+import { useTillCash } from '../../hooks/useTillCash';
 
 interface DocumentDetailsModalProps {
   selectedRecord: any | null; // Can be Transaction, Expense, or SupplierPayment
@@ -55,6 +57,32 @@ const reportShiftLabel = (record: any, index: number) => {
   return id || `Shift ${index + 1}`;
 };
 
+const refundLinesFromRecord = (record: any, returnQuantities: { [productId: string]: number }, isReturnMode: boolean) => {
+  const selectedLines = Object.entries(returnQuantities)
+    .filter(([, quantity]) => (Number(quantity) || 0) > 0)
+    .map(([productId, quantity]) => ({ productId, quantity: Number(quantity) || 0 }));
+  if (isReturnMode) return selectedLines;
+  const pendingLines = parseList(record?.pendingRefundItems)
+    .map((line: any) => ({ productId: String(line.productId || ''), quantity: Number(line.quantity || 0) }))
+    .filter(line => line.productId && line.quantity > 0);
+  if (pendingLines.length > 0) return pendingLines;
+  return parseList(record?.items)
+    .map((item: any) => ({
+      productId: String(item.productId || ''),
+      quantity: Math.max(0, Number(item.quantity || 0) - Number(item.returnedQuantity || 0)),
+    }))
+    .filter(line => line.productId && line.quantity > 0);
+};
+
+const refundAmountFromLines = (record: any, lines: { productId: string; quantity: number }[]) => {
+  const items = parseList(record?.items);
+  const amount = lines.reduce((sum, line) => {
+    const item = items.find((row: any) => row.productId === line.productId);
+    return sum + ((Number(item?.snapshotPrice) || 0) * line.quantity);
+  }, 0);
+  return Math.round(Math.min(Number(record?.total || 0), amount || Number(record?.total || 0)) * 100) / 100;
+};
+
 export default function DocumentDetailsModalDesktop({ selectedRecord, setSelectedRecord, handleRefund, onApprove, onReject, onReceive }: DocumentDetailsModalProps) {
   const [returnQuantities, setReturnQuantities] = useState<{ [productId: string]: number }>({});
   const [isReturnMode, setIsReturnMode] = useState(false);
@@ -64,8 +92,10 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
   const currentUser = useStore(state => state.currentUser);
   const [isSharing, setIsSharing] = useState(false);
   const [isSavingPDF, setIsSavingPDF] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState<{ blob: Blob; filename: string; title: string } | null>(null);
   const [isHardwarePrinting, setIsHardwarePrinting] = useState(false);
   const [isApprovalActionRunning, setIsApprovalActionRunning] = useState(false);
+  const tillCash = useTillCash();
 
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
@@ -162,6 +192,14 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
   );
   const creditNoteItems = parseList(selectedRecord.items);
   const refundItems = parseList(selectedRecord.items);
+  const refundPreviewLines = refundLinesFromRecord(selectedRecord, returnQuantities, isReturnMode);
+  const refundPreviewAmount = isSale ? refundAmountFromLines(selectedRecord, refundPreviewLines) : 0;
+  const cashRefundNoticeVisible = isSale && (isReturnMode || selectedRecord.status === 'PENDING_REFUND');
+  const refundRequiresAdminCash = isAdmin && cashRefundNoticeVisible && refundPreviewAmount > 0;
+  const refundApprovalBlocked = refundRequiresAdminCash && (!tillCash.hasOpenShift || tillCash.actualCashDrawer + 0.01 < refundPreviewAmount);
+  const refundBlockMessage = !tillCash.hasOpenShift
+    ? 'Open a till shift before approving a cash refund.'
+    : `Till has ${moneyText(tillCash.actualCashDrawer)} available. Add cash before refunding ${moneyText(refundPreviewAmount)}.`;
 
   const runApprovalAction = async (action: (record: any) => Promise<void>) => {
     if (isApprovalActionRunning) return;
@@ -183,6 +221,10 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
   const onInitiateRefund = () => {
       const itemsToReturn = Object.entries(returnQuantities).filter(([_, qty]) => (qty as number) > 0);
       if (itemsToReturn.length === 0 && isReturnMode) return;
+      if (isAdmin && refundApprovalBlocked) {
+        toastError(refundBlockMessage);
+        return;
+      }
       onConfirmRefund();
   };
 
@@ -199,43 +241,52 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
       setIsAdminVerifying(false);
   };
 
+  const preparePdfDocument = async () => {
+    const typeLabel = isSale ? 'Receipt' : isRefund ? 'Refund' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isCreditNote ? 'Credit-Note' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
+    const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
+    const recordWithDetails = withReceiptDetails(selectedRecord);
+
+    if (isPayment) {
+      const invoiceAllocations = parseList(selectedRecord.invoiceAllocations);
+      const allocationAmountById = new Map(invoiceAllocations.map((allocation: any) => [String(allocation.purchaseOrderId || '').trim(), Number(allocation.amount || 0)] as const));
+      const pIds = invoiceAllocations.length > 0
+        ? invoiceAllocations.map((allocation: any) => allocation.purchaseOrderId).filter(Boolean)
+        : (parseList(selectedRecord.purchaseOrderIds).length > 0 ? parseList(selectedRecord.purchaseOrderIds) : (selectedRecord.purchaseOrderId ? [selectedRecord.purchaseOrderId] : []));
+      const pos = await db.purchaseOrders.bulkGet(pIds);
+      recordWithDetails.invoiceDetails = pos.filter(Boolean).map((p: any) => ({
+        date: p.orderDate,
+        ref: p.invoiceNumber || String(p.id || '').split('-')[0],
+        amount: allocationAmountById.get(p.id) || p.totalAmount
+      }));
+
+      if (selectedRecord.creditNoteIds?.length > 0) {
+        const cns = await db.creditNotes.bulkGet(selectedRecord.creditNoteIds);
+        recordWithDetails.creditNoteDetails = cns.filter(Boolean).map((c: any) => ({ date: c.timestamp, ref: c.reference || 'CRN', amount: c.amount }));
+      } else {
+        const cnsByAlloc = await db.creditNotes.where('allocatedTo').equals(selectedRecord.id).toArray();
+        if (cnsByAlloc.length > 0) {
+          recordWithDetails.creditNoteDetails = cnsByAlloc.map(c => ({ date: c.timestamp, ref: c.reference || 'CRN', amount: c.amount }));
+        }
+      }
+    }
+
+    return {
+      filename,
+      recordWithDetails,
+      title: `${typeLabel.replace(/-/g, ' ')} preview`,
+    };
+  };
+
   const handleShare = async () => {
     if (!selectedRecord) return;
     setIsSharing(true);
     try {
-      const typeLabel = isSale ? 'Receipt' : isRefund ? 'Refund' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isCreditNote ? 'Credit-Note' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
-      const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
-      
-      const recordWithDetails = withReceiptDetails(selectedRecord);
-      if (isPayment) {
-        const invoiceAllocations = parseList(selectedRecord.invoiceAllocations);
-        const allocationAmountById = new Map(invoiceAllocations.map((allocation: any) => [String(allocation.purchaseOrderId || '').trim(), Number(allocation.amount || 0)] as const));
-        const pIds = invoiceAllocations.length > 0
-          ? invoiceAllocations.map((allocation: any) => allocation.purchaseOrderId).filter(Boolean)
-          : (parseList(selectedRecord.purchaseOrderIds).length > 0 ? parseList(selectedRecord.purchaseOrderIds) : (selectedRecord.purchaseOrderId ? [selectedRecord.purchaseOrderId] : []));
-        const pos = await db.purchaseOrders.bulkGet(pIds);
-        recordWithDetails.invoiceDetails = pos.filter(Boolean).map(p => ({ 
-          date: p.orderDate, 
-          ref: p.invoiceNumber || String(p.id || '').split('-')[0], 
-          amount: allocationAmountById.get(p.id) || p.totalAmount 
-        }));
-        
-        if (selectedRecord.creditNoteIds?.length > 0) {
-          const cns = await db.creditNotes.bulkGet(selectedRecord.creditNoteIds);
-          recordWithDetails.creditNoteDetails = cns.filter(Boolean).map(c => ({ date: c.timestamp, ref: c.reference || 'CRN', amount: c.amount }));
-        } else {
-          const cnsByAlloc = await db.creditNotes.where('allocatedTo').equals(selectedRecord.id).toArray();
-          if (cnsByAlloc.length > 0) {
-            recordWithDetails.creditNoteDetails = cnsByAlloc.map(c => ({ date: c.timestamp, ref: c.reference || 'CRN', amount: c.amount }));
-          }
-        }
-      }
-
+      const { filename, recordWithDetails } = await preparePdfDocument();
       await generateAndShareDocument(recordWithDetails, filename, supplier, false, storeName, storeLocation);
       success('PDF ready!');
     } catch (err) {
       console.error('Share failed:', err);
-      toastError('Could not share — try Save PDF instead.');
+      toastError('Could not share. Try View PDF instead.');
     } finally {
       setIsSharing(false);
     }
@@ -245,37 +296,12 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
     if (!selectedRecord) return;
     setIsSavingPDF(true);
     try {
-      const typeLabel = isSale ? 'Receipt' : isRefund ? 'Refund' : isExpense ? 'Expense' : isPayment ? 'Supplier-Payment' : isCreditNote ? 'Credit-Note' : isSalesInvoice ? 'Invoice' : isPO ? 'LPO' : isReport ? 'Shift-Report' : 'Summary';
-      const filename = `${typeLabel}-${String(selectedRecord.id || '').split('-')[0].toUpperCase()}`;
-
-      const recordWithDetails = withReceiptDetails(selectedRecord);
-      if (isPayment) {
-        const invoiceAllocations = parseList(selectedRecord.invoiceAllocations);
-        const allocationAmountById = new Map(invoiceAllocations.map((allocation: any) => [String(allocation.purchaseOrderId || '').trim(), Number(allocation.amount || 0)] as const));
-        const pIds = invoiceAllocations.length > 0
-          ? invoiceAllocations.map((allocation: any) => allocation.purchaseOrderId).filter(Boolean)
-          : (parseList(selectedRecord.purchaseOrderIds).length > 0 ? parseList(selectedRecord.purchaseOrderIds) : (selectedRecord.purchaseOrderId ? [selectedRecord.purchaseOrderId] : []));
-        const pos = await db.purchaseOrders.bulkGet(pIds);
-        recordWithDetails.invoiceDetails = pos.filter(Boolean).map(p => ({ 
-          date: p.orderDate, 
-          ref: p.invoiceNumber || String(p.id || '').split('-')[0], 
-          amount: allocationAmountById.get(p.id) || p.totalAmount 
-        }));
-        
-        if (selectedRecord.creditNoteIds?.length > 0) {
-          const cns = await db.creditNotes.bulkGet(selectedRecord.creditNoteIds);
-          recordWithDetails.creditNoteDetails = cns.filter(Boolean).map(c => ({ 
-            date: c.timestamp, 
-            ref: c.reference || 'CRN', 
-            amount: c.amount 
-          }));
-        }
-      }
-
-      await generateAndShareDocument(recordWithDetails, filename, supplier, true, storeName, storeLocation);
-      success('PDF saved successfully!');
+      const { filename, recordWithDetails, title } = await preparePdfDocument();
+      const blob = generateDocumentPdfBlob(recordWithDetails, supplier, storeName, storeLocation);
+      setPdfPreview({ blob, filename, title });
+      success('PDF preview ready.');
     } catch (err) {
-      console.error('Save PDF failed:', err);
+      console.error('PDF preview failed:', err);
       toastError('PDF generation failed. Please try again.');
     } finally {
       setIsSavingPDF(false);
@@ -344,7 +370,7 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
                   </div>
                   <h2 className={`${isSale ? 'text-xl print:text-[12pt]' : 'text-2xl'} font-black text-slate-900 tracking-tight`}>
                      {isSale ? storeName : 
-                      isRefund ? 'Refund document' :
+                      isRefund ? 'Refund receipt' :
                       isExpense ? `Expense document` : 
                       isPayment ? 'Supplier payment note' :
                       isCreditNote ? 'Supplier credit note' :
@@ -362,7 +388,7 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
                     </div>
                   )}
                   <p className="text-xs font-bold text-slate-500  tracking-[0.2em] mt-1">
-                      {isSale ? 'Receipt' : isRefund ? 'Original receipt' : 'Reference'}: {isSale ? saleReference : isRefund ? (selectedRecord.receiptNumber || String(selectedRecord.originalTransactionId || '').split('-')[0].toUpperCase()) : (selectedRecord.reference || selectedRecord.invoiceNumber || (String(selectedRecord.id || '').startsWith('PO-') ? selectedRecord.id : String(selectedRecord.id || '').split('-')[0].toUpperCase()))}
+                      {isSale ? 'Receipt' : isRefund ? 'Refund' : 'Reference'}: {isSale ? saleReference : isRefund ? (selectedRecord.refundNumber || String(selectedRecord.id || '').split('-')[0].toUpperCase()) : (selectedRecord.reference || selectedRecord.invoiceNumber || (String(selectedRecord.id || '').startsWith('PO-') ? selectedRecord.id : String(selectedRecord.id || '').split('-')[0].toUpperCase()))}
                   </p>
                   <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400 mt-2  ">
                      <Calendar size={12} /> {recordDate.toLocaleString('en-KE')}
@@ -444,8 +470,9 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
                     <div className="space-y-5">
                        <div className="grid grid-cols-2 gap-3">
                           {[
+                            { label: 'Refund receipt', value: selectedRecord.refundNumber || String(selectedRecord.id || '').split('-')[0].toUpperCase() },
                             { label: 'Original receipt', value: selectedRecord.receiptNumber || String(selectedRecord.originalTransactionId || '').split('-')[0].toUpperCase() },
-                            { label: 'Payment source', value: sentenceValue(selectedRecord.source || selectedRecord.paymentMethod, 'TILL') },
+                            { label: 'Refunded by', value: 'Cash from till' },
                             { label: 'Shift', value: shiftNumber },
                             { label: 'Approved by', value: selectedRecord.approvedBy || 'Admin' },
                           ].map(item => (
@@ -475,12 +502,12 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
 
                        <div className="border-t border-dashed border-slate-200 pt-4 space-y-2">
                           <div className="flex items-center justify-between text-xs font-bold text-slate-500">
-                            <span>Original payment</span>
-                            <span>{paymentType(selectedRecord.paymentMethod)}</span>
+                            <span>Refund method</span>
+                            <span>Cash from till</span>
                           </div>
                           <div className="flex items-center justify-between text-xs font-bold text-slate-500">
-                            <span>Cash deducted from drawer</span>
-                            <span>{moneyText(selectedRecord.cashAmount || 0)}</span>
+                            <span>Cash paid out from till</span>
+                            <span>{moneyText(selectedRecord.cashAmount ?? selectedRecord.amount ?? 0)}</span>
                           </div>
                           <div className="flex items-end justify-between pt-2">
                             <span className="text-sm font-black text-slate-400">Refund total</span>
@@ -988,6 +1015,25 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
 
          {/* Footer Actions - Sticky at bottom */}
           <div className="p-4 flex flex-col gap-2 bg-white border-t border-slate-100 no-print shadow-[0_-4px_12px_rgba(0,0,0,0.03)] relative z-20">
+            {cashRefundNoticeVisible && (
+              <div className={`rounded-xl border px-4 py-3 text-xs font-bold ${
+                refundApprovalBlocked
+                  ? 'border-rose-200 bg-rose-50 text-rose-700'
+                  : 'border-amber-200 bg-amber-50 text-amber-800'
+              }`}>
+                <div className="flex items-start gap-3">
+                  <Banknote size={16} className="mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-black">Cash refund from till</p>
+                    <p className="mt-0.5 text-[11px]">
+                      Refund amount {moneyText(refundPreviewAmount)}. Available till cash {moneyText(tillCash.actualCashDrawer)}.
+                    </p>
+                    {isAdmin && refundApprovalBlocked && <p className="mt-1 text-[11px]">{refundBlockMessage}</p>}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Receive Goods Action */}
             {onReceive && isPO && selectedRecord.approvalStatus === 'APPROVED' && selectedRecord.status === 'PENDING' && (
                <button
@@ -1008,10 +1054,10 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
               <div className="flex gap-2">
                 <button
                   onClick={() => runApprovalAction(onApprove)}
-                  disabled={isApprovalActionRunning}
+                  disabled={isApprovalActionRunning || (selectedRecord?.recordType === 'SALE' && selectedRecord?.status === 'PENDING_REFUND' && refundApprovalBlocked)}
                   aria-busy={isApprovalActionRunning}
                   data-busy={isApprovalActionRunning ? 'true' : undefined}
-                  className="flex-1 py-3.5 bg-green-600 text-white font-black text-xs   rounded-xl transition-colors active:bg-green-700 flex items-center justify-center gap-2 shadow-lg shadow-green-600/20"
+                  className="flex-1 py-3.5 bg-green-600 text-white font-black text-xs   rounded-xl transition-colors active:bg-green-700 flex items-center justify-center gap-2 shadow-lg shadow-green-600/20 disabled:opacity-50"
                 >
                   {isApprovalActionRunning ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                   {isApprovalActionRunning ? 'Working...' : 'Approve'}
@@ -1053,7 +1099,7 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
                   {isHardwarePrinting ? 'Printing...' : isCreditNote ? 'Print credit note' : 'Print receipt'}
                 </button>
               )}
-              {/* Save PDF — direct download */}
+              {/* PDF preview */}
               <button
                 onClick={handleSavePDF}
                 disabled={isSharing || isSavingPDF}
@@ -1061,8 +1107,8 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
                 data-busy={isSavingPDF ? 'true' : undefined}
                 className="flex-1 py-3 bg-white border border-slate-200 text-slate-700 font-bold text-[10px]   rounded-xl flex items-center justify-center gap-2 transition-colors active:bg-slate-100 disabled:opacity-50"
               >
-                {isSavingPDF ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
-                {isSavingPDF ? 'Saving...' : isPO ? 'Save LPO' : 'Save PDF'}
+                {isSavingPDF ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                {isSavingPDF ? 'Opening...' : isPO ? 'View LPO' : 'View PDF'}
               </button>
 
               <button
@@ -1077,7 +1123,7 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
                 isReturnMode ? (
                   <button 
                     onClick={onInitiateRefund}
-                    disabled={Object.values(returnQuantities).every(q => q === 0)}
+                    disabled={Object.values(returnQuantities).every(q => q === 0) || (isAdmin && refundApprovalBlocked)}
                     className="col-span-2 py-3.5 bg-red-600 text-white font-black text-xs   rounded-xl disabled:opacity-50 transition-colors active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-red-600/20"
                    >
                      <CheckCircle2 size={16} /> Confirm {isAdmin ? 'Return' : 'Request'}
@@ -1094,6 +1140,15 @@ export default function DocumentDetailsModalDesktop({ selectedRecord, setSelecte
             )}
          </div>
        </div>
+
+      {pdfPreview && (
+        <PdfPreviewModal
+          blob={pdfPreview.blob}
+          filename={pdfPreview.filename}
+          title={pdfPreview.title}
+          onClose={() => setPdfPreview(null)}
+        />
+      )}
 
       {isAdminVerifying && (
          <AdminVerificationModal 

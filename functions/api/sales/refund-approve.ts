@@ -41,6 +41,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       itemsToReturn: body?.itemsToReturn,
       approvedBy: body?.approvedBy,
       idempotencyKey: body?.idempotencyKey,
+      shiftId: body?.shiftId,
     });
     if (prepared.statements.length) await env.DB.batch(prepared.statements);
     return json({ success: true, transaction: prepared.transaction, refund: prepared.refund, idempotent: prepared.idempotent });

@@ -10,6 +10,7 @@ import { recordAuditEvent } from '../../utils/auditLog';
 import { approveRefundTransaction, requestRefundApproval } from '../../utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { getBusinessSettings } from '../../utils/settings';
+import { getCurrentShiftId } from '../../utils/shiftSession';
 
 
 interface RefundsTabProps {
@@ -47,6 +48,7 @@ export default function RefundsTabDesktop({ setActiveTab }: RefundsTabProps) {
   const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const currentUser = useStore(state => state.currentUser);
+  const activeShift = useStore(state => state.activeShift);
   const allTransactions = useLiveQuery(
     () => activeBusinessId && activeShopId
       ? db.transactions.where('shopId').equals(activeShopId).and(t => t.businessId === activeBusinessId).toArray()
@@ -81,6 +83,7 @@ export default function RefundsTabDesktop({ setActiveTab }: RefundsTabProps) {
   const refundDocuments = [...(allRefunds || [])]
     .filter(refund => [
       refund.id,
+      refund.refundNumber,
       refund.receiptNumber,
       refund.originalTransactionId,
       refund.cashierName,
@@ -109,11 +112,13 @@ export default function RefundsTabDesktop({ setActiveTab }: RefundsTabProps) {
     setIsSaving(true);
     try {
         const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
+        const shiftId = getCurrentShiftId(activeShift, activeShopId, currentUser?.id);
         if (autoApprove && activeShopId && activeBusinessId) {
           await approveRefundTransaction(t, itemsToReturn, {
             approvedBy: currentUser?.name || 'Owner',
             activeShopId,
-            activeBusinessId
+            activeBusinessId,
+            shiftId
           });
         } else {
           await requestRefundApproval(t, itemsToReturn);
@@ -189,7 +194,7 @@ export default function RefundsTabDesktop({ setActiveTab }: RefundsTabProps) {
                const row = t as any;
                const isRefundDoc = row.recordType === 'REFUND';
                const receiptRef = isRefundDoc
-                 ? String(row.receiptNumber || row.originalTransactionId || row.id || '').split('-')[0].toUpperCase()
+                 ? String(row.refundNumber || String(row.id || '').split('-')[0]).toUpperCase()
                  : String(row.id || '').split('-')[0].toUpperCase();
                return (
                <button
@@ -206,7 +211,7 @@ export default function RefundsTabDesktop({ setActiveTab }: RefundsTabProps) {
                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(row.timestamp).toLocaleDateString()}</span>
                      <span className="w-1 h-1 rounded-full bg-slate-200" />
-                     <span className="text-[10px] font-bold text-slate-400 truncate">{isRefundDoc ? `Source: ${row.source || 'TILL'}` : `Cashier: ${row.cashierName || 'System'}`}</span>
+                     <span className="text-[10px] font-bold text-slate-400 truncate">{isRefundDoc ? 'Refunded by cash from till' : `Cashier: ${row.cashierName || 'System'}`}</span>
                    </div>
                  </div>
                  <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-tighter shrink-0 ${row.status === 'REFUNDED' ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>

@@ -294,6 +294,21 @@ export default function CustomersTabMobile() {
   const totalCreditSales = filteredCreditSales.reduce((sum, sale) => sum + getCreditAmount(sale), 0)
     + filteredStatementInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
   const totalPayments = filteredStatementPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const creditCollectionLabel = (payment: CustomerPayment) => {
+    const method = String(payment.paymentMethod || '').toUpperCase();
+    if (method === 'MPESA') return 'M-Pesa credit collection';
+    if (method === 'CASH') return 'Cash credit collection';
+    return `${payment.paymentMethod || 'Customer'} credit collection`;
+  };
+  const creditCollectionDetail = (payment: CustomerPayment) => {
+    const allocations = getPaymentAllocations(payment);
+    const allocationLabels = allocations
+      .map(allocation => sourceMap.get(sourceKey(allocation.sourceType, allocation.sourceId))?.title)
+      .filter(Boolean) as string[];
+    const code = payment.transactionCode || payment.reference || payment.paymentMethod || '';
+    if (allocationLabels.length > 0) return `${code ? `${code} - ` : ''}Linked to ${allocationLabels.join(', ')}`;
+    return code ? `${code} - Applied to customer credit` : 'Applied to customer credit';
+  };
   const statementRows = [
     ...filteredStatementInvoices.map((invoice: SalesInvoice) => ({
       id: invoice.id,
@@ -321,8 +336,8 @@ export default function CustomersTabMobile() {
       id: payment.id,
       timestamp: payment.timestamp,
       type: 'PAYMENT' as const,
-      title: payment.reference || 'Customer payment',
-      detail: payment.transactionCode || payment.paymentMethod,
+      title: creditCollectionLabel(payment),
+      detail: creditCollectionDetail(payment),
       debit: 0,
       credit: Number(payment.amount || 0),
       method: payment.paymentMethod,

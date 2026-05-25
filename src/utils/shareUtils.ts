@@ -633,13 +633,13 @@ function buildCreditNotePDF(r: any, supplier?: any, bizName?: string, location?:
 
 function buildRefundPDF(r: any, bizName?: string, location?: string): Blob {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const ref = safeStr(r.receiptNumber || r.originalTransactionId || r.id, 'REF').toUpperCase();
-  let y = banner(doc, 'Refund Document', ref, new Date(r.timestamp || Date.now()).toLocaleString('en-KE'), bizName, location);
+  const ref = safeStr(r.refundNumber || r.id || r.receiptNumber || r.originalTransactionId, 'REF').toUpperCase();
+  let y = banner(doc, 'Refund Receipt', ref, new Date(r.timestamp || Date.now()).toLocaleString('en-KE'), bizName, location);
   y = hLine(doc, y);
 
   y = kvRow(doc, 'Original Receipt', safeStr(r.receiptNumber || r.originalTransactionId), y);
-  y = kvRow(doc, 'Refund ID', safeStr(r.id), y);
-  y = kvRow(doc, 'Payment Source', safeStr(r.source || r.paymentMethod || 'TILL'), y);
+  y = kvRow(doc, 'Refund ID', safeStr(r.refundNumber || r.id), y);
+  y = kvRow(doc, 'Refunded By', 'Cash from till', y);
   y = kvRow(doc, 'Processed By', safeStr(r.cashierName || r.approvedBy || 'Staff'), y);
   y = kvRow(doc, 'Approved By', safeStr(r.approvedBy || 'Admin'), y);
   if (r.shiftId) y = kvRow(doc, 'Shift ID', safeStr(r.shiftId), y);
@@ -655,7 +655,7 @@ function buildRefundPDF(r: any, bizName?: string, location?: string): Blob {
     : [['Refunded sale items', '-', ksh(r.amount)]];
 
   y = table(doc, ['Refunded Item', 'Qty', 'Amount'], [104, 28, 50], rows, y);
-  y = kvRow(doc, 'Cash Deducted From Drawer', ksh(r.cashAmount), y, red);
+  y = kvRow(doc, 'Cash Paid Out From Till', ksh(r.cashAmount ?? r.amount), y, red);
   y = bigTotal(doc, 'Refund Total', ksh(r.amount), y + 2, red);
 
   footer(doc);
@@ -1155,6 +1155,10 @@ function download(blob: Blob, filename: string) {
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
 }
 
+export function downloadDocumentBlob(blob: Blob, filename: string) {
+  download(blob, filename);
+}
+
 // ─── Build blob by record type ────────────────────────────────────────────────
 function buildPDF(record: any, supplier?: any, bizName?: string, location?: string): Blob {
   switch (record?.recordType) {
@@ -1169,6 +1173,10 @@ function buildPDF(record: any, supplier?: any, bizName?: string, location?: stri
     case 'DAILY_SUMMARY':    return buildReport(record, bizName, location);
     default:                 return buildReceipt(record, bizName, location); // treat unknown as receipt
   }
+}
+
+export function generateDocumentPdfBlob(record: any, supplier?: any, bizName?: string, location?: string): Blob {
+  return buildPDF(record, supplier, bizName, location);
 }
 
 // ─── Main export: generate + share/download ───────────────────────────────────

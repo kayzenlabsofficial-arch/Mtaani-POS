@@ -127,6 +127,7 @@ export async function ensureRefundSchema(db: D1Database) {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS refunds (
       id TEXT PRIMARY KEY,
+      refundNumber TEXT,
       originalTransactionId TEXT NOT NULL,
       receiptNumber TEXT,
       amount REAL NOT NULL,
@@ -139,6 +140,26 @@ export async function ensureRefundSchema(db: D1Database) {
       approvedBy TEXT,
       status TEXT NOT NULL DEFAULT 'APPROVED',
       shiftId TEXT,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS shifts (
+      id TEXT PRIMARY KEY,
+      startTime INTEGER NOT NULL,
+      endTime INTEGER,
+      cashierId TEXT,
+      cashierName TEXT NOT NULL,
+      tillId TEXT,
+      tillName TEXT,
+      openingCash REAL DEFAULT 0,
+      closingCash REAL,
+      expectedCash REAL,
+      cashVariance REAL,
+      closeBreakdown TEXT,
+      status TEXT NOT NULL,
+      lastSyncAt INTEGER,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -202,6 +223,7 @@ export async function ensureRefundSchema(db: D1Database) {
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
     'ALTER TABLE financialAccounts ADD COLUMN accountNumber TEXT',
     'ALTER TABLE financialAccounts ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE refunds ADD COLUMN refundNumber TEXT',
     'ALTER TABLE refunds ADD COLUMN cashAmount REAL DEFAULT 0',
     'ALTER TABLE refunds ADD COLUMN receiptNumber TEXT',
     'ALTER TABLE refunds ADD COLUMN paymentMethod TEXT',
@@ -213,6 +235,17 @@ export async function ensureRefundSchema(db: D1Database) {
     'ALTER TABLE refunds ADD COLUMN shiftId TEXT',
     'ALTER TABLE refunds ADD COLUMN businessId TEXT',
     'ALTER TABLE refunds ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE shifts ADD COLUMN cashierId TEXT',
+    'ALTER TABLE shifts ADD COLUMN tillId TEXT',
+    'ALTER TABLE shifts ADD COLUMN tillName TEXT',
+    'ALTER TABLE shifts ADD COLUMN openingCash REAL DEFAULT 0',
+    'ALTER TABLE shifts ADD COLUMN closingCash REAL',
+    'ALTER TABLE shifts ADD COLUMN expectedCash REAL',
+    'ALTER TABLE shifts ADD COLUMN cashVariance REAL',
+    'ALTER TABLE shifts ADD COLUMN closeBreakdown TEXT',
+    'ALTER TABLE shifts ADD COLUMN lastSyncAt INTEGER',
+    'ALTER TABLE shifts ADD COLUMN businessId TEXT',
+    'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
     'ALTER TABLE idempotencyKeys ADD COLUMN transactionId TEXT',
     'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, idempotencyKey)',
     'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_transaction ON idempotencyKeys(businessId, transactionId)',
@@ -269,24 +302,99 @@ function refundAmountFor(transaction: any, lines: RefundLine[]) {
   return roundMoney(Math.min(asNumber(transaction.total), amount || asNumber(transaction.total)));
 }
 
-function cashPaidAmount(transaction: any): number {
-  const method = String(transaction?.paymentMethod || '').toUpperCase();
-  if (method === 'CASH') return asNumber(transaction.total);
-  if (method !== 'SPLIT') return 0;
-  const split = typeof transaction.splitPayments === 'string'
-    ? (() => { try { return JSON.parse(transaction.splitPayments); } catch { return {}; } })()
-    : (transaction.splitPayments || transaction.splitData || {});
-  return asNumber(split.cashAmount);
+function parseMaybeJson(value: unknown): any {
+  if (!value) return null;
+  if (typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch { return null; }
 }
 
-function refundSourceFor(transaction: any, cashAmount: number, refundAmount: number) {
-  const method = String(transaction?.paymentMethod || 'CASH').toUpperCase();
-  if (cashAmount > 0 && cashAmount < refundAmount) return 'MIXED';
-  if (cashAmount >= refundAmount && refundAmount > 0) return 'TILL';
-  if (method === 'MPESA') return 'MPESA';
-  if (method === 'PDQ') return 'PDQ';
-  if (method === 'CREDIT') return 'CREDIT';
-  return method === 'SPLIT' ? 'MIXED' : 'TILL';
+function splitDetails(record: any) {
+  return parseMaybeJson(record?.splitPayments) || parseMaybeJson(record?.splitData)?.splitPayments || parseMaybeJson(record?.splitData) || null;
+}
+
+function paymentAmount(record: any, method: 'CASH' | 'MPESA' | 'PDQ' | 'CREDIT') {
+  const paymentMethod = String(record?.paymentMethod || '').toUpperCase();
+  if (paymentMethod === method) return asNumber(record?.total);
+  if (paymentMethod !== 'SPLIT') return 0;
+  const split = splitDetails(record);
+  if (method === 'CASH') return asNumber(split?.cashAmount);
+  return String(split?.secondaryMethod || '').toUpperCase() === method ? asNumber(split?.secondaryAmount) : 0;
+}
+
+function recordInShift(record: any, since: number, until: number, shiftId?: string | null) {
+  if (shiftId && record?.shiftId) return String(record.shiftId) === String(shiftId);
+  const ts = asNumber(record?.timestamp || record?.issueDate);
+  return ts >= since && ts <= until;
+}
+
+function cashRefundAmount(record: any) {
+  if (String(record?.status || 'APPROVED').toUpperCase() === 'REJECTED') return 0;
+  const source = String(record?.source || '').toUpperCase();
+  if (source === 'TILL' || source === 'MIXED') return asNumber(record?.cashAmount ?? record?.amount);
+  return asNumber(record?.cashAmount);
+}
+
+async function safeRows(db: D1Database, sql: string, binds: unknown[] = []) {
+  const result = await db.prepare(sql).bind(...binds).all<any>().catch(() => ({ results: [] }));
+  return (result.results || []) as any[];
+}
+
+async function requireOpenRefundShift(db: D1Database, businessId: string, shiftId?: string | null) {
+  const cleanShiftId = trimText(shiftId, 180);
+  if (!cleanShiftId) throw new PolicyError('Open a till shift before approving a cash refund.', 409);
+  const shift = await db.prepare(`
+    SELECT id, startTime, openingCash, status
+    FROM shifts
+    WHERE id = ? AND businessId = ?
+    LIMIT 1
+  `).bind(cleanShiftId, businessId).first<any>();
+  if (!shift) throw new PolicyError('The selected till shift was not found.', 404);
+  if (String(shift.status || '').toUpperCase() !== 'OPEN') throw new PolicyError('Only an open till shift can approve a cash refund.', 409);
+  return shift;
+}
+
+async function availableTillCashForShift(db: D1Database, businessId: string, shift: any, until: number): Promise<number> {
+  const shiftId = trimText(shift?.id, 180);
+  const since = asNumber(shift?.startTime);
+  const openingCash = asNumber(shift?.openingCash);
+  if (!shiftId || since <= 0) return 0;
+
+  const [
+    transactions,
+    expenses,
+    picks,
+    refunds,
+    supplierPayments,
+    customerPayments,
+  ] = await Promise.all([
+    safeRows(db, `SELECT total, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+  ]);
+
+  const txRows = transactions.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || '').toUpperCase() === 'PAID');
+  const expenseRows = expenses.filter(row => recordInShift(row, since, until, shiftId) && String(row.source || '').toUpperCase() === 'TILL' && String(row.status || '').toUpperCase() !== 'REJECTED');
+  const pickRows = picks.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED');
+  const refundRows = refunds.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || 'APPROVED').toUpperCase() !== 'REJECTED');
+  const supplierRows = supplierPayments.filter(row => recordInShift(row, since, until, shiftId) && String(row.source || '').toUpperCase() === 'TILL');
+  const customerRows = customerPayments.filter(row => recordInShift(row, since, until, shiftId) && String(row.paymentMethod || '').toUpperCase() === 'CASH');
+
+  const cashSales = txRows.reduce((sum, row) => sum + paymentAmount(row, 'CASH'), 0);
+  const customerCashPayments = customerRows.reduce((sum, row) => sum + asNumber(row.amount), 0);
+  const tillExpenses = expenseRows.reduce((sum, row) => sum + asNumber(row.amount), 0);
+  const picked = pickRows.reduce((sum, row) => sum + asNumber(row.amount), 0);
+  const cashRefunds = refundRows.reduce((sum, row) => sum + cashRefundAmount(row), 0);
+  const supplierTillPayments = supplierRows.reduce((sum, row) => sum + asNumber(row.amount), 0);
+
+  return Math.max(0, roundMoney(openingCash + cashSales + customerCashPayments - tillExpenses - picked - supplierTillPayments - cashRefunds));
+}
+
+function makeRefundNumber(now: number) {
+  const day = new Date(now).toISOString().slice(2, 10).replace(/-/g, '');
+  return `REF-${day}-${String(now).slice(-5)}`;
 }
 
 function refundDocumentItems(transaction: any, lines: RefundLine[]) {
@@ -491,6 +599,7 @@ export async function prepareRefundApproval(db: D1Database, args: {
   itemsToReturn?: RefundLine[];
   approvedBy?: string;
   idempotencyKey?: string;
+  shiftId?: string;
 }) {
   if (!args.service && !APPROVER_ROLES.has(args.principal.role)) {
     throw new PolicyError('You are not allowed to approve refunds.', 403);
@@ -520,12 +629,14 @@ export async function prepareRefundApproval(db: D1Database, args: {
   const lines = refundLinesFor(tx, args.itemsToReturn);
   if (lines.length === 0) throw new PolicyError('No refundable items selected.', 400);
   const refundAmount = refundAmountFor(tx, lines);
-  const originalCashPaid = cashPaidAmount(tx);
-  const proportionalCashRefund = asNumber(tx.total) > 0 ? refundAmount * (originalCashPaid / asNumber(tx.total)) : 0;
-  const cashRefundAmount = roundMoney(Math.min(refundAmount, Math.max(0, proportionalCashRefund)));
-  const refundSource = refundSourceFor(tx, cashRefundAmount, refundAmount);
   const statements: D1PreparedStatement[] = [];
   const now = Date.now();
+  const refundShift = await requireOpenRefundShift(db, args.businessId, args.shiftId);
+  const availableCash = await availableTillCashForShift(db, args.businessId, refundShift, now);
+  if (availableCash + 0.01 < refundAmount) {
+    throw new PolicyError(`Till has Ksh ${availableCash.toLocaleString()} available. Add cash before refunding Ksh ${refundAmount.toLocaleString()}.`, 409);
+  }
+  const cashRefundAmount = refundAmount;
   const idemStatement = idempotencyStatement(db, {
     businessId: args.businessId,
     transactionId: tx.id,
@@ -533,25 +644,6 @@ export async function prepareRefundApproval(db: D1Database, args: {
     cashierName: args.principal.userName || null,
   });
   if (idemStatement) statements.push(idemStatement);
-
-  if (cashRefundAmount > 0) {
-    const cashAccount = await db.prepare(`
-      SELECT id, balance
-      FROM financialAccounts
-      WHERE businessId = ?
-        AND type = 'CASH'
-        AND COALESCE(accountNumber, '') <> 'PICKED-CASH'
-        AND id NOT LIKE 'picked_cash_%'
-      LIMIT 1
-    `).bind(args.businessId).first<any>();
-    if (cashAccount) {
-      if (asNumber(cashAccount.balance) < cashRefundAmount) throw new PolicyError('Insufficient cash account balance for this refund.', 409);
-      statements.push(
-        db.prepare(`UPDATE financialAccounts SET balance = balance - ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-          .bind(cashRefundAmount, now, cashAccount.id, args.businessId)
-      );
-    }
-  }
 
   const movementDedupe = new Map<string, number>();
   for (const line of lines) {
@@ -587,7 +679,7 @@ export async function prepareRefundApproval(db: D1Database, args: {
         now,
         `Return #${txRef}`,
         args.businessId,
-        tx.shiftId || null,
+        refundShift.id || null,
         now,
       )
     );
@@ -605,21 +697,23 @@ export async function prepareRefundApproval(db: D1Database, args: {
   tx.approvedBy = trimText(args.approvedBy || args.principal.userName, 120);
   tx.updated_at = now;
   const refundId = `refund_${tx.id}_${now}`;
+  const refundNumber = makeRefundNumber(now);
   const receiptNumber = trimText(tx.receiptNumber || tx.invoiceNumber || tx.id, 160);
   const refundDocument = {
     id: refundId,
+    refundNumber,
     originalTransactionId: tx.id,
     receiptNumber,
     amount: refundAmount,
     cashAmount: cashRefundAmount,
-    paymentMethod: String(tx.paymentMethod || 'CASH').toUpperCase(),
-    source: refundSource,
+    paymentMethod: 'CASH',
+    source: 'TILL',
     items: refundDocumentItems(tx, lines),
     timestamp: now,
     cashierName: args.principal.userName || null,
     approvedBy: tx.approvedBy,
     status: 'APPROVED',
-    shiftId: tx.shiftId || null,
+    shiftId: refundShift.id || null,
     businessId: args.businessId,
     updated_at: now,
   };
@@ -633,10 +727,11 @@ export async function prepareRefundApproval(db: D1Database, args: {
   );
   statements.push(
     db.prepare(`
-      INSERT INTO refunds (id, originalTransactionId, receiptNumber, amount, cashAmount, paymentMethod, source, items, timestamp, cashierName, approvedBy, status, shiftId, businessId, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO refunds (id, refundNumber, originalTransactionId, receiptNumber, amount, cashAmount, paymentMethod, source, items, timestamp, cashierName, approvedBy, status, shiftId, businessId, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       refundDocument.id,
+      refundDocument.refundNumber,
       refundDocument.originalTransactionId,
       refundDocument.receiptNumber,
       refundDocument.amount,
