@@ -32,6 +32,8 @@ const parseList = (value: any): any[] => {
   return [];
 };
 
+const RECEIPT_PREVIEW_WIDTH_REM = 20;
+
 const moneyText = (value: unknown) => `Ksh ${(Number(value) || 0).toLocaleString()}`;
 
 function documentLabel(record: any) {
@@ -196,8 +198,13 @@ export default function DocumentPdfModalView({
   if (!selectedRecord) return null;
 
   const close = () => setSelectedRecord(null);
-  const viewerMode = isZoomCustom || isReceiptSized ? `zoom=${pdfZoom}` : 'view=FitH';
-  const viewerUrl = objectUrl ? `${objectUrl}#toolbar=0&navpanes=0&scrollbar=1&${viewerMode}` : '';
+  const viewerUrl = objectUrl ? `${objectUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH` : '';
+  const frameWidth = isReceiptSized
+    ? `${RECEIPT_PREVIEW_WIDTH_REM * (pdfZoom / 100)}rem`
+    : isZoomCustom
+      ? `${pdfZoom}%`
+      : '100%';
+  const frameMaxWidth = isReceiptSized ? 'none' : '100%';
 
   const changeZoom = (delta: number) => {
     setIsZoomCustom(true);
@@ -347,9 +354,9 @@ export default function DocumentPdfModalView({
           </div>
         </header>
 
-        <div className={`min-h-0 flex-1 bg-slate-200 ${isReceiptSized ? 'overflow-auto p-3 sm:p-5' : 'p-0 sm:p-3'}`}>
+        <div className={`min-h-0 flex-1 overflow-auto bg-slate-200 ${isReceiptSized ? 'p-3 sm:p-5' : 'p-0 sm:p-3'}`}>
           {viewerUrl ? (
-            <div className={isReceiptSized ? 'mx-auto h-full w-full max-w-[24rem]' : 'h-full w-full'}>
+            <div className="flex min-h-full w-full flex-col">
               <div className="mb-2 flex items-center justify-center gap-1 sm:hidden">
                 <button
                   type="button"
@@ -379,12 +386,18 @@ export default function DocumentPdfModalView({
                   <ZoomIn size={16} />
                 </button>
               </div>
-              <iframe
-                ref={iframeRef}
-                src={viewerUrl}
-                title={title}
-                className="h-[calc(100%-2.75rem)] w-full border-0 bg-white sm:h-full sm:rounded-lg sm:shadow-sm"
-              />
+              <div
+                className="mx-auto min-h-0 flex-1"
+                style={{ width: frameWidth, maxWidth: frameMaxWidth }}
+              >
+                <iframe
+                  key={`${viewerUrl}-${pdfZoom}-${isZoomCustom ? 'custom' : 'fit'}-${isReceiptSized ? 'receipt' : 'page'}`}
+                  ref={iframeRef}
+                  src={viewerUrl}
+                  title={title}
+                  className="h-full min-h-[28rem] w-full border-0 bg-white sm:min-h-full sm:rounded-lg sm:shadow-sm"
+                />
+              </div>
             </div>
           ) : (
             <div className="flex h-full items-center justify-center bg-white text-sm font-bold text-slate-500">
