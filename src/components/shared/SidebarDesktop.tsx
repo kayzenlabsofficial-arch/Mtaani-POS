@@ -81,7 +81,7 @@ export default function SidebarDesktop({
           onClick={() => onTabChange('DASHBOARD')}
           className="mb-6 text-left"
         >
-          <span className="block text-xl font-black leading-tight text-white">Mtaani POS</span>
+          <span className="block text-xl font-black leading-tight text-white">Smart POS</span>
           <span className="mt-1 block text-xs font-semibold text-blue-200/70">Fast retail desk</span>
         </button>
 

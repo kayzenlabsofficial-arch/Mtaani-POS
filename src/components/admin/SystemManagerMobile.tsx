@@ -38,12 +38,12 @@ export function ManageBusinessModal({ business, onClose }: ManageBusinessModalPr
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleResetPassword = async (userId: string, userName: string) => {
-    if (!confirm(`Reset password for ${userName}?`)) return;
+    if (!confirm(`Reset password for ${userName} to 1234 and require setup on next login?`)) return;
     setIsProcessing(true);
     try {
       const result = await StaffService.resetPassword({ userId, businessId: business.id });
       await db.users.reload();
-      success(`Temporary password for ${userName}: ${result.temporaryPassword || 'generated on server'}`);
+      success(`Password reset for ${userName} to ${result.temporaryPassword || '1234'}. They must create a new password on next login.`);
     } catch {
       error('Reset failed.');
     } finally {
@@ -98,7 +98,14 @@ export function ManageBusinessModal({ business, onClose }: ManageBusinessModalPr
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-white">{user.name}</p>
-                      <p className="text-[10px] font-bold uppercase tracking-tighter text-slate-500">{sentenceValue(user.role)}</p>
+                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+                        <p className="text-[10px] font-bold uppercase tracking-tighter text-slate-500">{sentenceValue(user.role)}</p>
+                        {Number(user.mustChangePassword || 0) === 1 && (
+                          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-amber-300">
+                            Setup required
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <button
@@ -156,7 +163,7 @@ export default function SystemManagerDashboardMobile({ onLogout }: { onLogout: (
       const result = await BusinessAdminService.create({ name: form.name.trim(), code: trimmedCode });
       setForm({ name: '', code: '' });
       await Promise.allSettled([db.businesses.reload(), db.users.reload()]);
-      alert(`Business created. Login: username admin, temporary password ${result.adminPassword}`);
+      alert(`Business created. Login: username admin, password ${result.adminPassword || '1234'}. This is one-time; they must create their own admin account on first login.`);
     } catch (err: any) {
       console.error(err);
       alert(`Failed to create business: ${err.message || 'Unknown error'}`);
@@ -193,11 +200,11 @@ export default function SystemManagerDashboardMobile({ onLogout }: { onLogout: (
             <form onSubmit={handleCreate} className="space-y-6">
               <label className="block">
                 <span className="ml-2 block text-[10px] font-bold uppercase tracking-widest text-slate-500">Business name</span>
-                <input type="text" placeholder="e.g. Mtaani Mart" className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-5 py-3 text-sm font-bold outline-none transition-all focus:border-primary" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+                <input type="text" placeholder="e.g. Smart Mart" className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-5 py-3 text-sm font-bold outline-none transition-all focus:border-primary" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
               </label>
               <label className="block">
                 <span className="ml-2 block text-[10px] font-bold uppercase tracking-widest text-slate-500">Login code</span>
-                <input type="text" placeholder="e.g. MTAANI1" className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-5 py-3 text-sm font-bold outline-none transition-all focus:border-primary" value={form.code} onChange={e => setForm({ ...form, code: e.target.value.toUpperCase() })} />
+                <input type="text" placeholder="e.g. SMART1" className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-5 py-3 text-sm font-bold outline-none transition-all focus:border-primary" value={form.code} onChange={e => setForm({ ...form, code: e.target.value.toUpperCase() })} />
               </label>
               <button type="submit" className="w-full rounded-xl bg-primary py-4 text-xs font-black uppercase tracking-widest shadow-lg shadow-primary/20 transition-all hover:bg-primary-container active:scale-[0.98]">Save business</button>
             </form>

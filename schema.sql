@@ -1,5 +1,5 @@
 -- ============================================================
--- MTAANI POS - DEFINITIVE D1 SCHEMA (matches Dexie exactly)
+-- SMART POS - DEFINITIVE D1 SCHEMA (matches Dexie exactly)
 -- Run with: npx wrangler d1 execute mtaani_pos_db --remote --file=schema.sql
 -- ============================================================
 
@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS users (
     password TEXT NOT NULL,
     role TEXT NOT NULL,
     businessId TEXT,
+    mustChangePassword INTEGER DEFAULT 0,
+    isBootstrapAdmin INTEGER DEFAULT 0,
     updated_at INTEGER
 );
 

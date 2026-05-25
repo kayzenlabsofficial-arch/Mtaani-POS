@@ -594,6 +594,16 @@ export class CloudTable<T extends { id: string }> {
     emitChange();
   }
 
+  async cacheLocal(item: T | any): Promise<void> {
+    const scope = await this.currentScope();
+    this.clearIfScopeChanged(scope.key);
+    const stamped = this.stamp(item) as T;
+    this.cache.set(stamped.id, stamped);
+    this.loaded = true;
+    this.loadedScopeKey = scope.key;
+    emitChange();
+  }
+
   // Force reload from D1 (use after external changes)
   async reload(): Promise<void> {
     this.loaded = false;

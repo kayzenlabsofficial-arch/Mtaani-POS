@@ -89,7 +89,7 @@ function secureJsonHeaders() {
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS businesses (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, isActive INTEGER DEFAULT 1, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL, businessId TEXT, mustChangePassword INTEGER DEFAULT 0, isBootstrapAdmin INTEGER DEFAULT 0, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, sellingPrice REAL NOT NULL, costPrice REAL, discountType TEXT DEFAULT 'NONE', discountValue REAL DEFAULT 0, taxCategory TEXT NOT NULL, stockQuantity REAL NOT NULL, unit TEXT, barcode TEXT NOT NULL, imageUrl TEXT, reorderPoint REAL, supplierIds TEXT, expiryTracking INTEGER DEFAULT 0, expiryDate INTEGER, isBundle INTEGER DEFAULT 0, components TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId);
@@ -179,6 +179,17 @@ async function ensureCoreSchema(db: D1Database): Promise<void> {
   for (const statement of statements) {
     try { await db.prepare(statement).run(); } catch {}
   }
+  await ensureUserSetupColumns(db);
+}
+
+async function ensureUserSetupColumns(db: D1Database): Promise<void> {
+  const columns = [
+    'mustChangePassword INTEGER DEFAULT 0',
+    'isBootstrapAdmin INTEGER DEFAULT 0',
+  ];
+  for (const column of columns) {
+    try { await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run(); } catch {}
+  }
 }
 
 async function ensureHrSchema(db: D1Database): Promise<void> {
@@ -193,6 +204,61 @@ async function ensureHrSchema(db: D1Database): Promise<void> {
     'CREATE INDEX IF NOT EXISTS idx_hrPayrollAdjustments_staff_date ON hrPayrollAdjustments(businessId, staffId, effectiveDate)',
   ];
   for (const statement of statements) await db.prepare(statement).run();
+}
+
+async function ensureSettingsSchema(db: D1Database): Promise<void> {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS settings (
+      id TEXT PRIMARY KEY,
+      storeName TEXT NOT NULL,
+      location TEXT,
+      tillNumber TEXT,
+      kraPin TEXT,
+      receiptFooter TEXT,
+      ownerModeEnabled INTEGER DEFAULT 0,
+      autoApproveOwnerActions INTEGER DEFAULT 1,
+      cashSweepEnabled INTEGER DEFAULT 1,
+      cashDrawerLimit REAL DEFAULT 5000,
+      salesTills TEXT,
+      defaultOpeningFloat REAL DEFAULT 0,
+      mpesaConsumerKey TEXT,
+      mpesaConsumerSecret TEXT,
+      mpesaPasskey TEXT,
+      mpesaEnv TEXT DEFAULT 'sandbox',
+      mpesaType TEXT DEFAULT 'paybill',
+      mpesaStoreNumber TEXT,
+      accessControl TEXT,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+
+  const columns: Array<[string, string]> = [
+    ['location', 'TEXT'],
+    ['tillNumber', 'TEXT'],
+    ['kraPin', 'TEXT'],
+    ['receiptFooter', 'TEXT'],
+    ['ownerModeEnabled', 'INTEGER DEFAULT 0'],
+    ['autoApproveOwnerActions', 'INTEGER DEFAULT 1'],
+    ['cashSweepEnabled', 'INTEGER DEFAULT 1'],
+    ['cashDrawerLimit', 'REAL DEFAULT 5000'],
+    ['salesTills', 'TEXT'],
+    ['defaultOpeningFloat', 'REAL DEFAULT 0'],
+    ['mpesaConsumerKey', 'TEXT'],
+    ['mpesaConsumerSecret', 'TEXT'],
+    ['mpesaPasskey', 'TEXT'],
+    ['mpesaEnv', "TEXT DEFAULT 'sandbox'"],
+    ['mpesaType', "TEXT DEFAULT 'paybill'"],
+    ['mpesaStoreNumber', 'TEXT'],
+    ['accessControl', 'TEXT'],
+    ['businessId', 'TEXT'],
+    ['updated_at', 'INTEGER'],
+  ];
+  for (const [name, type] of columns) {
+    try {
+      await db.prepare(`ALTER TABLE settings ADD COLUMN ${name} ${type}`).run();
+    } catch {}
+  }
 }
 
 async function ensurePickedCashAccount(db: D1Database, businessId: string) {
@@ -376,6 +442,8 @@ async function hardenUserWrites(db: D1Database, businessId: string, principalRol
 
     item.name = trimText(item.name, 120) || saved?.name || 'Staff Member';
     item.role = role;
+    item.mustChangePassword = Number(item.mustChangePassword ?? saved?.mustChangePassword ?? 0) ? 1 : 0;
+    item.isBootstrapAdmin = Number(item.isBootstrapAdmin ?? saved?.isBootstrapAdmin ?? 0) ? 1 : 0;
     item.updated_at = Date.now();
     delete item[LEGACY_SCOPE_COLUMN];
 
@@ -463,6 +531,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     }
 
     if (HR_TABLES.has(table)) await ensureHrSchema(env.DB);
+    if (table === 'users') await ensureUserSetupColumns(env.DB);
+    if (table === 'settings') await ensureSettingsSchema(env.DB);
     if (table === 'financialAccounts' && businessId) await ensurePickedCashAccount(env.DB, businessId);
     if (table === 'financialAccountAdjustments') await ensureFinancialAccountAdjustmentSchema(env.DB);
     if (table === 'loginAttempts') {

@@ -13,12 +13,14 @@ import type { CheckoutOptions, RegisterCheckoutHandler } from './types';
 export default function RegisterPaymentPanelDesktop({
   onCheckout,
   isCheckingOut,
+  canCheckout = true,
   className = '',
   onCheckoutSuccess,
   showCartItems = true,
 }: {
   onCheckout: RegisterCheckoutHandler;
   isCheckingOut: boolean;
+  canCheckout?: boolean;
   className?: string;
   onCheckoutSuccess?: () => void;
   showCartItems?: boolean;
@@ -106,6 +108,10 @@ export default function RegisterPaymentPanelDesktop({
   React.useEffect(() => {
     if (cart.length === 0) setPaymentWindow(null);
   }, [cart.length]);
+
+  React.useEffect(() => {
+    if (!canCheckout) setPaymentWindow(null);
+  }, [canCheckout]);
 
   React.useEffect(() => {
     setMpesaVerification(null);
@@ -325,7 +331,7 @@ export default function RegisterPaymentPanelDesktop({
 
   const paymentLabel = (method: string) => method === 'MPESA' ? 'M-Pesa' : method === 'CREDIT' ? 'Credit' : 'Cash';
   const checkoutBusy = isCheckingOut || isVerifyingMpesa || mpesaState === 'PUSHING' || mpesaState === 'POLLING';
-  const canCompleteSale = cart.length > 0 && !checkoutBusy;
+  const canCompleteSale = canCheckout && cart.length > 0 && !checkoutBusy;
   const renderPaymentIcon = (method: string, active = false) => {
     if (method === 'MPESA') return <span className={`flex h-9 w-9 items-center justify-center rounded-full border text-xs font-black ${active ? 'border-blue-200 bg-white text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>M</span>;
     const option = paymentOptions.find(item => item.id === method);
@@ -396,15 +402,17 @@ export default function RegisterPaymentPanelDesktop({
               key={id}
               type="button"
               onClick={() => {
+                if (!canCheckout) return;
                 setPaymentMode(id);
                 setPaymentWindow(id);
               }}
+              disabled={!canCheckout}
               data-testid={`payment-${id.toLowerCase()}`}
               className={`min-h-16 rounded-lg border-2 px-2 py-2 text-center shadow-sm transition-all ${
                 paymentMode === id
                   ? 'border-blue-500 bg-blue-50 text-blue-900 ring-2 ring-blue-100'
                   : 'border-slate-300 bg-white text-slate-700 hover:border-blue-300 hover:bg-slate-50'
-              }`}
+              } disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:ring-0`}
             >
               <span className="mx-auto mb-1 flex h-8 items-center justify-center">{renderPaymentIcon(id, paymentMode === id)}</span>
               <span className="block text-[11px] font-bold">{label}</span>
@@ -421,8 +429,13 @@ export default function RegisterPaymentPanelDesktop({
           className="flex min-h-[3.25rem] w-full items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-600 px-4 py-4 text-sm font-black text-white shadow-md shadow-blue-900/10 disabled:cursor-not-allowed disabled:border-slate-500 disabled:bg-slate-400 disabled:shadow-none"
         >
           <MaterialIcon name="payments" style={{ fontSize: '18px' }} />
-          {checkoutBusy ? 'Working...' : 'Complete sale'}
+          {!canCheckout ? 'Sale locked' : checkoutBusy ? 'Working...' : 'Complete sale'}
         </button>
+        {!canCheckout && (
+          <p className="rounded-lg border-2 border-slate-200 bg-slate-50 px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">
+            Admin has locked sale completion
+          </p>
+        )}
       </div>
 
       {paymentWindow && (

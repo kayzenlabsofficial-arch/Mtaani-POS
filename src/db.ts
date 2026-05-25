@@ -39,6 +39,8 @@ export interface User {
   role: 'ADMIN' | 'CASHIER' | 'MANAGER' | 'ROOT';
   businessId: string;
   shopId?: string; // Assigned shop for isolation
+  mustChangePassword?: number | boolean;
+  isBootstrapAdmin?: number | boolean;
   updated_at?: number;
 }
 

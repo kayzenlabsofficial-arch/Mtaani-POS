@@ -122,7 +122,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const id = text(settings.id, fallback.id || `core_${businessId}`, 160);
     const saved = {
       id,
-      storeName: text(settings.storeName, fallback.storeName || 'Mtaani Shop', 160) || 'Mtaani Shop',
+      storeName: text(settings.storeName, fallback.storeName || 'Smart Shop', 160) || 'Smart Shop',
       location: text(settings.location, fallback.location || 'Nairobi, Kenya', 160),
       tillNumber: text(settings.tillNumber, fallback.tillNumber || '', 80),
       kraPin: text(settings.kraPin, fallback.kraPin || '', 80),

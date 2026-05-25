@@ -9,6 +9,7 @@ import { useStore } from '../../store';
 import AdminVerificationModal from './AdminVerificationModalMobile';
 import { useToast } from '../../context/ToastContext';
 import { getBusinessSettings } from '../../utils/settings';
+import { canPerform } from '../../utils/accessControl';
 
 interface DocumentDetailsModalProps {
   selectedRecord: any | null; // Can be Transaction, Expense, or SupplierPayment
@@ -60,6 +61,7 @@ export default function DocumentDetailsModalMobile({ selectedRecord, setSelected
   const [isAdminVerifying, setIsAdminVerifying] = useState(false);
   const { success, error: toastError } = useToast();
   const isAdmin = useStore(state => state.isAdmin);
+  const currentUser = useStore(state => state.currentUser);
   const [isSharing, setIsSharing] = useState(false);
   const [isSavingPDF, setIsSavingPDF] = useState(false);
   const [isHardwarePrinting, setIsHardwarePrinting] = useState(false);
@@ -67,7 +69,8 @@ export default function DocumentDetailsModalMobile({ selectedRecord, setSelected
 
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
-  const storeName = businessSettings?.storeName || 'Mtaani POS';
+  const canRequestRefund = canPerform(currentUser, 'sale.refund.request', businessSettings);
+  const storeName = businessSettings?.storeName || 'Smart POS';
   const storeLocation = businessSettings?.location || 'Nairobi, Kenya';
   // Fetch contextual data based on record type
   const supplier = useLiveQuery(
@@ -1070,7 +1073,7 @@ export default function DocumentDetailsModalMobile({ selectedRecord, setSelected
               </button>
             </div>
             
-            {isSale && (
+            {isSale && canRequestRefund && (
                 isReturnMode ? (
                   <button 
                     onClick={onInitiateRefund}

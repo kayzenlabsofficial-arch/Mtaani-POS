@@ -10,6 +10,7 @@ export default function RegisterMobile({
   saleItemCount,
   saleTotal,
   isCheckingOut,
+  canCheckout,
   isMobileCheckoutOpen,
   onOpenMobileCheckout,
   onCloseMobileCheckout,
@@ -19,6 +20,7 @@ export default function RegisterMobile({
   saleItemCount: number;
   saleTotal: number;
   isCheckingOut: boolean;
+  canCheckout: boolean;
   isMobileCheckoutOpen: boolean;
   onOpenMobileCheckout: (event?: React.SyntheticEvent) => void;
   onCloseMobileCheckout: () => void;
@@ -37,13 +39,13 @@ export default function RegisterMobile({
             onClick={onOpenMobileCheckout}
             onPointerDown={onOpenMobileCheckout}
             onTouchStart={onOpenMobileCheckout}
-            disabled={isCheckingOut}
+            disabled={isCheckingOut || !canCheckout}
             aria-busy={isCheckingOut}
             data-busy={isCheckingOut ? 'true' : undefined}
             data-testid="mobile-checkout"
             className="rounded-lg border-2 border-blue-700 bg-blue-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white disabled:border-slate-500 disabled:bg-slate-400"
           >
-            {isCheckingOut ? 'Saving' : 'Checkout'}
+            {!canCheckout ? 'Locked' : isCheckingOut ? 'Saving' : 'Checkout'}
           </button>
         </div>
       )}
@@ -79,6 +81,7 @@ export default function RegisterMobile({
                 onCheckout={onCheckout}
                 onCheckoutSuccess={onCloseMobileCheckout}
                 isCheckingOut={isCheckingOut}
+                canCheckout={canCheckout}
                 showCartItems={false}
                 className="h-full max-h-full min-h-0 rounded-lg border-0 shadow-none"
               />

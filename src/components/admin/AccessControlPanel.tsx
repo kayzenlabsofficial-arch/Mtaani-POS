@@ -120,12 +120,12 @@ export default function AccessControlPanel() {
     if (!activeBusinessId || isSaving) return;
     setIsSaving(true);
     try {
-      await BusinessSettingsService.save({
+      const result = await BusinessSettingsService.save({
         businessId: activeBusinessId,
         settings: {
           ...(businessSettings || {}),
           id: businessSettings?.id || settingsIdForBusiness(activeBusinessId),
-          storeName: businessSettings?.storeName || 'Mtaani Shop',
+          storeName: businessSettings?.storeName || 'Smart Shop',
           location: businessSettings?.location || 'Nairobi, Kenya',
           tillNumber: businessSettings?.tillNumber || '',
           kraPin: businessSettings?.kraPin || '',
@@ -134,7 +134,8 @@ export default function AccessControlPanel() {
           businessId: activeBusinessId,
         },
       });
-      await db.settings.reload();
+      if (result.settings) await db.settings.cacheLocal(result.settings);
+      await db.settings.reload().catch(() => {});
       setIsEditing(false);
       success('Access controls saved.');
     } catch (err: any) {

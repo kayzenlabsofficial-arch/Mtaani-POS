@@ -53,7 +53,7 @@ export default function ReceiptDetailsModalDesktop({ selectedReceipt, setSelecte
          <div id="printable-content" className="print-receipt-80mm">
            <div className="p-6 bg-white sm:bg-slate-50 border-b border-slate-100 flex flex-col items-center">
                <ReceiptText size={32} className="text-slate-400 mb-2 no-print" />
-               <h2 className="text-lg font-black text-slate-900  tracking-tighter">Mtaani POS receipt</h2>
+               <h2 className="text-lg font-black text-slate-900  tracking-tighter">Smart POS receipt</h2>
                <p className="text-[10px] font-bold text-slate-500 ">Transaction ID: {selectedReceipt.id.split('-')[0].toUpperCase()}</p>
                <p className="text-[10px] font-bold text-slate-400 mt-0.5">{new Date(selectedReceipt.timestamp).toLocaleString()}</p>
                <div className={`mt-3 text-[10px] font-black px-2 py-0.5 rounded border  no-print ${selectedReceipt.status === 'PAID' ? 'bg-green-100 text-green-700 border-green-200' : selectedReceipt.status === 'QUOTE' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-orange-100 text-orange-700 border-orange-200'}`}>

@@ -263,7 +263,7 @@ export default function RegisterTab({
     }
     const hasCashDrawerEvent = receipt.paymentMethod === 'CASH' || Number(receipt.splitPayments?.cashAmount || 0) > 0;
     const result = await printReceiptViaAssignedPrinter(receipt, {
-      storeName: businessSettings?.storeName || 'Mtaani POS',
+      storeName: businessSettings?.storeName || 'Smart POS',
       location: businessSettings?.location || 'Nairobi, Kenya',
       openDrawer: profile.cashDrawerTrigger === 'RECEIPT_PRINT' && hasCashDrawerEvent,
     });
@@ -306,6 +306,7 @@ export default function RegisterTab({
   const saleItemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
   const selectedProductCount = cart.length;
   const isProductSearchOpen = searchQuery.trim().length > 0;
+  const canCheckout = canPerform(currentUser, 'sale.checkout', businessSettings);
 
   React.useEffect(() => {
     if (cart.length === 0) setIsMobileCheckoutOpen(false);
@@ -393,6 +394,7 @@ export default function RegisterTab({
           saleItemCount={saleItemCount}
           saleTotal={saleTotal}
           isCheckingOut={isCheckingOut}
+          canCheckout={canCheckout}
           isMobileCheckoutOpen={isMobileCheckoutOpen}
           onOpenMobileCheckout={openMobileCheckout}
           onCloseMobileCheckout={closeMobileCheckout}
@@ -407,6 +409,7 @@ export default function RegisterTab({
           saleTotal={saleTotal}
           heldOrders={scopedHeldOrders}
           isCheckingOut={isCheckingOut}
+          canCheckout={canCheckout}
           onCheckout={completeCheckout}
           onHoldOrder={handleHoldOrder}
           onOpenHeldOrders={openHeldOrders}

@@ -10,15 +10,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
+const DEFAULT_ADMIN_PASSWORD = '1234';
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...corsHeaders },
   });
-}
-
-function temporaryPassword() {
-  return `MT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
 async function ensureSchema(db: D1Database) {
@@ -36,6 +34,8 @@ async function ensureSchema(db: D1Database) {
   const userColumns = [
     'pin TEXT',
     'updated_at INTEGER',
+    'mustChangePassword INTEGER DEFAULT 0',
+    'isBootstrapAdmin INTEGER DEFAULT 0',
   ];
   for (const column of userColumns) {
     try { await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run(); } catch {}
@@ -63,12 +63,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const now = Date.now();
     const businessId = crypto.randomUUID();
     const userId = crypto.randomUUID();
-    const adminPassword = temporaryPassword();
+    const adminPassword = DEFAULT_ADMIN_PASSWORD;
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO businesses (id, name, code, isActive, updated_at) VALUES (?, ?, ?, ?, ?)`)
         .bind(businessId, name, code, 1, now),
-      env.DB.prepare(`INSERT INTO users (id, name, password, role, businessId, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
-        .bind(userId, 'admin', await hashPassword(adminPassword), 'ADMIN', businessId, now),
+      env.DB.prepare(`INSERT INTO users (id, name, password, role, businessId, mustChangePassword, isBootstrapAdmin, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(userId, 'admin', await hashPassword(adminPassword), 'ADMIN', businessId, 1, 1, now),
       env.DB.prepare(`INSERT INTO financialAccounts (id, name, type, balance, businessId, accountNumber, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
         .bind(`picked_cash_${businessId}`, 'Main account', 'CASH', 0, businessId, 'PICKED-CASH', now),
     ]);

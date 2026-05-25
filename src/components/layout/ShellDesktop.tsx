@@ -36,7 +36,7 @@ export function TopHeaderDesktop({
           </div>
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-xs font-black uppercase leading-none tracking-widest text-slate-900">
-              {activeBusiness?.name || 'Mtaani POS'}
+              {activeBusiness?.name || 'Smart POS'}
             </span>
             <span className="mt-0.5 truncate text-[10px] font-semibold text-slate-500">
               {shopName}

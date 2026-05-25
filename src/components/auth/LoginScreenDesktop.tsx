@@ -23,7 +23,7 @@ export default function LoginScreenDesktop({
           <div className="mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-3xl border border-white/20 bg-white/20 shadow-2xl backdrop-blur-sm">
             <ShoppingCart className="h-12 w-12 text-white" strokeWidth={2.5} />
           </div>
-          <h1 className="mb-4 text-5xl font-black tracking-tight text-white">Mtaani POS</h1>
+          <h1 className="mb-4 text-5xl font-black tracking-tight text-white">Smart POS</h1>
           <p className="mx-auto max-w-xs text-lg font-medium leading-relaxed text-blue-100">
             Simple sales, stock, and money tracking for Kenyan businesses.
           </p>
@@ -61,7 +61,7 @@ export default function LoginScreenDesktop({
                 <Building2 className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" strokeWidth={2.2} />
                 <input
                   type="text"
-                  placeholder="e.g. MTAANI01"
+                  placeholder="e.g. SMART01"
                   className="w-full rounded-2xl border border-slate-800 bg-slate-900 py-4 pl-12 pr-5 text-sm font-bold text-white outline-none transition-all placeholder:text-slate-600 focus:border-primary focus:ring-2 focus:ring-primary/20"
                   value={businessCode}
                   onChange={(event) => setBusinessCode(event.target.value.toUpperCase())}

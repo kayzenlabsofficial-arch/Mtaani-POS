@@ -38,6 +38,7 @@ import SettingsTab from './components/tabs/SettingsTab';
 import Sidebar from './components/shared/Sidebar';
 import { MobileNav, MobileRegisterFab, MoreOptionsMenu, TopHeaderDesktop, TopHeaderMobile } from './components/layout/Shell';
 import { LoginScreen } from './components/auth/LoginScreen';
+import AccountSetupScreen from './components/auth/AccountSetupScreen';
 import SystemManagerDashboard from './components/admin/SystemManager';
 
 // Modals
@@ -79,7 +80,9 @@ export default function MtaaniPOS() {
     kraPin: businessSettings?.kraPin,
   }), [activeBusiness?.name, businessSettings]);
   const activeShift = useStore(state => state.activeShift);
+  const setCurrentUser = useStore(state => state.setCurrentUser);
   const isRegisterTab = activeTab === 'REGISTER';
+  const requiresAccountSetup = !!currentUser && Number(currentUser.mustChangePassword || 0) === 1;
   const canSeeSalesData = currentUser?.role === 'ADMIN' || currentUser?.role === 'ROOT'
     || (canOpenTab(currentUser, businessSettings, 'DASHBOARD') && !shouldBlurFeature(currentUser, businessSettings, 'dashboard.moneyBreakdown'));
 
@@ -91,6 +94,13 @@ export default function MtaaniPOS() {
     navigateToTab(tab);
   }, [businessSettings, currentUser, error, navigateToTab]);
   const activeTabLocked = !!currentUser && !canOpenTab(currentUser, businessSettings, activeTab);
+  const openExpenseWorkflow = React.useCallback(() => {
+    if (!canPerform(currentUser, 'expense.create', businessSettings)) {
+      error('Creating expenses is locked for this account.');
+      return;
+    }
+    setIsExpenseModalOpen(true);
+  }, [businessSettings, currentUser, error, setIsExpenseModalOpen]);
 
   React.useEffect(() => {
     if (activeBusinessId && !activeShopId) setActiveShopId(SINGLE_SHOP_ID);
@@ -229,6 +239,12 @@ export default function MtaaniPOS() {
     }
   };
 
+  const handleAccountSetupComplete = React.useCallback((user: any) => {
+    setCurrentUser({ ...user, password: '' });
+    void db.users.reload().catch(() => {});
+    success('Account setup complete.');
+  }, [setCurrentUser, success]);
+
   if (isSystemAdmin) {
     return <SystemManagerDashboard onLogout={handleLogout} />;
   }
@@ -241,6 +257,17 @@ export default function MtaaniPOS() {
         password={password} setPassword={setPassword}
         handleLogin={handleLogin} isLoggingIn={isLoggingIn}
         loginError={loginError} isOnline={isOnline}
+      />
+    );
+  }
+
+  if (requiresAccountSetup) {
+    return (
+      <AccountSetupScreen
+        currentUser={currentUser}
+        isOnline={isOnline}
+        onComplete={handleAccountSetupComplete}
+        onLogout={handleLogout}
       />
     );
   }
@@ -296,7 +323,7 @@ export default function MtaaniPOS() {
             ) : (
               <>
                 {activeTab === 'REGISTER' && <RegisterTab toggleCart={toggleCart} handleCheckout={handleCheckout} setActiveTab={openAllowedTab} />}
-                {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={openAllowedTab} openExpenseModal={() => setIsExpenseModalOpen(true)} />}
+                {activeTab === 'DASHBOARD' && <DashboardTab setActiveTab={openAllowedTab} openExpenseModal={openExpenseWorkflow} />}
                 {activeTab === 'TILLS' && <TillsTab />}
                 {activeTab === 'INVENTORY' && <InventoryTab />}
                 {activeTab === 'CUSTOMERS' && <CustomersTab />}

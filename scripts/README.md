@@ -1,6 +1,6 @@
 # Database Setup Script
 
-This script provides a comprehensive way to initialize and seed the MTAANI POS database for Cloudflare D1 deployment.
+This script provides a comprehensive way to initialize and seed the SMART POS database for Cloudflare D1 deployment.
 
 ## Overview
 
@@ -49,7 +49,7 @@ node scripts/db-setup.js --help
 
 The script uses the following environment variables:
 
-- `API_SECRET` or `MTAANI_API_SECRET`: service API secret for authentication. There is no default secret.
+- `API_SECRET` or `SMART_API_SECRET`: service API secret for authentication. Legacy `MTAANI_API_SECRET` is still accepted.
 - `API_BASE_URL`: Base URL for API calls (defaults to `http://localhost:8788`)
 
 ## Configuration

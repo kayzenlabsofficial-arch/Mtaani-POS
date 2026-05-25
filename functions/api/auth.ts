@@ -21,6 +21,8 @@ async function ensureAuthSchema(db: D1Database) {
   const userColumns = [
     'pin TEXT',
     'updated_at INTEGER',
+    'mustChangePassword INTEGER DEFAULT 0',
+    'isBootstrapAdmin INTEGER DEFAULT 0',
   ];
   for (const column of userColumns) {
     try { await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run(); } catch {}
@@ -57,6 +59,8 @@ function safeUser(user: any) {
     name: user.name,
     role: user.role,
     businessId: user.businessId,
+    mustChangePassword: Number(user.mustChangePassword || 0),
+    isBootstrapAdmin: Number(user.isBootstrapAdmin || 0),
   };
 }
 
@@ -126,7 +130,7 @@ async function handleAuthPost(request: Request, env: Env) {
   }
 
   const user = await env.DB.prepare(`
-    SELECT id, name, role, password, businessId
+    SELECT id, name, role, password, businessId, mustChangePassword, isBootstrapAdmin
     FROM users
     WHERE businessId = ? AND lower(trim(name)) = ?
     LIMIT 1

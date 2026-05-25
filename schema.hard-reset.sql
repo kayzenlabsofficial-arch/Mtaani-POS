@@ -1,4 +1,4 @@
--- MTAANI POS hard reset.
+-- SMART POS hard reset.
 -- This intentionally deletes existing POS tables so the database can be rebuilt
 -- from the current single-shop schema.sql without legacy multi-location columns.
 

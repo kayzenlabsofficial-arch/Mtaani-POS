@@ -62,6 +62,7 @@ export default function RefundsTabMobile({ setActiveTab }: RefundsTabProps) {
     [],
   );
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
+  const canRequestRefund = canPerform(currentUser, 'sale.refund.request', businessSettings);
   
   if (!allTransactions || !allRefunds) {
     return (
@@ -151,12 +152,14 @@ export default function RefundsTabMobile({ setActiveTab }: RefundsTabProps) {
             <span className="text-[10px] font-bold text-rose-600">Vol: Ksh {totalRefundedValue.toLocaleString()}</span>
           </div>
         </div>
-        <button
-          onClick={() => setActiveTab('DOCUMENTS')}
-          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
-        >
-          <Plus size={18} /> Initiate Return
-        </button>
+        {canRequestRefund && (
+          <button
+            onClick={() => setActiveTab('DOCUMENTS')}
+            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
+          >
+            <Plus size={18} /> Initiate Return
+          </button>
+        )}
       </div>
 
       {/* Search Bar */}

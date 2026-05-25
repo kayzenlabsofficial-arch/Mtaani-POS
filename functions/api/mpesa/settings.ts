@@ -141,7 +141,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   const settingId = String(body?.settingsId || `core_${businessId}`).trim();
   await env.DB.prepare(`
     INSERT OR IGNORE INTO settings (id, storeName, businessId, updated_at)
-    VALUES (?, 'Mtaani Shop', ?, ?)
+    VALUES (?, 'Smart Shop', ?, ?)
   `).bind(settingId, businessId, Date.now()).run();
   const settings = await env.DB.prepare('SELECT * FROM settings WHERE id = ? AND businessId = ? LIMIT 1')
     .bind(settingId, businessId)

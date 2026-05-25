@@ -333,7 +333,7 @@ const transactionRows = transactions.map(tx => {
     discountReason: null,
     items: json(tx.items),
     timestamp: tx.timestamp,
-    status: 'COMPLETED',
+    status: 'PAID',
     paymentMethod: tx.paymentMethod,
     amountTendered: tx.amountTendered ?? total,
     changeGiven: Math.max(0, Number(tx.amountTendered || total) - total),
@@ -593,10 +593,10 @@ const salesInvoices = [
 ];
 
 const hrStaff = [
-  ['hr_admin', 'Demo Admin', '0700000001', 'admin@mtaani.example', 'Owner', 'Management', 100000, 'MONTHLY'],
-  ['hr_cashier', 'Cashier Demo', '0700000002', 'cashier@mtaani.example', 'Cashier', 'Sales', 28000, 'MONTHLY'],
-  ['hr_manager', 'Manager Demo', '0700000003', 'manager@mtaani.example', 'Shop Manager', 'Operations', 42000, 'MONTHLY'],
-  ['hr_runner', 'Kevin Runner', '0700000004', 'runner@mtaani.example', 'Delivery Rider', 'Delivery', 1200, 'DAILY'],
+  ['hr_admin', 'Demo Admin', '0700000001', 'admin@smartpos.example', 'Owner', 'Management', 100000, 'MONTHLY'],
+  ['hr_cashier', 'Cashier Demo', '0700000002', 'cashier@smartpos.example', 'Cashier', 'Sales', 28000, 'MONTHLY'],
+  ['hr_manager', 'Manager Demo', '0700000003', 'manager@smartpos.example', 'Shop Manager', 'Operations', 42000, 'MONTHLY'],
+  ['hr_runner', 'Kevin Runner', '0700000004', 'runner@smartpos.example', 'Delivery Rider', 'Delivery', 1200, 'DAILY'],
 ].map(([id, fullName, phone, email, roleTitle, department, baseSalary, payCycle]) => ({
   id,
   fullName,
@@ -688,14 +688,14 @@ const users = [
   { id: 'user_manager', name: 'Manager', password: password1234, role: 'MANAGER', businessId, updated_at: now },
 ];
 
-const business = [{ id: businessId, name: 'Mtaani Wines & Spirits', code: 'MTAANI01', isActive: 1, updated_at: now }];
+const business = [{ id: businessId, name: 'Smart Wines & Spirits', code: 'SMART01', isActive: 1, updated_at: now }];
 const settings = [{
-  id: `settings_${businessId}`,
-  storeName: 'Mtaani Wines & Spirits',
+  id: `core_${businessId}`,
+  storeName: 'Smart Wines & Spirits',
   location: 'Nairobi, Kenya',
   tillNumber: '789123',
   kraPin: 'P051234567M',
-  receiptFooter: 'Thank you for shopping with Mtaani Wines & Spirits.',
+  receiptFooter: 'Thank you for shopping with Smart Wines & Spirits.',
   ownerModeEnabled: 1,
   autoApproveOwnerActions: 1,
   cashSweepEnabled: 1,
@@ -758,11 +758,11 @@ const deleteTables = [
 ];
 
 const seedSql = [
-  '-- Wines and spirits demo seed for Mtaani POS.',
+  '-- Wines and spirits demo seed for Smart POS.',
   'PRAGMA foreign_keys = OFF;',
-  ...deleteTables.map(table => `DELETE FROM ${table} WHERE businessId IN (SELECT id FROM businesses WHERE id = ${q(businessId)} OR code IN ('DEMO', 'MTAANI01'));`),
-  "DELETE FROM loginAttempts WHERE id LIKE 'LOGIN:DEMO:%' OR id LIKE 'LOGIN:MTAANI01:%';",
-  `DELETE FROM businesses WHERE id = ${q(businessId)} OR code IN ('DEMO', 'MTAANI01');`,
+  ...deleteTables.map(table => `DELETE FROM ${table} WHERE businessId IN (SELECT id FROM businesses WHERE id = ${q(businessId)} OR code IN ('DEMO', 'SMART01', 'MTAANI01'));`),
+  "DELETE FROM loginAttempts WHERE id LIKE 'LOGIN:DEMO:%' OR id LIKE 'LOGIN:SMART01:%' OR id LIKE 'LOGIN:MTAANI01:%';",
+  `DELETE FROM businesses WHERE id = ${q(businessId)} OR code IN ('DEMO', 'SMART01', 'MTAANI01');`,
   insert('businesses', ['id', 'name', 'code', 'isActive', 'updated_at'], business),
   insert('users', ['id', 'name', 'password', 'role', 'businessId', 'updated_at'], users),
   insert('settings', ['id', 'storeName', 'location', 'tillNumber', 'kraPin', 'receiptFooter', 'ownerModeEnabled', 'autoApproveOwnerActions', 'cashSweepEnabled', 'cashDrawerLimit', 'salesTills', 'defaultOpeningFloat', 'mpesaConsumerKey', 'mpesaConsumerSecret', 'mpesaPasskey', 'mpesaEnv', 'mpesaType', 'mpesaStoreNumber', 'businessId', 'updated_at'], settings),
@@ -795,14 +795,14 @@ if (!skipSchema) {
   runWrangler(['d1', 'execute', databaseName, target, '--file', path.join(root, 'schema.sql')]);
 }
 
-const tempDir = await mkdtemp(path.join(tmpdir(), 'mtaani-wines-seed-'));
+const tempDir = await mkdtemp(path.join(tmpdir(), 'smartpos-wines-seed-'));
 const seedPath = path.join(tempDir, 'seed-wines-spirits-demo.sql');
 
 try {
   await writeFile(seedPath, seedSql, 'utf8');
   runWrangler(['d1', 'execute', databaseName, target, '--file', seedPath]);
-  console.log('\nSeed complete: Mtaani Wines & Spirits');
-  console.log('Business code: MTAANI01');
+  console.log('\nSeed complete: Smart Wines & Spirits');
+  console.log('Business code: SMART01');
   console.log('Admin login: admin / 1234');
   console.log('Cashier login: Cashier / 1234');
   console.log('Manager login: Manager / 1234');

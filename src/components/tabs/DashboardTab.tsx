@@ -840,7 +840,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         `Shift-${(savedCloseRecord.tillName || 'Till').replace(/\s+/g, '-')}-${new Date(now).toISOString().slice(0, 10)}`,
         undefined,
         true,
-        businessSettings?.storeName || 'Mtaani POS',
+        businessSettings?.storeName || 'Smart POS',
         businessSettings?.location || activeShop?.location || 'Nairobi, Kenya',
       ).catch((pdfErr) => {
         console.warn('Could not download shift PDF', pdfErr);

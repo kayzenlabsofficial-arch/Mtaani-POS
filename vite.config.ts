@@ -6,7 +6,7 @@ import { defineConfig, type Plugin } from 'vite';
 
 function productionJsObfuscator(): Plugin {
   return {
-    name: 'mtaani-production-js-obfuscator',
+    name: 'smart-pos-production-js-obfuscator',
     apply: 'build',
     enforce: 'post',
     async generateBundle(_, bundle) {
@@ -55,9 +55,9 @@ export default defineConfig(() => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}']
         },
         manifest: {
-          name: 'Mtaani POS',
-          short_name: 'Mtaani',
-          description: 'Premium Cloud POS for Kenyan Businesses',
+          name: 'Smart POS',
+          short_name: 'Smart POS',
+          description: 'Cloud POS for retail businesses',
           theme_color: '#2563eb',
           icons: [
             {
@@ -76,7 +76,7 @@ export default defineConfig(() => {
       productionJsObfuscator()
     ],
     define: {
-      'process.env.DEFAULT_BUSINESS_CODE': JSON.stringify('MTAANI01'),
+      'process.env.DEFAULT_BUSINESS_CODE': JSON.stringify('SMART01'),
       '__BUILD_DATE__': JSON.stringify(new Date().toLocaleString('en-GB', { 
         day: '2-digit', month: 'short', year: 'numeric', 
         hour: '2-digit', minute: '2-digit' 

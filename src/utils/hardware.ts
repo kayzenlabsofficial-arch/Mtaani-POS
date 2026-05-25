@@ -572,7 +572,7 @@ function escposBytes(text: string, options: { cut?: boolean; drawerPulse?: boole
   return new Uint8Array(chunks);
 }
 
-export function buildEscPosReceipt(record: any, storeName = 'Mtaani POS', location = 'Nairobi, Kenya') {
+export function buildEscPosReceipt(record: any, storeName = 'Smart POS', location = 'Nairobi, Kenya') {
   const items = Array.isArray(record?.items) ? record.items : [];
   const ref = cleanText(record?.invoiceNumber || String(record?.id || '').split('-')[0]).toUpperCase() || 'SALE';
   const createdAt = new Date(record?.timestamp || record?.issueDate || Date.now());
@@ -629,7 +629,7 @@ export function buildEscPosReceipt(record: any, storeName = 'Mtaani POS', locati
   return `${rows.join('\n')}\n`;
 }
 
-export async function testAssignedReceiptPrinter(storeName = 'Mtaani POS', location = 'Nairobi, Kenya'): Promise<HardwareResult> {
+export async function testAssignedReceiptPrinter(storeName = 'Smart POS', location = 'Nairobi, Kenya'): Promise<HardwareResult> {
   try {
     const text = [
       center(storeName.toUpperCase()),

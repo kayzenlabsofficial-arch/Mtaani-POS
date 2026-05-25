@@ -69,7 +69,7 @@ function pageBottom(doc: jsPDF): number {
 }
 
 // ─── Shared drawing primitives ────────────────────────────────────────────────
-function banner(doc: jsPDF, title: string, ref: string, date: string, bizName = 'MTAANI POS', location = 'Mtaani Street, Nairobi CBD, Kenya'): number {
+function banner(doc: jsPDF, title: string, ref: string, date: string, bizName = 'SMART POS', location = 'Nairobi, Kenya'): number {
   const top = 10;
   const contentW = contentWidth(doc);
   const rightPanelW = 58;
@@ -83,7 +83,7 @@ function banner(doc: jsPDF, title: string, ref: string, date: string, bizName = 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   const locationLines = splitToFit(doc, location, leftMax, 1);
-  const contactLines = splitToFit(doc, 'Email: hello@mtaanipos.co.ke | Tel: +254 700 123 456', leftMax, 1);
+  const contactLines = splitToFit(doc, 'Email: hello@smartpos.co.ke | Tel: +254 700 123 456', leftMax, 1);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
@@ -271,7 +271,7 @@ function footer(doc: jsPDF) {
   doc.setFontSize(7);
   st(doc, slate600);
   doc.text(
-    fitLine(doc, `Made by Mtaani POS - ${new Date().toLocaleString()}`, contentW),
+    fitLine(doc, `Made by Smart POS - ${new Date().toLocaleString()}`, contentW),
     M + contentW / 2, y, { align: 'center' }
   );
 }
@@ -297,7 +297,7 @@ function safeStr(s: any, fallback = '—'): string {
 }
 
 // ─── Thermal Receipt (80mm) ──────────────────────────────────────────────────
-function buildReceipt(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'): Blob {
+function buildReceipt(r: any, bizName = 'SMART POS', location = 'Nairobi, Kenya'): Blob {
   const TW = 80; // 80mm width
   const TM = 4;  // margin
   const CW = TW - TM * 2;
@@ -921,7 +921,7 @@ function drawCloseDayShiftSummary(doc: jsPDF, y: number, shiftReports: any[]): n
   return y;
 }
 
-function buildReport(r: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'): Blob {
+function buildReport(r: any, bizName = 'SMART POS', location = 'Nairobi, Kenya'): Blob {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const isDaily = r.recordType === 'DAILY_SUMMARY';
   const ref = safeStr((r.id || '').split('-')[0], 'RPT').toUpperCase();
@@ -1095,7 +1095,7 @@ export function buildStatementPDF(s: any, invoices: any[], payments: any[], cred
 
 
 // ─── Download trigger (works everywhere, no share sheet needed) ───────────────
-function buildSalesInvoicePDF(invoice: any, bizName = 'MTAANI POS', location = 'Nairobi, Kenya'): Blob {
+function buildSalesInvoicePDF(invoice: any, bizName = 'SMART POS', location = 'Nairobi, Kenya'): Blob {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   let y = banner(
     doc,
@@ -1193,7 +1193,7 @@ export async function generateAndShareDocument(
     try {
       await navigator.share({
         files: [file],
-        title: `Mtaani POS — ${filename}`,
+        title: `Smart POS — ${filename}`,
         text: `Document: ${filename}`,
       });
       return;
@@ -1558,7 +1558,7 @@ export async function generateAndDownloadProfitLossReport(report: ProfitLossRepo
     periods.length > 1 ? 'Profit and Loss Comparison' : 'Profit and Loss Report',
     report.title,
     new Date().toLocaleDateString(),
-    report.businessName || 'MTAANI POS',
+    report.businessName || 'SMART POS',
     report.location || 'Nairobi, Kenya'
   );
   y = drawProfitLossInfoGrid(doc, y, report, periods);
@@ -1613,7 +1613,7 @@ export async function generateAndDownloadProductPerformanceReport(report: Produc
     'Product Performance Report',
     report.title,
     new Date().toLocaleDateString(),
-    report.businessName || 'MTAANI POS',
+    report.businessName || 'SMART POS',
     report.location || 'Nairobi, Kenya'
   );
 

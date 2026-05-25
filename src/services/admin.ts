@@ -25,7 +25,7 @@ export const StaffService = {
   },
 
   resetPassword(input: { userId: string; newPassword?: string; businessId: string; shopId?: string | null }) {
-    return apiRequest<{ success: boolean; userId: string; temporaryPassword?: string }>('/api/admin/staff', {
+    return apiRequest<{ success: boolean; userId: string; temporaryPassword?: string; mustChangePassword?: boolean }>('/api/admin/staff', {
       method: 'POST',
       body: { action: 'RESET_PASSWORD', ...input },
       businessId: input.businessId,

@@ -210,7 +210,7 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
     const savedTills = tableTills.length ? tableTills : parseSalesTills(savedSettings);
     return {
       store: {
-        storeName: savedSettings?.storeName || 'Mtaani Shop',
+        storeName: savedSettings?.storeName || 'Smart Shop',
         krapin: savedSettings?.kraPin || '',
         tillNumber: savedSettings?.tillNumber || '',
         receiptFooter: savedSettings?.receiptFooter || 'Thank you for shopping!',

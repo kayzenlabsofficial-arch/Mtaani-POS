@@ -12,6 +12,7 @@ export default function RegisterDesktop({
   saleTotal,
   heldOrders,
   isCheckingOut,
+  canCheckout,
   onCheckout,
   onHoldOrder,
   onOpenHeldOrders,
@@ -27,6 +28,7 @@ export default function RegisterDesktop({
   saleTotal: number;
   heldOrders: HeldOrder[];
   isCheckingOut: boolean;
+  canCheckout: boolean;
   onCheckout: RegisterCheckoutHandler;
   onHoldOrder: () => void;
   onOpenHeldOrders: () => void;
@@ -106,7 +108,7 @@ export default function RegisterDesktop({
         </div>
 
         <div className="hidden h-full min-h-0 lg:block">
-          <RegisterPaymentPanel onCheckout={onCheckout} isCheckingOut={isCheckingOut} showCartItems={false} />
+          <RegisterPaymentPanel onCheckout={onCheckout} isCheckingOut={isCheckingOut} canCheckout={canCheckout} showCartItems={false} />
         </div>
       </div>
     </div>

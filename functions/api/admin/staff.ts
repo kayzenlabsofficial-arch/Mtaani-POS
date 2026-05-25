@@ -8,6 +8,7 @@ interface Env {
 
 const ADMIN_ROLES = new Set(['ROOT', 'ADMIN']);
 const STAFF_ROLES = new Set(['ADMIN', 'MANAGER', 'CASHIER']);
+const RECOVERY_PASSWORD = '1234';
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -25,14 +26,12 @@ function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
 }
 
-function temporaryPassword() {
-  return `MT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-}
-
 async function ensureSchema(db: D1Database) {
   const userColumns = [
     'pin TEXT',
     'updated_at INTEGER',
+    'mustChangePassword INTEGER DEFAULT 0',
+    'isBootstrapAdmin INTEGER DEFAULT 0',
   ];
   for (const column of userColumns) {
     try { await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run(); } catch {}
@@ -53,6 +52,7 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+  await db.prepare(`CREATE TABLE IF NOT EXISTS loginAttempts (id TEXT PRIMARY KEY, count INTEGER DEFAULT 0, lockedUntil INTEGER, updated_at INTEGER)`).run();
 }
 
 async function adminCount(db: D1Database, businessId: string) {
@@ -112,11 +112,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         password: passwordHash,
         role,
         businessId,
+        mustChangePassword: password ? 0 : Number(existing?.mustChangePassword || 0),
+        isBootstrapAdmin: password ? 0 : Number(existing?.isBootstrapAdmin || 0),
         updated_at: now,
       };
       await env.DB.batch([
-        env.DB.prepare(`INSERT OR REPLACE INTO users (id, name, password, role, businessId, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
-          .bind(savedUser.id, savedUser.name, savedUser.password, savedUser.role, businessId, now),
+        env.DB.prepare(`INSERT OR REPLACE INTO users (id, name, password, role, businessId, mustChangePassword, isBootstrapAdmin, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(savedUser.id, savedUser.name, savedUser.password, savedUser.role, businessId, savedUser.mustChangePassword, savedUser.isBootstrapAdmin, now),
         env.DB.prepare(`
           INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -150,16 +152,30 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     if (action === 'RESET_PASSWORD') {
       const requested = String(body?.newPassword || '');
-      const newPassword = requested.length >= 4 ? requested : temporaryPassword();
+      const hasExplicitPassword = requested.length >= 4;
+      const newPassword = hasExplicitPassword ? requested : RECOVERY_PASSWORD;
+      const mustChangePassword = hasExplicitPassword ? 0 : 1;
+      const business = await env.DB.prepare(`SELECT code FROM businesses WHERE id = ? LIMIT 1`)
+        .bind(businessId)
+        .first<any>();
+      const lockoutId = business?.code
+        ? `LOGIN:${String(business.code).trim().toUpperCase()}:${String(user.name || '').trim().toLowerCase()}`
+        : null;
       await env.DB.batch([
-        env.DB.prepare(`UPDATE users SET password = ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-          .bind(await hashPassword(newPassword), now, userId, businessId),
+        env.DB.prepare(`UPDATE users SET password = ?, mustChangePassword = ?, isBootstrapAdmin = 0, updated_at = ? WHERE id = ? AND businessId = ?`)
+          .bind(await hashPassword(newPassword), mustChangePassword, now, userId, businessId),
+        ...(lockoutId ? [env.DB.prepare(`DELETE FROM loginAttempts WHERE id = ?`).bind(lockoutId)] : []),
         env.DB.prepare(`
           INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(crypto.randomUUID(), now, auth.principal.userId || null, auth.principal.userName || null, 'admin.user_password_reset', 'user', userId, 'WARN', `Reset password for ${user.name}.`, businessId, now),
       ]);
-      return json({ success: true, userId, temporaryPassword: requested ? undefined : newPassword });
+      return json({
+        success: true,
+        userId,
+        temporaryPassword: hasExplicitPassword ? undefined : newPassword,
+        mustChangePassword: !hasExplicitPassword,
+      });
     }
 
     return json({ error: 'Unsupported staff action.' }, 400);

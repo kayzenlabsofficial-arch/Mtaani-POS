@@ -89,6 +89,7 @@ export default function ExpensesTabDesktop() {
   const allRefunds = useLiveQuery(() => activeBusinessId && activeShopId ? db.refunds.where('shopId').equals(activeShopId).and(r => r.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
   const allSupplierPayments = useLiveQuery(() => activeBusinessId && activeShopId ? db.supplierPayments.where('shopId').equals(activeShopId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
   const allCustomerPayments = useLiveQuery(() => activeBusinessId && activeShopId ? db.customerPayments.where('shopId').equals(activeShopId).and(p => p.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
+  const canCreateExpense = canPerform(currentUser, 'expense.create', businessSettings);
   
   const todayStartMs = getTodayStartMs();
   const currentShiftId = getCurrentShiftId(activeShift, activeShopId, currentUser?.id);
@@ -106,7 +107,7 @@ export default function ExpensesTabDesktop() {
   });
   const todayTillExpenses = drawer.tillExpenses;
   const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'ACCOUNT' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const actualCashDrawer = drawer.actualCashDrawer;
+  const actualCashDrawer = Math.max(0, drawer.actualCashDrawer);
 
   const handleSaveExpense = async () => {
       if (isSaving) return;
@@ -272,13 +273,15 @@ export default function ExpensesTabDesktop() {
             <h2 className="text-2xl font-black text-slate-950">Expenses</h2>
             <p className="mt-1 text-sm font-semibold text-slate-500">Track till and Main account spending.</p>
           </div>
-          <button
-            onClick={() => setIsExpenseModalOpen(true)}
-            data-testid="expenses-log-expense"
-            className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-sm font-black text-white transition-all hover:bg-blue-800 active:scale-[0.98]"
-          >
-            <Plus size={18} /> Log expense
-          </button>
+          {canCreateExpense && (
+            <button
+              onClick={() => setIsExpenseModalOpen(true)}
+              data-testid="expenses-log-expense"
+              className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-sm font-black text-white transition-all hover:bg-blue-800 active:scale-[0.98]"
+            >
+              <Plus size={18} /> Log expense
+            </button>
+          )}
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">

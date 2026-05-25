@@ -1,4 +1,4 @@
-# Mtaani POS
+# Smart POS
 
 Simple single-shop POS for local retail businesses.
 
