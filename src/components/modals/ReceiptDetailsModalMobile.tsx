@@ -121,7 +121,7 @@ export default function ReceiptDetailsModalMobile({ selectedReceipt, setSelected
            </div>
          </div>
 
-         <div className="p-4 grid grid-cols-2 gap-2 bg-slate-50 border-t border-slate-100 no-print">
+         <div className="mobile-popup-footer grid grid-cols-2 gap-2 bg-slate-50 border-t border-slate-100 p-4 no-print">
             <div className="col-span-2 grid grid-cols-2 gap-2 mb-2">
                <button 
                   onClick={handleShare} 

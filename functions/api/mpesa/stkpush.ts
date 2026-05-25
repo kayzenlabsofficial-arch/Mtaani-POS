@@ -1,18 +1,10 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
-import { decryptSecret } from './secureCredentials';
+import { loadMpesaRuntimeCredentials } from './credentialStore';
 
 interface Env {
   DB: D1Database;
   API_SECRET?: string;
-  MPESA_CONSUMER_KEY?: string;
-  MPESA_CONSUMER_SECRET?: string;
-  MPESA_SHORTCODE?: string;
-  MPESA_PASSKEY?: string;
-  MPESA_CALLBACK_URL?: string;
-  MPESA_ENV?: string; // 'sandbox' or 'production'
   MPESA_CALLBACK_SECRET?: string;
-  MPESA_TYPE?: string;
-  MPESA_STORE_NUMBER?: string;
   MPESA_CREDENTIAL_ENCRYPTION_KEY?: string;
 }
 
@@ -22,7 +14,12 @@ const corsHeaders = {
 };
 
 function jsonHeaders() {
-  return { 'Content-Type': 'application/json', ...corsHeaders };
+  return {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    'X-Content-Type-Options': 'nosniff',
+    ...corsHeaders,
+  };
 }
 
 // Format phone number to 2547XXXXXXXX
@@ -64,52 +61,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const reference = body.reference || 'POS_PAYMENT';
     const description = 'Payment for items';
 
-    // 1. Fetch Credentials from D1 Database for this business
-    let consumerKey, consumerSecret, passkey, shortcode, isProd, mpesaType, storeNumber;
-
-    try {
-      const settings = await env.DB.prepare(`
-        SELECT mpesaConsumerKey, mpesaConsumerSecret, mpesaPasskey, mpesaEnv, tillNumber, mpesaType, mpesaStoreNumber
-        FROM settings
-        WHERE businessId = ?
-        ORDER BY updated_at DESC
-        LIMIT 1
-      `).bind(body.businessId).first() as any;
-
-      if (settings && settings.mpesaConsumerKey && settings.mpesaConsumerSecret) {
-        consumerKey = await decryptSecret(settings.mpesaConsumerKey, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
-        consumerSecret = await decryptSecret(settings.mpesaConsumerSecret, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
-        passkey = await decryptSecret(settings.mpesaPasskey, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
-        isProd = settings.mpesaEnv === 'production';
-        mpesaType = settings.mpesaType || 'paybill';
-        
-        // For Paybill: shortcode = tillNumber
-        // For Buy Goods: shortcode = Store Number, PartyB = tillNumber
-        if (mpesaType === 'buygoods') {
-          shortcode = settings.mpesaStoreNumber;
-          storeNumber = settings.tillNumber || settings.mpesaStoreNumber;
-        } else {
-          shortcode = settings.tillNumber;
-        }
-      } else {
-        // Fallback to Global Env Vars if business settings are missing
-        consumerKey = env.MPESA_CONSUMER_KEY;
-        consumerSecret = env.MPESA_CONSUMER_SECRET;
-        passkey = env.MPESA_PASSKEY;
-        isProd = env.MPESA_ENV === 'production';
-        mpesaType = env.MPESA_TYPE || 'paybill';
-        
-        if (mpesaType === 'buygoods') {
-           shortcode = env.MPESA_STORE_NUMBER;
-           storeNumber = env.MPESA_STORE_NUMBER;
-        } else {
-           shortcode = env.MPESA_SHORTCODE;
-        }
-      }
-    } catch (dbErr) {
-      console.error("[DB Error fetching credentials]:", dbErr);
-      isProd = false;
-    }
+    // 1. Fetch credentials from the server-only encrypted M-Pesa store.
+    const credentials = await loadMpesaRuntimeCredentials(env.DB, body.businessId, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
+    const consumerKey = credentials.consumerKey;
+    const consumerSecret = credentials.consumerSecret;
+    const passkey = credentials.passkey;
+    const shortcode = credentials.shortcode;
+    const isProd = credentials.env === 'production';
+    const mpesaType = credentials.type;
+    const storeNumber = credentials.storeNumber;
 
     // Security & Validation: Prevent using sandbox defaults in production
     if (isProd && (!consumerKey || !consumerSecret || !shortcode || !passkey)) {
@@ -119,7 +79,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     if (!consumerKey || !consumerSecret || !passkey || !shortcode) {
       // Never fall back to hardcoded credentials.
       // Misconfiguration should fail closed to protect financial integrity.
-      throw new Error("M-Pesa configuration is missing (consumer key/secret/passkey/shortcode). Configure it in business settings or via environment variables.");
+      throw new Error('M-Pesa is not configured.');
     }
 
     const baseUrl = isProd 
@@ -135,8 +95,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     });
 
     if (!tokenRes.ok) {
-      const err = await tokenRes.text();
-      throw new Error(`Failed to generate M-Pesa token: ${err}`);
+      await tokenRes.text().catch(() => '');
+      throw new Error('M-Pesa could not connect. Check the saved credentials.');
     }
 
     const { access_token } = await tokenRes.json() as any;
@@ -186,7 +146,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const stkData = await stkRes.json() as any;
 
     if (!stkRes.ok || stkData.errorCode) {
-       throw new Error(`M-Pesa request failed: ${JSON.stringify(stkData)}`);
+       throw new Error(stkData?.errorMessage || stkData?.ResponseDescription || 'M-Pesa request failed.');
     }
 
     // 5. SECURE LOGGING: Save the pending request to D1
@@ -233,7 +193,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     }), { headers: jsonHeaders() });
 
   } catch (err: any) {
-    console.error("[M-Pesa Request Error]:", err);
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: jsonHeaders() });
+    const message = err?.message || 'M-Pesa request failed.';
+    console.error('[M-Pesa Request Error]', message);
+    return new Response(JSON.stringify({ error: message }), { status: 500, headers: jsonHeaders() });
   }
 };

@@ -1,4 +1,6 @@
-const ENCRYPTED_PREFIX = 'enc:v1:';
+const ENCRYPTED_PREFIX_V1 = 'enc:v1:';
+const ENCRYPTED_PREFIX_V2 = 'enc:v2:';
+const MIN_KEY_LENGTH = 32;
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -13,6 +15,18 @@ function base64ToBytes(value: string): Uint8Array {
   return bytes;
 }
 
+function normalizeKeyMaterial(keyMaterial?: string): string {
+  const normalized = String(keyMaterial || '').trim();
+  if (
+    normalized.length < MIN_KEY_LENGTH ||
+    normalized.toLowerCase().includes('replace-with') ||
+    normalized.toLowerCase().includes('changeme')
+  ) {
+    throw new Error('M-Pesa safe storage key is missing or too weak. Add a long random MPESA_CREDENTIAL_ENCRYPTION_KEY Pages secret.');
+  }
+  return normalized;
+}
+
 async function importAesKey(keyMaterial: string): Promise<CryptoKey> {
   const encoded = new TextEncoder().encode(keyMaterial);
   const digest = await crypto.subtle.digest('SHA-256', encoded);
@@ -20,30 +34,45 @@ async function importAesKey(keyMaterial: string): Promise<CryptoKey> {
 }
 
 export function isEncryptedSecret(value?: string | null): boolean {
-  return typeof value === 'string' && value.startsWith(ENCRYPTED_PREFIX);
+  return typeof value === 'string' && (value.startsWith(ENCRYPTED_PREFIX_V1) || value.startsWith(ENCRYPTED_PREFIX_V2));
 }
 
-export async function encryptSecret(value: string, keyMaterial: string): Promise<string> {
+export function assertSafeCredentialKey(keyMaterial?: string): string {
+  return normalizeKeyMaterial(keyMaterial);
+}
+
+export async function encryptSecret(value: string, keyMaterial: string, associatedData: string): Promise<string> {
   const trimmed = value.trim();
   if (!trimmed) return '';
-  const key = await importAesKey(keyMaterial);
+  const key = await importAesKey(normalizeKeyMaterial(keyMaterial));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(trimmed));
-  return `${ENCRYPTED_PREFIX}${bytesToBase64(iv)}:${bytesToBase64(new Uint8Array(cipher))}`;
+  const cipher = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(associatedData) },
+    key,
+    new TextEncoder().encode(trimmed),
+  );
+  return `${ENCRYPTED_PREFIX_V2}${bytesToBase64(iv)}:${bytesToBase64(new Uint8Array(cipher))}`;
 }
 
-export async function decryptSecret(value?: string | null, keyMaterial?: string): Promise<string | undefined> {
+export async function decryptSecret(value?: string | null, keyMaterial?: string, associatedData?: string): Promise<string | undefined> {
   if (!value) return undefined;
   if (!isEncryptedSecret(value)) return value;
-  if (!keyMaterial) {
-    throw new Error('M-Pesa safe storage key is missing. Add MPESA_CREDENTIAL_ENCRYPTION_KEY as a Pages secret.');
-  }
 
+  const key = await importAesKey(normalizeKeyMaterial(keyMaterial));
   const [, , ivPart, cipherPart] = value.split(':');
   if (!ivPart || !cipherPart) throw new Error('Saved M-Pesa secret is damaged.');
-  const key = await importAesKey(keyMaterial);
+  const algorithm: AesGcmParams = value.startsWith(ENCRYPTED_PREFIX_V2)
+    ? {
+        name: 'AES-GCM',
+        iv: base64ToBytes(ivPart),
+        additionalData: new TextEncoder().encode(associatedData || ''),
+      }
+    : { name: 'AES-GCM', iv: base64ToBytes(ivPart) };
+  if (value.startsWith(ENCRYPTED_PREFIX_V2) && !associatedData) {
+    throw new Error('Saved M-Pesa secret cannot be opened without its security context.');
+  }
   const plain = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: base64ToBytes(ivPart) },
+    algorithm,
     key,
     base64ToBytes(cipherPart),
   );

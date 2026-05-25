@@ -251,7 +251,7 @@ export default function CategoryManagementModalView({ isOpen, onClose, isMobile 
               </div>
             </div>
 
-            <div className="flex shrink-0 gap-4 border-t border-slate-100 p-6">
+            <div className={`${isMobile ? 'mobile-popup-footer ' : ''}flex shrink-0 gap-4 border-t border-slate-100 p-6`}>
               <button onClick={closeForm} disabled={isSaving} className="flex-1 rounded-2xl bg-slate-100 px-6 py-4 text-xs font-black text-slate-600 transition-all disabled:opacity-50">
                 Cancel
               </button>

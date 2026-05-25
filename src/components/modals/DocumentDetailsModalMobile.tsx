@@ -987,7 +987,7 @@ export default function DocumentDetailsModalMobile({ selectedRecord, setSelected
          </div>
 
          {/* Footer Actions - Sticky at bottom */}
-          <div className="p-4 flex flex-col gap-2 bg-white border-t border-slate-100 no-print shadow-[0_-4px_12px_rgba(0,0,0,0.03)] relative z-20">
+          <div className="mobile-popup-footer relative z-20 flex flex-col gap-2 border-t border-slate-100 bg-white p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.03)] no-print">
             {/* Receive Goods Action */}
             {onReceive && isPO && selectedRecord.approvalStatus === 'APPROVED' && selectedRecord.status === 'PENDING' && (
                <button

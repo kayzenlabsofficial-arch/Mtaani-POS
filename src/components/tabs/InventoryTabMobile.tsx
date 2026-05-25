@@ -709,7 +709,7 @@ export default function InventoryTabMobile() {
               </div>
             </div>
 
-            <div className="flex-shrink-0 border-t border-slate-100">
+            <div className="mobile-popup-footer flex-shrink-0 border-t border-slate-100">
               <div className="mx-auto grid w-full max-w-[1440px] grid-cols-2 gap-3 p-6 md:px-8">
                 <button onClick={() => openProductModal(selectedProduct)} className="flex items-center justify-center gap-2 rounded-lg border-2 border-slate-200 py-3 text-sm font-bold text-slate-700 transition-all hover:border-blue-300 hover:text-blue-700">
                   <MaterialIcon name="edit" style={{ fontSize: '18px' }} /> Edit
@@ -732,7 +732,7 @@ export default function InventoryTabMobile() {
       {isRestocking && selectedProduct && (
         <div className="mobile-vv-overlay fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/45" onClick={() => setIsRestocking(false)} />
-          <div className="mobile-vv-panel relative z-10 w-full max-w-sm overflow-y-auto rounded-lg border-2 border-slate-200 bg-white p-6 shadow-xl">
+          <div className="mobile-vv-panel modal-scroll-padding relative z-10 w-full max-w-sm overflow-y-auto rounded-lg border-2 border-slate-200 bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-black text-slate-900">Adjust stock</h3>
               <button onClick={() => setIsRestocking(false)} className="h-9 w-9 rounded-lg border-2 border-slate-200 bg-white text-slate-500 hover:border-blue-300">
@@ -1006,7 +1006,7 @@ export default function InventoryTabMobile() {
                 </div>
               )}
             </div>
-            <div className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-6 flex gap-3 border-t border-slate-100 bg-white p-6">
+            <div className="mobile-popup-sticky-action -mx-6 mt-6 flex gap-3 border-t border-slate-100 bg-white p-6">
               <button onClick={() => setIsProductModalOpen(false)} disabled={isSavingProduct} className="flex-1 rounded-lg border-2 border-slate-200 bg-white py-3.5 text-xs font-black uppercase tracking-widest text-slate-600 disabled:opacity-50">Cancel</button>
               <button
                 onClick={handleSaveProduct}

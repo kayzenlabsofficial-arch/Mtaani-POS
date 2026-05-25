@@ -142,7 +142,52 @@ export async function verifySessionToken(secret: string, token: string): Promise
   }
 }
 
-export async function authorizeRequest(request: Request, env: { API_SECRET?: string }): Promise<AuthResult> {
+async function ensureBusinessBillingColumns(db: D1Database): Promise<void> {
+  for (const column of [
+    "billingStatus TEXT NOT NULL DEFAULT 'OK'",
+    'billingAmountDue REAL DEFAULT 0',
+    'billingDueAt INTEGER',
+    'billingMessage TEXT',
+    'billingLastPaidAt INTEGER',
+  ]) {
+    try { await db.prepare(`ALTER TABLE businesses ADD COLUMN ${column}`).run(); } catch {}
+  }
+}
+
+function isLockBypassRequest(request: Request): boolean {
+  if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') return true;
+  try {
+    const pathname = new URL(request.url).pathname;
+    return pathname.startsWith('/api/billing/')
+      || pathname === '/api/user/account-setup';
+  } catch {
+    return false;
+  }
+}
+
+async function rejectLockedBusiness(request: Request, env: { DB?: D1Database }, principal: Principal, service: boolean): Promise<Response | null> {
+  if (service || principal.role === 'ROOT' || !principal.businessId || isLockBypassRequest(request)) return null;
+  if (!env.DB) return null;
+
+  await ensureBusinessBillingColumns(env.DB);
+  const business = await env.DB.prepare(`
+    SELECT billingStatus, billingAmountDue, billingDueAt, billingMessage
+    FROM businesses
+    WHERE id = ?
+    LIMIT 1
+  `).bind(principal.businessId).first<any>();
+
+  if (String(business?.billingStatus || 'OK').toUpperCase() !== 'LOCKED') return null;
+  return json({
+    error: business?.billingMessage || 'This business is locked because payment is overdue.',
+    code: 'BUSINESS_LOCKED',
+    billingStatus: 'LOCKED',
+    amountDue: Number(business?.billingAmountDue || 0),
+    dueAt: business?.billingDueAt || null,
+  }, 423);
+}
+
+export async function authorizeRequest(request: Request, env: { API_SECRET?: string; DB?: D1Database }): Promise<AuthResult> {
   const secret = env.API_SECRET;
   if (!secret) return { ok: false, response: json({ error: 'Server is not configured.' }, 500) };
   const originBlocked = rejectUntrustedBrowserOrigin(request);
@@ -169,6 +214,8 @@ export async function authorizeRequest(request: Request, env: { API_SECRET?: str
   if (!token) return { ok: false, response: json({ error: 'Sign in required.' }, 401) };
   const principal = await verifySessionToken(secret, token);
   if (!principal) return { ok: false, response: json({ error: 'Session expired. Please sign in again.' }, 401) };
+  const locked = await rejectLockedBusiness(request, env, principal, false);
+  if (locked) return { ok: false, response: locked };
   return { ok: true, service: false, principal };
 }
 

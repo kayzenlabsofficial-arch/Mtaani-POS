@@ -14,7 +14,7 @@ const ALLOWED_TABLES = new Set([
   'settings', 'salesTills', 'categories', 'businesses', 'system', 'expenseAccounts',
   'financialAccounts', 'financialAccountAdjustments', 'productIngredients', 'loginAttempts', 'auditLogs',
   'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments',
-  'mpesaCallbacks', 'deviceSyncStatus', 'idempotencyKeys',
+  'mpesaCallbacks', 'billingPayments', 'deviceSyncStatus', 'idempotencyKeys',
 ]);
 
 const UNSCOPED_TABLES = new Set(['businesses', 'loginAttempts']);
@@ -63,6 +63,7 @@ const COMMAND_ONLY_WRITE_TABLES = new Set([
   'dailySummaries',
   'stockAdjustmentRequests',
   'stockMovements',
+  'billingPayments',
   'auditLogs',
 ]);
 const LEGACY_SCOPE_COLUMN = String.fromCharCode(98, 114, 97, 110, 99, 104, 73, 100);
@@ -88,7 +89,7 @@ function secureJsonHeaders() {
 }
 
 const SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS businesses (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, isActive INTEGER DEFAULT 1, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS businesses (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, isActive INTEGER DEFAULT 1, billingStatus TEXT NOT NULL DEFAULT 'OK', billingAmountDue REAL DEFAULT 0, billingDueAt INTEGER, billingMessage TEXT, billingLastPaidAt INTEGER, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL, businessId TEXT, mustChangePassword INTEGER DEFAULT 0, isBootstrapAdmin INTEGER DEFAULT 0, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, sellingPrice REAL NOT NULL, costPrice REAL, discountType TEXT DEFAULT 'NONE', discountValue REAL DEFAULT 0, taxCategory TEXT NOT NULL, stockQuantity REAL NOT NULL, unit TEXT, barcode TEXT NOT NULL, imageUrl TEXT, reorderPoint REAL, supplierIds TEXT, expiryTracking INTEGER DEFAULT 0, expiryDate INTEGER, isBundle INTEGER DEFAULT 0, components TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER);
@@ -119,13 +120,15 @@ CREATE TABLE IF NOT EXISTS dailySummaries (id TEXT PRIMARY KEY, date INTEGER NOT
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_date ON dailySummaries(businessId, date);
 CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (id TEXT PRIMARY KEY, productId TEXT NOT NULL, productName TEXT, oldQty REAL, newQty REAL, requestedQuantity REAL, reason TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, preparedBy TEXT, approvedBy TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS purchaseOrders (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, items TEXT NOT NULL, totalAmount REAL NOT NULL, status TEXT NOT NULL, approvalStatus TEXT NOT NULL, paymentStatus TEXT, paidAmount REAL, orderDate INTEGER NOT NULL, expectedDate INTEGER, receivedDate INTEGER, invoiceNumber TEXT, poNumber TEXT, preparedBy TEXT, approvedBy TEXT, receivedBy TEXT, businessId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, storeName TEXT NOT NULL, location TEXT, tillNumber TEXT, kraPin TEXT, receiptFooter TEXT, ownerModeEnabled INTEGER DEFAULT 0, autoApproveOwnerActions INTEGER DEFAULT 1, cashSweepEnabled INTEGER DEFAULT 1, cashDrawerLimit REAL DEFAULT 5000, salesTills TEXT, defaultOpeningFloat REAL DEFAULT 0, mpesaConsumerKey TEXT, mpesaConsumerSecret TEXT, mpesaPasskey TEXT, mpesaEnv TEXT DEFAULT 'sandbox', mpesaType TEXT DEFAULT 'paybill', mpesaStoreNumber TEXT, accessControl TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, storeName TEXT NOT NULL, location TEXT, tillNumber TEXT, kraPin TEXT, receiptFooter TEXT, ownerModeEnabled INTEGER DEFAULT 0, autoApproveOwnerActions INTEGER DEFAULT 1, cashSweepEnabled INTEGER DEFAULT 1, cashDrawerLimit REAL DEFAULT 5000, salesTills TEXT, defaultOpeningFloat REAL DEFAULT 0, accessControl TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS salesTills (id TEXT PRIMARY KEY, name TEXT NOT NULL, isActive INTEGER DEFAULT 1, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, iconName TEXT NOT NULL, color TEXT NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS expenseAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS financialAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, balance REAL NOT NULL DEFAULT 0, businessId TEXT, accountNumber TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS financialAccountAdjustments (id TEXT PRIMARY KEY, accountId TEXT NOT NULL, amount REAL NOT NULL, direction TEXT NOT NULL, balanceBefore REAL NOT NULL, balanceAfter REAL NOT NULL, reason TEXT, userName TEXT, timestamp INTEGER NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS mpesaCallbacks (checkoutRequestId TEXT PRIMARY KEY, merchantRequestId TEXT, resultCode INTEGER, resultDesc TEXT, amount REAL, receiptNumber TEXT, phoneNumber TEXT, businessId TEXT, timestamp INTEGER, utilizedTransactionId TEXT, utilizedCustomerId TEXT, utilizedCustomerName TEXT, utilizedAt INTEGER);
+CREATE TABLE IF NOT EXISTS mpesaCredentials (businessId TEXT PRIMARY KEY, settingsId TEXT, environment TEXT NOT NULL DEFAULT 'sandbox', accountType TEXT NOT NULL DEFAULT 'paybill', product TEXT NOT NULL DEFAULT 'M-PESA EXPRESS', shortcode TEXT, storeNumber TEXT, consumerKeyCipher TEXT, consumerSecretCipher TEXT, passkeyCipher TEXT, credentialsVersion TEXT DEFAULT 'enc:v2', lastTestAt INTEGER, lastTestStatus TEXT, lastTestMessage TEXT, created_at INTEGER, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS billingPayments (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, phone TEXT, amount REAL NOT NULL, reference TEXT, checkoutRequestId TEXT UNIQUE, merchantRequestId TEXT, receiptNumber TEXT, resultCode INTEGER, resultDesc TEXT, status TEXT NOT NULL DEFAULT 'PENDING', createdAt INTEGER, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS deviceSyncStatus (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, deviceId TEXT NOT NULL, cashierName TEXT, lastSyncAt INTEGER, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS idempotencyKeys (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, idempotencyKey TEXT NOT NULL, operation TEXT NOT NULL, deviceId TEXT, cashierName TEXT, transactionId TEXT, createdAt INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS loginAttempts (id TEXT PRIMARY KEY, count INTEGER DEFAULT 0, lockedUntil INTEGER, updated_at INTEGER);
@@ -180,6 +183,7 @@ async function ensureCoreSchema(db: D1Database): Promise<void> {
     try { await db.prepare(statement).run(); } catch {}
   }
   await ensureUserSetupColumns(db);
+  await ensureBusinessBillingColumns(db);
 }
 
 async function ensureUserSetupColumns(db: D1Database): Promise<void> {
@@ -190,6 +194,36 @@ async function ensureUserSetupColumns(db: D1Database): Promise<void> {
   for (const column of columns) {
     try { await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run(); } catch {}
   }
+}
+
+async function ensureBusinessBillingColumns(db: D1Database): Promise<void> {
+  const columns = [
+    "billingStatus TEXT NOT NULL DEFAULT 'OK'",
+    'billingAmountDue REAL DEFAULT 0',
+    'billingDueAt INTEGER',
+    'billingMessage TEXT',
+    'billingLastPaidAt INTEGER',
+  ];
+  for (const column of columns) {
+    try { await db.prepare(`ALTER TABLE businesses ADD COLUMN ${column}`).run(); } catch {}
+  }
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS billingPayments (
+      id TEXT PRIMARY KEY,
+      businessId TEXT NOT NULL,
+      phone TEXT,
+      amount REAL NOT NULL,
+      reference TEXT,
+      checkoutRequestId TEXT UNIQUE,
+      merchantRequestId TEXT,
+      receiptNumber TEXT,
+      resultCode INTEGER,
+      resultDesc TEXT,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      createdAt INTEGER,
+      updated_at INTEGER
+    )
+  `).run();
 }
 
 async function ensureHrSchema(db: D1Database): Promise<void> {
@@ -221,12 +255,6 @@ async function ensureSettingsSchema(db: D1Database): Promise<void> {
       cashDrawerLimit REAL DEFAULT 5000,
       salesTills TEXT,
       defaultOpeningFloat REAL DEFAULT 0,
-      mpesaConsumerKey TEXT,
-      mpesaConsumerSecret TEXT,
-      mpesaPasskey TEXT,
-      mpesaEnv TEXT DEFAULT 'sandbox',
-      mpesaType TEXT DEFAULT 'paybill',
-      mpesaStoreNumber TEXT,
       accessControl TEXT,
       businessId TEXT,
       updated_at INTEGER
@@ -244,12 +272,6 @@ async function ensureSettingsSchema(db: D1Database): Promise<void> {
     ['cashDrawerLimit', 'REAL DEFAULT 5000'],
     ['salesTills', 'TEXT'],
     ['defaultOpeningFloat', 'REAL DEFAULT 0'],
-    ['mpesaConsumerKey', 'TEXT'],
-    ['mpesaConsumerSecret', 'TEXT'],
-    ['mpesaPasskey', 'TEXT'],
-    ['mpesaEnv', "TEXT DEFAULT 'sandbox'"],
-    ['mpesaType', "TEXT DEFAULT 'paybill'"],
-    ['mpesaStoreNumber', 'TEXT'],
     ['accessControl', 'TEXT'],
     ['businessId', 'TEXT'],
     ['updated_at', 'INTEGER'],
@@ -475,6 +497,17 @@ function redactRows(table: string, rows: Record<string, any>[]): Record<string, 
   });
   return rows.map(row => {
     const out = { ...row };
+    if (table === 'settings') {
+      delete out.mpesaConsumerKey;
+      delete out.mpesaConsumerSecret;
+      delete out.mpesaPasskey;
+      delete out.mpesaEnv;
+      delete out.mpesaType;
+      delete out.mpesaStoreNumber;
+      delete out.consumerKeyCipher;
+      delete out.consumerSecretCipher;
+      delete out.passkeyCipher;
+    }
     delete out[LEGACY_SCOPE_COLUMN];
     return out;
   });
@@ -532,6 +565,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     if (HR_TABLES.has(table)) await ensureHrSchema(env.DB);
     if (table === 'users') await ensureUserSetupColumns(env.DB);
+    if (table === 'businesses' || table === 'billingPayments') await ensureBusinessBillingColumns(env.DB);
     if (table === 'settings') await ensureSettingsSchema(env.DB);
     if (table === 'financialAccounts' && businessId) await ensurePickedCashAccount(env.DB, businessId);
     if (table === 'financialAccountAdjustments') await ensureFinancialAccountAdjustmentSchema(env.DB);
@@ -542,8 +576,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     if (request.method === 'GET') {
       if (table === 'businesses') {
         const query = principal.role === 'ROOT' || service
-          ? env.DB.prepare('SELECT id, name, code, isActive FROM businesses')
-          : env.DB.prepare('SELECT id, name, code, isActive FROM businesses WHERE id = ?').bind(principal.businessId);
+          ? env.DB.prepare('SELECT id, name, code, isActive, billingStatus, billingAmountDue, billingDueAt, billingMessage, billingLastPaidAt, updated_at FROM businesses')
+          : env.DB.prepare('SELECT id, name, code, isActive, billingStatus, billingAmountDue, billingDueAt, billingMessage, billingLastPaidAt, updated_at FROM businesses WHERE id = ?').bind(principal.businessId);
         const { results } = await query.all();
         return new Response(JSON.stringify(results.map(deserializeRow)), { headers: jsonHeaders() });
       }
@@ -557,6 +591,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
       if (!businessId || !canAccessBusiness(principal, businessId)) {
         return new Response(JSON.stringify({ error: 'X-Business-ID header required' }), { status: 400, headers: jsonHeaders() });
+      }
+      if (table === 'billingPayments' && principal.role !== 'ADMIN' && principal.role !== 'ROOT' && !service) {
+        return new Response(JSON.stringify({ error: 'Admin access required.' }), { status: 403, headers: jsonHeaders() });
       }
 
       let results: any[] = [];

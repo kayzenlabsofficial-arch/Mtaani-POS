@@ -205,7 +205,7 @@ export default function BarcodeScannerMobile({ onScan, onClose, isInline = false
   }, [startCamera, stopAll]);
 
   const content = (
-    <div className={`flex flex-col overflow-hidden ${isInline ? 'bg-slate-900 rounded-3xl shadow-lg mb-4' : 'bg-slate-900 rounded-t-[2.5rem] sm:rounded-3xl w-full max-w-sm shadow-elevated relative'}`}>
+    <div className={`flex flex-col ${isInline ? 'overflow-hidden bg-slate-900 rounded-3xl shadow-lg mb-4' : 'overflow-y-auto overscroll-contain modal-scroll-padding bg-slate-900 rounded-t-[2.5rem] sm:rounded-3xl w-full max-w-sm shadow-elevated relative'}`}>
 
       {/* Header */}
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
@@ -289,7 +289,7 @@ export default function BarcodeScannerMobile({ onScan, onClose, isInline = false
       </div>
 
       {/* Footer — last scanned + manual entry */}
-      <div className="px-5 pb-5 flex items-center justify-between gap-4">
+      <div className={`px-5 pb-5 flex items-center justify-between gap-4 ${isInline ? '' : 'mobile-popup-footer'}`}>
         {lastScanned ? (
           <div className="flex flex-col min-w-0">
             <p className="text-[7px] font-black text-slate-500  ">Last scanned</p>

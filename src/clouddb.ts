@@ -72,8 +72,21 @@ function isLikelyOfflineError(e: any): boolean {
   );
 }
 
-function sanitizeRowsForClient(_table: string, rows: any[]): any[] {
-  return rows;
+function sanitizeRowsForClient(table: string, rows: any[]): any[] {
+  if (table !== 'settings') return rows;
+  return rows.map(row => {
+    const clean = { ...row };
+    delete clean.mpesaConsumerKey;
+    delete clean.mpesaConsumerSecret;
+    delete clean.mpesaPasskey;
+    delete clean.mpesaEnv;
+    delete clean.mpesaType;
+    delete clean.mpesaStoreNumber;
+    delete clean.consumerKeyCipher;
+    delete clean.consumerSecretCipher;
+    delete clean.passkeyCipher;
+    return clean;
+  });
 }
 
 async function d1Fetch(table: string, method: string, body?: any): Promise<any> {

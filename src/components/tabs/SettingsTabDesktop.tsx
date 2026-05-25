@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Save, ShieldCheck, RefreshCcw, Download, ScanLine, Printer, Usb, Building2, Check, X, Store, Pencil, type LucideIcon } from 'lucide-react';
+import { Save, ShieldCheck, RefreshCcw, Download, ScanLine, Printer, Usb, Building2, Check, X, Store, Pencil, Smartphone, KeyRound, type LucideIcon } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
+import { usePhoneUi } from '../../hooks/usePhoneUi';
 import { DEFAULT_CASH_DRAWER_LIMIT } from '../../utils/ownerMode';
 import { getBusinessSettings, settingsIdForBusiness } from '../../utils/settings';
 import {
@@ -26,13 +27,15 @@ import {
   type HardwareSupport,
 } from '../../utils/hardware';
 import { BusinessSettingsService } from '../../services/businessSettings';
+import { getShopMpesaSettings, saveShopMpesaSettings, testShopMpesaSettings, type MpesaSettingsStatus } from '../../services/mpesaSettings';
 import { normalizeTillCount, parseSalesTillRows, parseSalesTills, serializeSalesTills, type SalesTill } from '../../utils/tills';
 
-type SettingsSectionId = 'business' | 'tills' | 'hardware' | 'owner' | 'system';
+type SettingsSectionId = 'business' | 'tills' | 'mpesa' | 'hardware' | 'owner' | 'system';
 
 const settingsSections: Array<{ id: SettingsSectionId; label: string; Icon: LucideIcon }> = [
   { id: 'business', label: 'Business', Icon: Building2 },
   { id: 'tills', label: 'Tills', Icon: Store },
+  { id: 'mpesa', label: 'M-Pesa', Icon: Smartphone },
   { id: 'hardware', label: 'Hardware', Icon: Usb },
   { id: 'owner', label: 'Owner mode', Icon: ShieldCheck },
   { id: 'system', label: 'System', Icon: Download },
@@ -151,9 +154,11 @@ function SettingsDrawer({
   children: React.ReactNode;
   footer: React.ReactNode;
 }) {
+  const isPhoneUi = usePhoneUi();
+
   return (
-    <div className="fixed inset-0 z-[120] flex justify-end bg-slate-950/45 backdrop-blur-sm">
-      <section className="flex h-full w-full flex-col bg-white shadow-2xl sm:max-w-xl sm:border-l-2 sm:border-slate-200">
+    <div className={`${isPhoneUi ? 'mobile-vv-overlay ' : ''}fixed inset-0 z-[120] flex justify-end bg-slate-950/45 backdrop-blur-sm`}>
+      <section className={`${isPhoneUi ? 'mobile-vv-panel ' : ''}flex h-full w-full flex-col bg-white shadow-2xl sm:max-w-xl sm:border-l-2 sm:border-slate-200`}>
         <header className="flex items-start justify-between gap-4 border-b-2 border-slate-200 px-4 py-4 sm:px-5">
           <div className="min-w-0">
             <h3 className="text-lg font-black text-slate-950">{title}</h3>
@@ -168,10 +173,10 @@ function SettingsDrawer({
             <X size={18} />
           </button>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+        <div className={`${isPhoneUi ? 'modal-scroll-padding ' : ''}min-h-0 flex-1 overflow-y-auto p-4 sm:p-5`}>
           {children}
         </div>
-        <footer className="border-t-2 border-slate-200 bg-slate-50 p-4 sm:p-5">
+        <footer className={`${isPhoneUi ? 'mobile-popup-footer ' : ''}border-t-2 border-slate-200 bg-slate-50 p-4 sm:p-5`}>
           {footer}
         </footer>
       </section>
@@ -194,6 +199,7 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
 
 export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }: { updateServiceWorker: (reloadPage?: boolean) => Promise<void>, needRefresh: boolean }) {
   const isAdmin = useStore((state) => state.isAdmin);
+  const currentUser = useStore((state) => state.currentUser);
   const activeBusinessId = useStore((state) => state.activeBusinessId);
   const { success, warning, error } = useToast();
   
@@ -244,6 +250,20 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
   const [hardwareMessage, setHardwareMessage] = useState('');
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>('business');
   const [editingSection, setEditingSection] = useState<SettingsSectionId | null>(null);
+  const [mpesaStatus, setMpesaStatus] = useState<MpesaSettingsStatus | null>(null);
+  const [isMpesaBusy, setIsMpesaBusy] = useState(false);
+  const [mpesaDraft, setMpesaDraft] = useState({
+    env: 'sandbox' as 'sandbox' | 'production',
+    type: 'paybill' as 'paybill' | 'buygoods',
+    product: 'M-PESA EXPRESS',
+    shortcode: '',
+    storeNumber: '',
+    consumerKey: '',
+    consumerSecret: '',
+    passkey: '',
+    adminPassword: '',
+    confirmationText: '',
+  });
 
   const resetDraftsFromSaved = React.useCallback(() => {
     setStoreSettings(savedDrafts.store);
@@ -254,6 +274,34 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
   useEffect(() => {
     resetDraftsFromSaved();
   }, [resetDraftsFromSaved]);
+
+  const resetMpesaDraft = React.useCallback(() => {
+    setMpesaDraft({
+      env: mpesaStatus?.mpesaEnv || 'sandbox',
+      type: mpesaStatus?.mpesaType || 'paybill',
+      product: mpesaStatus?.mpesaProduct || 'M-PESA EXPRESS',
+      shortcode: storeSettings.tillNumber || '',
+      storeNumber: '',
+      consumerKey: '',
+      consumerSecret: '',
+      passkey: '',
+      adminPassword: '',
+      confirmationText: '',
+    });
+  }, [mpesaStatus, storeSettings.tillNumber]);
+
+  const loadMpesaStatus = React.useCallback(async () => {
+    if (!activeBusinessId || (!isAdmin && currentUser?.role !== 'ROOT')) {
+      setMpesaStatus(null);
+      return;
+    }
+    const result = await getShopMpesaSettings(activeBusinessId);
+    if (result.status) setMpesaStatus(result.status);
+  }, [activeBusinessId, currentUser?.role, isAdmin]);
+
+  useEffect(() => {
+    void loadMpesaStatus();
+  }, [loadMpesaStatus]);
 
   const refreshHardwareDevices = async (quiet = false) => {
     setIsHardwareBusy(true);
@@ -416,6 +464,61 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
       }
   };
 
+  const handleSaveMpesaSettings = async () => {
+    if (!activeBusinessId || !currentUser?.id) return error('Please log in again.');
+    setIsMpesaBusy(true);
+    try {
+      const result = await saveShopMpesaSettings({
+        businessId: activeBusinessId,
+        userId: currentUser.id,
+        adminPassword: mpesaDraft.adminPassword,
+        confirmationText: mpesaDraft.confirmationText,
+        credentials: {
+          env: mpesaDraft.env,
+          type: mpesaDraft.type,
+          product: mpesaDraft.product,
+          shortcode: mpesaDraft.shortcode,
+          storeNumber: mpesaDraft.storeNumber,
+          consumerKey: mpesaDraft.consumerKey,
+          consumerSecret: mpesaDraft.consumerSecret,
+          passkey: mpesaDraft.passkey,
+        },
+      });
+      if (result.error) return error(result.error);
+      if (result.status) setMpesaStatus(result.status);
+      setMpesaDraft(prev => ({
+        ...prev,
+        consumerKey: '',
+        consumerSecret: '',
+        passkey: '',
+        adminPassword: '',
+        confirmationText: '',
+      }));
+      setEditingSection(null);
+      success('M-Pesa settings saved securely.');
+    } finally {
+      setIsMpesaBusy(false);
+    }
+  };
+
+  const handleTestMpesaSettings = async () => {
+    if (!activeBusinessId || !currentUser?.id) return error('Please log in again.');
+    setIsMpesaBusy(true);
+    try {
+      const result = await testShopMpesaSettings({
+        businessId: activeBusinessId,
+        userId: currentUser.id,
+        adminPassword: mpesaDraft.adminPassword,
+        confirmationText: mpesaDraft.confirmationText,
+      });
+      if (result.error) return error(result.error);
+      success(result.message || 'M-Pesa credentials connected successfully.');
+      await loadMpesaStatus();
+    } finally {
+      setIsMpesaBusy(false);
+    }
+  };
+
   const assignedScanner = hardwareAssignments.find(item => item.role === 'BARCODE_SCANNER');
   const assignedPrinter = hardwareAssignments.find(item => item.role === 'RECEIPT_PRINTER');
   const assignedDrawer = hardwareAssignments.find(item => item.role === 'CASH_DRAWER');
@@ -438,12 +541,14 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
 
   const openEdit = (section: SettingsSectionId) => {
     resetDraftsFromSaved();
+    if (section === 'mpesa') resetMpesaDraft();
     setHardwareMessage('');
     setEditingSection(section);
   };
 
   const closeEdit = () => {
     resetDraftsFromSaved();
+    resetMpesaDraft();
     setHardwareMessage('');
     setEditingSection(null);
   };
@@ -465,6 +570,36 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
       >
         {isUpdating ? <RefreshCcw size={16} className="animate-spin" /> : <Save size={16} />}
         {label}
+      </button>
+    </div>
+  );
+
+  const mpesaFooter = (
+    <div className="flex flex-col gap-2 sm:flex-row">
+      <button
+        type="button"
+        onClick={closeEdit}
+        className="h-12 flex-1 rounded-lg border-2 border-slate-200 bg-white px-4 text-[10px] font-black uppercase tracking-widest text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        onClick={handleTestMpesaSettings}
+        disabled={isMpesaBusy || !mpesaStatus?.mpesaConfigured}
+        className="flex h-12 flex-1 items-center justify-center gap-2 rounded-lg border-2 border-slate-300 bg-white px-4 text-[10px] font-black uppercase tracking-widest text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50"
+      >
+        {isMpesaBusy ? <RefreshCcw size={16} className="animate-spin" /> : <KeyRound size={16} />}
+        Test saved
+      </button>
+      <button
+        type="button"
+        onClick={handleSaveMpesaSettings}
+        disabled={isMpesaBusy}
+        className="flex h-12 flex-[2] items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-blue-800 disabled:opacity-50"
+      >
+        {isMpesaBusy ? <RefreshCcw size={16} className="animate-spin" /> : <Save size={16} />}
+        Save securely
       </button>
     </div>
   );
@@ -492,6 +627,127 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
       <div>
         <FieldLabel>Receipt footer</FieldLabel>
         <TextInput type="text" value={storeSettings.receiptFooter} onChange={e => setStoreSettings({ ...storeSettings, receiptFooter: e.target.value })} />
+      </div>
+    </div>
+  );
+
+  const renderMpesaEditor = () => (
+    <div className="space-y-5">
+      <div className="rounded-lg border-2 border-blue-100 bg-blue-50 p-4">
+        <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Secure entry</p>
+        <p className="mt-2 text-sm font-bold leading-relaxed text-slate-700">
+          Existing secrets are never shown here. Leave a secret field blank to keep the saved value.
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <FieldLabel>Environment</FieldLabel>
+          <select
+            value={mpesaDraft.env}
+            onChange={event => setMpesaDraft(prev => ({ ...prev, env: event.target.value as 'sandbox' | 'production' }))}
+            className="w-full rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none transition-colors focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+          >
+            <option value="sandbox">Sandbox</option>
+            <option value="production">Production</option>
+          </select>
+        </div>
+        <div>
+          <FieldLabel>Account type</FieldLabel>
+          <select
+            value={mpesaDraft.type}
+            onChange={event => setMpesaDraft(prev => ({ ...prev, type: event.target.value as 'paybill' | 'buygoods' }))}
+            className="w-full rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none transition-colors focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+          >
+            <option value="paybill">Paybill</option>
+            <option value="buygoods">Buy goods / Till</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <FieldLabel>Daraja product</FieldLabel>
+        <select
+          value={mpesaDraft.product}
+          onChange={event => setMpesaDraft(prev => ({ ...prev, product: event.target.value }))}
+          className="w-full rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none transition-colors focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+        >
+          <option value="M-PESA EXPRESS">M-PESA EXPRESS</option>
+        </select>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <FieldLabel>Short code</FieldLabel>
+          <TextInput
+            type="text"
+            value={mpesaDraft.shortcode}
+            placeholder={mpesaStatus?.mpesaShortcodeMasked || 'e.g. 123456'}
+            onChange={event => setMpesaDraft(prev => ({ ...prev, shortcode: event.target.value }))}
+          />
+        </div>
+        <div>
+          <FieldLabel>Store number</FieldLabel>
+          <TextInput
+            type="text"
+            value={mpesaDraft.storeNumber}
+            placeholder={mpesaStatus?.mpesaStoreNumberMasked || 'Only if required'}
+            onChange={event => setMpesaDraft(prev => ({ ...prev, storeNumber: event.target.value }))}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-4">
+        <div>
+          <FieldLabel>Consumer key</FieldLabel>
+          <TextInput
+            type="password"
+            autoComplete="new-password"
+            value={mpesaDraft.consumerKey}
+            placeholder={mpesaStatus?.mpesaConsumerKeySet ? 'Saved securely - leave blank to keep' : 'Enter consumer key'}
+            onChange={event => setMpesaDraft(prev => ({ ...prev, consumerKey: event.target.value }))}
+          />
+        </div>
+        <div>
+          <FieldLabel>Consumer secret</FieldLabel>
+          <TextInput
+            type="password"
+            autoComplete="new-password"
+            value={mpesaDraft.consumerSecret}
+            placeholder={mpesaStatus?.mpesaConsumerSecretSet ? 'Saved securely - leave blank to keep' : 'Enter consumer secret'}
+            onChange={event => setMpesaDraft(prev => ({ ...prev, consumerSecret: event.target.value }))}
+          />
+        </div>
+        <div>
+          <FieldLabel>Passkey</FieldLabel>
+          <TextInput
+            type="password"
+            autoComplete="new-password"
+            value={mpesaDraft.passkey}
+            placeholder={mpesaStatus?.mpesaPasskeySet ? 'Saved securely - leave blank to keep' : 'Enter passkey'}
+            onChange={event => setMpesaDraft(prev => ({ ...prev, passkey: event.target.value }))}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <FieldLabel>Admin password</FieldLabel>
+          <TextInput
+            type="password"
+            autoComplete="current-password"
+            value={mpesaDraft.adminPassword}
+            onChange={event => setMpesaDraft(prev => ({ ...prev, adminPassword: event.target.value }))}
+          />
+        </div>
+        <div>
+          <FieldLabel>Type UPDATE MPESA</FieldLabel>
+          <TextInput
+            type="text"
+            value={mpesaDraft.confirmationText}
+            onChange={event => setMpesaDraft(prev => ({ ...prev, confirmationText: event.target.value.toUpperCase() }))}
+          />
+        </div>
       </div>
     </div>
   );
@@ -808,6 +1064,68 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
           </SummaryPanel>
         )}
 
+        {activeSettingsSection === 'mpesa' && (
+          <SummaryPanel
+            title="M-Pesa"
+            description="Secure Daraja credentials for phone prompts and payment verification."
+            Icon={Smartphone}
+            actionLabel={mpesaStatus?.mpesaConfigured ? 'Manage' : 'Set up'}
+            onEdit={() => openEdit('mpesa')}
+          >
+            <div className="space-y-5">
+              <div className="grid border-b border-slate-200 pb-3 sm:grid-cols-3 sm:divide-x sm:divide-slate-200">
+                <ProfileDetail
+                  label="Connection"
+                  value={mpesaStatus?.mpesaConfigured ? 'Configured' : 'Not configured'}
+                  className="sm:pr-4"
+                />
+                <ProfileDetail
+                  label="Environment"
+                  value={mpesaStatus?.mpesaEnv === 'production' ? 'Production' : 'Sandbox'}
+                  className="border-t border-slate-200 sm:border-t-0 sm:px-4"
+                />
+                <ProfileDetail
+                  label="Account type"
+                  value={mpesaStatus?.mpesaType === 'buygoods' ? 'Buy goods / Till' : 'Paybill'}
+                  className="border-t border-slate-200 sm:border-t-0 sm:pl-4"
+                />
+              </div>
+
+              <div className="divide-y divide-slate-200 border-y border-slate-200">
+                <ProfileRow
+                  label="Daraja product"
+                  value={`${mpesaStatus?.mpesaProduct || 'M-PESA EXPRESS'} ${mpesaStatus?.mpesaEnv === 'production' ? 'Production' : 'Sandbox'}`}
+                  status={<StatusPill active={!!mpesaStatus?.mpesaProduct} label="Selected" />}
+                  Icon={Smartphone}
+                />
+                <ProfileRow
+                  label="Safe storage"
+                  value={mpesaStatus?.safeStorageReady ? 'Encryption key is available' : 'Encryption key is missing or weak'}
+                  status={<StatusPill active={!!mpesaStatus?.safeStorageReady} label={mpesaStatus?.safeStorageReady ? 'Ready' : 'Blocked'} />}
+                  Icon={ShieldCheck}
+                />
+                <ProfileRow
+                  label="Credential secrets"
+                  value={mpesaStatus?.mpesaConfigured ? 'Consumer key, consumer secret, and passkey are saved' : 'Credentials still need setup'}
+                  status={<StatusPill active={!!mpesaStatus?.credentialsEncrypted} label={mpesaStatus?.credentialsEncrypted ? 'Encrypted' : 'Not saved'} />}
+                  Icon={KeyRound}
+                />
+                <ProfileRow
+                  label="Short code"
+                  value={mpesaStatus?.mpesaShortcodeMasked || valueOrEmpty(storeSettings.tillNumber)}
+                  status={<StatusPill active={!!(mpesaStatus?.mpesaShortcodeSet || storeSettings.tillNumber)} label={mpesaStatus?.mpesaShortcodeSet ? 'Saved' : 'Business till'} />}
+                  Icon={Smartphone}
+                />
+                <ProfileRow
+                  label="Last connection test"
+                  value={mpesaStatus?.lastTestAt ? new Date(mpesaStatus.lastTestAt).toLocaleString() : 'Not tested'}
+                  status={<StatusPill active={mpesaStatus?.lastTestStatus === 'PASSED'} label={mpesaStatus?.lastTestStatus === 'PASSED' ? 'Passed' : 'Not passed'} />}
+                />
+              </div>
+            </div>
+          </SummaryPanel>
+        )}
+
         {activeSettingsSection === 'hardware' && (
           <SummaryPanel
             title="Hardware"
@@ -920,11 +1238,12 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
               >
                 Done
               </button>
-            ) : editingSection === 'tills' ? settingsFooter('Save tills') : editingSection === 'owner' ? settingsFooter('Save owner mode') : settingsFooter('Save settings')
+            ) : editingSection === 'mpesa' ? mpesaFooter : editingSection === 'tills' ? settingsFooter('Save tills') : editingSection === 'owner' ? settingsFooter('Save owner mode') : settingsFooter('Save settings')
           }
         >
           {editingSection === 'business' && renderBusinessEditor()}
           {editingSection === 'tills' && renderTillsEditor()}
+          {editingSection === 'mpesa' && renderMpesaEditor()}
           {editingSection === 'hardware' && renderHardwareEditor()}
           {editingSection === 'owner' && renderOwnerEditor()}
           {editingSection === 'system' && renderSystemEditor()}

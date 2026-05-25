@@ -440,7 +440,7 @@ export default function PurchasesTabMobile() {
                  )}
               </div>
 
-              <div className="grid shrink-0 grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)] gap-3 border-t-2 border-slate-100 bg-white px-5 py-5 sm:gap-4 sm:px-6">
+              <div className="mobile-popup-footer grid shrink-0 grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)] gap-3 border-t-2 border-slate-100 bg-white px-5 py-5 sm:gap-4 sm:px-6">
                  <button onClick={() => { setIsPOModalOpen(false); setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); }} className="min-w-0 rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-[10px] font-black uppercase tracking-[0.15em] text-slate-600 transition-all press sm:px-8">
                    Cancel
                  </button>
@@ -525,7 +525,7 @@ export default function PurchasesTabMobile() {
                  </div>
               </div>
 
-              <div className="grid shrink-0 grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)] gap-3 border-t-2 border-slate-100 bg-white px-5 py-5 sm:gap-4 sm:px-6">
+              <div className="mobile-popup-footer grid shrink-0 grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)] gap-3 border-t-2 border-slate-100 bg-white px-5 py-5 sm:gap-4 sm:px-6">
                  <button onClick={() => setIsReceivePOModalOpen(false)} className="min-w-0 rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-[10px] font-black uppercase tracking-[0.15em] text-slate-600 transition-all press sm:px-8">
                    Cancel
                  </button>

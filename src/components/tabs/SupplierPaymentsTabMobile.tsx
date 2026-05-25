@@ -446,7 +446,7 @@ export default function SupplierPaymentsTabMobile({ financialAccounts }: { finan
               </div>
             )}
 
-            <div className="keyboard-lift-when-open sticky bottom-0 mt-5 bg-white pt-3 pb-safe lg:static lg:pb-0">
+            <div className="keyboard-lift-when-open mobile-popup-sticky-action mt-5 bg-white pt-3 pb-safe lg:static lg:mb-0 lg:pb-0">
               <button
                 type="button"
                 onClick={handleProcessPayment}

@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS deviceSyncStatus;
 DROP TABLE IF EXISTS financialAccountAdjustments;
 DROP TABLE IF EXISTS financialAccounts;
 DROP TABLE IF EXISTS expenseAccounts;
+DROP TABLE IF EXISTS mpesaCredentials;
 DROP TABLE IF EXISTS mpesaCallbacks;
 DROP TABLE IF EXISTS categories;
 DROP TABLE IF EXISTS salesTills;

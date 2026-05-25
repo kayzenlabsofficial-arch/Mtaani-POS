@@ -45,6 +45,9 @@
   --visual-viewport-height: 100dvh;
   --visual-viewport-offset-top: 0px;
   --visual-keyboard-inset: 0px;
+  --mobile-popup-bottom-gap: max(1.25rem, env(safe-area-inset-bottom));
+  --mobile-popup-footer-bottom: calc(1rem + var(--mobile-popup-bottom-gap));
+  --mobile-popup-scroll-padding: calc(8rem + var(--mobile-popup-bottom-gap));
 }
 
 *, *::before, *::after {
@@ -380,11 +383,23 @@ button[data-busy="true"]:has(.animate-spin)::before {
   }
 
   html[data-keyboard-open] .keyboard-lift-when-open {
-    bottom: var(--visual-keyboard-inset) !important;
+    bottom: calc(var(--visual-keyboard-inset) + var(--mobile-popup-bottom-gap)) !important;
   }
 
   .modal-scroll-padding {
-    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+    scroll-padding-bottom: var(--mobile-popup-scroll-padding);
+    padding-bottom: var(--mobile-popup-scroll-padding) !important;
+  }
+
+  .mobile-popup-footer {
+    padding-bottom: var(--mobile-popup-footer-bottom) !important;
+  }
+
+  .mobile-popup-sticky-action {
+    position: sticky;
+    bottom: var(--mobile-popup-bottom-gap);
+    z-index: 20;
+    margin-bottom: var(--mobile-popup-bottom-gap);
   }
 
   .mobile-vv-overlay {
@@ -392,10 +407,11 @@ button[data-busy="true"]:has(.animate-spin)::before {
     bottom: auto !important;
     height: var(--visual-viewport-height) !important;
     min-height: 0;
+    padding-bottom: var(--mobile-popup-bottom-gap) !important;
   }
 
   .mobile-vv-panel {
-    max-height: calc(var(--visual-viewport-height) - 0.75rem) !important;
+    max-height: calc(var(--visual-viewport-height) - var(--mobile-popup-bottom-gap) - 0.75rem) !important;
   }
 
   /* ── Input focus glow ────────────────────────────────  */

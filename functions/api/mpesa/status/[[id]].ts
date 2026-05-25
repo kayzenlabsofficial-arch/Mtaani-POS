@@ -11,7 +11,12 @@ const corsHeaders = {
 };
 
 function jsonHeaders() {
-  return { 'Content-Type': 'application/json', ...corsHeaders };
+  return {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    'X-Content-Type-Options': 'nosniff',
+    ...corsHeaders,
+  };
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {

@@ -14,6 +14,7 @@ import { getBusinessSettings } from './utils/settings';
 import { pickedCashAccountId, singleFinanceAccount } from './utils/financeAccount';
 import { useStore } from './store';
 import { getCurrentShiftId, getCurrentShiftStart } from './utils/shiftSession';
+import { BillingService, type BillingInfo } from './services/billing';
 
 // Modular Components
 import RegisterTab from './components/tabs/RegisterTab';
@@ -40,6 +41,7 @@ import { MobileNav, MobileRegisterFab, MoreOptionsMenu, TopHeaderDesktop, TopHea
 import { LoginScreen } from './components/auth/LoginScreen';
 import AccountSetupScreen from './components/auth/AccountSetupScreen';
 import SystemManagerDashboard from './components/admin/SystemManager';
+import { BillingBanner, BillingLockScreen } from './components/billing/BillingNotice';
 
 // Modals
 import ProfileModal from './components/modals/ProfileModal';
@@ -83,6 +85,11 @@ export default function MtaaniPOS() {
   const setCurrentUser = useStore(state => state.setCurrentUser);
   const isRegisterTab = activeTab === 'REGISTER';
   const requiresAccountSetup = !!currentUser && Number(currentUser.mustChangePassword || 0) === 1;
+  const [billingInfo, setBillingInfo] = React.useState<BillingInfo | null>(null);
+  const [billingPhone, setBillingPhone] = React.useState('');
+  const [billingCheckoutId, setBillingCheckoutId] = React.useState('');
+  const [billingPaymentMessage, setBillingPaymentMessage] = React.useState('');
+  const [isBillingPaying, setIsBillingPaying] = React.useState(false);
   const canSeeSalesData = currentUser?.role === 'ADMIN' || currentUser?.role === 'ROOT'
     || (canOpenTab(currentUser, businessSettings, 'DASHBOARD') && !shouldBlurFeature(currentUser, businessSettings, 'dashboard.moneyBreakdown'));
 
@@ -105,6 +112,73 @@ export default function MtaaniPOS() {
   React.useEffect(() => {
     if (activeBusinessId && !activeShopId) setActiveShopId(SINGLE_SHOP_ID);
   }, [activeBusinessId, activeShopId, setActiveShopId]);
+
+  const refreshBillingStatus = React.useCallback(async (checkoutRequestId = '') => {
+    if (!currentUser || !activeBusinessId || isSystemAdmin) {
+      setBillingInfo(null);
+      return null;
+    }
+    const res = await BillingService.status({ businessId: activeBusinessId, checkoutRequestId });
+    setBillingInfo(res.billing);
+    if (checkoutRequestId && res.payment?.status) {
+      setBillingPaymentMessage(
+        res.payment.status === 'PAID'
+          ? 'Payment received. Unlocking account...'
+          : res.payment.status === 'FAILED'
+            ? (res.payment.resultDesc || 'Payment request failed.')
+            : 'Waiting for M-Pesa confirmation.',
+      );
+    }
+    return res;
+  }, [activeBusinessId, currentUser, isSystemAdmin]);
+
+  React.useEffect(() => {
+    if (!currentUser || !activeBusinessId || isSystemAdmin) {
+      setBillingInfo(null);
+      setBillingCheckoutId('');
+      return;
+    }
+    refreshBillingStatus().catch(() => {});
+  }, [activeBusinessId, currentUser?.id, isSystemAdmin, refreshBillingStatus]);
+
+  React.useEffect(() => {
+    if (!billingCheckoutId || !activeBusinessId) return;
+    const timer = window.setInterval(() => {
+      refreshBillingStatus(billingCheckoutId)
+        .then(res => {
+          const status = String(res?.payment?.status || '').toUpperCase();
+          if (status === 'PAID') {
+            setBillingCheckoutId('');
+            setBillingPaymentMessage('Payment received. The account is active again.');
+            void db.businesses.reload().catch(() => {});
+            success('Payment received. Business unlocked.');
+          } else if (status === 'FAILED') {
+            setBillingCheckoutId('');
+          }
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [activeBusinessId, billingCheckoutId, refreshBillingStatus, success]);
+
+  const handleBillingPay = React.useCallback(async () => {
+    if (!currentUser || currentUser.role !== 'ADMIN') return error('Only the business administrator can pay from the POS.');
+    if (!activeBusinessId) return error('Business is still loading.');
+    if (!billingPhone.trim()) return error('Enter the Safaricom phone number.');
+    setIsBillingPaying(true);
+    setBillingPaymentMessage('');
+    try {
+      const res = await BillingService.pay({ businessId: activeBusinessId, phone: billingPhone.trim() });
+      setBillingInfo(res.billing);
+      setBillingCheckoutId(res.payment.checkoutRequestId || '');
+      setBillingPaymentMessage(res.message || 'Payment prompt sent. Waiting for M-Pesa confirmation.');
+      success('Payment prompt sent.');
+    } catch (err: any) {
+      error(err?.message || 'Could not start payment.');
+    } finally {
+      setIsBillingPaying(false);
+    }
+  }, [activeBusinessId, billingPhone, currentUser, error, success]);
 
   React.useEffect(() => {
     const root = document.documentElement;
@@ -272,6 +346,27 @@ export default function MtaaniPOS() {
     );
   }
 
+  const isBusinessLocked = billingInfo?.billingStatus === 'LOCKED';
+  const showBillingBanner = !!billingInfo && billingInfo.billingStatus !== 'OK';
+  const billingPaymentProps = {
+    phone: billingPhone,
+    setPhone: setBillingPhone,
+    onPay: handleBillingPay,
+    isPaying: isBillingPaying,
+    paymentMessage: billingPaymentMessage,
+  };
+
+  if (isBusinessLocked && billingInfo) {
+    return (
+      <BillingLockScreen
+        billing={billingInfo}
+        isAdmin={currentUser.role === 'ADMIN'}
+        payment={billingPaymentProps}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   return (
     <div className={`flex h-[100dvh] overflow-hidden font-hanken ${isPhoneUi ? 'bg-slate-100' : 'bg-slate-50'}`}>
       {!isPhoneUi && (
@@ -307,6 +402,14 @@ export default function MtaaniPOS() {
             isOnline={isOnline}
             onOpenProfile={() => setIsProfileModalOpen(true)}
             currentUser={currentUser}
+          />
+        )}
+
+        {showBillingBanner && billingInfo && (
+          <BillingBanner
+            billing={billingInfo}
+            isAdmin={currentUser.role === 'ADMIN'}
+            payment={billingPaymentProps}
           />
         )}
 

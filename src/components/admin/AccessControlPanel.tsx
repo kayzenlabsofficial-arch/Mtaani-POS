@@ -5,6 +5,7 @@ import { db } from '../../db';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import { BusinessSettingsService } from '../../services/businessSettings';
+import { usePhoneUi } from '../../hooks/usePhoneUi';
 import { settingsIdForBusiness, getBusinessSettings } from '../../utils/settings';
 import {
   ACCESS_CONTROL_GROUPS,
@@ -48,9 +49,11 @@ function AccessDrawer({
   children: React.ReactNode;
   footer: React.ReactNode;
 }) {
+  const isPhoneUi = usePhoneUi();
+
   return (
-    <div className="fixed inset-0 z-[120] flex justify-end bg-slate-950/45 backdrop-blur-sm">
-      <section className="flex h-full w-full flex-col bg-white shadow-2xl sm:max-w-2xl sm:border-l-2 sm:border-slate-200">
+    <div className={`${isPhoneUi ? 'mobile-vv-overlay ' : ''}fixed inset-0 z-[120] flex justify-end bg-slate-950/45 backdrop-blur-sm`}>
+      <section className={`${isPhoneUi ? 'mobile-vv-panel ' : ''}flex h-full w-full flex-col bg-white shadow-2xl sm:max-w-2xl sm:border-l-2 sm:border-slate-200`}>
         <header className="flex items-start justify-between gap-4 border-b-2 border-slate-200 px-4 py-4 sm:px-5">
           <div className="min-w-0">
             <h3 className="text-lg font-black text-slate-950">Edit access controls</h3>
@@ -65,10 +68,10 @@ function AccessDrawer({
             <X size={18} />
           </button>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+        <div className={`${isPhoneUi ? 'modal-scroll-padding ' : ''}min-h-0 flex-1 overflow-y-auto p-4 sm:p-5`}>
           {children}
         </div>
-        <footer className="border-t-2 border-slate-200 bg-slate-50 p-4 sm:p-5">
+        <footer className={`${isPhoneUi ? 'mobile-popup-footer ' : ''}border-t-2 border-slate-200 bg-slate-50 p-4 sm:p-5`}>
           {footer}
         </footer>
       </section>

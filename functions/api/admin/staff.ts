@@ -4,11 +4,11 @@ import { PolicyError } from '../salesSecurity';
 interface Env {
   DB: D1Database;
   API_SECRET?: string;
+  BUSINESS_BOOTSTRAP_PASSWORD?: string;
 }
 
 const ADMIN_ROLES = new Set(['ROOT', 'ADMIN']);
 const STAFF_ROLES = new Set(['ADMIN', 'MANAGER', 'CASHIER']);
-const RECOVERY_PASSWORD = '1234';
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -24,6 +24,14 @@ function json(data: unknown, status = 200) {
 
 function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
+}
+
+function requireBootstrapPassword(env: Env) {
+  const password = String(env.BUSINESS_BOOTSTRAP_PASSWORD || '').trim();
+  if (password.length < 4) {
+    throw new PolicyError('BUSINESS_BOOTSTRAP_PASSWORD must be set in Cloudflare secrets and be at least 4 characters.', 500);
+  }
+  return password;
 }
 
 async function ensureSchema(db: D1Database) {
@@ -153,7 +161,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (action === 'RESET_PASSWORD') {
       const requested = String(body?.newPassword || '');
       const hasExplicitPassword = requested.length >= 4;
-      const newPassword = hasExplicitPassword ? requested : RECOVERY_PASSWORD;
+      const newPassword = hasExplicitPassword ? requested : requireBootstrapPassword(env);
       const mustChangePassword = hasExplicitPassword ? 0 : 1;
       const business = await env.DB.prepare(`SELECT code FROM businesses WHERE id = ? LIMIT 1`)
         .bind(businessId)
@@ -173,7 +181,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return json({
         success: true,
         userId,
-        temporaryPassword: hasExplicitPassword ? undefined : newPassword,
         mustChangePassword: !hasExplicitPassword,
       });
     }

@@ -299,10 +299,11 @@ export async function prepareExpenseSubmit(
   const now = Date.now();
   const expense = { ...(args.expense || {}) };
   expense.id = trimText(expense.id || crypto.randomUUID(), 120);
-  expense.source = String(expense.source || 'TILL').toUpperCase() === 'ACCOUNT' ? 'ACCOUNT' : 'TILL';
+  const requestedSource = String(expense.source || 'TILL').toUpperCase();
+  expense.source = requestedSource === 'ACCOUNT' ? 'ACCOUNT' : requestedSource === 'SHOP' ? 'SHOP' : 'TILL';
   expense.accountId = expense.source === 'ACCOUNT' ? pickedCashAccountId(businessId) : null;
-  expense.productId = null;
-  expense.quantity = null;
+  expense.productId = expense.source === 'SHOP' ? trimText(expense.productId, 120) : null;
+  expense.quantity = expense.source === 'SHOP' ? Math.max(0, asNumber(expense.quantity, 1)) : null;
   expense.amount = expense.source === 'SHOP'
     ? await amountForStockExpense(db, businessId, expense)
     : Math.round(asNumber(expense.amount) * 100) / 100;

@@ -456,7 +456,7 @@ export default function SupplierLedgerModalMobile({ supplier, onClose, onEdit, o
                 )}
             </div>
             {activeRows.length > pageSize && (
-              <div className="flex items-center justify-between gap-3 border-t-2 border-slate-100 bg-slate-50 px-5 py-4 no-print sm:px-6">
+              <div className="mobile-popup-footer flex items-center justify-between gap-3 border-t-2 border-slate-100 bg-slate-50 px-5 py-4 no-print sm:px-6">
                 <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1} className="rounded-lg border-2 border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40">Previous 50</button>
                 <span className="text-xs font-medium text-slate-500">Page {currentPage} of {totalPages}</span>
                 <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} className="rounded-lg border-2 border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40">Next 50</button>
@@ -549,7 +549,7 @@ export default function SupplierLedgerModalMobile({ supplier, onClose, onEdit, o
                         <textarea data-testid="supplier-credit-reason" value={creditNoteForm.reason} onChange={e => setCreditNoteForm({...creditNoteForm, reason: e.target.value})} className="h-20 w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:border-blue-600" placeholder="e.g. Returned broken stock" />
                     </div>
                 </div>
-                <div className="flex gap-2 border-t-2 border-slate-100 bg-white p-5 sm:p-6">
+                <div className="mobile-popup-footer flex gap-2 border-t-2 border-slate-100 bg-white p-5 sm:p-6">
                     <button data-testid="supplier-credit-cancel" onClick={() => { setIsAddCreditNoteOpen(false); resetCreditNoteForm(); }} className="flex-1 rounded-lg border-2 border-slate-200 bg-white py-3 text-xs font-black text-slate-600">Cancel</button>
                     <button data-testid="supplier-credit-save" onClick={handleAddCreditNote} disabled={creditNoteItems.length === 0 || creditNoteTotal <= 0 || isSavingCreditNote} aria-busy={isSavingCreditNote} data-busy={isSavingCreditNote ? 'true' : undefined} className="flex flex-[2] items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 py-3 text-xs font-black text-white transition-all active:scale-95 disabled:opacity-50 hover:bg-blue-800">
                         {isSavingCreditNote && <Loader2 size={14} className="animate-spin" />}

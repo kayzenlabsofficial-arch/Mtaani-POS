@@ -373,7 +373,7 @@ export default function RegisterPaymentPanelMobile({
         </div>
       )}
 
-      <div className="keyboard-lift-when-open sticky bottom-0 z-20 max-h-[72dvh] shrink-0 space-y-3 overflow-y-auto border-t border-slate-300 bg-white p-4 lg:max-h-none lg:overflow-visible">
+      <div className="keyboard-lift-when-open mobile-popup-sticky-action z-20 max-h-[72dvh] shrink-0 space-y-3 overflow-y-auto border-t border-slate-300 bg-white p-4 lg:max-h-none lg:overflow-visible">
         <div className="rounded-lg border-2 border-slate-300 bg-slate-50 p-4 text-slate-950 shadow-sm ring-1 ring-white">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -477,7 +477,7 @@ export default function RegisterPaymentPanelMobile({
                   <span className="text-lg font-medium">Change to Give</span>
                   <span className="text-lg font-semibold tabular-nums">Ksh {changeDue.toLocaleString()}.00</span>
                 </div>
-                <button type="button" onClick={() => void completeCashPayment()} disabled={isCheckingOut || !cashTendered.trim() || tendered < total} aria-busy={isCheckingOut} data-busy={isCheckingOut ? 'true' : undefined} className="sticky bottom-0 z-10 flex h-14 w-full items-center justify-center rounded-md bg-emerald-700 px-4 text-base font-bold text-white shadow-lg shadow-emerald-900/15 disabled:opacity-50">
+                <button type="button" onClick={() => void completeCashPayment()} disabled={isCheckingOut || !cashTendered.trim() || tendered < total} aria-busy={isCheckingOut} data-busy={isCheckingOut ? 'true' : undefined} className="mobile-popup-sticky-action flex h-14 w-full items-center justify-center rounded-md bg-emerald-700 px-4 text-base font-bold text-white shadow-lg shadow-emerald-900/15 disabled:opacity-50">
                   Finalize Transaction
                 </button>
               </div>
@@ -498,7 +498,7 @@ export default function RegisterPaymentPanelMobile({
                       <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-600">Customer Phone Number</span><input value={mpesaPhone} onChange={(event) => setMpesaPhone(event.target.value)} placeholder="e.g. 0712345678" data-testid="mpesa-phone" className="h-12 w-full rounded-md border border-slate-500 bg-white px-4 text-base font-semibold outline-none placeholder:text-slate-500 focus:border-[#43b02a]" /></label>
                       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-slate-100 px-4 py-4"><span className="text-base font-medium text-slate-600">Amount to Pay via M-Pesa</span><span className="text-base font-semibold tabular-nums text-slate-950">Ksh {mpesaBalanceDue.toLocaleString()}.00</span></div>
                       {hasMpesaCashSplit && <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-700"><span className="text-sm font-semibold">Cash Applied</span><span className="text-sm font-bold tabular-nums">Ksh {mpesaAppliedCashAmount.toLocaleString()}.00</span></div>}
-                      <button type="button" onClick={() => void sendMpesaPrompt()} disabled={mpesaIsWaiting || isCheckingOut || mpesaBalanceDue <= 0} aria-busy={mpesaIsWaiting} data-busy={mpesaIsWaiting ? 'true' : undefined} data-testid="mpesa-prompt" className="sticky bottom-0 z-10 flex h-14 w-full items-center justify-center gap-2 rounded-md bg-[#43b02a] px-4 text-base font-bold text-white disabled:opacity-50"><Smartphone size={20} /> Send Prompt</button>
+                      <button type="button" onClick={() => void sendMpesaPrompt()} disabled={mpesaIsWaiting || isCheckingOut || mpesaBalanceDue <= 0} aria-busy={mpesaIsWaiting} data-busy={mpesaIsWaiting ? 'true' : undefined} data-testid="mpesa-prompt" className="mobile-popup-sticky-action flex h-14 w-full items-center justify-center gap-2 rounded-md bg-[#43b02a] px-4 text-base font-bold text-white disabled:opacity-50"><Smartphone size={20} /> Send Prompt</button>
                     </>
                   )}
                   {mpesaTab === 'VERIFY' && (
@@ -506,7 +506,7 @@ export default function RegisterPaymentPanelMobile({
                       <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-600">Transaction Code</span><input value={mpesaRef} onChange={(event) => setMpesaRef(event.target.value.toUpperCase())} placeholder="ABC123XYZ" data-testid="mpesa-reference" className="h-12 w-full rounded-md border border-slate-500 bg-white px-4 text-base font-semibold uppercase outline-none placeholder:text-slate-500 focus:border-slate-950" /></label>
                       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-slate-100 px-4 py-4"><span className="text-base font-medium text-slate-600">Required M-Pesa Amount</span><span className="text-base font-semibold tabular-nums text-slate-950">Ksh {mpesaBalanceDue.toLocaleString()}.00</span></div>
                       {hasMpesaCashSplit && <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-700"><span className="text-sm font-semibold">Cash Applied</span><span className="text-sm font-bold tabular-nums">Ksh {mpesaAppliedCashAmount.toLocaleString()}.00</span></div>}
-                      <button type="button" onClick={() => void completeVerifiedMpesaPayment()} disabled={isVerifyingMpesa || isCheckingOut || !mpesaRef.trim()} aria-busy={isVerifyingMpesa} data-busy={isVerifyingMpesa ? 'true' : undefined} className="sticky bottom-0 z-10 flex h-14 w-full items-center justify-center rounded-md bg-slate-950 px-4 text-base font-bold text-white disabled:opacity-50">Verify & Complete</button>
+                      <button type="button" onClick={() => void completeVerifiedMpesaPayment()} disabled={isVerifyingMpesa || isCheckingOut || !mpesaRef.trim()} aria-busy={isVerifyingMpesa} data-busy={isVerifyingMpesa ? 'true' : undefined} className="mobile-popup-sticky-action flex h-14 w-full items-center justify-center rounded-md bg-slate-950 px-4 text-base font-bold text-white disabled:opacity-50">Verify & Complete</button>
                     </>
                   )}
                   {mpesaTab === 'MANUAL' && (
@@ -516,7 +516,7 @@ export default function RegisterPaymentPanelMobile({
                         <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-600">Amount</span><input type="number" min="0" value={mpesaManualAmount} onChange={(event) => setMpesaManualAmount(event.target.value)} placeholder="0.00" className="h-12 w-full rounded-md border border-slate-500 bg-white px-4 text-base font-semibold outline-none placeholder:text-slate-500 focus:border-slate-950" /></label>
                       </div>
                       <div className="rounded-md bg-slate-100 px-4 py-4 text-center"><p className="text-xs font-bold text-slate-600">M-PESA BALANCE DUE</p><p className="mt-1 text-lg font-semibold tabular-nums text-slate-950">Ksh {mpesaBalanceDue.toLocaleString()}.00</p>{hasMpesaCashSplit && <p className="mt-1 text-xs font-semibold text-emerald-700">Cash applied: Ksh {mpesaAppliedCashAmount.toLocaleString()}.00</p>}</div>
-                      <button type="button" onClick={() => void completeManualMpesaPayment()} disabled={isCheckingOut || !mpesaRef.trim() || (Number(mpesaManualAmount) || 0) < mpesaBalanceDue} aria-busy={isCheckingOut} data-busy={isCheckingOut ? 'true' : undefined} className="sticky bottom-0 z-10 flex h-14 w-full items-center justify-center rounded-md bg-slate-950 px-4 text-base font-bold text-white disabled:opacity-50">Process Manual Entry</button>
+                      <button type="button" onClick={() => void completeManualMpesaPayment()} disabled={isCheckingOut || !mpesaRef.trim() || (Number(mpesaManualAmount) || 0) < mpesaBalanceDue} aria-busy={isCheckingOut} data-busy={isCheckingOut ? 'true' : undefined} className="mobile-popup-sticky-action flex h-14 w-full items-center justify-center rounded-md bg-slate-950 px-4 text-base font-bold text-white disabled:opacity-50">Process Manual Entry</button>
                     </>
                   )}
                   {mpesaTab === 'CASH' && (
@@ -528,7 +528,7 @@ export default function RegisterPaymentPanelMobile({
                       </div>
                       <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-600">Cash Amount to Deduct</span><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-base font-bold text-slate-700">Ksh</span><input type="number" min="0" max={total} value={mpesaCashDeduct} onChange={(event) => setMpesaCashDeduct(event.target.value)} placeholder="0.00" className="h-14 w-full rounded-md border border-slate-500 bg-white pl-14 pr-4 text-2xl font-bold tabular-nums text-slate-950 outline-none placeholder:text-slate-500 focus:border-slate-950" /></div></label>
                       <p className="text-sm italic text-slate-600">Apply the cash amount here, then finish the remaining balance from STK Push, Verify Code, or Manual.</p>
-                      <button type="button" onClick={applyMpesaCashDeduction} disabled={isCheckingOut || mpesaCashInputAmount <= 0} className="sticky bottom-0 z-10 flex h-12 w-full items-center justify-center rounded-md border border-slate-950 bg-white px-4 text-base font-medium text-slate-950 disabled:opacity-50">Apply</button>
+                      <button type="button" onClick={applyMpesaCashDeduction} disabled={isCheckingOut || mpesaCashInputAmount <= 0} className="mobile-popup-sticky-action flex h-12 w-full items-center justify-center rounded-md border border-slate-950 bg-white px-4 text-base font-medium text-slate-950 disabled:opacity-50">Apply</button>
                     </>
                   )}
                   {mpesaState !== 'IDLE' && <p className={`rounded-md px-4 py-3 text-sm font-semibold ${mpesaState === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : mpesaState === 'FAILED' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>{mpesaState === 'PUSHING' ? 'Sending request' : mpesaState === 'POLLING' ? 'Waiting for customer PIN' : mpesaState === 'SUCCESS' ? 'Payment received' : 'Request failed or timed out'}</p>}
@@ -547,7 +547,7 @@ export default function RegisterPaymentPanelMobile({
                     return <button key={customer.id} type="button" onClick={() => setSelectedCustomerId(customer.id)} className={`w-full rounded-md border px-4 py-4 text-left transition-colors ${active ? 'border-slate-950 bg-white shadow-sm' : 'border-slate-300 bg-white hover:border-slate-500'}`}><span className="block text-base font-medium text-slate-950">{customer.name}</span><span className="mt-1 block text-sm text-slate-600">{limit > 0 ? `Limit: Ksh ${limit.toLocaleString()}.00` : `Balance: Ksh ${Number(customer.balance || 0).toLocaleString()}.00`}</span></button>;
                   })}
                 </div>
-                <button type="button" onClick={() => void completeCreditPayment()} disabled={isCheckingOut || !selectedCustomer} aria-busy={isCheckingOut} data-busy={isCheckingOut ? 'true' : undefined} className={`sticky bottom-0 z-10 flex h-14 w-full items-center justify-center rounded-md px-4 text-base font-bold text-white ${selectedCustomer ? 'bg-slate-950' : 'bg-slate-400'}`}>Process on Credit</button>
+                <button type="button" onClick={() => void completeCreditPayment()} disabled={isCheckingOut || !selectedCustomer} aria-busy={isCheckingOut} data-busy={isCheckingOut ? 'true' : undefined} className={`mobile-popup-sticky-action flex h-14 w-full items-center justify-center rounded-md px-4 text-base font-bold text-white ${selectedCustomer ? 'bg-slate-950' : 'bg-slate-400'}`}>Process on Credit</button>
               </div>
             )}
         </MobileModal>

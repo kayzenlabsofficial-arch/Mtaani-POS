@@ -677,7 +677,7 @@ export default function SalesInvoicesTabMobile() {
                     type="button"
                     onClick={saveInvoice}
                     disabled={isSaving}
-                    className="sticky bottom-0 z-10 mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50 hover:bg-blue-800"
+                    className="mobile-popup-sticky-action mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50 hover:bg-blue-800"
                   >
                     <Send size={16} /> {isSaving ? 'Saving...' : 'Create invoice'}
                   </button>
@@ -690,7 +690,7 @@ export default function SalesInvoicesTabMobile() {
 
       {isServiceModalOpen && (
         <div className="mobile-vv-overlay fixed inset-0 z-[110] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
-          <div className="mobile-vv-panel w-full max-w-lg overflow-y-auto rounded-t-2xl border-2 border-slate-200 bg-white p-5 shadow-xl sm:rounded-lg">
+          <div className="mobile-vv-panel modal-scroll-padding w-full max-w-lg overflow-y-auto rounded-t-2xl border-2 border-slate-200 bg-white p-5 shadow-xl sm:rounded-lg">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-black text-slate-900">{editingService ? 'Edit service' : 'Add service'}</h3>
@@ -719,7 +719,7 @@ export default function SalesInvoicesTabMobile() {
                   Active
                 </label>
               </div>
-              <button onClick={saveService} disabled={isSaving} className="sticky bottom-0 z-10 h-12 w-full rounded-lg border-2 border-blue-700 bg-blue-700 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50 hover:bg-blue-800">
+              <button onClick={saveService} disabled={isSaving} className="mobile-popup-sticky-action h-12 w-full rounded-lg border-2 border-blue-700 bg-blue-700 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50 hover:bg-blue-800">
                 {isSaving ? 'Saving...' : 'Save service'}
               </button>
             </div>
@@ -787,7 +787,7 @@ export default function SalesInvoicesTabMobile() {
 
       {paymentInvoice && (
         <div className="mobile-vv-overlay fixed inset-0 z-[120] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
-          <div className="mobile-vv-panel w-full max-w-md overflow-y-auto rounded-t-2xl border-2 border-slate-200 bg-white p-5 shadow-xl sm:rounded-lg">
+          <div className="mobile-vv-panel modal-scroll-padding w-full max-w-md overflow-y-auto rounded-t-2xl border-2 border-slate-200 bg-white p-5 shadow-xl sm:rounded-lg">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-black text-slate-900">Clear invoice balance</h3>
@@ -807,7 +807,7 @@ export default function SalesInvoicesTabMobile() {
                 <option value="CHEQUE">Cheque</option>
               </select>
               <input value={paymentForm.reference} onChange={e => setPaymentForm(prev => ({ ...prev, reference: e.target.value }))} placeholder="Code or note" className="h-12 w-full rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-blue-600" />
-              <button onClick={applyPayment} disabled={isSaving} className="sticky bottom-0 z-10 h-12 w-full rounded-lg border-2 border-blue-700 bg-blue-700 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50 hover:bg-blue-800">
+              <button onClick={applyPayment} disabled={isSaving} className="mobile-popup-sticky-action h-12 w-full rounded-lg border-2 border-blue-700 bg-blue-700 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50 hover:bg-blue-800">
                 {isSaving ? 'Saving...' : 'Clear balance'}
               </button>
             </div>

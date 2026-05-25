@@ -1,10 +1,11 @@
 ﻿import React, { useState } from 'react';
-import { Search, Plus, FileMinus, Trash2, Calendar, User, X, SlidersHorizontal } from 'lucide-react';
+import { Search, Plus, FileMinus, Trash2, Calendar, User, X, SlidersHorizontal, PackageMinus } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import ExpenseModal from '../modals/ExpenseModalMobile';
+import { SearchableSelect } from '../shared/SearchableSelect';
 import { canPerform } from '../../utils/accessControl';
 import { recordAuditEvent } from '../../utils/auditLog';
 import { submitExpenseRecord } from '../../utils/approvalWorkflows';
@@ -14,10 +15,12 @@ import { getBusinessSettings } from '../../utils/settings';
 import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSession';
 import { ExpenseService } from '../../services/expenses';
 import { pickedCashAccountId, singleFinanceAccount } from '../../utils/financeAccount';
+import { belongsToActiveShop } from '../../utils/shopScope';
 
 type ExpenseDateRange = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL';
-type ExpenseSourceFilter = 'ALL' | 'TILL' | 'ACCOUNT';
+type ExpenseSourceFilter = 'ALL' | 'TILL' | 'ACCOUNT' | 'SHOP';
 type ExpenseStatusFilter = 'ALL' | 'APPROVED' | 'PENDING' | 'REJECTED';
+type ExpenseViewTab = 'RECORDS' | 'SHOP';
 
 function toDateInputValue(date: Date) {
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
@@ -56,8 +59,10 @@ export default function ExpensesTabMobile() {
   const [expenseSourceFilter, setExpenseSourceFilter] = useState<ExpenseSourceFilter>('ALL');
   const [expenseStatusFilter, setExpenseStatusFilter] = useState<ExpenseStatusFilter>('ALL');
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('ALL');
+  const [activeExpenseTab, setActiveExpenseTab] = useState<ExpenseViewTab>('RECORDS');
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '', source: 'TILL' as 'TILL' | 'ACCOUNT', accountId: '' });
+  const [shopExpenseForm, setShopExpenseForm] = useState({ productId: '', quantity: '1', description: '' });
   const [isSaving, setIsSaving] = useState(false);
   
   const currentUser = useStore(state => state.currentUser);
@@ -68,6 +73,7 @@ export default function ExpensesTabMobile() {
   const { success, error } = useToast();
 
   const allExpenses = useLiveQuery(() => activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
+  const products = useLiveQuery(() => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(product => belongsToActiveShop(product, activeShopId)).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
   const expenseAccounts = useLiveQuery(() => activeBusinessId ? db.expenseAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId], []) ;
   const rawFinancialAccounts = useLiveQuery(
     () => activeBusinessId
@@ -107,7 +113,25 @@ export default function ExpensesTabMobile() {
   });
   const todayTillExpenses = drawer.tillExpenses;
   const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'ACCOUNT' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const todayShopExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'SHOP' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const actualCashDrawer = Math.max(0, drawer.actualCashDrawer);
+  const productById = React.useMemo(() => {
+    const map = new Map<string, any>();
+    (products || []).forEach(product => map.set(product.id, product));
+    return map;
+  }, [products]);
+  const selectedShopProduct = shopExpenseForm.productId ? productById.get(shopExpenseForm.productId) : null;
+  const shopExpenseQuantity = Number(shopExpenseForm.quantity) || 0;
+  const shopExpenseUnitCost = Number(selectedShopProduct?.costPrice || 0);
+  const shopExpenseAmount = Math.round(Math.max(0, shopExpenseUnitCost * Math.max(0, shopExpenseQuantity)) * 100) / 100;
+  const productOptions = React.useMemo(() => (products || [])
+    .filter(product => Number(product.stockQuantity || 0) > 0)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    .map(product => ({
+      value: product.id,
+      label: `${product.name} - ${Number(product.stockQuantity || 0).toLocaleString()} ${product.unit || 'pcs'} in stock`,
+      keywords: `${product.name || ''} ${product.category || ''} ${product.barcode || ''}`,
+    })), [products]);
 
   const handleSaveExpense = async () => {
       if (isSaving) return;
@@ -176,6 +200,71 @@ export default function ExpensesTabMobile() {
       }
   };
 
+  const handleSaveShopExpense = async () => {
+      if (isSaving) return;
+      if (!currentUser) return;
+      if (!activeBusinessId || !activeShopId) return error("The shop is still loading. Try again.");
+      if (!canPerform(currentUser, 'expense.create', businessSettings)) {
+          error("You do not have permission to create expenses.");
+          return;
+      }
+      if (!selectedShopProduct) {
+          error("Select the product being expensed.");
+          return;
+      }
+      if (shopExpenseQuantity <= 0) {
+          error("Enter a valid quantity.");
+          return;
+      }
+      if (shopExpenseQuantity > Number(selectedShopProduct.stockQuantity || 0)) {
+          error(`Only ${Number(selectedShopProduct.stockQuantity || 0).toLocaleString()} ${selectedShopProduct.unit || 'pcs'} available.`);
+          return;
+      }
+      if (shopExpenseUnitCost <= 0) {
+          error(`Set a cost price for ${selectedShopProduct.name} before expensing it from stock.`);
+          return;
+      }
+
+      setIsSaving(true);
+      try {
+        const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
+        const expenseRecord = {
+           id: crypto.randomUUID(),
+           amount: shopExpenseAmount,
+           category: 'Shop product',
+           description: shopExpenseForm.description.trim() || `Shop use: ${selectedShopProduct.name}`,
+           timestamp: Date.now(),
+           userName: currentUser.name,
+           preparedBy: currentUser.name,
+           status: autoApprove ? 'APPROVED' : 'PENDING',
+           approvedBy: autoApprove ? currentUser.name : undefined,
+           source: 'SHOP',
+           productId: selectedShopProduct.id,
+           quantity: shopExpenseQuantity,
+           shiftId: currentShiftId || undefined,
+           shopId: activeShopId,
+           businessId: activeBusinessId
+        } as any;
+
+        await submitExpenseRecord(expenseRecord);
+
+        recordAuditEvent({
+          userId: currentUser.id,
+          userName: currentUser.name,
+          action: 'expense.create.product',
+          entity: 'expense',
+          severity: autoApprove ? 'INFO' : 'WARN',
+          details: `${autoApprove ? 'Auto-approved' : 'Created pending'} shop product expense for ${shopExpenseQuantity.toLocaleString()} ${selectedShopProduct.unit || 'pcs'} of ${selectedShopProduct.name}.`,
+        });
+        setShopExpenseForm({ productId: '', quantity: '1', description: '' });
+        success(autoApprove ? "Product expensed and stock updated." : "Product expense request created.");
+      } catch (err: any) {
+        error("Failed to expense product: " + err.message);
+      } finally {
+        setIsSaving(false);
+      }
+  };
+
   const handleDeleteExpense = async (id: string) => {
       if (!isAdmin || isSaving) return;
       if (!activeBusinessId || !activeShopId) return error("The shop is still loading. Try again.");
@@ -207,6 +296,7 @@ export default function ExpensesTabMobile() {
   };
 
   const sourceBadge = (source?: string) => {
+    if (source === 'SHOP') return { label: 'Shop stock', className: 'bg-blue-50 text-blue-700 border-blue-100' };
     if (source === 'TILL') return { label: 'Till', className: 'bg-slate-50 text-slate-700 border-slate-200' };
     return { label: 'Main account', className: 'bg-slate-50 text-slate-700 border-slate-200' };
   };
@@ -227,8 +317,9 @@ export default function ExpensesTabMobile() {
       const status = String(e.status || 'APPROVED').toUpperCase();
       const source = String(e.source || 'ACCOUNT').toUpperCase();
       const category = String(e.category || 'General');
+      const productName = e.productId ? productById.get(e.productId)?.name || '' : '';
       const searchMatch = query.length === 0
-        || `${category} ${e.description || ''} ${e.userName || ''} ${source}`.toLowerCase().includes(query);
+        || `${category} ${e.description || ''} ${e.userName || ''} ${source} ${productName}`.toLowerCase().includes(query);
       const dateMatch = timestamp >= expensePeriod.start && timestamp <= expensePeriod.end;
       const sourceMatch = expenseSourceFilter === 'ALL' || source === expenseSourceFilter;
       const statusMatch = expenseStatusFilter === 'ALL' || status === expenseStatusFilter;
@@ -271,7 +362,7 @@ export default function ExpensesTabMobile() {
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
             <h2 className="text-2xl font-black text-slate-950">Expenses</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-500">Track till and Main account spending.</p>
+            <p className="mt-1 text-sm font-semibold text-slate-500">Track till, Main account, and shop stock expenses.</p>
           </div>
           {canCreateExpense && (
             <button
@@ -283,7 +374,7 @@ export default function ExpensesTabMobile() {
             </button>
           )}
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Till expenses</p>
             <p className="mt-1 text-xl font-black tabular-nums text-slate-950">Ksh {todayTillExpenses.toLocaleString()}</p>
@@ -296,11 +387,38 @@ export default function ExpensesTabMobile() {
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Cash drawer</p>
             <p className="mt-1 text-xl font-black tabular-nums text-blue-700">Ksh {actualCashDrawer.toLocaleString()}</p>
           </div>
+          <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Shop products</p>
+            <p className="mt-1 text-xl font-black tabular-nums text-slate-950">Ksh {todayShopExpenses.toLocaleString()}</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-lg border-2 border-slate-200 bg-white p-2 shadow-sm">
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { id: 'RECORDS', label: 'Expense records', Icon: FileMinus },
+            { id: 'SHOP', label: 'Shop product', Icon: PackageMinus },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveExpenseTab(tab.id as ExpenseViewTab)}
+              className={`flex h-11 items-center justify-center gap-2 rounded-lg border-2 px-3 text-[11px] font-black uppercase tracking-widest transition-all ${
+                activeExpenseTab === tab.id
+                  ? 'border-blue-700 bg-blue-700 text-white'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700'
+              }`}
+            >
+              <tab.Icon size={16} />
+              {tab.label}
+            </button>
+          ))}
         </div>
       </section>
 
       {/* Search and filters */}
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm">
+      {activeExpenseTab === 'RECORDS' && <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm">
       <div className="space-y-3">
         <div className="relative group">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-blue-700" size={16} />
@@ -378,6 +496,7 @@ export default function ExpensesTabMobile() {
               <option value="ALL">All sources</option>
               <option value="TILL">Till</option>
               <option value="ACCOUNT">Main account</option>
+              <option value="SHOP">Shop stock</option>
             </select>
             <select
               value={expenseStatusFilter}
@@ -412,15 +531,101 @@ export default function ExpensesTabMobile() {
           </div>
         </div>
       </div>
-      </section>
+      </section>}
+
+      {activeExpenseTab === 'SHOP' && (
+        <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="flex items-center gap-2 text-lg font-black text-slate-950">
+                <PackageMinus size={20} className="text-blue-700" />
+                Expense product from shop
+              </h3>
+              <p className="mt-1 text-sm font-semibold text-slate-500">Deduct stock and record the product cost as an expense.</p>
+            </div>
+            <div className="rounded-lg border-2 border-slate-200 bg-slate-50 px-3 py-2 text-right">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Cost value</p>
+              <p className="text-lg font-black tabular-nums text-slate-950">Ksh {shopExpenseAmount.toLocaleString()}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.5fr)_0.6fr]">
+            <label className="block">
+              <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-500">Product</span>
+              <SearchableSelect
+                value={shopExpenseForm.productId}
+                onChange={(value) => setShopExpenseForm(prev => ({ ...prev, productId: value }))}
+                options={productOptions}
+                placeholder="Select stock item"
+                searchPlaceholder="Search product, category, or barcode..."
+                emptyText="No in-stock products found"
+                buttonClassName="h-12 border-2 border-slate-200 bg-white font-bold"
+                menuClassName="z-[160]"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-500">Quantity</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={shopExpenseForm.quantity}
+                onChange={event => setShopExpenseForm(prev => ({ ...prev, quantity: event.target.value }))}
+                className="h-12 w-full rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-black text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+              />
+            </label>
+          </div>
+
+          {selectedShopProduct && (
+            <div className="mt-4 grid grid-cols-1 gap-3 rounded-lg border-2 border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Available</p>
+                <p className="mt-1 text-sm font-black text-slate-900">{Number(selectedShopProduct.stockQuantity || 0).toLocaleString()} {selectedShopProduct.unit || 'pcs'}</p>
+              </div>
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Unit cost</p>
+                <p className={`mt-1 text-sm font-black ${shopExpenseUnitCost > 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+                  Ksh {shopExpenseUnitCost.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Category</p>
+                <p className="mt-1 truncate text-sm font-black text-slate-900">{selectedShopProduct.category || 'General'}</p>
+              </div>
+            </div>
+          )}
+
+          <label className="mt-4 block">
+            <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-500">Reason</span>
+            <textarea
+              rows={3}
+              value={shopExpenseForm.description}
+              onChange={event => setShopExpenseForm(prev => ({ ...prev, description: event.target.value }))}
+              placeholder="e.g. Used for cleaning, office tea, shop repair..."
+              className="w-full resize-none rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={handleSaveShopExpense}
+            disabled={!canCreateExpense || !selectedShopProduct || shopExpenseQuantity <= 0 || shopExpenseQuantity > Number(selectedShopProduct?.stockQuantity || 0) || shopExpenseUnitCost <= 0 || isSaving}
+            className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-[11px] font-black uppercase tracking-widest text-white transition-all hover:bg-blue-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <PackageMinus size={17} />
+            {isSaving ? 'Saving...' : 'Save product expense'}
+          </button>
+        </section>
+      )}
 
       {/* Expense List */}
-      <section className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-sm">
+      {activeExpenseTab === 'RECORDS' && <section className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-sm">
          {filteredExpenses.map(expense => {
            const source = sourceBadge(expense.source);
            const status = statusBadge(expense.status);
            const amount = Number(expense.amount) || 0;
            const timestamp = Number(expense.timestamp) || Date.now();
+           const product = expense.productId ? productById.get(expense.productId) : null;
            return (
              <div key={expense.id} className="group flex cursor-default flex-col gap-3 border-b border-slate-100 bg-white p-4 transition-colors last:border-b-0 hover:bg-blue-50/30 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                 <div className="flex items-center gap-5 min-w-0">
@@ -428,9 +633,11 @@ export default function ExpensesTabMobile() {
                       <FileMinus size={28} />
                    </div>
                    <div className="min-w-0">
-                      <h4 className="text-base font-black text-slate-900 truncate leading-tight">{expense.category || 'General'}</h4>
+                      <h4 className="text-base font-black text-slate-900 truncate leading-tight">{expense.source === 'SHOP' ? product?.name || expense.category || 'Shop product' : expense.category || 'General'}</h4>
                       <div className="flex items-center gap-2.5 mt-1">
-                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate max-w-[120px] sm:max-w-none">{expense.description || 'General operational cost'}</span>
+                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate max-w-[120px] sm:max-w-none">
+                           {expense.source === 'SHOP' && expense.quantity ? `${Number(expense.quantity).toLocaleString()} ${product?.unit || 'pcs'} - ` : ''}{expense.description || 'General operational cost'}
+                         </span>
                          <span className="w-1 h-1 rounded-full bg-slate-200 shrink-0" />
                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Calendar size={10}/> {new Date(timestamp).toLocaleDateString()}</span>
                       </div>
@@ -477,7 +684,7 @@ export default function ExpensesTabMobile() {
                <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Logged operational costs will appear here</p>
             </div>
          )}
-      </section>
+      </section>}
 
       {/* Modals */}
       <ExpenseModal 

@@ -8,6 +8,11 @@ CREATE TABLE IF NOT EXISTS businesses (
     name TEXT NOT NULL,
     code TEXT NOT NULL UNIQUE,
     isActive INTEGER DEFAULT 1,
+    billingStatus TEXT NOT NULL DEFAULT 'OK',
+    billingAmountDue REAL DEFAULT 0,
+    billingDueAt INTEGER,
+    billingMessage TEXT,
+    billingLastPaidAt INTEGER,
     updated_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS users (
@@ -441,12 +446,6 @@ CREATE TABLE IF NOT EXISTS settings (
     cashDrawerLimit REAL DEFAULT 5000,
     salesTills TEXT,
     defaultOpeningFloat REAL DEFAULT 0,
-    mpesaConsumerKey TEXT,
-    mpesaConsumerSecret TEXT,
-    mpesaPasskey TEXT,
-    mpesaEnv TEXT DEFAULT 'sandbox',
-    mpesaType TEXT DEFAULT 'paybill',
-    mpesaStoreNumber TEXT,
     accessControl TEXT,
     businessId TEXT,
     updated_at INTEGER
@@ -489,6 +488,41 @@ CREATE TABLE IF NOT EXISTS mpesaCallbacks (
     utilizedCustomerId TEXT,
     utilizedCustomerName TEXT,
     utilizedAt INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS mpesaCredentials (
+    businessId TEXT PRIMARY KEY,
+    settingsId TEXT,
+    environment TEXT NOT NULL DEFAULT 'sandbox',
+    accountType TEXT NOT NULL DEFAULT 'paybill',
+    product TEXT NOT NULL DEFAULT 'M-PESA EXPRESS',
+    shortcode TEXT,
+    storeNumber TEXT,
+    consumerKeyCipher TEXT,
+    consumerSecretCipher TEXT,
+    passkeyCipher TEXT,
+    credentialsVersion TEXT DEFAULT 'enc:v2',
+    lastTestAt INTEGER,
+    lastTestStatus TEXT,
+    lastTestMessage TEXT,
+    created_at INTEGER,
+    updated_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS billingPayments (
+    id TEXT PRIMARY KEY,
+    businessId TEXT NOT NULL,
+    phone TEXT,
+    amount REAL NOT NULL,
+    reference TEXT,
+    checkoutRequestId TEXT UNIQUE,
+    merchantRequestId TEXT,
+    receiptNumber TEXT,
+    resultCode INTEGER,
+    resultDesc TEXT,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    createdAt INTEGER,
+    updated_at INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS expenseAccounts (

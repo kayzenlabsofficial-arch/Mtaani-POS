@@ -901,7 +901,7 @@ export default function HRTabMobile() {
             </div>
           </div>
 
-          <div className="sticky bottom-0 z-10 -mx-5 -mb-5 mt-5 flex flex-col-reverse gap-2 border-t-2 border-slate-200 bg-white p-5 sm:flex-row sm:justify-end">
+          <div className="mobile-popup-sticky-action -mx-5 mt-5 flex flex-col-reverse gap-2 border-t-2 border-slate-200 bg-white p-5 sm:flex-row sm:justify-end">
             <button type="button" onClick={() => setIsStaffModalOpen(false)} className="inline-flex items-center justify-center rounded-lg border-2 border-slate-200 px-4 py-2.5 text-sm font-black text-slate-700 transition hover:bg-slate-50">
               Cancel
             </button>

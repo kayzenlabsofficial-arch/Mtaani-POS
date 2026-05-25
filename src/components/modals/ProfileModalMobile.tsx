@@ -138,7 +138,7 @@ export default function ProfileModalMobile({ isOpen, onClose, currentUser }: Pro
             </div>
           </div>
 
-          <div className="sticky bottom-0 z-10 -mx-6 -mb-6 bg-white p-6 pt-2">
+          <div className="mobile-popup-sticky-action -mx-6 bg-white p-6 pt-2">
             <button 
               type="submit" 
               disabled={isSaving}

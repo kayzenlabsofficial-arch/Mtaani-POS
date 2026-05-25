@@ -29,6 +29,27 @@ export interface Business {
   name: string;
   code: string;
   isActive?: number;
+  billingStatus?: 'OK' | 'REMINDER' | 'LOCKED' | string;
+  billingAmountDue?: number;
+  billingDueAt?: number | null;
+  billingMessage?: string;
+  billingLastPaidAt?: number | null;
+  updated_at?: number;
+}
+
+export interface BillingPayment {
+  id: string;
+  businessId: string;
+  phone?: string;
+  amount: number;
+  reference?: string;
+  checkoutRequestId?: string;
+  merchantRequestId?: string;
+  receiptNumber?: string;
+  resultCode?: number;
+  resultDesc?: string;
+  status: 'PENDING' | 'PAID' | 'FAILED' | string;
+  createdAt?: number;
   updated_at?: number;
 }
 
@@ -609,6 +630,7 @@ export interface LoginAttempt {
 class MtaaniCloudDB {
 
   businesses          = new CloudTable<Business>('businesses');
+  billingPayments     = new CloudTable<BillingPayment>('billingPayments');
   loginAttempts       = new CloudTable<LoginAttempt>('loginAttempts');
 
   products            = new CloudTable<Product>('products');
@@ -681,6 +703,7 @@ class MtaaniCloudDB {
     this.financialAccounts.reset();
     this.financialAccountAdjustments.reset();
     this.loginAttempts.reset();
+    this.billingPayments.reset();
     this.auditLogs.reset();
 
   }
@@ -761,6 +784,7 @@ class MtaaniCloudDB {
 
     if (state.isSystemAdmin || state.currentUser?.role === 'ROOT') {
       reloads.push(() => this.loginAttempts.reload());
+      reloads.push(() => this.billingPayments.reload());
     }
 
     // Run all reloads in parallel for speed — failures are logged but don't block others

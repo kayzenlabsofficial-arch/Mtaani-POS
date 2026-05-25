@@ -31,3 +31,7 @@ The app uses one business record at a time, with tills and shifts handling cashi
 ## Environment
 
 Copy `.env.example` to `.dev.vars` for local Pages Functions secrets.
+
+Set `BUSINESS_BOOTSTRAP_PASSWORD` as a Cloudflare secret before creating or resetting business users. Super admin screens never display this password; share it with the owner outside the app.
+
+Platform billing STK pushes use the `BILLING_MPESA_*` Cloudflare secrets. These are separate from each business's sales M-Pesa settings.
