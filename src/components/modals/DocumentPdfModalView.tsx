@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Download, FileText, Loader2, PackagePlus, Printer, RotateCcw, Share2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, FileText, Loader2, Maximize2, PackagePlus, Printer, RotateCcw, Share2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction } from '../../db';
 import { useStore } from '../../store';
@@ -87,6 +87,8 @@ export default function DocumentPdfModalView({
   const [isSharing, setIsSharing] = useState(false);
   const [isApprovalActionRunning, setIsApprovalActionRunning] = useState(false);
   const [isRefunding, setIsRefunding] = useState(false);
+  const [pdfZoom, setPdfZoom] = useState(100);
+  const [isZoomCustom, setIsZoomCustom] = useState(false);
 
   const storeName = businessSettings?.storeName || 'Smart POS';
   const storeLocation = businessSettings?.location || 'Nairobi, Kenya';
@@ -186,11 +188,26 @@ export default function DocumentPdfModalView({
     return () => { cancelled = true; };
   }, [businessSettings, selectedRecord, storeLocation, storeName, supplier, toastError]);
 
+  useEffect(() => {
+    setPdfZoom(100);
+    setIsZoomCustom(false);
+  }, [selectedRecord?.id, selectedRecord?.recordType]);
+
   if (!selectedRecord) return null;
 
   const close = () => setSelectedRecord(null);
-  const viewerMode = isReceiptSized ? 'zoom=100' : 'view=FitH';
+  const viewerMode = isZoomCustom || isReceiptSized ? `zoom=${pdfZoom}` : 'view=FitH';
   const viewerUrl = objectUrl ? `${objectUrl}#toolbar=0&navpanes=0&scrollbar=1&${viewerMode}` : '';
+
+  const changeZoom = (delta: number) => {
+    setIsZoomCustom(true);
+    setPdfZoom(prev => Math.min(200, Math.max(50, prev + delta)));
+  };
+
+  const resetZoom = () => {
+    setPdfZoom(100);
+    setIsZoomCustom(false);
+  };
 
   const printPdf = () => {
     try {
@@ -260,6 +277,38 @@ export default function DocumentPdfModalView({
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
+            <div className="hidden items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 sm:flex" aria-label="PDF zoom controls">
+              <button
+                type="button"
+                onClick={() => changeZoom(-10)}
+                disabled={!pdfBlob || pdfZoom <= 50}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100 disabled:opacity-40"
+                aria-label="Zoom out"
+                title="Zoom out"
+              >
+                <ZoomOut size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={resetZoom}
+                disabled={!pdfBlob}
+                className="flex h-8 min-w-12 items-center justify-center gap-1 rounded-md px-2 text-[11px] font-black text-slate-700 transition hover:bg-slate-100 disabled:opacity-40"
+                aria-label="Reset PDF zoom"
+                title={isReceiptSized ? 'Reset to receipt size' : 'Fit to width'}
+              >
+                {isZoomCustom || isReceiptSized ? `${pdfZoom}%` : <Maximize2 size={15} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => changeZoom(10)}
+                disabled={!pdfBlob || pdfZoom >= 200}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100 disabled:opacity-40"
+                aria-label="Zoom in"
+                title="Zoom in"
+              >
+                <ZoomIn size={16} />
+              </button>
+            </div>
             <button
               type="button"
               onClick={sharePdf}
@@ -301,11 +350,40 @@ export default function DocumentPdfModalView({
         <div className={`min-h-0 flex-1 bg-slate-200 ${isReceiptSized ? 'overflow-auto p-3 sm:p-5' : 'p-0 sm:p-3'}`}>
           {viewerUrl ? (
             <div className={isReceiptSized ? 'mx-auto h-full w-full max-w-[24rem]' : 'h-full w-full'}>
+              <div className="mb-2 flex items-center justify-center gap-1 sm:hidden">
+                <button
+                  type="button"
+                  onClick={() => changeZoom(-10)}
+                  disabled={!pdfBlob || pdfZoom <= 50}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 disabled:opacity-40"
+                  aria-label="Zoom out"
+                >
+                  <ZoomOut size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={resetZoom}
+                  disabled={!pdfBlob}
+                  className="flex h-9 min-w-16 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 disabled:opacity-40"
+                  aria-label="Reset PDF zoom"
+                >
+                  {isZoomCustom || isReceiptSized ? `${pdfZoom}%` : 'Fit'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeZoom(10)}
+                  disabled={!pdfBlob || pdfZoom >= 200}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 disabled:opacity-40"
+                  aria-label="Zoom in"
+                >
+                  <ZoomIn size={16} />
+                </button>
+              </div>
               <iframe
                 ref={iframeRef}
                 src={viewerUrl}
                 title={title}
-                className="h-full w-full border-0 bg-white sm:rounded-lg sm:shadow-sm"
+                className="h-[calc(100%-2.75rem)] w-full border-0 bg-white sm:h-full sm:rounded-lg sm:shadow-sm"
               />
             </div>
           ) : (
