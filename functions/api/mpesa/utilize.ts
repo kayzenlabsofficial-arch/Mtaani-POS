@@ -5,6 +5,8 @@ interface Env {
   API_SECRET?: string;
 }
 
+const UTILIZE_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
+
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Business-ID',
@@ -83,6 +85,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return json({ error: 'Business, transaction and M-Pesa code are required.' }, 400);
     }
     if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied' }, 403);
+    if (!auth.service && !UTILIZE_ROLES.has(auth.principal.role)) {
+      return json({ error: 'Manager access required.' }, 403);
+    }
 
     await ensureMpesaLedgerSchema(env.DB);
     const transaction = await env.DB.prepare(`

@@ -7,8 +7,6 @@ interface Env {
   MPESA_CREDENTIAL_ENCRYPTION_KEY?: string;
 }
 
-const CONFIRM_PHRASE = 'UPDATE MPESA';
-
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
@@ -41,7 +39,6 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   const businessId = String(body?.businessId || request.headers.get('X-Business-ID') || '').trim();
   const userId = String(body?.userId || auth.principal.userId || '').trim();
   const adminPassword = String(body?.adminPassword || '');
-  const confirmationText = String(body?.confirmationText || '').trim().toUpperCase();
 
   if (!businessId || !userId) return json({ error: 'Business and admin are required.' }, 400);
   if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
@@ -55,11 +52,9 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
       .first<any>();
     if (!user || user.role !== 'ADMIN') return json({ error: 'Only an administrator can test M-Pesa settings.' }, 403);
     const passwordOk = await verifyPassword(adminPassword, String(user.password || ''));
-    if (!passwordOk || confirmationText !== CONFIRM_PHRASE) {
-      return json({ error: `Security check failed. Enter the admin password and type ${CONFIRM_PHRASE}.` }, 401);
+    if (!passwordOk) {
+      return json({ error: 'Security check failed. Enter the admin password.' }, 401);
     }
-  } else if (confirmationText !== CONFIRM_PHRASE) {
-    return json({ error: `Type ${CONFIRM_PHRASE} to test M-Pesa settings.` }, 401);
   }
 
   try {

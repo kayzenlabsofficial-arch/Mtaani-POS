@@ -299,6 +299,9 @@ export default function SalesInvoicesTabDesktop() {
     const amount = Number(paymentForm.amount);
     if (!amount || amount <= 0) return error('Enter the amount to clear.');
     if (amount > Number(paymentInvoice.balance || 0)) return error('Amount is more than the invoice balance.');
+    if (['CASH', 'MPESA', 'PDQ'].includes(String(paymentForm.method).toUpperCase()) && !currentShiftId) {
+      return error('Open a till shift before recording this invoice payment.');
+    }
     setIsSaving(true);
     try {
       await CustomerService.recordPayment({

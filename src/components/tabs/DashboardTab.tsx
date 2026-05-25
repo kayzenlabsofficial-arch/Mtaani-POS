@@ -842,42 +842,22 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       warning('This shop already has a daily close report for today. A day can only be closed once.');
       return;
     }
-    if (!confirm('Close the business day and create today\'s daily close report? This can only be done once per day.')) return;
-    const stats = getClosureStats(since);
+    const openRows = adminShiftRows.filter(row => row.status === 'Open');
+    if (openRows.length) {
+      warning('Close all open shifts before closing the business day.');
+      return;
+    }
     const todaysReports = (shopReports || []).filter(report => (report.timestamp || 0) >= since);
-    const closedShiftTotals = todaysReports.reduce((totals, report) => ({
-      totalSales: totals.totalSales + Number(report.totalSales || 0),
-      grossSales: totals.grossSales + Number(report.grossSales || 0),
-      taxTotal: totals.taxTotal + Number(report.taxTotal || 0),
-      totalExpenses: totals.totalExpenses + Number(report.totalExpenses || 0),
-      totalPicks: totals.totalPicks + Number(report.totalPicks || 0),
-      totalRefunds: totals.totalRefunds + Number(report.totalRefunds || 0),
-      totalVariance: totals.totalVariance + Number(report.difference || 0),
-    }), { totalSales: 0, grossSales: 0, taxTotal: 0, totalExpenses: 0, totalPicks: 0, totalRefunds: 0, totalVariance: 0 });
-    const closeTotals = todaysReports.length ? closedShiftTotals : {
-      totalSales: stats.totalSales,
-      grossSales: stats.grossSales,
-      taxTotal: stats.taxTotal,
-      totalExpenses: stats.totalExpenses,
-      totalPicks: stats.totalPicks,
-      totalRefunds: stats.totalRefunds,
-      totalVariance: stats.cashierVariance,
-    };
+    if (!todaysReports.length) {
+      warning('Close at least one shift before closing the business day.');
+      return;
+    }
+    if (!confirm('Close the business day and create today\'s daily close report? This can only be done once per day.')) return;
 
     setIsClosingDay(true);
     try {
       const result = await ClosingService.closeDay({
-        summary: {
-          date: since,
-          shiftIds: todaysReports.map(report => report.shiftId || report.id),
-          totalSales: closeTotals.totalSales,
-          grossSales: closeTotals.grossSales,
-          taxTotal: closeTotals.taxTotal,
-          totalExpenses: closeTotals.totalExpenses,
-          totalPicks: closeTotals.totalPicks,
-          totalRefunds: closeTotals.totalRefunds,
-          totalVariance: closeTotals.totalVariance,
-        },
+        summary: { date: since },
         shopId: activeShopId,
         businessId: activeBusinessId,
       });

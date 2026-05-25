@@ -7,7 +7,6 @@ interface Env {
   MPESA_CREDENTIAL_ENCRYPTION_KEY?: string;
 }
 
-const CONFIRM_PHRASE = 'UPDATE MPESA';
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 30 * 60 * 1000;
 
@@ -67,7 +66,6 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   const businessId = String(body?.businessId || url.searchParams.get('businessId') || request.headers.get('X-Business-ID') || '').trim();
   const userId = String(body?.userId || auth.principal.userId || '').trim();
   const adminPassword = String(body?.adminPassword || '');
-  const confirmationText = String(body?.confirmationText || '').trim().toUpperCase();
 
   if (!businessId) return json({ error: 'Business is required.' }, 400);
   if (!canAccessBusiness(auth.principal, businessId)) {
@@ -106,10 +104,9 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: 'Only an administrator can change M-Pesa settings.' }, 403);
   }
   const passwordOk = auth.service || auth.principal.role === 'ROOT' ? true : await verifyPassword(adminPassword, String(user?.password || ''));
-  const phraseOk = confirmationText === CONFIRM_PHRASE;
-  if (!passwordOk || !phraseOk) {
+  if (!passwordOk) {
     await recordFailedAttempt(env.DB, attemptId);
-    return json({ error: `Security check failed. Enter the admin password and type ${CONFIRM_PHRASE}.` }, 401);
+    return json({ error: 'Security check failed. Enter the admin password.' }, 401);
   }
   await clearAttempts(env.DB, attemptId);
 

@@ -420,6 +420,7 @@ export default function CustomersTabDesktop() {
     if (!editingCustomer || !repaymentAmount) return;
     const amount = Number(repaymentAmount);
     if (isNaN(amount) || amount <= 0) return error("Invalid amount");
+    if (!currentShiftId) return error("Open a till shift before recording customer M-Pesa payments.");
 
     const activeShopId = useStore.getState().activeShopId;
 
@@ -500,6 +501,9 @@ export default function CustomersTabDesktop() {
     if (!Number.isFinite(amount) || amount <= 0) return error("Enter a valid payment amount.");
     if (!activeBusinessId || !activeShopId) return error("The shop is still loading. Try again.");
     if (amount > (statementCustomer.balance || 0) + 0.01) return error("Payment cannot exceed the customer balance.");
+    if (['CASH', 'MPESA', 'PDQ'].includes(String(paymentForm.method).toUpperCase()) && !currentShiftId) {
+      return error("Open a till shift before recording this customer payment.");
+    }
 
     setIsSaving(true);
     try {

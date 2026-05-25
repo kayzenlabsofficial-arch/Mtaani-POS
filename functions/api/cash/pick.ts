@@ -115,7 +115,8 @@ function cashAmountFromTransaction(row: any): number {
   const method = String(row?.paymentMethod || '').toUpperCase();
   if (method === 'CASH') return transactionNetTotal(row);
   if (method !== 'SPLIT') return 0;
-  const split = parseMaybeJson(row?.splitPayments) || parseMaybeJson(row?.splitData) || {};
+  const splitData = parseMaybeJson(row?.splitData);
+  const split = parseMaybeJson(row?.splitPayments) || splitData?.splitPayments || splitData || {};
   return asNumber(split.cashAmount);
 }
 
@@ -190,7 +191,7 @@ async function availableCashForPick(db: D1Database, businessId: string, since: n
     db.prepare(`SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND timestamp >= ?`)
       .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
   ]);
-  const txRows = (transactions.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.status || '').toUpperCase() === 'PAID');
+  const txRows = (transactions.results || []).filter(row => inShiftScope(row, since, shiftId) && !['VOIDED', 'QUOTE'].includes(String(row.status || '').toUpperCase()));
   const expenseRows = (expenses.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL' && String(row.status || '').toUpperCase() !== 'REJECTED');
   const pickRows = (picks.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED');
   const refundRows = (refunds.results || []).filter(row => inShiftScope(row, since, shiftId));

@@ -8,6 +8,8 @@ import { getBusinessSettings } from '../../utils/settings';
 import { canPerform } from '../../utils/accessControl';
 import { downloadDocumentBlob, generateAndShareDocument, generateDocumentPdfBlob } from '../../utils/shareUtils';
 import { useTillCash } from '../../hooks/useTillCash';
+import { usePhoneUi } from '../../hooks/usePhoneUi';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 interface DocumentDetailsModalProps {
   selectedRecord: any | null;
@@ -35,6 +37,111 @@ const parseList = (value: any): any[] => {
 const RECEIPT_PREVIEW_WIDTH_REM = 20;
 
 const moneyText = (value: unknown) => `Ksh ${(Number(value) || 0).toLocaleString()}`;
+
+type PdfPageImage = {
+  height: number;
+  page: number;
+  src: string;
+  width: number;
+};
+
+function PhonePdfCanvasPreview({ blob, title }: { blob: Blob | null; title: string }) {
+  const [pages, setPages] = useState<PdfPageImage[]>([]);
+  const [isRendering, setIsRendering] = useState(false);
+  const [renderError, setRenderError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const renderPdf = async () => {
+      if (!blob) {
+        setPages([]);
+        setRenderError('');
+        return;
+      }
+
+      setIsRendering(true);
+      setRenderError('');
+      try {
+        const pdfjs = await import('pdfjs-dist/build/pdf.mjs');
+        (pdfjs as any).GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+        const data = new Uint8Array(await blob.arrayBuffer());
+        const pdf = await (pdfjs as any).getDocument({ data }).promise;
+        const nextPages: PdfPageImage[] = [];
+        const renderScale = Math.max(1.5, Math.min(2.4, window.devicePixelRatio || 1.5));
+
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+          if (cancelled) break;
+          const page = await pdf.getPage(pageNumber);
+          const viewport = page.getViewport({ scale: renderScale });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          if (!context) throw new Error('Canvas is not available on this device.');
+
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          await page.render({ canvasContext: context, viewport }).promise;
+          nextPages.push({
+            page: pageNumber,
+            src: canvas.toDataURL('image/png'),
+            width: canvas.width,
+            height: canvas.height,
+          });
+          page.cleanup?.();
+        }
+
+        await pdf.destroy?.();
+        if (!cancelled) setPages(nextPages);
+      } catch (err: any) {
+        console.error('Mobile PDF render failed:', err);
+        if (!cancelled) setRenderError(err?.message || 'Could not render this PDF on the phone.');
+      } finally {
+        if (!cancelled) setIsRendering(false);
+      }
+    };
+
+    void renderPdf();
+    return () => { cancelled = true; };
+  }, [blob]);
+
+  if (isRendering && pages.length === 0) {
+    return (
+      <div className="flex min-h-72 items-center justify-center rounded-lg bg-white text-sm font-bold text-slate-500">
+        Rendering PDF...
+      </div>
+    );
+  }
+
+  if (renderError) {
+    return (
+      <div className="flex min-h-72 flex-col items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white p-5 text-center">
+        <p className="text-sm font-black text-slate-900">PDF preview could not render on this phone.</p>
+        <p className="text-xs font-semibold text-slate-500">{renderError}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 pb-4">
+      {pages.map(page => (
+        <img
+          key={page.page}
+          src={page.src}
+          width={page.width}
+          height={page.height}
+          alt={`${title} page ${page.page}`}
+          className="block h-auto w-full rounded-lg bg-white shadow-sm"
+        />
+      ))}
+      {isRendering && (
+        <div className="rounded-lg border border-slate-300 bg-white p-3 text-center text-xs font-bold text-slate-500">
+          Rendering more pages...
+        </div>
+      )}
+    </div>
+  );
+}
 
 function documentLabel(record: any) {
   switch (record?.recordType) {
@@ -73,6 +180,7 @@ export default function DocumentPdfModalView({
   const currentUser = useStore(state => state.currentUser);
   const isAdmin = useStore(state => state.isAdmin);
   const activeBusinessId = useStore(state => state.activeBusinessId);
+  const isPhoneUi = usePhoneUi();
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   const supplier = useLiveQuery(
     () => (selectedRecord?.recordType === 'SUPPLIER_PAYMENT' || selectedRecord?.recordType === 'PURCHASE_ORDER' || selectedRecord?.recordType === 'CREDIT_NOTE')
@@ -390,13 +498,17 @@ export default function DocumentPdfModalView({
                 className="mx-auto min-h-0 flex-1"
                 style={{ width: frameWidth, maxWidth: frameMaxWidth }}
               >
-                <iframe
-                  key={`${viewerUrl}-${pdfZoom}-${isZoomCustom ? 'custom' : 'fit'}-${isReceiptSized ? 'receipt' : 'page'}`}
-                  ref={iframeRef}
-                  src={viewerUrl}
-                  title={title}
-                  className="h-full w-full border-0 bg-white sm:rounded-lg sm:shadow-sm"
-                />
+                {isPhoneUi ? (
+                  <PhonePdfCanvasPreview blob={pdfBlob} title={title} />
+                ) : (
+                  <iframe
+                    key={`${viewerUrl}-${pdfZoom}-${isZoomCustom ? 'custom' : 'fit'}-${isReceiptSized ? 'receipt' : 'page'}`}
+                    ref={iframeRef}
+                    src={viewerUrl}
+                    title={title}
+                    className="h-full w-full border-0 bg-white sm:rounded-lg sm:shadow-sm"
+                  />
+                )}
               </div>
             </div>
           ) : (

@@ -383,7 +383,7 @@ async function availableTillCashForShift(db: D1Database, businessId: string, shi
     safeRows(db, `SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
   ]);
 
-  const txRows = transactions.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || '').toUpperCase() === 'PAID');
+  const txRows = transactions.filter(row => recordInShift(row, since, until, shiftId) && !['VOIDED', 'QUOTE'].includes(String(row.status || '').toUpperCase()));
   const expenseRows = expenses.filter(row => recordInShift(row, since, until, shiftId) && String(row.source || '').toUpperCase() === 'TILL' && String(row.status || '').toUpperCase() !== 'REJECTED');
   const pickRows = picks.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED');
   const refundRows = refunds.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || 'APPROVED').toUpperCase() !== 'REJECTED');

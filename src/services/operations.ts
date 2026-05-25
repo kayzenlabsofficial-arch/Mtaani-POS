@@ -71,7 +71,7 @@ export const ClosingService = {
     businessId: string;
     shopId: string;
   }) {
-    return apiRequest<{ success: boolean; summaryId: string; idempotent?: boolean }>('/api/close/day', {
+    return apiRequest<{ success: boolean; summaryId: string; idempotent?: boolean; summary?: any }>('/api/close/day', {
       method: 'POST',
       body: input,
       businessId: input.businessId,

@@ -5,7 +5,6 @@ export interface SaveMpesaSettingsInput {
   shopId?: string;
   userId: string;
   adminPassword: string;
-  confirmationText: string;
   credentials: {
     consumerKey?: string;
     consumerSecret?: string;
@@ -64,7 +63,6 @@ export async function testShopMpesaSettings(input: {
   businessId: string;
   userId: string;
   adminPassword: string;
-  confirmationText: string;
 }): Promise<{ success?: boolean; error?: string; message?: string }> {
   try {
     return await apiRequest<{ success?: boolean; error?: string; message?: string }>('/api/mpesa/test', {

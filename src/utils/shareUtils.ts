@@ -981,7 +981,7 @@ function buildReport(r: any, bizName = 'SMART POS', location = 'Nairobi, Kenya')
     ? [
         { label: 'Total Sales', value: totalSales, kind: 'highlight' },
         { label: 'Refunds', value: refunds, format: 'deduct' },
-        { label: 'Remittance (Supplier payments + Expenses)', value: expenses, format: 'deduct' },
+        { label: 'Remittance (Supplier payments + Expenses)', value: remittanceTotal, format: 'deduct' },
         { label: 'Cash Picked', value: banked },
         { label: 'Cashier Variance', value: diff, kind: 'highlight' },
         { label: 'Shifts Included', value: String(shiftIds.length || 0), format: 'plain', kind: 'note' },

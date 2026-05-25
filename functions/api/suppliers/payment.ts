@@ -242,7 +242,7 @@ async function availableTillCash(db: D1Database, businessId: string, shift: any)
   ]);
 
   const cashSales = ((transactions.results || []) as any[])
-    .filter(row => inShiftScope(row, since, shiftId) && String(row.status || '').toUpperCase() === 'PAID')
+    .filter(row => inShiftScope(row, since, shiftId) && !['VOIDED', 'QUOTE'].includes(String(row.status || '').toUpperCase()))
     .reduce((sum, row) => sum + cashAmountFromTransaction(row), 0);
   const tillExpenses = ((expenses.results || []) as any[])
     .filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL' && String(row.status || '').toUpperCase() !== 'REJECTED')

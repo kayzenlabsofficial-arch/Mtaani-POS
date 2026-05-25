@@ -75,13 +75,15 @@ export default function RegisterPaymentPanelDesktop({
   const normaliseMpesaCode = (value: string) => value.replace(/\s+/g, '').trim().toUpperCase();
   const mpesaIsWaiting = mpesaState === 'PUSHING' || mpesaState === 'POLLING';
 
-  const baseOptions = (): CheckoutOptions => ({
+  const baseOptions = (includeCustomer = false): CheckoutOptions => ({
     subtotal,
     total,
     discountAmount,
     discountType: 'PRODUCT',
-    customerId: selectedCustomer?.id,
-    customerName: selectedCustomer?.name,
+    ...(includeCustomer && selectedCustomer ? {
+      customerId: selectedCustomer.id,
+      customerName: selectedCustomer.name,
+    } : {}),
   });
 
   const runCheckout = async (status: 'PAID' | 'UNPAID', method: string, options?: CheckoutOptions) => {
@@ -297,13 +299,27 @@ export default function RegisterPaymentPanelDesktop({
 
   const completeManualMpesaPayment = async () => {
     if (cart.length === 0 || isCheckingOut || checkoutLockRef.current) return;
+    if (!activeBusinessId || !activeShopId) return error('The shop is still loading. Try again.');
     const receipt = normaliseMpesaCode(mpesaRef);
     const amount = Number(mpesaManualAmount) || 0;
     if (!receipt) return warning('Enter the M-Pesa transaction code.');
     if (amount < mpesaBalanceDue) return warning('M-Pesa amount must cover the remaining order balance.');
     checkoutLockRef.current = true;
     try {
-      const details = mpesaCheckoutDetails(receipt);
+      const manual = await MpesaService.registerManualPayment({
+        code: receipt,
+        amount,
+        businessId: activeBusinessId,
+        shopId: activeShopId,
+      });
+      if (!manual.success) {
+        error(manual.error || 'Could not record the manual M-Pesa payment.');
+        return;
+      }
+      const details = mpesaCheckoutDetails(manual.receiptNumber || receipt, {
+        mpesaCheckoutRequestId: manual.checkoutRequestId,
+        mpesaCustomer: manual.phoneNumber || undefined,
+      });
       await runCheckout('PAID', details.method, details.options);
     } finally {
       checkoutLockRef.current = false;
@@ -323,7 +339,7 @@ export default function RegisterPaymentPanelDesktop({
     if (!selectedCustomer) return warning('Choose a registered customer before processing credit.');
     checkoutLockRef.current = true;
     try {
-      await runCheckout('UNPAID', 'CREDIT', baseOptions());
+      await runCheckout('UNPAID', 'CREDIT', baseOptions(true));
     } finally {
       checkoutLockRef.current = false;
     }
@@ -533,8 +549,7 @@ export default function RegisterPaymentPanelDesktop({
                 <div className="space-y-2">
                   {filteredCreditCustomers.length === 0 ? <div className="rounded-md border border-slate-300 bg-white px-4 py-6 text-center text-sm font-semibold text-slate-500">No registered customer found</div> : filteredCreditCustomers.slice(0, 6).map((customer: any) => {
                     const active = selectedCustomerId === customer.id;
-                    const limit = Number(customer.creditLimit || customer.limit || 0);
-                    return <button key={customer.id} type="button" onClick={() => setSelectedCustomerId(customer.id)} className={`w-full rounded-md border px-4 py-4 text-left transition-colors ${active ? 'border-slate-950 bg-white shadow-sm' : 'border-slate-300 bg-white hover:border-slate-500'}`}><span className="block text-base font-medium text-slate-950">{customer.name}</span><span className="mt-1 block text-sm text-slate-600">{limit > 0 ? `Limit: Ksh ${limit.toLocaleString()}.00` : `Balance: Ksh ${Number(customer.balance || 0).toLocaleString()}.00`}</span></button>;
+                    return <button key={customer.id} type="button" onClick={() => setSelectedCustomerId(customer.id)} className={`w-full rounded-md border px-4 py-4 text-left transition-colors ${active ? 'border-slate-950 bg-white shadow-sm' : 'border-slate-300 bg-white hover:border-slate-500'}`}><span className="block text-base font-medium text-slate-950">{customer.name}</span><span className="mt-1 block text-sm text-slate-600">Balance: Ksh {Number(customer.balance || 0).toLocaleString()}.00</span></button>;
                   })}
                 </div>
                 <button type="button" onClick={() => void completeCreditPayment()} disabled={isCheckingOut || !selectedCustomer} aria-busy={isCheckingOut} data-busy={isCheckingOut ? 'true' : undefined} className={`flex h-14 w-full items-center justify-center rounded-md px-4 text-base font-bold text-white ${selectedCustomer ? 'bg-slate-950' : 'bg-slate-400'}`}>Process on Credit</button>

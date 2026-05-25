@@ -14,7 +14,7 @@ const ALLOWED_TABLES = new Set([
   'settings', 'salesTills', 'categories', 'businesses', 'system', 'expenseAccounts',
   'financialAccounts', 'financialAccountAdjustments', 'productIngredients', 'loginAttempts', 'auditLogs',
   'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments',
-  'mpesaCallbacks', 'billingPayments', 'deviceSyncStatus', 'idempotencyKeys',
+  'billingPayments', 'deviceSyncStatus', 'idempotencyKeys',
 ]);
 
 const UNSCOPED_TABLES = new Set(['businesses', 'loginAttempts']);
@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS salesInvoices (id TEXT PRIMARY KEY, invoiceNumber TEX
 CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT, phone TEXT, email TEXT, address TEXT, kraPin TEXT, balance REAL, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS supplierPayments (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, purchaseOrderId TEXT, purchaseOrderIds TEXT, invoiceAllocations TEXT, creditNoteIds TEXT, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, timestamp INTEGER NOT NULL, reference TEXT, source TEXT, accountId TEXT, shopId TEXT, shiftId TEXT, preparedBy TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS creditNotes (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, amount REAL NOT NULL, reference TEXT NOT NULL, timestamp INTEGER NOT NULL, reason TEXT, status TEXT DEFAULT 'PENDING', allocatedTo TEXT, items TEXT, productId TEXT, quantity REAL, businessId TEXT, shiftId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS dailySummaries (id TEXT PRIMARY KEY, date INTEGER NOT NULL, shiftIds TEXT NOT NULL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, totalExpenses REAL NOT NULL, totalPicks REAL NOT NULL, totalRefunds REAL, totalVariance REAL NOT NULL, timestamp INTEGER NOT NULL, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS dailySummaries (id TEXT PRIMARY KEY, date INTEGER NOT NULL, shiftIds TEXT NOT NULL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, cashSales REAL DEFAULT 0, customerCashPayments REAL DEFAULT 0, customerMpesaPayments REAL DEFAULT 0, mpesaSales REAL DEFAULT 0, pdqSales REAL DEFAULT 0, totalExpenses REAL NOT NULL, supplierPaymentsTotal REAL DEFAULT 0, remittanceTotal REAL DEFAULT 0, totalPicks REAL NOT NULL, totalRefunds REAL, cashRefunds REAL DEFAULT 0, openingCash REAL DEFAULT 0, expectedCash REAL DEFAULT 0, reportedCash REAL DEFAULT 0, totalVariance REAL NOT NULL, shiftReports TEXT, timestamp INTEGER NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_date ON dailySummaries(businessId, date);
 CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (id TEXT PRIMARY KEY, productId TEXT NOT NULL, productName TEXT, oldQty REAL, newQty REAL, requestedQuantity REAL, reason TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, preparedBy TEXT, approvedBy TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS purchaseOrders (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, items TEXT NOT NULL, totalAmount REAL NOT NULL, status TEXT NOT NULL, approvalStatus TEXT NOT NULL, paymentStatus TEXT, paidAmount REAL, orderDate INTEGER NOT NULL, expectedDate INTEGER, receivedDate INTEGER, invoiceNumber TEXT, poNumber TEXT, preparedBy TEXT, approvedBy TEXT, receivedBy TEXT, businessId TEXT, updated_at INTEGER);

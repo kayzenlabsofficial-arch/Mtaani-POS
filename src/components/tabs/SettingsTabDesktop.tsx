@@ -262,7 +262,6 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
     consumerSecret: '',
     passkey: '',
     adminPassword: '',
-    confirmationText: '',
   });
 
   const resetDraftsFromSaved = React.useCallback(() => {
@@ -286,7 +285,6 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
       consumerSecret: '',
       passkey: '',
       adminPassword: '',
-      confirmationText: '',
     });
   }, [mpesaStatus, storeSettings.tillNumber]);
 
@@ -472,7 +470,6 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
         businessId: activeBusinessId,
         userId: currentUser.id,
         adminPassword: mpesaDraft.adminPassword,
-        confirmationText: mpesaDraft.confirmationText,
         credentials: {
           env: mpesaDraft.env,
           type: mpesaDraft.type,
@@ -492,7 +489,6 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
         consumerSecret: '',
         passkey: '',
         adminPassword: '',
-        confirmationText: '',
       }));
       setEditingSection(null);
       success('M-Pesa settings saved securely.');
@@ -509,7 +505,6 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
         businessId: activeBusinessId,
         userId: currentUser.id,
         adminPassword: mpesaDraft.adminPassword,
-        confirmationText: mpesaDraft.confirmationText,
       });
       if (result.error) return error(result.error);
       success(result.message || 'M-Pesa credentials connected successfully.');
@@ -730,7 +725,7 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div>
         <div>
           <FieldLabel>Admin password</FieldLabel>
           <TextInput
@@ -738,14 +733,6 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
             autoComplete="current-password"
             value={mpesaDraft.adminPassword}
             onChange={event => setMpesaDraft(prev => ({ ...prev, adminPassword: event.target.value }))}
-          />
-        </div>
-        <div>
-          <FieldLabel>Type UPDATE MPESA</FieldLabel>
-          <TextInput
-            type="text"
-            value={mpesaDraft.confirmationText}
-            onChange={event => setMpesaDraft(prev => ({ ...prev, confirmationText: event.target.value.toUpperCase() }))}
           />
         </div>
       </div>

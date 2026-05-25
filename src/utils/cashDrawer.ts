@@ -98,7 +98,7 @@ export function calculateCashDrawer({
   actualCashDrawer: number;
 } {
   const cashSales = transactions
-    .filter(t => recordInShiftCashScope(t, since, shiftId) && String(t.status || '').toUpperCase() === 'PAID')
+    .filter(t => recordInShiftCashScope(t, since, shiftId) && !['VOIDED', 'QUOTE'].includes(String(t.status || '').toUpperCase()))
     .reduce((sum, t) => sum + cashAmountFromTransaction(t), 0);
 
   const tillExpenses = expenses
@@ -164,7 +164,7 @@ export function calculateShiftCashFromSales({
   availableCashSales: number;
 } {
   const cashSales = transactions
-    .filter(t => recordInShiftCashScope(t, since, shiftId) && String(t.status || '').toUpperCase() === 'PAID')
+    .filter(t => recordInShiftCashScope(t, since, shiftId) && !['VOIDED', 'QUOTE'].includes(String(t.status || '').toUpperCase()))
     .reduce((sum, t) => sum + cashAmountFromTransaction(t), 0);
 
   const tillExpenses = expenses

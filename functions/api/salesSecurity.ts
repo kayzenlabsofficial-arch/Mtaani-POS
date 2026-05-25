@@ -30,6 +30,16 @@ type HardenOptions = {
   principal: Principal;
   service: boolean;
   sourceLabel?: string;
+  allowClosedShiftWindow?: boolean;
+};
+
+type ShiftRow = {
+  id: string;
+  status?: string;
+  cashierId?: string;
+  cashierName?: string;
+  startTime?: number;
+  endTime?: number;
 };
 
 const SALE_STATUSES = new Set(['PAID', 'UNPAID']);
@@ -236,6 +246,48 @@ function addDeduction(deductions: Map<string, number>, productId: string, quanti
   deductions.set(productId, (deductions.get(productId) || 0) + quantity);
 }
 
+async function requireValidShift(options: HardenOptions, tx: any, timestamp: number) {
+  const shiftId = trimText(tx.shiftId, 180);
+  if (!shiftId) throw new PolicyError('Open a till shift before completing a sale.', 409);
+
+  const shift = await options.db.prepare(`
+    SELECT id, status, cashierId, cashierName, startTime, endTime
+    FROM shifts
+    WHERE id = ? AND businessId = ?
+    LIMIT 1
+  `).bind(shiftId, options.businessId).first<ShiftRow>();
+
+  if (!shift) throw new PolicyError('The selected till shift was not found.', 409);
+
+  const status = String(shift.status || '').toUpperCase();
+  const isOpen = status === 'OPEN';
+  const startTime = asNumber(shift.startTime, 0);
+  const endTime = asNumber(shift.endTime, 0);
+  const withinClosedWindow = !!options.allowClosedShiftWindow
+    && status === 'CLOSED'
+    && startTime > 0
+    && timestamp >= startTime
+    && (!endTime || timestamp <= endTime);
+
+  if (!isOpen && !withinClosedWindow) {
+    throw new PolicyError('Only an open till shift can complete a sale.', 409);
+  }
+
+  const expectedCashierId = String(options.service ? tx.cashierId || '' : options.principal.userId || '').trim();
+  const expectedCashierName = String(options.service ? tx.cashierName || '' : options.principal.userName || '').trim().toLowerCase();
+  const shiftCashierId = String(shift.cashierId || '').trim();
+  const shiftCashierName = String(shift.cashierName || '').trim().toLowerCase();
+
+  if (shiftCashierId && expectedCashierId && shiftCashierId !== expectedCashierId) {
+    throw new PolicyError('This till shift belongs to another cashier.', 403);
+  }
+  if (!shiftCashierId && shiftCashierName && expectedCashierName && shiftCashierName !== expectedCashierName) {
+    throw new PolicyError('This till shift belongs to another cashier.', 403);
+  }
+
+  tx.shiftId = shift.id;
+}
+
 export async function hardenTransactionBatch(options: HardenOptions, transactions: any[]): Promise<D1PreparedStatement[]> {
   const { db, businessId, principal, service, sourceLabel = 'Sale' } = options;
   if (transactions.length > 100) throw new PolicyError('Too many sales in one request. Send fewer at a time.', 413);
@@ -378,11 +430,35 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
     if (tx.paymentMethod === 'SPLIT') {
       tx.splitPayments = normaliseSplitPayments(tx.splitPayments ?? tx.splitData, total);
     }
-    if (creditAmountFor(tx, total) > 0 && !tx.customerId) {
+    const creditAmount = creditAmountFor(tx, total);
+    let selectedCustomer: any = null;
+    if (tx.customerId) {
+      selectedCustomer = await db.prepare(`
+        SELECT id, name
+        FROM customers
+        WHERE id = ? AND businessId = ?
+        LIMIT 1
+      `).bind(tx.customerId, businessId).first<any>();
+      if (!selectedCustomer) {
+        throw new PolicyError('Selected customer was not found.', 404);
+      }
+      tx.customerName = tx.customerName || trimText(selectedCustomer.name, 160);
+    }
+    if (creditAmount > 0 && !selectedCustomer) {
       throw new PolicyError('Select a customer before selling on credit.', 400);
     }
-    if (tx.paymentMethod === 'CASH' && tx.amountTendered !== null) {
+    if (statusNeedsStock(desiredStatus) && tx.paymentMethod === 'CASH') {
+      if (tx.amountTendered === null) {
+        throw new PolicyError('Enter the cash amount received before completing the sale.', 400);
+      }
+      if (tx.amountTendered + 0.01 < total) {
+        throw new PolicyError('Cash received must cover the sale total.', 400);
+      }
       tx.changeGiven = roundMoney(Math.max(0, Number(tx.amountTendered) - total));
+    }
+
+    if (statusNeedsStock(desiredStatus)) {
+      await requireValidShift(options, tx, tx.timestamp);
     }
 
     const alreadyCounted = previous && statusNeedsStock(previous.status);
@@ -395,7 +471,7 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
                  balance = COALESCE(balance, 0) + ?,
                  updated_at = ?
              WHERE id = ? AND businessId = ?`
-          ).bind(total, creditAmountFor(tx, total), now, tx.customerId, businessId)
+          ).bind(total, creditAmount, now, tx.customerId, businessId)
         );
       }
 

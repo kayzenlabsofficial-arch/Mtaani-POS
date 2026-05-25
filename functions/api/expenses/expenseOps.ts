@@ -13,6 +13,54 @@ function trimText(value: unknown, max = 160): string {
   return String(value ?? '').trim().slice(0, max);
 }
 
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function parseMaybeJson(value: unknown): any {
+  if (!value) return null;
+  if (typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch { return null; }
+}
+
+function transactionNetTotal(row: any): number {
+  const subtotal = asNumber(row?.subtotal);
+  const discount = Math.max(0, asNumber(row?.discountAmount ?? row?.discount));
+  if (subtotal > 0 && discount > 0) return Math.max(0, roundMoney(subtotal - discount));
+  return asNumber(row?.total);
+}
+
+function cashAmountFromTransaction(row: any): number {
+  const method = String(row?.paymentMethod || '').toUpperCase();
+  if (method === 'CASH') return transactionNetTotal(row);
+  if (method !== 'SPLIT') return 0;
+  const splitData = parseMaybeJson(row?.splitData);
+  const split = parseMaybeJson(row?.splitPayments) || splitData?.splitPayments || splitData || {};
+  return asNumber(split.cashAmount);
+}
+
+function cashAmountFromRefund(row: any): number {
+  if (String(row?.status || 'APPROVED').toUpperCase() === 'REJECTED') return 0;
+  const source = String(row?.source || '').toUpperCase();
+  if (source === 'TILL' || source === 'MIXED') return asNumber(row?.cashAmount ?? row?.amount);
+  return asNumber(row?.cashAmount);
+}
+
+function inShiftScope(row: any, since: number, shiftId?: string | null): boolean {
+  if (shiftId && row?.shiftId) return String(row.shiftId) === String(shiftId);
+  return asNumber(row?.timestamp || row?.issueDate) >= since;
+}
+
+function ownsShift(shift: any, principal: Principal) {
+  const userId = trimText(principal?.userId, 160);
+  const userName = trimText(principal?.userName, 120).toLowerCase();
+  const cashierId = trimText(shift?.cashierId, 160);
+  const cashierName = trimText(shift?.cashierName, 120).toLowerCase();
+  return (userId && cashierId === userId)
+    || (userName && cashierName === userName)
+    || (userId && String(shift?.id || '').includes(`_${userId}`));
+}
+
 export function deserializeRow(row: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {};
   for (const [k, v] of Object.entries(row)) {
@@ -119,6 +167,26 @@ export async function ensureExpenseActionSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS shifts (
+      id TEXT PRIMARY KEY,
+      startTime INTEGER NOT NULL,
+      endTime INTEGER,
+      cashierId TEXT,
+      cashierName TEXT NOT NULL,
+      tillId TEXT,
+      tillName TEXT,
+      openingCash REAL DEFAULT 0,
+      closingCash REAL,
+      expectedCash REAL,
+      cashVariance REAL,
+      closeBreakdown TEXT,
+      status TEXT NOT NULL,
+      lastSyncAt INTEGER,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
   for (const sql of [
     'ALTER TABLE expenses ADD COLUMN source TEXT',
     'ALTER TABLE expenses ADD COLUMN accountId TEXT',
@@ -138,6 +206,9 @@ export async function ensureExpenseActionSchema(db: D1Database) {
     'ALTER TABLE stockMovements ADD COLUMN businessId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE shifts ADD COLUMN cashierId TEXT',
+    'ALTER TABLE shifts ADD COLUMN businessId TEXT',
+    'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
@@ -203,10 +274,85 @@ async function ensurePickedCashAccount(db: D1Database, businessId: string) {
   `).bind(id, businessId).first<any>();
 }
 
+async function requireOpenTillExpenseShift(
+  db: D1Database,
+  businessId: string,
+  shiftId: unknown,
+  principal?: Principal,
+  service = false,
+) {
+  const cleanShiftId = trimText(shiftId, 180);
+  if (!cleanShiftId) throw new PolicyError('Open a till shift before paying expenses from the till.', 409);
+  const shift = await db.prepare(`
+    SELECT id, startTime, openingCash, cashierId, cashierName, status
+    FROM shifts
+    WHERE id = ? AND businessId = ?
+    LIMIT 1
+  `).bind(cleanShiftId, businessId).first<any>();
+  if (!shift) throw new PolicyError('The selected till shift was not found.', 404);
+  if (String(shift.status || '').toUpperCase() !== 'OPEN') {
+    throw new PolicyError('Till expenses can only use an open shift.', 409);
+  }
+  if (!service && principal && !ownsShift(shift, principal)) {
+    throw new PolicyError('You can only pay till expenses from your own shift.', 403);
+  }
+  return shift;
+}
+
+async function availableTillCashForExpense(
+  db: D1Database,
+  businessId: string,
+  shift: any,
+  excludeExpenseId?: string,
+): Promise<number> {
+  const since = asNumber(shift?.startTime);
+  const shiftId = trimText(shift?.id, 180);
+  const openingCash = asNumber(shift?.openingCash);
+  const [transactions, expenses, picks, refunds, supplierPayments, customerPayments] = await Promise.all([
+    db.prepare(`SELECT total, subtotal, discountAmount, discount, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ?`)
+      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT id, amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ?`)
+      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND timestamp >= ?`)
+      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND timestamp >= ?`)
+      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND timestamp >= ?`)
+      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND timestamp >= ?`)
+      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+  ]);
+
+  const txRows = ((transactions.results || []) as any[])
+    .filter(row => inShiftScope(row, since, shiftId) && !['VOIDED', 'QUOTE'].includes(String(row.status || '').toUpperCase()));
+  const expenseRows = ((expenses.results || []) as any[])
+    .filter(row => trimText(row.id, 160) !== excludeExpenseId)
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL' && String(row.status || '').toUpperCase() !== 'REJECTED');
+  const pickRows = ((picks.results || []) as any[])
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED');
+  const refundRows = ((refunds.results || []) as any[])
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.status || 'APPROVED').toUpperCase() !== 'REJECTED');
+  const supplierRows = ((supplierPayments.results || []) as any[])
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL');
+  const customerRows = ((customerPayments.results || []) as any[])
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.paymentMethod || '').toUpperCase() === 'CASH');
+
+  return Math.max(0, roundMoney(
+    openingCash
+    + txRows.reduce((sum, row) => sum + cashAmountFromTransaction(row), 0)
+    + customerRows.reduce((sum, row) => sum + asNumber(row.amount), 0)
+    - expenseRows.reduce((sum, row) => sum + asNumber(row.amount), 0)
+    - pickRows.reduce((sum, row) => sum + asNumber(row.amount), 0)
+    - refundRows.reduce((sum, row) => sum + cashAmountFromRefund(row), 0)
+    - supplierRows.reduce((sum, row) => sum + asNumber(row.amount), 0),
+  ));
+}
+
 async function effectStatementsForApprovedExpense(
   db: D1Database,
   businessId: string,
   expense: Record<string, any>,
+  context: { principal?: Principal; service?: boolean; excludeExpenseId?: string } = {},
 ): Promise<D1PreparedStatement[]> {
   const source = String(expense.source || 'TILL').toUpperCase();
   const amount = asNumber(expense.amount);
@@ -223,6 +369,15 @@ async function effectStatementsForApprovedExpense(
       db.prepare(`UPDATE financialAccounts SET balance = balance - ?, updated_at = ? WHERE id = ? AND businessId = ?`)
         .bind(amount, now, accountId, businessId),
     ];
+  }
+
+  if (source === 'TILL') {
+    const shift = await requireOpenTillExpenseShift(db, businessId, expense.shiftId, context.principal, context.service);
+    const availableCash = await availableTillCashForExpense(db, businessId, shift, context.excludeExpenseId);
+    if (amount > availableCash + 0.01) {
+      throw new PolicyError(`Insufficient till cash. Available: Ksh ${availableCash.toLocaleString()}.`, 409);
+    }
+    return [];
   }
 
   if (source === 'SHOP') {
@@ -336,8 +491,12 @@ export async function prepareExpenseSubmit(
     return { expense: clean, statements: [], idempotent: true };
   }
 
+  if (expense.source === 'TILL') {
+    await requireOpenTillExpenseShift(db, businessId, expense.shiftId, principal, service);
+  }
+
   const statements = [await insertStatement(db, 'expenses', expense)];
-  if (approved) statements.push(...await effectStatementsForApprovedExpense(db, businessId, expense));
+  if (approved) statements.push(...await effectStatementsForApprovedExpense(db, businessId, expense, { principal, service }));
   statements.push(auditStatement(db, {
     principal,
     businessId, expenseId: expense.id,
@@ -383,7 +542,7 @@ export async function prepareExpenseApproval(
   const statements = [
     db.prepare(`UPDATE expenses SET status = 'APPROVED', approvedBy = ?, amount = ?, updated_at = ? WHERE id = ? AND businessId = ?`)
       .bind(clean.approvedBy, clean.amount, clean.updated_at, clean.id, businessId),
-    ...await effectStatementsForApprovedExpense(db, businessId, clean),
+    ...await effectStatementsForApprovedExpense(db, businessId, clean, { principal, service, excludeExpenseId: clean.id }),
     auditStatement(db, {
       principal,
       businessId, expenseId: clean.id,

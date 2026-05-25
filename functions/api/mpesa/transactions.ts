@@ -5,6 +5,8 @@ interface Env {
   API_SECRET?: string;
 }
 
+const LEDGER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
+
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Business-ID',
@@ -68,6 +70,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
     if (!businessId) return json({ error: 'Business is required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied' }, 403);
+    if (!auth.service && !LEDGER_ROLES.has(auth.principal.role)) {
+      return json({ error: 'Manager access required.' }, 403);
+    }
 
     await ensureMpesaLedgerSchema(env.DB);
 

@@ -6,6 +6,7 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 import { getProductIngredients, isBundleProduct } from '../utils/bundleInventory';
 import { SalesService } from '../services/sales';
 import { flushOutboxNow } from '../offline/offlineSync';
+import { cacheTableRows, readCachedTableRows } from '../offline/localdb';
 import { getCurrentShiftId } from '../utils/shiftSession';
 import { calculateCartTotals, productUnitDiscount } from '../utils/productPricing';
 
@@ -377,6 +378,60 @@ export function useMtaaniPOS() {
       if (isOfflineSale) {
         // Intentional Dexie write: CloudTable queues offline cash sales into the sync outbox.
         await db.transactions.add(newTransaction);
+        try {
+          const deductions = new Map<string, number>();
+          const addDeduction = (productId: string, quantity: number) => {
+            if (!productId || quantity <= 0) return;
+            deductions.set(productId, (deductions.get(productId) || 0) + quantity);
+          };
+
+          for (const item of cart) {
+            const prod = productsById.get(item.id);
+            const saleQty = Number(item.cartQuantity) || 0;
+            if (!prod || saleQty <= 0) continue;
+            if (isBundleProduct(prod)) {
+              getProductIngredients(prod, productIngredients).forEach(row => {
+                addDeduction(row.ingredientProductId, row.quantity * saleQty);
+              });
+            } else {
+              addDeduction(item.id, saleQty);
+            }
+          }
+
+          const updatedProducts: any[] = [];
+          for (const [productId, quantity] of deductions.entries()) {
+            const prod = productsById.get(productId) || ingredientProductsById.get(productId);
+            if (!prod) continue;
+            const updated = {
+              ...prod,
+              stockQuantity: Math.max(0, Number(prod.stockQuantity || 0) - quantity),
+              updated_at: Date.now(),
+            };
+            updatedProducts.push(updated);
+            await db.products.cacheLocal(updated);
+          }
+
+          if (activeBusinessId && updatedProducts.length > 0) {
+            const updatesById = new Map(updatedProducts.map(product => [product.id, product]));
+            const cachedRows = await readCachedTableRows({ table: 'products', businessId: activeBusinessId });
+            const baseRows = cachedRows.length > 0 ? cachedRows : await db.products.toArray().catch(() => []);
+            const seen = new Set<string>();
+            const nextRows = baseRows.map((row: any) => {
+              const replacement = updatesById.get(row.id);
+              if (replacement) {
+                seen.add(row.id);
+                return replacement;
+              }
+              return row;
+            });
+            updatedProducts.forEach(product => {
+              if (!seen.has(product.id)) nextRows.push(product);
+            });
+            await cacheTableRows({ table: 'products', businessId: activeBusinessId, rows: nextRows });
+          }
+        } catch (reserveErr) {
+          console.warn('[POS Offline] Sale saved, but local stock reservation failed:', reserveErr);
+        }
         clearCart();
         setSelectedCustomerId(null);
         setDiscountValue(0);

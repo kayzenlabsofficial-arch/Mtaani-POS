@@ -41,6 +41,18 @@ export interface MpesaVerificationResponse {
   error?: string;
 }
 
+export interface ManualMpesaResponse {
+  success?: boolean;
+  existing?: boolean;
+  checkoutRequestId?: string;
+  receiptNumber?: string;
+  amount?: number;
+  phoneNumber?: string | null;
+  paymentStatus?: 'PAID';
+  utilizationStatus?: 'UNUTILIZED';
+  error?: string;
+}
+
 export interface MpesaLedgerRow {
   checkoutRequestId: string;
   merchantRequestId?: string;
@@ -97,6 +109,26 @@ export const MpesaService = {
     } catch (err: any) {
       console.error('M-Pesa Verify Failed:', err);
       return { found: false, paid: false, usable: false, utilizationStatus: 'UNUTILIZED', error: err.message || 'Network error' };
+    }
+  },
+
+  async registerManualPayment(input: {
+    code: string;
+    amount: number;
+    businessId: string;
+    shopId?: string;
+    phoneNumber?: string;
+  }): Promise<ManualMpesaResponse> {
+    try {
+      const { shopId: _legacyShopId, ...body } = input;
+      return await apiRequest<ManualMpesaResponse>(`${API_BASE}/manual`, {
+        method: 'POST',
+        body,
+        businessId: input.businessId,
+      });
+    } catch (err: any) {
+      console.error('M-Pesa Manual Entry Failed:', err);
+      return { error: err.message || 'Network error' };
     }
   },
 

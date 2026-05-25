@@ -14,6 +14,7 @@ type Allocation = {
 
 const PAYMENT_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER', 'CASHIER']);
 const PAYMENT_METHODS = new Set(['CASH', 'MPESA', 'BANK', 'PDQ', 'CHEQUE']);
+const SHIFT_PAYMENT_METHODS = new Set(['CASH', 'MPESA', 'PDQ']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -38,6 +39,41 @@ function roundMoney(value: number) {
 
 function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
+}
+
+function ownsShift(shift: any, principal: any) {
+  const userId = trimText(principal?.userId, 160);
+  const userName = trimText(principal?.userName, 120).toLowerCase();
+  const cashierId = trimText(shift?.cashierId, 160);
+  const cashierName = trimText(shift?.cashierName, 120).toLowerCase();
+  return (userId && cashierId === userId)
+    || (userName && cashierName === userName)
+    || (userId && String(shift?.id || '').includes(`_${userId}`));
+}
+
+async function requireOpenPaymentShift(
+  db: D1Database,
+  businessId: string,
+  shiftId: unknown,
+  principal: any,
+  service: boolean,
+) {
+  const cleanShiftId = trimText(shiftId, 180);
+  if (!cleanShiftId) throw new PolicyError('Open a till shift before recording this customer payment.', 409);
+  const shift = await db.prepare(`
+    SELECT id, cashierId, cashierName, status
+    FROM shifts
+    WHERE id = ? AND businessId = ?
+    LIMIT 1
+  `).bind(cleanShiftId, businessId).first<any>();
+  if (!shift) throw new PolicyError('The selected till shift was not found.', 404);
+  if (String(shift.status || '').toUpperCase() !== 'OPEN') {
+    throw new PolicyError('Customer till payments can only use an open shift.', 409);
+  }
+  if (!service && !ownsShift(shift, principal)) {
+    throw new PolicyError('You can only record till customer payments on your own shift.', 403);
+  }
+  return shift;
 }
 
 function parseAllocations(value: unknown): Allocation[] {
@@ -114,6 +150,26 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS shifts (
+      id TEXT PRIMARY KEY,
+      startTime INTEGER NOT NULL,
+      endTime INTEGER,
+      cashierId TEXT,
+      cashierName TEXT NOT NULL,
+      tillId TEXT,
+      tillName TEXT,
+      openingCash REAL DEFAULT 0,
+      closingCash REAL,
+      expectedCash REAL,
+      cashVariance REAL,
+      closeBreakdown TEXT,
+      status TEXT NOT NULL,
+      lastSyncAt INTEGER,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
 
   for (const sql of [
     'ALTER TABLE customerPayments ADD COLUMN transactionCode TEXT',
@@ -123,6 +179,9 @@ async function ensureSchema(db: D1Database) {
     'ALTER TABLE customerPayments ADD COLUMN shiftId TEXT',
     'ALTER TABLE customerPayments ADD COLUMN businessId TEXT',
     'ALTER TABLE customerPayments ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE shifts ADD COLUMN cashierId TEXT',
+    'ALTER TABLE shifts ADD COLUMN businessId TEXT',
+    'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
@@ -184,6 +243,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const method = String(payment.paymentMethod || payment.method || 'CASH').toUpperCase();
     const paymentMethod = PAYMENT_METHODS.has(method) ? method : 'CASH';
+    if (SHIFT_PAYMENT_METHODS.has(paymentMethod)) {
+      await requireOpenPaymentShift(env.DB, businessId, payment.shiftId, auth.principal, auth.service);
+    }
     const allocations = parseAllocations(payment.allocations);
     const allocationTotal = roundMoney(allocations.reduce((sum, allocation) => sum + allocation.amount, 0));
     if (allocationTotal > amount + 0.01) throw new PolicyError('Payment allocations exceed the payment amount.', 400);

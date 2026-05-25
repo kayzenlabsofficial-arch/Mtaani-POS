@@ -158,6 +158,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   const transactionMutations = validMutations.filter(m => m.table === 'transactions' && m.op === 'UPSERT');
   const payloads = transactionMutations.map(m => m.payload || {});
+  if (payloads.some(payload => String(payload.status || '').toUpperCase() !== 'PAID' || String(payload.paymentMethod || '').toUpperCase() !== 'CASH')) {
+    return json({ error: 'Offline sync only accepts paid cash register sales.' }, 400);
+  }
   let sideEffects: D1PreparedStatement[] = [];
   try {
     sideEffects = await hardenTransactionBatch({
@@ -166,6 +169,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       principal: auth.principal,
       service: auth.service,
       sourceLabel: 'Sale (Sync)',
+      allowClosedShiftWindow: true,
     }, payloads);
   } catch (err: any) {
     const status = err instanceof PolicyError ? err.status : 400;
