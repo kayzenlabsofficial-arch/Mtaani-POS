@@ -51,6 +51,12 @@ function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
 }
 
+function parseMaybeJson(value: unknown): any {
+  if (!value) return null;
+  if (typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch { return null; }
+}
+
 function pickedCashAccountId(businessId: string) {
   return trimText(`picked_cash_${businessId}`, 160);
 }
@@ -125,6 +131,25 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS shifts (
+      id TEXT PRIMARY KEY,
+      startTime INTEGER NOT NULL,
+      endTime INTEGER,
+      cashierId TEXT,
+      cashierName TEXT NOT NULL,
+      tillId TEXT,
+      tillName TEXT,
+      openingCash REAL DEFAULT 0,
+      closingCash REAL,
+      expectedCash REAL,
+      cashVariance REAL,
+      closeBreakdown TEXT,
+      status TEXT NOT NULL,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
 
   const paymentColumns = [
     'purchaseOrderId TEXT',
@@ -143,6 +168,107 @@ async function ensureSchema(db: D1Database) {
   for (const column of paymentColumns) {
     try { await db.prepare(`ALTER TABLE supplierPayments ADD COLUMN ${column}`).run(); } catch {}
   }
+  for (const column of [
+    'tillId TEXT',
+    'tillName TEXT',
+    'openingCash REAL DEFAULT 0',
+    'closingCash REAL',
+    'expectedCash REAL',
+    'cashVariance REAL',
+    'closeBreakdown TEXT',
+  ]) {
+    try { await db.prepare(`ALTER TABLE shifts ADD COLUMN ${column}`).run(); } catch {}
+  }
+}
+
+function cashAmountFromTransaction(row: any): number {
+  const method = String(row?.paymentMethod || '').toUpperCase();
+  if (method === 'CASH') return transactionNetTotal(row);
+  if (method !== 'SPLIT') return 0;
+  const split = parseMaybeJson(row?.splitPayments) || parseMaybeJson(row?.splitData)?.splitPayments || parseMaybeJson(row?.splitData) || {};
+  return asNumber(split.cashAmount);
+}
+
+function transactionNetTotal(row: any): number {
+  const subtotal = asNumber(row?.subtotal);
+  const discount = Math.max(0, asNumber(row?.discountAmount ?? row?.discount));
+  if (subtotal > 0 && discount > 0) return Math.max(0, roundMoney(subtotal - discount));
+  return asNumber(row?.total);
+}
+
+function cashAmountFromRefund(row: any): number {
+  if (String(row?.status || 'APPROVED').toUpperCase() === 'REJECTED') return 0;
+  const source = String(row?.source || '').toUpperCase();
+  if (source === 'TILL' || source === 'MIXED') return asNumber(row?.cashAmount ?? row?.amount);
+  return asNumber(row?.cashAmount);
+}
+
+function inShiftScope(row: any, since: number, shiftId?: string | null): boolean {
+  if (shiftId && row?.shiftId) return String(row.shiftId) === String(shiftId);
+  return asNumber(row?.timestamp || row?.issueDate) >= since;
+}
+
+async function requireOpenShift(db: D1Database, businessId: string, shiftId?: string | null) {
+  if (!shiftId) throw new PolicyError('Open a till shift before paying suppliers from the till.', 409);
+  const shift = await db.prepare(`
+    SELECT id, startTime, openingCash, status
+    FROM shifts
+    WHERE id = ? AND businessId = ?
+    LIMIT 1
+  `).bind(shiftId, businessId).first<any>();
+  if (!shift) throw new PolicyError('Shift was not found.', 404);
+  if (String(shift.status || '').toUpperCase() !== 'OPEN') {
+    throw new PolicyError('Supplier till payments can only use an open shift.', 409);
+  }
+  return shift;
+}
+
+async function availableTillCash(db: D1Database, businessId: string, shift: any): Promise<number> {
+  const since = asNumber(shift?.startTime, 0);
+  const shiftId = String(shift?.id || '').trim();
+  const [transactions, expenses, picks, refunds, supplierPayments, customerPayments] = await Promise.all([
+    db.prepare(`SELECT total, subtotal, discountAmount, discount, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ?`)
+      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ?`)
+      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND timestamp >= ?`)
+      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND timestamp >= ?`)
+      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND timestamp >= ?`)
+      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND timestamp >= ?`)
+      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+  ]);
+
+  const cashSales = ((transactions.results || []) as any[])
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.status || '').toUpperCase() === 'PAID')
+    .reduce((sum, row) => sum + cashAmountFromTransaction(row), 0);
+  const tillExpenses = ((expenses.results || []) as any[])
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL' && String(row.status || '').toUpperCase() !== 'REJECTED')
+    .reduce((sum, row) => sum + asNumber(row.amount), 0);
+  const picked = ((picks.results || []) as any[])
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED')
+    .reduce((sum, row) => sum + asNumber(row.amount), 0);
+  const cashRefunds = ((refunds.results || []) as any[])
+    .filter(row => inShiftScope(row, since, shiftId))
+    .reduce((sum, row) => sum + cashAmountFromRefund(row), 0);
+  const supplierTillPayments = ((supplierPayments.results || []) as any[])
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL')
+    .reduce((sum, row) => sum + asNumber(row.amount), 0);
+  const customerCashPayments = ((customerPayments.results || []) as any[])
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.paymentMethod || '').toUpperCase() === 'CASH')
+    .reduce((sum, row) => sum + asNumber(row.amount), 0);
+
+  return Math.max(0, roundMoney(
+    asNumber(shift?.openingCash)
+    + cashSales
+    + customerCashPayments
+    - tillExpenses
+    - picked
+    - supplierTillPayments
+    - cashRefunds,
+  ));
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -187,6 +313,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       account = await ensurePickedCashAccount(env.DB, businessId);
       if (!account) throw new PolicyError('Selected account was not found.', 404);
       if (asNumber(account.balance) < cashAmount) throw new PolicyError(`Insufficient funds in "${account.name}".`, 409);
+    }
+    if (source === 'TILL' && cashAmount > 0) {
+      const shift = await requireOpenShift(env.DB, businessId, body?.shiftId || null);
+      const availableCash = await availableTillCash(env.DB, businessId, shift);
+      if (cashAmount > availableCash + 0.01) {
+        throw new PolicyError(`Insufficient till cash. Available: Ksh ${availableCash.toLocaleString()}.`, 409);
+      }
     }
 
     const creditNotes: any[] = [];

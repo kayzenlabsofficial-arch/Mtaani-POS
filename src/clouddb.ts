@@ -27,7 +27,7 @@ function emitChange() {
 // circular dependency: clouddb → store → db → clouddb.
 
 const API = '/api/data';
-const DATA_FETCH_TIMEOUT_MS = 20000;
+const DATA_FETCH_TIMEOUT_MS = 45000;
 
 const OFFLINE_CACHE_TABLES = new Set<OfflineCacheTable>([
   'products',
@@ -66,6 +66,8 @@ function isLikelyOfflineError(e: any): boolean {
   if (typeof window !== 'undefined' && navigator && navigator.onLine === false) return true;
   const msg = String(e?.message || e || '');
   return (
+    e?.name === 'AbortError' ||
+    msg.includes('aborted') ||
     msg.includes('Failed to fetch') ||
     msg.includes('NetworkError') ||
     msg.includes('fetch') && msg.includes('failed')

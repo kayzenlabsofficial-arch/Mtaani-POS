@@ -30,9 +30,16 @@ function splitDetails(record: any) {
   return parseMaybeJson(record?.splitPayments) || parseMaybeJson(record?.splitData)?.splitPayments || parseMaybeJson(record?.splitData) || null;
 }
 
+function transactionNetTotal(record: any) {
+  const subtotal = n(record?.subtotal);
+  const discount = Math.max(0, n(record?.discountAmount ?? record?.discount));
+  if (subtotal > 0 && discount > 0) return Math.max(0, Math.round((subtotal - discount) * 100) / 100);
+  return n(record?.total);
+}
+
 function paymentAmount(record: any, method: 'CASH' | 'MPESA' | 'PDQ' | 'CREDIT') {
   const paymentMethod = String(record?.paymentMethod || '').toUpperCase();
-  if (paymentMethod === method) return n(record?.total);
+  if (paymentMethod === method) return transactionNetTotal(record);
   if (paymentMethod !== 'SPLIT') return 0;
   const split = splitDetails(record);
   if (method === 'CASH') return n(split?.cashAmount);
@@ -331,7 +338,7 @@ async function buildServerShiftReport(
     supplierPayments,
     customerPayments,
   ] = await Promise.all([
-    safeRows(db, `SELECT total, subtotal, tax, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT total, subtotal, discountAmount, discount, tax, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
     safeRows(db, `SELECT total, subtotal, tax, balance, issueDate, timestamp, status, shiftId FROM salesInvoices WHERE businessId = ? AND COALESCE(issueDate, timestamp, 0) >= ? AND COALESCE(issueDate, timestamp, 0) <= ?`, [businessId, since, until]),
     safeRows(db, `SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
     safeRows(db, `SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
@@ -360,7 +367,7 @@ async function buildServerShiftReport(
     .reduce((sum, row) => sum + n(row.amount), 0);
   const grossSales = txs.reduce((sum, row) => sum + n(row.subtotal ?? row.total), 0)
     + invoiceRows.reduce((sum, row) => sum + n(row.subtotal ?? row.total), 0);
-  const totalSales = txs.reduce((sum, row) => sum + n(row.total), 0)
+  const totalSales = txs.reduce((sum, row) => sum + transactionNetTotal(row), 0)
     + invoiceRows.reduce((sum, row) => sum + n(row.total), 0);
   const taxTotal = txs.reduce((sum, row) => sum + n(row.tax), 0)
     + invoiceRows.reduce((sum, row) => sum + n(row.tax), 0);

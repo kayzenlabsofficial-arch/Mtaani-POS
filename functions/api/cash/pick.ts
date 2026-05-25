@@ -76,6 +76,13 @@ async function ensureSchema(db: D1Database) {
     'ALTER TABLE cashPicks ADD COLUMN shiftId TEXT',
     'ALTER TABLE cashPicks ADD COLUMN businessId TEXT',
     'ALTER TABLE shifts ADD COLUMN cashierId TEXT',
+    'ALTER TABLE shifts ADD COLUMN tillId TEXT',
+    'ALTER TABLE shifts ADD COLUMN tillName TEXT',
+    'ALTER TABLE shifts ADD COLUMN openingCash REAL DEFAULT 0',
+    'ALTER TABLE shifts ADD COLUMN closingCash REAL',
+    'ALTER TABLE shifts ADD COLUMN expectedCash REAL',
+    'ALTER TABLE shifts ADD COLUMN cashVariance REAL',
+    'ALTER TABLE shifts ADD COLUMN closeBreakdown TEXT',
     'ALTER TABLE shifts ADD COLUMN businessId TEXT',
     'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
     'ALTER TABLE financialAccounts ADD COLUMN accountNumber TEXT',
@@ -97,9 +104,16 @@ function parseMaybeJson(value: unknown): any {
   try { return JSON.parse(value); } catch { return null; }
 }
 
+function transactionNetTotal(row: any): number {
+  const subtotal = asNumber(row?.subtotal);
+  const discount = Math.max(0, asNumber(row?.discountAmount ?? row?.discount));
+  if (subtotal > 0 && discount > 0) return Math.max(0, Math.round((subtotal - discount) * 100) / 100);
+  return asNumber(row?.total);
+}
+
 function cashAmountFromTransaction(row: any): number {
   const method = String(row?.paymentMethod || '').toUpperCase();
-  if (method === 'CASH') return asNumber(row?.total);
+  if (method === 'CASH') return transactionNetTotal(row);
   if (method !== 'SPLIT') return 0;
   const split = parseMaybeJson(row?.splitPayments) || parseMaybeJson(row?.splitData) || {};
   return asNumber(split.cashAmount);
@@ -126,7 +140,7 @@ async function requireOwnOpenShift(
 ) {
   if (!shiftId) throw new PolicyError('Open your own shift before picking cash.', 409);
   const shift = await db.prepare(`
-    SELECT id, startTime, cashierId, cashierName, status
+    SELECT id, startTime, openingCash, cashierId, cashierName, status
     FROM shifts
     WHERE id = ? AND businessId = ?
     LIMIT 1
@@ -161,9 +175,9 @@ async function resolveShiftStart(db: D1Database, businessId: string, shiftId?: s
   return todayStartMs();
 }
 
-async function availableCashForPick(db: D1Database, businessId: string, since: number, shiftId?: string | null): Promise<number> {
+async function availableCashForPick(db: D1Database, businessId: string, since: number, shiftId?: string | null, openingCash = 0): Promise<number> {
   const [transactions, expenses, picks, refunds, supplierPayments, customerPayments] = await Promise.all([
-    db.prepare(`SELECT total, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ?`)
+    db.prepare(`SELECT total, subtotal, discountAmount, discount, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ?`)
       .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
     db.prepare(`SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ?`)
       .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
@@ -188,7 +202,7 @@ async function availableCashForPick(db: D1Database, businessId: string, since: n
   const picked = pickRows.reduce((sum, row) => sum + asNumber(row.amount), 0);
   const cashRefunds = refundRows.reduce((sum, row) => sum + cashAmountFromRefund(row), 0);
   const supplierTillPayments = supplierRows.reduce((sum, row) => sum + asNumber(row.amount), 0);
-  return Math.max(0, Math.round((cashSales + customerCashPayments - tillExpenses - picked - supplierTillPayments - cashRefunds) * 100) / 100);
+  return Math.max(0, Math.round((Number(openingCash || 0) + cashSales + customerCashPayments - tillExpenses - picked - supplierTillPayments - cashRefunds) * 100) / 100);
 }
 
 function pickedCashAccountId(businessId: string) {
@@ -236,7 +250,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const shiftId = trimText(body?.shiftId, 160) || null;
       const shift = await requireOwnOpenShift(env.DB, businessId, shiftId, auth.principal, auth.service);
       const shiftStart = await resolveShiftStart(env.DB, businessId, shiftId, body?.shiftStart || shift.startTime);
-      const availableCash = await availableCashForPick(env.DB, businessId, shiftStart, shiftId);
+      const availableCash = await availableCashForPick(env.DB, businessId, shiftStart, shiftId, asNumber(shift.openingCash));
       const varianceAmount = Math.max(0, Math.round((amount - availableCash) * 100) / 100);
       const pickedAccount = status === 'APPROVED' ? await ensurePickedCashAccount(env.DB, businessId) : null;
       const cashPick = { id, amount, timestamp: now, status, userName: trimText(body?.userName || auth.principal.userName, 120), businessId, accountId: pickedAccount?.id || null, shiftId, updated_at: now };

@@ -297,7 +297,8 @@ function refundAmountFor(transaction: any, lines: RefundLine[]) {
   const txItems = asArray(transaction.items);
   const amount = lines.reduce((sum, line) => {
     const item = txItems.find(row => row.productId === line.productId);
-    return sum + (asNumber(item?.snapshotPrice) * line.quantity);
+    const unitAmount = Math.max(0, asNumber(item?.snapshotPrice) - asNumber(item?.discountAmount));
+    return sum + (unitAmount * line.quantity);
   }, 0);
   return roundMoney(Math.min(asNumber(transaction.total), amount || asNumber(transaction.total)));
 }
@@ -312,9 +313,16 @@ function splitDetails(record: any) {
   return parseMaybeJson(record?.splitPayments) || parseMaybeJson(record?.splitData)?.splitPayments || parseMaybeJson(record?.splitData) || null;
 }
 
+function transactionNetTotal(record: any) {
+  const subtotal = asNumber(record?.subtotal);
+  const discount = Math.max(0, asNumber(record?.discountAmount ?? record?.discount));
+  if (subtotal > 0 && discount > 0) return Math.max(0, roundMoney(subtotal - discount));
+  return asNumber(record?.total);
+}
+
 function paymentAmount(record: any, method: 'CASH' | 'MPESA' | 'PDQ' | 'CREDIT') {
   const paymentMethod = String(record?.paymentMethod || '').toUpperCase();
-  if (paymentMethod === method) return asNumber(record?.total);
+  if (paymentMethod === method) return transactionNetTotal(record);
   if (paymentMethod !== 'SPLIT') return 0;
   const split = splitDetails(record);
   if (method === 'CASH') return asNumber(split?.cashAmount);
@@ -367,7 +375,7 @@ async function availableTillCashForShift(db: D1Database, businessId: string, shi
     supplierPayments,
     customerPayments,
   ] = await Promise.all([
-    safeRows(db, `SELECT total, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT total, subtotal, discountAmount, discount, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
     safeRows(db, `SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
     safeRows(db, `SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
     safeRows(db, `SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
@@ -401,11 +409,12 @@ function refundDocumentItems(transaction: any, lines: RefundLine[]) {
   const txItems = asArray(transaction.items);
   return lines.map(line => {
     const item = txItems.find(row => row.productId === line.productId) || {};
+    const unitAmount = Math.max(0, asNumber(item.snapshotPrice) - asNumber(item.discountAmount));
     return {
       productId: line.productId,
       name: trimText(item.name || line.productId, 160),
       quantity: line.quantity,
-      amount: roundMoney(asNumber(item.snapshotPrice) * line.quantity),
+      amount: roundMoney(unitAmount * line.quantity),
     };
   });
 }

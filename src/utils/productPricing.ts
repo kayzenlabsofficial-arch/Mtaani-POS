@@ -1,9 +1,8 @@
 import type { Product } from '../db';
 import type { CartItem } from '../store';
+import { roundMoney } from './posMoney';
 
 export type ProductDiscountType = 'NONE' | 'FIXED' | 'PERCENT';
-
-const roundMoney = (value: number) => Math.round(value * 100) / 100;
 
 export function normaliseDiscountType(value: unknown): ProductDiscountType {
   const type = String(value || '').trim().toUpperCase();

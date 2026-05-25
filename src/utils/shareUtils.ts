@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { lineDiscountAmount, lineNetAmount, transactionOriginalNetTotal } from './posMoney';
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
 const M = 14;          // page margin mm
@@ -306,7 +307,7 @@ function buildReceipt(r: any, bizName = 'SMART POS', location = 'Nairobi, Kenya'
   const items = Array.isArray(r.items) ? r.items : [];
   const itemH = items.reduce((height: number, item: any) => {
     const nameLines = Math.max(1, Math.ceil(safeStr(item?.name).length / 32));
-    return height + (nameLines * 4) + 4 + (safe(item?.discountAmount) > 0 ? 4 : 0);
+    return height + (nameLines * 4) + 4 + (lineDiscountAmount(item) > 0 ? 4 : 0);
   }, 0);
   const totalH = 65 + itemH + 55; // estimated
   const createdAt = new Date(r.timestamp || r.issueDate || Date.now());
@@ -382,8 +383,8 @@ function buildReceipt(r: any, bizName = 'SMART POS', location = 'Nairobi, Kenya'
   items.forEach(item => {
     const qty = safe(item.quantity);
     const price = safe(item.snapshotPrice);
-    const total = qty * price;
-    const lineDiscount = safe(item.discountAmount) * qty;
+    const lineDiscount = lineDiscountAmount(item);
+    const total = lineNetAmount(item);
     
     // Name (wrapped if too long)
     const name = safeStr(item.name);
@@ -422,7 +423,7 @@ function buildReceipt(r: any, bizName = 'SMART POS', location = 'Nairobi, Kenya'
   if (safe(r.discountAmount) > 0) row('Total discount', `-${ksh(r.discountAmount)}`);
   row('VAT (16%)', ksh(r.tax));
   y += 2;
-  row('TOTAL', ksh(r.total), true);
+  row('TOTAL', ksh(transactionOriginalNetTotal(r)), true);
   
   y += 4;
   // Payment Details (Tendered & Change)
@@ -1251,7 +1252,7 @@ export async function generateAndDownloadCustomerStatement(customer: any, sales:
 
   const creditAmount = (sale: any) => {
     if (sale.recordType === 'SALES_INVOICE') return safe(sale.total);
-    if (sale.paymentMethod === 'CREDIT') return safe(sale.total);
+    if (sale.paymentMethod === 'CREDIT') return transactionOriginalNetTotal(sale);
     if (sale.paymentMethod === 'SPLIT' && sale.splitPayments?.secondaryMethod === 'CREDIT') return safe(sale.splitPayments.secondaryAmount);
     return 0;
   };

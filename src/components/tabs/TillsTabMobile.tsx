@@ -4,6 +4,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
+import { paymentAmountForMethod, transactionOriginalNetTotal } from '../../utils/posMoney';
 import { getBusinessSettings } from '../../utils/settings';
 import { parseSalesTillRows, parseSalesTills, tillNameForShift } from '../../utils/tills';
 
@@ -12,24 +13,6 @@ const money = (value: unknown) => `Ksh ${(Number(value) || 0).toLocaleString()}`
 function inShift(record: any, since: number, shiftId?: string) {
   if (shiftId && record?.shiftId) return record.shiftId === shiftId;
   return Number(record?.timestamp || record?.issueDate || 0) >= since;
-}
-
-function splitDetails(record: any) {
-  const raw = record?.splitPayments || record?.splitData?.splitPayments;
-  if (!raw) return null;
-  if (typeof raw === 'string') {
-    try { return JSON.parse(raw); } catch { return null; }
-  }
-  return raw;
-}
-
-function paymentAmount(record: any, method: 'CASH' | 'MPESA' | 'PDQ' | 'CREDIT') {
-  const paymentMethod = String(record?.paymentMethod || '').toUpperCase();
-  if (paymentMethod === method) return Number(record?.total || 0);
-  if (paymentMethod !== 'SPLIT') return 0;
-  const split = splitDetails(record);
-  if (method === 'CASH') return Number(split?.cashAmount || 0);
-  return String(split?.secondaryMethod || '').toUpperCase() === method ? Number(split?.secondaryAmount || 0) : 0;
 }
 
 function TillCard({ till, shift, rows }: { key?: React.Key; till: any; shift: any; rows: any }) {
@@ -149,8 +132,8 @@ export default function TillsTabMobile() {
       rows: {
         ...drawer,
         expectedCash: Math.max(0, drawer.actualCashDrawer),
-        totalSales: txs.reduce((sum, tx) => sum + Number(tx.total || 0), 0),
-        mpesaSales: txs.reduce((sum, tx) => sum + paymentAmount(tx, 'MPESA'), 0),
+        totalSales: txs.reduce((sum, tx) => sum + transactionOriginalNetTotal(tx), 0),
+        mpesaSales: txs.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'MPESA'), 0),
       },
     };
   });

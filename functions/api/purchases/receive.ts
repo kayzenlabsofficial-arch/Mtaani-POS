@@ -136,6 +136,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     `).bind(po.supplierId, businessId).first<any>();
     if (!supplier) throw new PolicyError('Supplier was not found.', 404);
 
+    const duplicateInvoice = await env.DB.prepare(`
+      SELECT id
+      FROM purchaseOrders
+      WHERE businessId = ?
+        AND supplierId = ?
+        AND invoiceNumber = ?
+        AND id != ?
+      LIMIT 1
+    `).bind(businessId, po.supplierId, invoiceNumber, purchaseOrderId).first<any>();
+    if (duplicateInvoice) throw new PolicyError('This supplier invoice number has already been received.', 409);
+
     const savedItems = parseItems(po.items);
     if (!savedItems.length) throw new PolicyError('Purchase order has no line items.', 400);
 

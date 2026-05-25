@@ -35,6 +35,7 @@ type HardenOptions = {
 const SALE_STATUSES = new Set(['PAID', 'UNPAID']);
 const CASHIER_ALLOWED_STATUSES = new Set(['PAID', 'UNPAID', 'QUOTE', 'PENDING_REFUND']);
 const STAFF_ALLOWED_METHODS = new Set(['CASH', 'MPESA', 'PDQ', 'CREDIT', 'SPLIT']);
+const SPLIT_SECONDARY_METHODS = new Set(['MPESA', 'PDQ', 'CREDIT']);
 
 function deserializeRow(row: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {};
@@ -104,7 +105,7 @@ async function loadProducts(db: D1Database, businessId: string, ids: string[]): 
     const chunk = uniqueIds.slice(i, i + CHUNK_SIZE);
     const placeholders = chunk.map(() => '?').join(',');
     const { results } = await db.prepare(
-      `SELECT id, name, category, sellingPrice, costPrice, taxCategory, unit, isBundle, components, stockQuantity
+      `SELECT id, name, category, sellingPrice, costPrice, discountType, discountValue, taxCategory, unit, isBundle, components, stockQuantity
        FROM products
        WHERE businessId = ? AND id IN (${placeholders})`
     ).bind(businessId, ...chunk).all();
@@ -188,6 +189,46 @@ function creditAmountFor(tx: Record<string, any>, total: number): number {
     return roundMoney(clamp(asNumber(splitPayments?.secondaryAmount), 0, total));
   }
   return 0;
+}
+
+function parseSplitPayments(value: unknown): any {
+  if (!value) return null;
+  const parsed = typeof value === 'string'
+    ? (() => { try { return JSON.parse(value); } catch { return null; } })()
+    : value;
+  return parsed?.splitPayments || parsed;
+}
+
+function normaliseSplitPayments(value: unknown, total: number) {
+  const split = parseSplitPayments(value);
+  if (!split || typeof split !== 'object') {
+    throw new PolicyError('Split payment details are required.', 400);
+  }
+
+  const cashAmount = roundMoney(clamp(asNumber(split.cashAmount), 0, total));
+  const secondaryAmount = roundMoney(clamp(asNumber(split.secondaryAmount), 0, total));
+  const secondaryMethod = String(split.secondaryMethod || '').toUpperCase();
+  const secondaryReference = trimText(split.secondaryReference, 120);
+
+  if (!SPLIT_SECONDARY_METHODS.has(secondaryMethod)) {
+    throw new PolicyError('Split payment secondary method is invalid.', 400);
+  }
+  if (total > 0 && cashAmount <= 0) {
+    throw new PolicyError('Split payment must include the cash amount paid.', 400);
+  }
+  if (total > 0 && secondaryAmount <= 0) {
+    throw new PolicyError('Split payment must include the second payment amount.', 400);
+  }
+  if (Math.abs(roundMoney(cashAmount + secondaryAmount) - total) > 0.01) {
+    throw new PolicyError('Split payment amounts must equal the sale total.', 400);
+  }
+
+  return {
+    cashAmount,
+    secondaryAmount,
+    secondaryMethod,
+    secondaryReference,
+  };
 }
 
 function addDeduction(deductions: Map<string, number>, productId: string, quantity: number) {
@@ -331,6 +372,15 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
     tx.amountTendered = tx.amountTendered === undefined ? null : roundMoney(Math.max(0, asNumber(tx.amountTendered)));
     tx.changeGiven = tx.changeGiven === undefined ? null : roundMoney(Math.max(0, asNumber(tx.changeGiven)));
 
+    if (statusNeedsStock(desiredStatus) && !tx.paymentMethod) {
+      throw new PolicyError('Choose a valid payment method before completing the sale.', 400);
+    }
+    if (tx.paymentMethod === 'SPLIT') {
+      tx.splitPayments = normaliseSplitPayments(tx.splitPayments ?? tx.splitData, total);
+    }
+    if (creditAmountFor(tx, total) > 0 && !tx.customerId) {
+      throw new PolicyError('Select a customer before selling on credit.', 400);
+    }
     if (tx.paymentMethod === 'CASH' && tx.amountTendered !== null) {
       tx.changeGiven = roundMoney(Math.max(0, Number(tx.amountTendered) - total));
     }

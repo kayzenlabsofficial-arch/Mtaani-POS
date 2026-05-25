@@ -11,32 +11,16 @@ import { approveRefundTransaction, requestRefundApproval } from '../../utils/app
 import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { getBusinessSettings } from '../../utils/settings';
 import { getCurrentShiftId } from '../../utils/shiftSession';
+import { refundedAmountFromReturnedLines, transactionOriginalNetTotal } from '../../utils/posMoney';
 
 
 interface RefundsTabProps {
   setActiveTab: (tab: any) => void;
 }
 
-function transactionItems(transaction: Transaction): any[] {
-  const items = (transaction as any).items;
-  if (Array.isArray(items)) return items;
-  if (typeof items === 'string') {
-    try {
-      const parsed = JSON.parse(items);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
 function refundedAmountFor(transaction: Transaction): number {
-  if (transaction.status === 'REFUNDED') return Number(transaction.total) || 0;
-  const amount = transactionItems(transaction).reduce((sum, item) => {
-    return sum + ((Number(item?.snapshotPrice) || 0) * (Number(item?.returnedQuantity) || 0));
-  }, 0);
-  return Math.min(Number(transaction.total) || 0, amount);
+  if (transaction.status === 'REFUNDED') return transactionOriginalNetTotal(transaction as any);
+  return refundedAmountFromReturnedLines(transaction as any);
 }
 
 export default function RefundsTabDesktop({ setActiveTab }: RefundsTabProps) {

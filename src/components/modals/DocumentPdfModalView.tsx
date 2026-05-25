@@ -1,0 +1,370 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Download, FileText, Loader2, PackagePlus, Printer, RotateCcw, Share2, X } from 'lucide-react';
+import { useLiveQuery } from '../../clouddb';
+import { db, type Transaction } from '../../db';
+import { useStore } from '../../store';
+import { useToast } from '../../context/ToastContext';
+import { getBusinessSettings } from '../../utils/settings';
+import { canPerform } from '../../utils/accessControl';
+import { downloadDocumentBlob, generateAndShareDocument, generateDocumentPdfBlob } from '../../utils/shareUtils';
+import { useTillCash } from '../../hooks/useTillCash';
+
+interface DocumentDetailsModalProps {
+  selectedRecord: any | null;
+  setSelectedRecord: (record: any | null) => void;
+  handleRefund: (t: Transaction, itemsToReturn?: { productId: string, quantity: number }[]) => Promise<void>;
+  onApprove?: (record: any) => Promise<void>;
+  onReject?: (record: any) => Promise<void>;
+  onReceive?: (record: any) => void;
+  extraActions?: React.ReactNode;
+}
+
+const parseList = (value: any): any[] => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+const moneyText = (value: unknown) => `Ksh ${(Number(value) || 0).toLocaleString()}`;
+
+function documentLabel(record: any) {
+  switch (record?.recordType) {
+    case 'SALE': return 'Receipt';
+    case 'REFUND': return 'Refund';
+    case 'EXPENSE': return 'Expense';
+    case 'SUPPLIER_PAYMENT': return 'Supplier-Payment';
+    case 'CREDIT_NOTE': return 'Credit-Note';
+    case 'SALES_INVOICE': return 'Invoice';
+    case 'PURCHASE_ORDER': return 'LPO';
+    case 'CLOSE_DAY_REPORT': return 'Shift-Report';
+    case 'DAILY_SUMMARY': return 'Daily-Summary';
+    default: return 'Document';
+  }
+}
+
+function documentFilename(record: any) {
+  const label = documentLabel(record);
+  const ref = String(record?.receiptNumber || record?.invoiceNumber || record?.poNumber || record?.refundNumber || record?.reference || record?.id || Date.now())
+    .split('-')[0]
+    .toUpperCase()
+    .replace(/[^A-Z0-9_]+/g, '');
+  return `${label}-${ref || 'DOC'}`;
+}
+
+export default function DocumentPdfModalView({
+  selectedRecord,
+  setSelectedRecord,
+  handleRefund,
+  onApprove,
+  onReject,
+  onReceive,
+  extraActions,
+}: DocumentDetailsModalProps) {
+  const { success, error: toastError } = useToast();
+  const currentUser = useStore(state => state.currentUser);
+  const isAdmin = useStore(state => state.isAdmin);
+  const activeBusinessId = useStore(state => state.activeBusinessId);
+  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
+  const supplier = useLiveQuery(
+    () => (selectedRecord?.recordType === 'SUPPLIER_PAYMENT' || selectedRecord?.recordType === 'PURCHASE_ORDER' || selectedRecord?.recordType === 'CREDIT_NOTE')
+      ? db.suppliers.get(selectedRecord.supplierId)
+      : Promise.resolve(null),
+    [selectedRecord]
+  );
+  const tillCash = useTillCash();
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [objectUrl, setObjectUrl] = useState('');
+  const [preparedRecord, setPreparedRecord] = useState<any | null>(null);
+  const [isPreparing, setIsPreparing] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [isApprovalActionRunning, setIsApprovalActionRunning] = useState(false);
+  const [isRefunding, setIsRefunding] = useState(false);
+
+  const storeName = businessSettings?.storeName || 'Smart POS';
+  const storeLocation = businessSettings?.location || 'Nairobi, Kenya';
+  const canRequestRefund = canPerform(currentUser, 'sale.refund.request', businessSettings);
+  const filename = useMemo(() => documentFilename(selectedRecord), [selectedRecord]);
+  const title = useMemo(() => `${documentLabel(selectedRecord).replace(/-/g, ' ')} PDF`, [selectedRecord]);
+
+  const isSale = selectedRecord?.recordType === 'SALE';
+  const isPO = selectedRecord?.recordType === 'PURCHASE_ORDER';
+  const isPendingApproval = isAdmin && onApprove && onReject && (
+    (selectedRecord?.recordType === 'PURCHASE_ORDER' && selectedRecord?.approvalStatus === 'PENDING') ||
+    (selectedRecord?.recordType === 'EXPENSE' && selectedRecord?.status === 'PENDING') ||
+    (selectedRecord?.recordType === 'SALE' && selectedRecord?.status === 'PENDING_REFUND')
+  );
+  const canReceive = !!(onReceive && isPO && selectedRecord?.approvalStatus === 'APPROVED' && selectedRecord?.status === 'PENDING');
+  const refundAmount = Math.max(0, Number(selectedRecord?.total || 0));
+  const refundBlocked = isAdmin && isSale && refundAmount > 0 && (!tillCash.hasOpenShift || tillCash.actualCashDrawer + 0.01 < refundAmount);
+
+  useEffect(() => {
+    if (!pdfBlob) {
+      setObjectUrl('');
+      return;
+    }
+    const nextUrl = URL.createObjectURL(pdfBlob);
+    setObjectUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [pdfBlob]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const prepare = async () => {
+      if (!selectedRecord) {
+        setPdfBlob(null);
+        setPreparedRecord(null);
+        return;
+      }
+
+      setIsPreparing(true);
+      setPdfBlob(null);
+      setPreparedRecord(null);
+      try {
+        const recordWithDetails = {
+          ...selectedRecord,
+          shopName: selectedRecord.shopName || storeName,
+          tillNumber: selectedRecord.tillNumber || businessSettings?.tillNumber,
+          businessAddress: selectedRecord.businessAddress || storeLocation,
+          receiptFooter: selectedRecord.receiptFooter || businessSettings?.receiptFooter || 'Thank you for shopping!',
+        };
+
+        if (selectedRecord.recordType === 'SUPPLIER_PAYMENT') {
+          const invoiceAllocations = parseList(selectedRecord.invoiceAllocations);
+          const allocationAmountById = new Map(invoiceAllocations.map((allocation: any) => [String(allocation.purchaseOrderId || '').trim(), Number(allocation.amount || 0)] as const));
+          const purchaseOrderIds = invoiceAllocations.length > 0
+            ? invoiceAllocations.map((allocation: any) => allocation.purchaseOrderId).filter(Boolean)
+            : (parseList(selectedRecord.purchaseOrderIds).length > 0 ? parseList(selectedRecord.purchaseOrderIds) : (selectedRecord.purchaseOrderId ? [selectedRecord.purchaseOrderId] : []));
+          const purchaseOrders = await db.purchaseOrders.bulkGet(purchaseOrderIds);
+          recordWithDetails.invoiceDetails = purchaseOrders.filter(Boolean).map((order: any) => ({
+            date: order.orderDate,
+            ref: order.invoiceNumber || String(order.id || '').split('-')[0],
+            amount: allocationAmountById.get(order.id) || order.totalAmount,
+          }));
+
+          const creditNoteIds = parseList(selectedRecord.creditNoteIds);
+          if (creditNoteIds.length > 0) {
+            const creditNotes = await db.creditNotes.bulkGet(creditNoteIds);
+            recordWithDetails.creditNoteDetails = creditNotes.filter(Boolean).map((note: any) => ({
+              date: note.timestamp,
+              ref: note.reference || 'CRN',
+              amount: note.amount,
+            }));
+          } else {
+            const creditNotes = await db.creditNotes.where('allocatedTo').equals(selectedRecord.id).toArray();
+            recordWithDetails.creditNoteDetails = creditNotes.map(note => ({
+              date: note.timestamp,
+              ref: note.reference || 'CRN',
+              amount: note.amount,
+            }));
+          }
+        }
+
+        const blob = generateDocumentPdfBlob(recordWithDetails, supplier, storeName, storeLocation);
+        if (!cancelled) {
+          setPreparedRecord(recordWithDetails);
+          setPdfBlob(blob);
+        }
+      } catch (err) {
+        console.error('PDF preview failed:', err);
+        if (!cancelled) toastError('PDF generation failed. Please try again.');
+      } finally {
+        if (!cancelled) setIsPreparing(false);
+      }
+    };
+
+    void prepare();
+    return () => { cancelled = true; };
+  }, [businessSettings, selectedRecord, storeLocation, storeName, supplier, toastError]);
+
+  if (!selectedRecord) return null;
+
+  const close = () => setSelectedRecord(null);
+  const viewerUrl = objectUrl ? `${objectUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH` : '';
+
+  const printPdf = () => {
+    try {
+      iframeRef.current?.contentWindow?.focus();
+      iframeRef.current?.contentWindow?.print();
+    } catch {
+      if (pdfBlob) downloadDocumentBlob(pdfBlob, filename);
+    }
+  };
+
+  const sharePdf = async () => {
+    if (!preparedRecord) return;
+    setIsSharing(true);
+    try {
+      await generateAndShareDocument(preparedRecord, filename, supplier, false, storeName, storeLocation);
+      success('PDF ready.');
+    } catch (err) {
+      console.error('Share failed:', err);
+      toastError('Could not share the PDF.');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const approveOrReject = async (action?: (record: any) => Promise<void>) => {
+    if (!action || isApprovalActionRunning) return;
+    setIsApprovalActionRunning(true);
+    try {
+      await action(selectedRecord);
+      close();
+    } finally {
+      setIsApprovalActionRunning(false);
+    }
+  };
+
+  const requestRefund = async () => {
+    if (!isSale || isRefunding) return;
+    if (refundBlocked) {
+      toastError(!tillCash.hasOpenShift
+        ? 'Open a till shift before approving a cash refund.'
+        : `Till has ${moneyText(tillCash.actualCashDrawer)} available. Add cash before refunding ${moneyText(refundAmount)}.`);
+      return;
+    }
+    setIsRefunding(true);
+    try {
+      await handleRefund(selectedRecord);
+      close();
+    } finally {
+      setIsRefunding(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-slate-950/70 p-0 backdrop-blur-sm sm:p-4">
+      <button type="button" className="absolute inset-0 cursor-default" aria-label="Close PDF" onClick={close} />
+
+      <section className="relative z-10 flex h-full w-full max-w-6xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:h-[94vh] sm:rounded-lg">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700">
+              <FileText size={20} />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-slate-950">{title}</p>
+              <p className="truncate text-[11px] font-bold text-slate-500">{filename}.pdf</p>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={sharePdf}
+              disabled={!preparedRecord || isSharing}
+              className="hidden h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:flex"
+            >
+              {isSharing ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />}
+              Share
+            </button>
+            <button
+              type="button"
+              onClick={printPdf}
+              disabled={!pdfBlob}
+              className="hidden h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:flex"
+            >
+              <Printer size={16} />
+              Print
+            </button>
+            <button
+              type="button"
+              onClick={() => pdfBlob && downloadDocumentBlob(pdfBlob, filename)}
+              disabled={!pdfBlob}
+              className="flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-3 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              <Download size={16} />
+              Download
+            </button>
+            <button
+              type="button"
+              onClick={close}
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+              aria-label="Close PDF"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+
+        <div className="min-h-0 flex-1 bg-slate-200 p-0 sm:p-3">
+          {viewerUrl ? (
+            <iframe
+              ref={iframeRef}
+              src={viewerUrl}
+              title={title}
+              className="h-full w-full border-0 bg-white sm:rounded-lg sm:shadow-sm"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center bg-white text-sm font-bold text-slate-500">
+              {isPreparing ? 'Preparing PDF preview...' : 'PDF preview unavailable.'}
+            </div>
+          )}
+        </div>
+
+        {(canReceive || isPendingApproval || (isSale && canRequestRefund) || extraActions) && (
+          <footer className="shrink-0 border-t border-slate-200 bg-white p-3 sm:p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              {extraActions}
+
+              {canReceive && (
+                <button
+                  type="button"
+                  onClick={() => { onReceive?.(selectedRecord); close(); }}
+                  className="flex h-11 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-xs font-black uppercase tracking-widest text-white"
+                >
+                  <PackagePlus size={16} />
+                  Receive items
+                </button>
+              )}
+
+              {isPendingApproval && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => approveOrReject(onApprove)}
+                    disabled={isApprovalActionRunning || (selectedRecord?.recordType === 'SALE' && selectedRecord?.status === 'PENDING_REFUND' && refundBlocked)}
+                    className="flex h-11 items-center justify-center gap-2 rounded-lg bg-green-700 px-4 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50"
+                  >
+                    {isApprovalActionRunning ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => approveOrReject(onReject)}
+                    disabled={isApprovalActionRunning}
+                    className="flex h-11 items-center justify-center gap-2 rounded-lg bg-red-700 px-4 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50"
+                  >
+                    <AlertTriangle size={16} />
+                    Reject
+                  </button>
+                </>
+              )}
+
+              {isSale && canRequestRefund && !isPendingApproval && (
+                <button
+                  type="button"
+                  onClick={requestRefund}
+                  disabled={isRefunding || (selectedRecord.status !== 'PAID' && selectedRecord.status !== 'PARTIAL_REFUND')}
+                  className="flex h-11 items-center justify-center gap-2 rounded-lg bg-orange-700 px-4 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50"
+                >
+                  {isRefunding ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
+                  {isAdmin ? 'Return receipt' : 'Request return'}
+                </button>
+              )}
+            </div>
+          </footer>
+        )}
+      </section>
+    </div>
+  );
+}

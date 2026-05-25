@@ -11,6 +11,7 @@ import { getBusinessSettings } from '../../utils/settings';
 import { generateAndShareDocument } from '../../utils/shareUtils';
 import { getDefaultOpeningFloat, parseSalesTillRows, parseSalesTills } from '../../utils/tills';
 import { belongsToActiveShop } from '../../utils/shopScope';
+import { cashRefundAmount, paymentAmountForMethod, transactionOriginalNetTotal } from '../../utils/posMoney';
 import { CashService, ClosingService, ShiftService } from '../../services/operations';
 import { apiRequest } from '../../services/apiClient';
 import { canAccessFeature, shouldBlurFeature } from '../../utils/accessControl';
@@ -38,27 +39,6 @@ function percentChange(current: number, previous: number) {
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
-function splitDetails(record: any) {
-  const raw = record?.splitPayments || record?.splitData?.splitPayments;
-  if (!raw) return null;
-  if (typeof raw === 'string') {
-    try { return JSON.parse(raw); } catch { return null; }
-  }
-  return raw;
-}
-
-function paymentAmount(record: any, method: 'CASH' | 'MPESA' | 'PDQ' | 'CREDIT') {
-  const paymentMethod = String(record?.paymentMethod || '').toUpperCase();
-  if (paymentMethod === method) return Number(record?.total || 0);
-  if (paymentMethod !== 'SPLIT') return 0;
-
-  const split = splitDetails(record);
-  if (method === 'CASH') return Number(split?.cashAmount || 0);
-  return String(split?.secondaryMethod || '').toUpperCase() === method
-    ? Number(split?.secondaryAmount || 0)
-    : 0;
-}
-
 function recordInShift(record: any, since: number, until: number, shiftId?: string) {
   if (shiftId && record?.shiftId) return record.shiftId === shiftId;
   const ts = Number(record?.timestamp || record?.issueDate || 0);
@@ -74,13 +54,6 @@ function splitFundedRemittance(cashSales: number, expenses: number, supplierPaym
   const totalExpenses = Math.round(Math.min(expenses, remittanceTotal * (expenses / rawRemittance)) * 100) / 100;
   const supplierPaymentsTotal = Math.round((remittanceTotal - totalExpenses) * 100) / 100;
   return { totalExpenses, supplierPaymentsTotal, remittanceTotal };
-}
-
-function cashRefundAmount(record: any) {
-  if (String(record?.status || 'APPROVED').toUpperCase() === 'REJECTED') return 0;
-  const source = String(record?.source || '').toUpperCase();
-  if (source === 'TILL' || source === 'MIXED') return Number(record?.cashAmount ?? record?.amount ?? 0);
-  return Number(record?.cashAmount || 0);
 }
 
 type ClosureStats = {
@@ -299,15 +272,15 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const yesterdaysExpenses = (shopExpenses || []).filter(expense => (expense.timestamp || 0) >= yesterdayStart && (expense.timestamp || 0) < todayStart && expense.status !== 'REJECTED')
     .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const todaysSalesCount = todaysTransactions.length + todaysInvoices.length;
-  const totalRevenue = todaysTransactions.reduce((a, t) => a + Number(t.total || 0), 0)
+  const totalRevenue = todaysTransactions.reduce((a, t) => a + transactionOriginalNetTotal(t), 0)
     + todaysInvoices.reduce((a, invoice) => a + Number(invoice.total || 0), 0);
   const yesterdaysSalesCount = yesterdaysTransactions.length + yesterdaysInvoices.length;
-  const yesterdaysRevenue = yesterdaysTransactions.reduce((a, t) => a + Number(t.total || 0), 0)
+  const yesterdaysRevenue = yesterdaysTransactions.reduce((a, t) => a + transactionOriginalNetTotal(t), 0)
     + yesterdaysInvoices.reduce((a, invoice) => a + Number(invoice.total || 0), 0);
   const todaysCustomerPayments = (shopCustomerPayments || []).filter(payment => (payment.timestamp || 0) >= todayStart);
-  const todayCashSales = todaysTransactions.reduce((sum, tx) => sum + paymentAmount(tx, 'CASH'), 0);
-  const todayMpesaSales = todaysTransactions.reduce((sum, tx) => sum + paymentAmount(tx, 'MPESA'), 0);
-  const todayCreditSales = todaysTransactions.reduce((sum, tx) => sum + paymentAmount(tx, 'CREDIT'), 0);
+  const todayCashSales = todaysTransactions.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'CASH'), 0);
+  const todayMpesaSales = todaysTransactions.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'MPESA'), 0);
+  const todayCreditSales = todaysTransactions.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'CREDIT'), 0);
   const todayCashRepayments = todaysCustomerPayments
     .filter(payment => String(payment.paymentMethod || '').toUpperCase() === 'CASH')
     .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
@@ -331,7 +304,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           time: day,
           sales: txs
             .filter(t => (t.timestamp || 0) >= start && (t.timestamp || 0) < end)
-            .reduce((sum, t) => sum + Number(t.total || 0), 0)
+            .reduce((sum, t) => sum + transactionOriginalNetTotal(t), 0)
             + invoices
               .filter(invoice => (invoice.issueDate || 0) >= start && (invoice.issueDate || 0) < end)
               .reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
@@ -348,7 +321,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         time: `${String(hour).padStart(2, '0')}:00`,
         sales: txs
           .filter(t => (t.timestamp || 0) >= start && (t.timestamp || 0) < end)
-          .reduce((sum, t) => sum + Number(t.total || 0), 0)
+          .reduce((sum, t) => sum + transactionOriginalNetTotal(t), 0)
           + invoices
             .filter(invoice => (invoice.issueDate || 0) >= start && (invoice.issueDate || 0) < end)
             .reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
@@ -477,18 +450,18 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   };
 
   const getClosureStats = (since: number, until = Date.now(), shiftId?: string) => {
-    const txs = (shopTransactions || []).filter(t => recordInShift(t, since, until, shiftId) && t.status !== 'VOIDED' && t.status !== 'QUOTE');
-    const invoices = (shopSalesInvoices || []).filter(invoice => recordInShift(invoice, since, until, shiftId) && invoice.status !== 'CANCELLED');
-    const expenses = (shopExpenses || []).filter(e => recordInShift(e, since, until, shiftId) && e.status !== 'REJECTED');
-    const picks = (shopCashPicks || []).filter(p => recordInShift(p, since, until, shiftId) && p.status !== 'REJECTED');
+    const txs = (shopTransactions || []).filter(t => recordInShift(t, since, until, shiftId) && !['VOIDED', 'QUOTE'].includes(String(t.status || '').toUpperCase()));
+    const invoices = (shopSalesInvoices || []).filter(invoice => recordInShift(invoice, since, until, shiftId) && String(invoice.status || '').toUpperCase() !== 'CANCELLED');
+    const expenses = (shopExpenses || []).filter(e => recordInShift(e, since, until, shiftId) && String(e.status || '').toUpperCase() !== 'REJECTED');
+    const picks = (shopCashPicks || []).filter(p => recordInShift(p, since, until, shiftId) && String(p.status || '').toUpperCase() !== 'REJECTED');
     const refunds = (shopRefunds || []).filter(r => recordInShift(r, since, until, shiftId) && String(r.status || 'APPROVED').toUpperCase() !== 'REJECTED');
     const supplierPayments = (shopSupplierPayments || []).filter(p => recordInShift(p, since, until, shiftId));
     const customerPayments = (shopCustomerPayments || []).filter(p => recordInShift(p, since, until, shiftId));
     const shift = (shopShifts || []).find(row => row.id === shiftId) || (ownOpenShift?.id === shiftId ? ownOpenShift : null);
     const openingCash = Number(shift?.openingCash || 0);
-    const cashSales = txs.reduce((sum, tx) => sum + paymentAmount(tx, 'CASH'), 0);
-    const mpesaSales = txs.reduce((sum, tx) => sum + paymentAmount(tx, 'MPESA'), 0);
-    const pdqSales = txs.reduce((sum, tx) => sum + paymentAmount(tx, 'PDQ'), 0);
+    const cashSales = txs.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'CASH'), 0);
+    const mpesaSales = txs.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'MPESA'), 0);
+    const pdqSales = txs.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'PDQ'), 0);
     const customerCashPayments = customerPayments
       .filter(payment => String(payment.paymentMethod || '').toUpperCase() === 'CASH')
       .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
@@ -499,12 +472,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     const cashRefunds = refunds.reduce((sum, refund) => sum + cashRefundAmount(refund), 0);
     const grossSales = txs.reduce((sum, tx) => sum + Number(tx.subtotal ?? tx.total ?? 0), 0)
       + invoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || invoice.total || 0), 0);
-    const totalSales = txs.reduce((sum, tx) => sum + Number(tx.total || 0), 0)
+    const totalSales = txs.reduce((sum, tx) => sum + transactionOriginalNetTotal(tx), 0)
       + invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
     const taxTotal = txs.reduce((sum, tx) => sum + Number(tx.tax || 0), 0)
       + invoices.reduce((sum, invoice) => sum + Number(invoice.tax || 0), 0);
-    const rawTotalExpenses = expenses.filter(e => e.source === 'TILL').reduce((sum, e) => sum + Number(e.amount || 0), 0);
-    const rawSupplierPaymentsTotal = supplierPayments.filter(p => p.source === 'TILL').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const rawTotalExpenses = expenses.filter(e => String(e.source || '').toUpperCase() === 'TILL').reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const rawSupplierPaymentsTotal = supplierPayments.filter(p => String(p.source || '').toUpperCase() === 'TILL').reduce((sum, p) => sum + Number(p.amount || 0), 0);
     const totalExpenses = rawTotalExpenses;
     const supplierPaymentsTotal = rawSupplierPaymentsTotal;
     const remittanceTotal = totalExpenses + supplierPaymentsTotal;

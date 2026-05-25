@@ -69,7 +69,9 @@ function parseMaybeJson(value: unknown) {
 }
 
 function creditAmountForSale(row: Record<string, any>) {
-  const total = asNumber(row.total);
+  const subtotal = asNumber(row.subtotal);
+  const discount = Math.max(0, asNumber(row.discountAmount ?? row.discount));
+  const total = subtotal > 0 && discount > 0 ? roundMoney(Math.max(0, subtotal - discount)) : asNumber(row.total);
   const method = String(row.paymentMethod || '').toUpperCase();
   if (method === 'CREDIT') return total;
 
@@ -226,7 +228,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
 
       const sale = await env.DB.prepare(`
-        SELECT id, customerId, total, paymentMethod, splitPayments, status
+        SELECT id, customerId, total, subtotal, discountAmount, discount, paymentMethod, splitPayments, status
         FROM transactions
         WHERE id = ? AND businessId = ?
         LIMIT 1

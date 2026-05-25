@@ -24,6 +24,7 @@ export async function settleSupplierPayment({
   preparedBy,
   shiftId,
   shiftStart,
+  openingCash,
 }: {
   supplier: Supplier;
   payment: SupplierPaymentInput;
@@ -32,6 +33,7 @@ export async function settleSupplierPayment({
   preparedBy: string;
   shiftId?: string;
   shiftStart?: number;
+  openingCash?: number;
 }) {
   const cashAmount = Number(payment.amount || 0);
   if (cashAmount < 0) throw new Error('Payment amount cannot be negative.');
@@ -71,6 +73,7 @@ export async function settleSupplierPayment({
       customerPayments,
       shiftId,
       since: shiftStart || getTodayStartMs(),
+      openingCash,
     }).availableCashSales;
     if (cashAmount > drawer) {
       throw new Error(`Insufficient cash sales in this shift. Available: Ksh ${Math.max(0, drawer).toLocaleString()}.`);

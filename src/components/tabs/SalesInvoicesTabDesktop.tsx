@@ -5,7 +5,6 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
-  Download,
   FileText,
   Package,
   Plus,
@@ -22,7 +21,7 @@ import { db, type SalesInvoice, type SalesInvoiceItem, type ServiceItem } from '
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { SearchableSelect } from '../shared/SearchableSelectDesktop';
-import { getBusinessSettings } from '../../utils/settings';
+import DocumentDetailsModal from '../modals/DocumentDetailsModalDesktop';
 import { belongsToActiveShop } from '../../utils/shopScope';
 import { SalesInvoiceService } from '../../services/salesInvoices';
 import { CustomerService } from '../../services/customers';
@@ -110,8 +109,6 @@ export default function SalesInvoicesTabDesktop() {
     [activeBusinessId, activeShopId],
     []
   );
-  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
-
   const visibleProducts = products || [];
   const activeServices = (services || []).filter(service => Number(service.isActive) !== 0);
 
@@ -358,16 +355,6 @@ export default function SalesInvoicesTabDesktop() {
       error('Could not cancel invoice: ' + err.message);
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const downloadInvoice = async (invoice: SalesInvoice) => {
-    try {
-      const { generateAndDownloadSalesInvoice } = await import('../../utils/shareUtils');
-      await generateAndDownloadSalesInvoice(invoice, businessSettings?.storeName, businessSettings?.location);
-      success('Invoice PDF created.');
-    } catch (err: any) {
-      error('Could not create invoice PDF: ' + err.message);
     }
   };
 
@@ -728,61 +715,35 @@ export default function SalesInvoicesTabDesktop() {
       )}
 
       {selectedInvoice && (
-        <div className="fixed inset-0 z-[105] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
-          <div className="max-h-[92vh] w-full max-w-2xl overflow-hidden rounded-t-2xl border-2 border-slate-200 bg-white shadow-xl sm:rounded-lg">
-            <div className="flex items-center justify-between border-b-2 border-slate-100 px-5 py-4">
-              <div className="min-w-0">
-                <h3 className="truncate text-base font-black text-slate-900">{selectedInvoice.invoiceNumber}</h3>
-                <p className="truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">{selectedInvoice.customerName}</p>
-              </div>
-              <button onClick={() => setSelectedInvoice(null)} className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-slate-200 bg-white text-slate-500">
-                <X size={18} />
+        <DocumentDetailsModal
+          selectedRecord={selectedInvoice}
+          setSelectedRecord={record => setSelectedInvoice(record as SalesInvoice | null)}
+          handleRefund={async () => {}}
+          extraActions={(
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentInvoice(selectedInvoice);
+                  setPaymentForm({ amount: String(selectedInvoice.balance || ''), method: 'CASH', reference: '' });
+                  setSelectedInvoice(null);
+                }}
+                disabled={selectedInvoice.status === 'PAID' || selectedInvoice.status === 'CANCELLED'}
+                className="flex h-11 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-xs font-black uppercase tracking-widest text-white disabled:opacity-40 hover:bg-blue-800"
+              >
+                <Banknote size={16} /> Clear
               </button>
-            </div>
-            <div className="max-h-[calc(92vh-74px)] overflow-y-auto p-5">
-              <div className="mb-5 grid grid-cols-2 gap-3">
-                <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-4">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total</p>
-                  <p className="mt-1 text-xl font-black text-slate-900">{money(selectedInvoice.total)}</p>
-                </div>
-                <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-4">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Balance</p>
-                  <p className="mt-1 text-xl font-black text-rose-700">{money(selectedInvoice.balance)}</p>
-                </div>
-              </div>
-              <div className="mb-5 space-y-2">
-                {(selectedInvoice.items || []).map((item, index) => (
-                  <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2">
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-black text-slate-900">{item.name}</span>
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{itemTypeLabel(item.itemType)} | Qty {item.quantity}</span>
-                    </span>
-                    <span className="text-sm font-black tabular-nums text-slate-900">{money(lineAmount(item) + lineVat(item))}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <button onClick={() => downloadInvoice(selectedInvoice)} className="flex h-12 items-center justify-center gap-2 rounded-lg border-2 border-slate-200 bg-white text-xs font-black uppercase tracking-widest text-slate-700">
-                  <Download size={16} /> PDF
-                </button>
-                <button
-                  onClick={() => { setPaymentInvoice(selectedInvoice); setPaymentForm({ amount: String(selectedInvoice.balance || ''), method: 'CASH', reference: '' }); }}
-                  disabled={selectedInvoice.status === 'PAID' || selectedInvoice.status === 'CANCELLED'}
-                  className="flex h-12 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 text-xs font-black uppercase tracking-widest text-white disabled:opacity-40 hover:bg-blue-800"
-                >
-                  <Banknote size={16} /> Clear
-                </button>
-                <button
-                  onClick={() => cancelInvoice(selectedInvoice)}
-                  disabled={selectedInvoice.status === 'PAID' || selectedInvoice.status === 'CANCELLED' || Number(selectedInvoice.paidAmount || 0) > 0}
-                  className="flex h-12 items-center justify-center gap-2 rounded-lg border-2 border-rose-100 bg-rose-50 text-xs font-black uppercase tracking-widest text-rose-600 disabled:opacity-40"
-                >
-                  <Trash2 size={16} /> Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+              <button
+                type="button"
+                onClick={() => cancelInvoice(selectedInvoice)}
+                disabled={isSaving || selectedInvoice.status === 'PAID' || selectedInvoice.status === 'CANCELLED' || Number(selectedInvoice.paidAmount || 0) > 0}
+                className="flex h-11 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-4 text-xs font-black uppercase tracking-widest text-rose-700 disabled:opacity-40"
+              >
+                <Trash2 size={16} /> Cancel
+              </button>
+            </>
+          )}
+        />
       )}
 
       {paymentInvoice && (

@@ -225,6 +225,7 @@ export default function SupplierPaymentsTabMobile({ financialAccounts }: { finan
         preparedBy: currentUser?.name || 'Staff',
         shiftId: getCurrentShiftId(activeShift, activeShopId, currentUser?.id),
         shiftStart: getCurrentShiftStart(activeShift, getTodayStartMs()),
+        openingCash: Number(activeShift?.openingCash || 0),
       });
 
       success('Supplier payment recorded.');

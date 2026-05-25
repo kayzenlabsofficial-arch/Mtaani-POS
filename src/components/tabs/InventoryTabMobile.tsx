@@ -15,6 +15,7 @@ import { ProductService } from '../../services/products';
 import { dateInputToExpiryMs, expiryBadgeClass, expiryMsToDateInput, formatExpiryDate, getExpiryInfo } from '../../utils/expiry';
 import { normaliseDiscountType, productDiscountLabel, productSalePrice } from '../../utils/productPricing';
 import { normaliseSupplierIds } from '../../utils/supplierProducts';
+import { lineNetAmount, netItemQuantity } from '../../utils/posMoney';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -322,9 +323,9 @@ export default function InventoryTabMobile() {
       .filter((item: any) => item.productId === selectedProduct.id)
       .map((item: any) => ({ tx, item }))
   ) : [];
-  const soldUnits = productSales.reduce((sum, row) => sum + (Number(row.item.quantity) || 0), 0);
-  const revenue = productSales.reduce((sum, row) => sum + ((Number(row.item.quantity) || 0) * (Number(row.item.snapshotPrice) || 0)), 0);
-  const cost = productSales.reduce((sum, row) => sum + ((Number(row.item.quantity) || 0) * (Number(row.item.snapshotCost ?? selectedProduct?.costPrice ?? 0) || 0)), 0);
+  const soldUnits = productSales.reduce((sum, row) => sum + netItemQuantity(row.tx, row.item), 0);
+  const revenue = productSales.reduce((sum, row) => sum + lineNetAmount(row.item, netItemQuantity(row.tx, row.item)), 0);
+  const cost = productSales.reduce((sum, row) => sum + (netItemQuantity(row.tx, row.item) * (Number(row.item.snapshotCost ?? selectedProduct?.costPrice ?? 0) || 0)), 0);
   const grossProfit = revenue - cost;
   const movementIn = (selectedMovements || []).filter(m => m.type === 'IN' || m.quantity > 0).reduce((sum, m) => sum + Math.abs(Number(m.quantity) || 0), 0);
   const movementOut = (selectedMovements || []).filter(m => m.type !== 'IN' && m.quantity < 0).reduce((sum, m) => sum + Math.abs(Number(m.quantity) || 0), 0);
@@ -336,8 +337,8 @@ export default function InventoryTabMobile() {
     const rows = productSales.filter(row => (row.tx.timestamp || 0) >= day.getTime() && (row.tx.timestamp || 0) < next);
     return {
       label: day.toLocaleDateString('en-KE', { weekday: 'short' }),
-      sales: rows.reduce((sum, row) => sum + ((Number(row.item.quantity) || 0) * (Number(row.item.snapshotPrice) || 0)), 0),
-      units: rows.reduce((sum, row) => sum + (Number(row.item.quantity) || 0), 0)
+      sales: rows.reduce((sum, row) => sum + lineNetAmount(row.item, netItemQuantity(row.tx, row.item)), 0),
+      units: rows.reduce((sum, row) => sum + netItemQuantity(row.tx, row.item), 0)
     };
   });
 

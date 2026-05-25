@@ -18,6 +18,14 @@ import { canPerform } from '../../utils/accessControl';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
 import { belongsToActiveShop } from '../../utils/shopScope';
 import { getBusinessSettings } from '../../utils/settings';
+import {
+  lineNetRevenueForTransaction,
+  lineTaxForTransaction,
+  netItemQuantity,
+  roundMoney,
+  transactionItems as txItems,
+  transactionNetMetrics,
+} from '../../utils/posMoney';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -49,24 +57,6 @@ type ProductPerformanceRow = {
   share: number;
 };
 
-function roundMoney(value: number) {
-  return Math.round(value * 100) / 100;
-}
-
-function txItems(transaction: any): any[] {
-  const items = transaction?.items;
-  if (Array.isArray(items)) return items;
-  if (typeof items === 'string') {
-    try {
-      const parsed = JSON.parse(items);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
 function invoiceItems(invoice: any): any[] {
   const items = invoice?.items;
   if (Array.isArray(items)) return items;
@@ -97,30 +87,6 @@ function purchaseItems(purchaseOrder: any): any[] {
 
 function reportableTransaction(transaction: any) {
   return REPORTABLE_TRANSACTION_STATUSES.has(String(transaction?.status || '').toUpperCase());
-}
-
-function netItemQuantity(transaction: any, item: any) {
-  if (String(transaction?.status || '').toUpperCase() === 'REFUNDED') return 0;
-  return Math.max(0, Number(item?.quantity || 0) - Number(item?.returnedQuantity || 0));
-}
-
-function transactionNetMetrics(transaction: any) {
-  const items = txItems(transaction);
-  const originalLineSubtotal = items.reduce((sum, item) => {
-    return sum + (Number(item?.snapshotPrice || 0) * Number(item?.quantity || 0));
-  }, 0);
-  const remainingLineSubtotal = items.reduce((sum, item) => {
-    return sum + (Number(item?.snapshotPrice || 0) * netItemQuantity(transaction, item));
-  }, 0);
-  const fallbackSubtotal = Number(transaction?.subtotal ?? transaction?.total ?? 0);
-  const originalSubtotal = originalLineSubtotal > 0 ? originalLineSubtotal : fallbackSubtotal;
-  const ratio = originalSubtotal > 0 ? Math.min(1, Math.max(0, remainingLineSubtotal / originalSubtotal)) : (String(transaction?.status || '').toUpperCase() === 'REFUNDED' ? 0 : 1);
-  const netSubtotal = roundMoney(Number(transaction?.subtotal ?? originalSubtotal) * ratio);
-  const netTotal = roundMoney(Number(transaction?.total || 0) * ratio);
-  const netTax = roundMoney(Number(transaction?.tax || 0) * ratio);
-  const netDiscount = roundMoney(Number(transaction?.discountAmount ?? transaction?.discount ?? 0) * ratio);
-  const discountFactor = remainingLineSubtotal > 0 ? netTotal / remainingLineSubtotal : 0;
-  return { ratio, netSubtotal, netTotal, netTax, netDiscount, discountFactor };
 }
 
 function formatPeriodLabel(start: number, end: number) {
@@ -371,22 +337,24 @@ export default function ReportsTabContent() {
     hourlySales[hour].revenue += metrics.netTotal;
 
     txItems(t).forEach(item => {
+      const productId = String(item.productId || '').trim();
+      if (!productId) return;
       const netQty = netItemQuantity(t, item);
       if (netQty <= 0) return;
-      const purchase = allPurchases?.find(p => purchaseItems(p).some(pi => pi.productId === item.productId));
-      const cost = Number(item.snapshotCost ?? purchaseItems(purchase).find(pi => pi.productId === item.productId)?.unitCost ?? (item.snapshotPrice * 0.7)) || 0;
-      const lineRevenue = Number(item.snapshotPrice || 0) * netQty * metrics.discountFactor;
+      const purchase = allPurchases?.find(p => purchaseItems(p).some(pi => pi.productId === productId));
+      const cost = Number(item.snapshotCost ?? purchaseItems(purchase).find(pi => pi.productId === productId)?.unitCost ?? (item.snapshotPrice * 0.7)) || 0;
+      const lineRevenue = lineNetRevenueForTransaction(t, item, metrics);
       const itemProfit = lineRevenue - (cost * netQty);
       estimatedCOGS += (cost * netQty);
 
-      if (!productPerf[item.productId]) {
-        productPerf[item.productId] = { name: item.name, qty: 0, revenue: 0, profit: 0 };
+      if (!productPerf[productId]) {
+        productPerf[productId] = { name: item.name || productId, qty: 0, revenue: 0, profit: 0 };
       }
-      productPerf[item.productId].qty += netQty;
-      productPerf[item.productId].revenue += lineRevenue;
-      productPerf[item.productId].profit += itemProfit;
+      productPerf[productId].qty += netQty;
+      productPerf[productId].revenue += lineRevenue;
+      productPerf[productId].profit += itemProfit;
 
-      const productObj = displayProducts.find(p => p.id === item.productId);
+      const productObj = displayProducts.find(p => p.id === productId);
       const category = productObj?.category || 'Uncategorized';
       if (!categoryPerf[category]) categoryPerf[category] = { revenue: 0, profit: 0 };
       categoryPerf[category].revenue += lineRevenue;
@@ -677,19 +645,20 @@ export default function ReportsTabContent() {
   productPeriodTransactions.forEach(transaction => {
     const metrics = transactionNetMetrics(transaction);
     txItems(transaction).forEach(item => {
+      const productId = String(item.productId || '').trim();
+      if (!productId) return;
       const netQty = netItemQuantity(transaction, item);
       if (netQty <= 0) return;
 
-      const productObj = displayProducts.find(p => p.id === item.productId);
-      const purchase = allPurchases?.find(p => purchaseItems(p).some(pi => pi.productId === item.productId));
-      const purchaseLine = purchaseItems(purchase).find(pi => pi.productId === item.productId);
+      const productObj = displayProducts.find(p => p.id === productId);
+      const purchase = allPurchases?.find(p => purchaseItems(p).some(pi => pi.productId === productId));
+      const purchaseLine = purchaseItems(purchase).find(pi => pi.productId === productId);
       const unitCost = Number(item.snapshotCost ?? purchaseLine?.unitCost ?? productObj?.costPrice ?? (Number(item.snapshotPrice || 0) * 0.7)) || 0;
-      const baseLineRevenue = Number(item.snapshotPrice || 0) * netQty;
-      const lineRevenue = baseLineRevenue * metrics.discountFactor;
+      const lineRevenue = lineNetRevenueForTransaction(transaction, item, metrics);
       const lineCogs = unitCost * netQty;
-      const lineTax = metrics.netSubtotal > 0 ? metrics.netTax * (baseLineRevenue / metrics.netSubtotal) : 0;
+      const lineTax = lineTaxForTransaction(transaction, item, metrics);
       const row = ensureProductRow(
-        item.productId,
+        productId,
         item.name || productObj?.name || 'Unnamed product',
         productObj?.category || item.category || 'Uncategorized',
         item.unit || productObj?.unit || 'units',

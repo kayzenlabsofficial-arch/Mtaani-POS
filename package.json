@@ -9,6 +9,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:integrity": "vitest run src/utils/posMoney.test.ts src/utils/cashDrawer.test.ts",
+    "audit:money": "node scripts/money-integrity-audit.mjs",
     "wrangler:dev": "wrangler pages dev --port=8788",
     "wrangler:deploy": "wrangler pages deploy dist",
     "d1:setup": "wrangler d1 execute mtaani_pos_db --remote --file=schema.sql",
@@ -45,6 +48,7 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^4.1.7",
     "wrangler": "^4.90.0"
   }
 }

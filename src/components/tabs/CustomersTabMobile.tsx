@@ -10,6 +10,7 @@ import MobileModal from '../shared/MobileModal';
 import { belongsToActiveShop } from '../../utils/shopScope';
 import { CustomerService } from '../../services/customers';
 import { getCurrentShiftId } from '../../utils/shiftSession';
+import { transactionOriginalNetTotal } from '../../utils/posMoney';
 
 type DebtSourceType = 'SALE' | 'INVOICE';
 type DebtAllocation = { sourceType: DebtSourceType; sourceId: string; amount: number };
@@ -147,7 +148,7 @@ export default function CustomersTabMobile() {
   const statementCustomer = statementCustomerId ? allCustomers.find(c => c.id === statementCustomerId) || null : null;
 
   const getCreditAmount = (sale: Transaction) => {
-    if (sale.paymentMethod === 'CREDIT') return Number(sale.total || 0);
+    if (sale.paymentMethod === 'CREDIT') return transactionOriginalNetTotal(sale);
     if (sale.paymentMethod === 'SPLIT' && sale.splitPayments?.secondaryMethod === 'CREDIT') {
       return Number(sale.splitPayments.secondaryAmount || 0);
     }

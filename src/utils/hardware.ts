@@ -1,3 +1,5 @@
+import { lineDiscountAmount, lineNetAmount, transactionOriginalNetTotal } from './posMoney';
+
 export type HardwareDeviceRole = 'RECEIPT_PRINTER' | 'BARCODE_SCANNER' | 'CASH_DRAWER';
 
 export type HardwareTransport =
@@ -600,16 +602,18 @@ export function buildEscPosReceipt(record: any, storeName = 'Smart POS', locatio
   for (const item of items) {
     const qty = Number(item.quantity) || 0;
     const price = Number(item.snapshotPrice) || 0;
-    const total = qty * price;
+    const discount = lineDiscountAmount(item);
+    const total = lineNetAmount(item);
     rows.push(cleanText(item.name || 'Item').slice(0, RECEIPT_COLUMNS));
     rows.push(leftRight(`${qty} x ${money(price)}`, money(total)));
+    if (discount > 0) rows.push(leftRight('Discount', `-${money(discount)}`));
   }
 
   rows.push(line());
   rows.push(leftRight('Subtotal', money(record?.subtotal ?? record?.total)));
   if ((Number(record?.discountAmount) || 0) > 0) rows.push(leftRight('Discount', `-${money(record.discountAmount)}`));
   if ((Number(record?.tax) || 0) > 0) rows.push(leftRight('VAT', money(record.tax)));
-  rows.push(leftRight('TOTAL', money(record?.total)));
+  rows.push(leftRight('TOTAL', money(transactionOriginalNetTotal(record || {}))));
 
   if (record?.paymentMethod === 'SPLIT' && record?.splitPayments) {
     rows.push(leftRight('Cash', money(record.splitPayments.cashAmount)));

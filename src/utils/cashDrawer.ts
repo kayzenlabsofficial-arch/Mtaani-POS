@@ -1,10 +1,12 @@
+import { cashRefundAmount, paymentAmountForMethod } from './posMoney';
+
 type TransactionLike = {
   total?: number;
   timestamp?: number;
   status?: string;
   paymentMethod?: string;
   splitPayments?: { cashAmount?: number } | null;
-  splitData?: { cashAmount?: number } | null;
+  splitData?: { cashAmount?: number; splitPayments?: { cashAmount?: number } } | null;
   shiftId?: string;
 };
 
@@ -53,11 +55,7 @@ export function getTodayStartMs(now = new Date()): number {
 }
 
 export function cashAmountFromTransaction(transaction: TransactionLike): number {
-  if (transaction.paymentMethod === 'CASH') return Number(transaction.total || 0);
-  if (transaction.paymentMethod === 'SPLIT') {
-    return Number(transaction.splitPayments?.cashAmount ?? transaction.splitData?.cashAmount ?? 0);
-  }
-  return 0;
+  return paymentAmountForMethod(transaction, 'CASH');
 }
 
 function recordInShiftCashScope(record: { timestamp?: number; shiftId?: string }, since: number, shiftId?: string): boolean {
@@ -66,12 +64,7 @@ function recordInShiftCashScope(record: { timestamp?: number; shiftId?: string }
 }
 
 function cashAmountFromRefund(refund: RefundLike): number {
-  if (String(refund.status || 'APPROVED').toUpperCase() === 'REJECTED') return 0;
-  const source = String(refund.source || '').toUpperCase();
-  if (source === 'TILL' || source === 'MIXED') {
-    return Number(refund.cashAmount ?? refund.amount ?? 0);
-  }
-  return Number(refund.cashAmount || 0);
+  return cashRefundAmount(refund);
 }
 
 export function calculateCashDrawer({
@@ -105,15 +98,15 @@ export function calculateCashDrawer({
   actualCashDrawer: number;
 } {
   const cashSales = transactions
-    .filter(t => recordInShiftCashScope(t, since, shiftId) && t.status === 'PAID')
+    .filter(t => recordInShiftCashScope(t, since, shiftId) && String(t.status || '').toUpperCase() === 'PAID')
     .reduce((sum, t) => sum + cashAmountFromTransaction(t), 0);
 
   const tillExpenses = expenses
-    .filter(e => recordInShiftCashScope(e, since, shiftId) && e.source === 'TILL' && e.status !== 'REJECTED')
+    .filter(e => recordInShiftCashScope(e, since, shiftId) && String(e.source || '').toUpperCase() === 'TILL' && String(e.status || '').toUpperCase() !== 'REJECTED')
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
   const picked = cashPicks
-    .filter(p => recordInShiftCashScope(p, since, shiftId) && p.status !== 'REJECTED')
+    .filter(p => recordInShiftCashScope(p, since, shiftId) && String(p.status || '').toUpperCase() !== 'REJECTED')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   const cashRefunds = refunds
@@ -121,11 +114,11 @@ export function calculateCashDrawer({
     .reduce((sum, r) => sum + cashAmountFromRefund(r), 0);
 
   const supplierTillPayments = supplierPayments
-    .filter(p => recordInShiftCashScope(p, since, shiftId) && p.source === 'TILL')
+    .filter(p => recordInShiftCashScope(p, since, shiftId) && String(p.source || '').toUpperCase() === 'TILL')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   const customerCashPayments = customerPayments
-    .filter(p => recordInShiftCashScope(p, since, shiftId) && p.paymentMethod === 'CASH')
+    .filter(p => recordInShiftCashScope(p, since, shiftId) && String(p.paymentMethod || '').toUpperCase() === 'CASH')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   return {
@@ -147,6 +140,7 @@ export function calculateShiftCashFromSales({
   refunds = [],
   supplierPayments = [],
   customerPayments = [],
+  openingCash = 0,
   since = getTodayStartMs(),
   shiftId,
 }: {
@@ -156,9 +150,11 @@ export function calculateShiftCashFromSales({
   refunds?: RefundLike[];
   supplierPayments?: SupplierPaymentLike[];
   customerPayments?: CustomerPaymentLike[];
+  openingCash?: number;
   since?: number;
   shiftId?: string;
 }): {
+  openingCash: number;
   cashSales: number;
   customerCashPayments: number;
   tillExpenses: number;
@@ -168,15 +164,15 @@ export function calculateShiftCashFromSales({
   availableCashSales: number;
 } {
   const cashSales = transactions
-    .filter(t => recordInShiftCashScope(t, since, shiftId) && t.status === 'PAID')
+    .filter(t => recordInShiftCashScope(t, since, shiftId) && String(t.status || '').toUpperCase() === 'PAID')
     .reduce((sum, t) => sum + cashAmountFromTransaction(t), 0);
 
   const tillExpenses = expenses
-    .filter(e => recordInShiftCashScope(e, since, shiftId) && e.source === 'TILL' && e.status !== 'REJECTED')
+    .filter(e => recordInShiftCashScope(e, since, shiftId) && String(e.source || '').toUpperCase() === 'TILL' && String(e.status || '').toUpperCase() !== 'REJECTED')
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
   const picked = cashPicks
-    .filter(p => recordInShiftCashScope(p, since, shiftId) && p.status !== 'REJECTED')
+    .filter(p => recordInShiftCashScope(p, since, shiftId) && String(p.status || '').toUpperCase() !== 'REJECTED')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   const cashRefunds = refunds
@@ -184,20 +180,21 @@ export function calculateShiftCashFromSales({
     .reduce((sum, r) => sum + cashAmountFromRefund(r), 0);
 
   const supplierTillPayments = supplierPayments
-    .filter(p => recordInShiftCashScope(p, since, shiftId) && p.source === 'TILL')
+    .filter(p => recordInShiftCashScope(p, since, shiftId) && String(p.source || '').toUpperCase() === 'TILL')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   const customerCashPayments = customerPayments
-    .filter(p => recordInShiftCashScope(p, since, shiftId) && p.paymentMethod === 'CASH')
+    .filter(p => recordInShiftCashScope(p, since, shiftId) && String(p.paymentMethod || '').toUpperCase() === 'CASH')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   return {
+    openingCash: Number(openingCash || 0),
     cashSales,
     customerCashPayments,
     tillExpenses,
     cashPicks: picked,
     cashRefunds,
     supplierTillPayments,
-    availableCashSales: Math.max(0, cashSales + customerCashPayments - tillExpenses - picked - supplierTillPayments - cashRefunds),
+    availableCashSales: Math.max(0, Number(openingCash || 0) + cashSales + customerCashPayments - tillExpenses - picked - supplierTillPayments - cashRefunds),
   };
 }
