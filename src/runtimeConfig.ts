@@ -1,9 +1,10 @@
+import { useStore } from './store';
+
 export type RuntimeConfig = {
   apiKey: string | null;
 };
 
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
-  const { useStore } = await import('./store');
   return { apiKey: useStore.getState().authToken || null };
 }
 

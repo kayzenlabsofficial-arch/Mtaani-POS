@@ -1,5 +1,6 @@
 import React from 'react';
 import { Package, Plus } from 'lucide-react';
+import { isLowStockProduct } from '../../utils/inventoryIntegrity';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -23,7 +24,7 @@ interface ProductCardProps {
 export function ProductCard({ product, onAdd, recentlyAdded }: ProductCardProps) {
   const stock = product.stockQuantity || 0;
   const isOutOfStock = stock <= 0;
-  const isLowStock = !isOutOfStock && stock <= (product.reorderPoint || 5);
+  const isLowStock = isLowStockProduct(product);
 
   const stockColor = isOutOfStock
     ? 'text-rose-600 bg-rose-50 border-rose-100'

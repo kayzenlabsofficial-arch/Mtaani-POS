@@ -1,5 +1,7 @@
 import { authorizeRequest, canAccessBusiness, hashPassword, isPasswordHashCurrent } from '../authUtils';
+import { ensureInventoryIntegritySchema } from '../inventoryIntegrity';
 import { hardenTransactionBatch, PolicyError } from '../salesSecurity';
+import { canReadServerFeature, type AccessFeatureId } from '../settingsPolicy';
 
 interface Env {
   DB: D1Database;
@@ -17,6 +19,7 @@ const ALLOWED_TABLES = new Set([
   'billingPayments', 'deviceSyncStatus', 'idempotencyKeys',
 ]);
 
+const HIDDEN_BUSINESS_TABLES = new Set(['mpesaCallbacks', 'mpesaCredentials']);
 const UNSCOPED_TABLES = new Set(['businesses', 'loginAttempts']);
 const ADMIN_WRITE_TABLES = new Set(['users', 'settings', 'salesTills', 'expenseAccounts', 'financialAccounts', 'categories']);
 const MANAGER_WRITE_TABLES = new Set([
@@ -26,7 +29,7 @@ const MANAGER_WRITE_TABLES = new Set([
   'hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments',
 ]);
 const CASHIER_WRITE_TABLES = new Set([
-  'transactions', 'customers', 'customerPayments', 'shifts',
+  'transactions', 'customers', 'shifts',
   'cashPicks', 'endOfDayReports', 'dailySummaries', 'stockAdjustmentRequests',
 ]);
 const MANAGER_DELETE_TABLES = new Set([
@@ -37,10 +40,69 @@ const MANAGER_DELETE_TABLES = new Set([
 ]);
 const MANAGER_READ_TABLES = new Set(['hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments']);
 const HR_TABLES = new Set(['hrStaff', 'hrStaffDocuments', 'hrAttendance', 'hrPayrollAdjustments']);
+const HR_STAFF_STATUSES = new Set(['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'EXITED']);
+const HR_PAY_CYCLES = new Set(['MONTHLY', 'WEEKLY', 'DAILY']);
+const HR_ATTENDANCE_STATUSES = new Set(['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'ON_LEAVE', 'OFF_DAY']);
+const HR_PAYROLL_TYPES = new Set(['SALARY', 'BONUS', 'DEDUCTION', 'PENALTY']);
+const HR_PAYROLL_STATUSES = new Set(['ACTIVE', 'PAID', 'CANCELLED']);
+const CASHIER_SAFE_SHIFT_FIELDS = new Set([
+  'id',
+  'startTime',
+  'endTime',
+  'cashierId',
+  'cashierName',
+  'tillId',
+  'tillName',
+  'status',
+  'lastSyncAt',
+  'businessId',
+  'updated_at',
+]);
+const ADMIN_ONLY_READ_TABLES = new Set([
+  'auditLogs',
+  'billingPayments',
+  'deviceSyncStatus',
+  'idempotencyKeys',
+]);
+const TABLE_ACCESS_FEATURES: Record<string, AccessFeatureId[]> = {
+  customers: ['tab.customers'],
+  customerPayments: ['tab.customers'],
+  salesInvoices: ['tab.invoices'],
+  suppliers: ['tab.suppliers'],
+  supplierPayments: ['tab.suppliers'],
+  creditNotes: ['tab.suppliers'],
+  purchaseOrders: ['tab.purchases'],
+  expenses: ['tab.expenses'],
+  expenseAccounts: ['tab.expenses'],
+  financialAccounts: ['tab.mainAccount'],
+  financialAccountAdjustments: ['tab.mainAccount'],
+  refunds: ['tab.refunds'],
+  hrStaff: ['tab.hr'],
+  hrStaffDocuments: ['tab.hr'],
+  hrAttendance: ['tab.hr'],
+  hrPayrollAdjustments: ['tab.hr'],
+  dailySummaries: ['report.view'],
+  endOfDayReports: ['report.view'],
+  cashPicks: ['tab.mainAccount'],
+  transactions: ['report.view'],
+  stockMovements: ['tab.inventory'],
+  stockAdjustmentRequests: ['tab.inventory'],
+};
+export const DOMAIN_API_WRITE_MESSAGES: Record<string, string> = {
+  expenses: 'Expenses must use the expense API.',
+  customerPayments: 'Customer payments must use the customer payment API.',
+  salesTills: 'Sales tills must use the business settings API.',
+};
+
+export function domainApiWriteMessage(table: string): string | null {
+  return DOMAIN_API_WRITE_MESSAGES[table] || null;
+}
+
 const COMMAND_ONLY_WRITE_TABLES = new Set([
   'businesses',
   'users',
   'settings',
+  'salesTills',
   'categories',
   'expenseAccounts',
   'products',
@@ -70,7 +132,7 @@ const LEGACY_SCOPE_COLUMN = String.fromCharCode(98, 114, 97, 110, 99, 104, 73, 1
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function jsonHeaders() {
@@ -91,16 +153,20 @@ function secureJsonHeaders() {
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS businesses (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, isActive INTEGER DEFAULT 1, billingStatus TEXT NOT NULL DEFAULT 'OK', billingAmountDue REAL DEFAULT 0, billingDueAt INTEGER, billingMessage TEXT, billingLastPaidAt INTEGER, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL, businessId TEXT, mustChangePassword INTEGER DEFAULT 0, isBootstrapAdmin INTEGER DEFAULT 0, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, sellingPrice REAL NOT NULL, costPrice REAL, discountType TEXT DEFAULT 'NONE', discountValue REAL DEFAULT 0, taxCategory TEXT NOT NULL, stockQuantity REAL NOT NULL, unit TEXT, barcode TEXT NOT NULL, imageUrl TEXT, reorderPoint REAL, supplierIds TEXT, expiryTracking INTEGER DEFAULT 0, expiryDate INTEGER, isBundle INTEGER DEFAULT 0, components TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, sellingPrice REAL NOT NULL, costPrice REAL, discountType TEXT DEFAULT 'NONE', discountValue REAL DEFAULT 0, taxCategory TEXT NOT NULL, stockQuantity REAL NOT NULL, unit TEXT, barcode TEXT NOT NULL, imageUrl TEXT, reorderPoint REAL, supplierIds TEXT, expiryTracking INTEGER DEFAULT 0, expiryDate INTEGER, isBundle INTEGER DEFAULT 0, components TEXT, shopId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId);
-CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, total REAL NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, discountAmount REAL, discountReason TEXT, items TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, paymentMethod TEXT, amountTendered REAL, changeGiven REAL, mpesaReference TEXT, mpesaCode TEXT, mpesaCustomer TEXT, mpesaCheckoutRequestId TEXT, cashierId TEXT, cashierName TEXT, customerId TEXT, customerName TEXT, discount REAL, discountType TEXT, splitPayments TEXT, splitData TEXT, isSynced INTEGER, approvedBy TEXT, pendingRefundItems TEXT, shiftId TEXT, businessId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS refunds (id TEXT PRIMARY KEY, refundNumber TEXT, originalTransactionId TEXT NOT NULL, receiptNumber TEXT, amount REAL NOT NULL, cashAmount REAL DEFAULT 0, paymentMethod TEXT, source TEXT, items TEXT, timestamp INTEGER NOT NULL, cashierName TEXT, approvedBy TEXT, status TEXT NOT NULL DEFAULT 'APPROVED', shiftId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, total REAL NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, discountAmount REAL, discountReason TEXT, items TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, paymentMethod TEXT, amountTendered REAL, changeGiven REAL, mpesaReference TEXT, mpesaCode TEXT, mpesaCustomer TEXT, mpesaCheckoutRequestId TEXT, cashierId TEXT, cashierName TEXT, customerId TEXT, customerName TEXT, discount REAL, discountType TEXT, splitPayments TEXT, splitData TEXT, isSynced INTEGER, approvedBy TEXT, pendingRefundItems TEXT, shiftId TEXT, shopId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS refunds (id TEXT PRIMARY KEY, refundNumber TEXT, originalTransactionId TEXT NOT NULL, receiptNumber TEXT, amount REAL NOT NULL, cashAmount REAL DEFAULT 0, paymentMethod TEXT, source TEXT, items TEXT, timestamp INTEGER NOT NULL, cashierName TEXT, approvedBy TEXT, status TEXT NOT NULL DEFAULT 'APPROVED', shiftId TEXT, shopId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS cashPicks (id TEXT PRIMARY KEY, amount REAL NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, userName TEXT, accountId TEXT, shiftId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, startTime INTEGER NOT NULL, endTime INTEGER, cashierId TEXT, cashierName TEXT NOT NULL, tillId TEXT, tillName TEXT, openingCash REAL DEFAULT 0, closingCash REAL, expectedCash REAL, cashVariance REAL, closeBreakdown TEXT, status TEXT NOT NULL, lastSyncAt INTEGER, businessId TEXT, updated_at INTEGER);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_open_till ON shifts(businessId, tillId) WHERE UPPER(COALESCE(status, '')) = 'OPEN' AND COALESCE(tillId, '') != '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_open_cashier ON shifts(businessId, cashierId) WHERE UPPER(COALESCE(status, '')) = 'OPEN' AND COALESCE(cashierId, '') != '';
 CREATE TABLE IF NOT EXISTS endOfDayReports (id TEXT PRIMARY KEY, shiftId TEXT, tillId TEXT, tillName TEXT, timestamp INTEGER NOT NULL, totalSales REAL NOT NULL DEFAULT 0, grossSales REAL NOT NULL DEFAULT 0, taxTotal REAL NOT NULL DEFAULT 0, cashSales REAL NOT NULL DEFAULT 0, customerCashPayments REAL DEFAULT 0, customerMpesaPayments REAL DEFAULT 0, mpesaSales REAL NOT NULL DEFAULT 0, pdqSales REAL, totalExpenses REAL NOT NULL DEFAULT 0, supplierPaymentsTotal REAL, remittanceTotal REAL, totalPicks REAL NOT NULL DEFAULT 0, totalRefunds REAL, cashRefunds REAL DEFAULT 0, openingCash REAL DEFAULT 0, closingCash REAL, expectedCash REAL NOT NULL DEFAULT 0, reportedCash REAL NOT NULL DEFAULT 0, difference REAL NOT NULL DEFAULT 0, cashierId TEXT, cashierName TEXT NOT NULL, closeBreakdown TEXT, businessId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, businessId TEXT, shiftId TEXT, expiryDate INTEGER, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, amount REAL NOT NULL, category TEXT NOT NULL, description TEXT, timestamp INTEGER NOT NULL, userName TEXT, status TEXT NOT NULL, source TEXT, accountId TEXT, productId TEXT, quantity REAL, preparedBy TEXT, approvedBy TEXT, shiftId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, businessId TEXT, shiftId TEXT, shopId TEXT, expiryDate INTEGER, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, amount REAL NOT NULL, category TEXT NOT NULL, description TEXT, timestamp INTEGER NOT NULL, userName TEXT, status TEXT NOT NULL, source TEXT, accountId TEXT, productId TEXT, quantity REAL, preparedBy TEXT, approvedBy TEXT, shiftId TEXT, shopId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE INDEX IF NOT EXISTS idx_expenses_business_shop_timestamp ON expenses(businessId, shopId, timestamp);
+CREATE INDEX IF NOT EXISTS idx_expenses_business_status_timestamp ON expenses(businessId, status, timestamp);
 CREATE TABLE IF NOT EXISTS hrStaff (id TEXT PRIMARY KEY, fullName TEXT NOT NULL, phone TEXT, email TEXT, roleTitle TEXT NOT NULL, department TEXT, nationalId TEXT, kraPin TEXT, nhifNumber TEXT, nssfNumber TEXT, hireDate INTEGER, status TEXT NOT NULL DEFAULT 'ACTIVE', baseSalary REAL DEFAULT 0, payCycle TEXT DEFAULT 'MONTHLY', emergencyContact TEXT, notes TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS hrStaffDocuments (id TEXT PRIMARY KEY, staffId TEXT NOT NULL, name TEXT NOT NULL, documentType TEXT NOT NULL, documentNumber TEXT, issueDate INTEGER, expiryDate INTEGER, fileName TEXT, fileUrl TEXT, notes TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS hrAttendance (id TEXT PRIMARY KEY, staffId TEXT NOT NULL, date INTEGER NOT NULL, checkIn TEXT, checkOut TEXT, status TEXT NOT NULL, hoursWorked REAL, notes TEXT, businessId TEXT, updated_at INTEGER);
@@ -109,24 +175,30 @@ CREATE INDEX IF NOT EXISTS idx_hrStaff_status ON hrStaff(businessId, status);
 CREATE INDEX IF NOT EXISTS idx_hrStaffDocuments_staff ON hrStaffDocuments(businessId, staffId);
 CREATE INDEX IF NOT EXISTS idx_hrAttendance_staff_date ON hrAttendance(businessId, staffId, date);
 CREATE INDEX IF NOT EXISTS idx_hrPayrollAdjustments_staff_date ON hrPayrollAdjustments(businessId, staffId, effectiveDate);
-CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, totalSpent REAL, balance REAL, businessId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS customerPayments (id TEXT PRIMARY KEY, customerId TEXT NOT NULL, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, reference TEXT, allocations TEXT, timestamp INTEGER NOT NULL, preparedBy TEXT, shiftId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, totalSpent REAL, balance REAL, shopId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS customerPayments (id TEXT PRIMARY KEY, customerId TEXT NOT NULL, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, reference TEXT, allocations TEXT, timestamp INTEGER NOT NULL, preparedBy TEXT, shiftId TEXT, shopId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE INDEX IF NOT EXISTS idx_customerPayments_code ON customerPayments(businessId, transactionCode);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customerPayments_unique_code ON customerPayments(businessId, transactionCode) WHERE transactionCode IS NOT NULL AND transactionCode != '';
 CREATE TABLE IF NOT EXISTS serviceItems (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT, description TEXT, price REAL NOT NULL, taxCategory TEXT DEFAULT 'A', isActive INTEGER DEFAULT 1, businessId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS salesInvoices (id TEXT PRIMARY KEY, invoiceNumber TEXT NOT NULL, customerId TEXT NOT NULL, customerName TEXT, customerPhone TEXT, customerEmail TEXT, items TEXT NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, total REAL NOT NULL, paidAmount REAL DEFAULT 0, balance REAL DEFAULT 0, status TEXT NOT NULL, issueDate INTEGER NOT NULL, dueDate INTEGER, notes TEXT, preparedBy TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS salesInvoices (id TEXT PRIMARY KEY, invoiceNumber TEXT NOT NULL, customerId TEXT NOT NULL, customerName TEXT, customerPhone TEXT, customerEmail TEXT, items TEXT NOT NULL, subtotal REAL NOT NULL, tax REAL NOT NULL, total REAL NOT NULL, paidAmount REAL DEFAULT 0, balance REAL DEFAULT 0, status TEXT NOT NULL, issueDate INTEGER NOT NULL, dueDate INTEGER, notes TEXT, preparedBy TEXT, shiftId TEXT, shopId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_salesInvoices_business_number ON salesInvoices(businessId, invoiceNumber);
 CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT, phone TEXT, email TEXT, address TEXT, kraPin TEXT, balance REAL, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS supplierPayments (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, purchaseOrderId TEXT, purchaseOrderIds TEXT, invoiceAllocations TEXT, creditNoteIds TEXT, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, transactionCode TEXT, timestamp INTEGER NOT NULL, reference TEXT, source TEXT, accountId TEXT, shopId TEXT, shiftId TEXT, preparedBy TEXT, businessId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS creditNotes (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, amount REAL NOT NULL, reference TEXT NOT NULL, timestamp INTEGER NOT NULL, reason TEXT, status TEXT DEFAULT 'PENDING', allocatedTo TEXT, items TEXT, productId TEXT, quantity REAL, businessId TEXT, shiftId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS creditNotes (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, amount REAL NOT NULL, reference TEXT NOT NULL, timestamp INTEGER NOT NULL, reason TEXT, status TEXT DEFAULT 'PENDING', allocatedTo TEXT, items TEXT, productId TEXT, quantity REAL, businessId TEXT, shiftId TEXT, shopId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS dailySummaries (id TEXT PRIMARY KEY, date INTEGER NOT NULL, shiftIds TEXT NOT NULL, totalSales REAL NOT NULL, grossSales REAL NOT NULL, taxTotal REAL NOT NULL, cashSales REAL DEFAULT 0, customerCashPayments REAL DEFAULT 0, customerMpesaPayments REAL DEFAULT 0, mpesaSales REAL DEFAULT 0, pdqSales REAL DEFAULT 0, totalExpenses REAL NOT NULL, supplierPaymentsTotal REAL DEFAULT 0, remittanceTotal REAL DEFAULT 0, totalPicks REAL NOT NULL, totalRefunds REAL, cashRefunds REAL DEFAULT 0, openingCash REAL DEFAULT 0, expectedCash REAL DEFAULT 0, reportedCash REAL DEFAULT 0, totalVariance REAL NOT NULL, shiftReports TEXT, timestamp INTEGER NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_date ON dailySummaries(businessId, date);
-CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (id TEXT PRIMARY KEY, productId TEXT NOT NULL, productName TEXT, oldQty REAL, newQty REAL, requestedQuantity REAL, reason TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, preparedBy TEXT, approvedBy TEXT, businessId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS purchaseOrders (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, items TEXT NOT NULL, totalAmount REAL NOT NULL, status TEXT NOT NULL, approvalStatus TEXT NOT NULL, paymentStatus TEXT, paidAmount REAL, orderDate INTEGER NOT NULL, expectedDate INTEGER, receivedDate INTEGER, invoiceNumber TEXT, poNumber TEXT, preparedBy TEXT, approvedBy TEXT, receivedBy TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (id TEXT PRIMARY KEY, productId TEXT NOT NULL, productName TEXT, oldQty REAL, newQty REAL, requestedQuantity REAL, reason TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL, preparedBy TEXT, approvedBy TEXT, shopId TEXT, businessId TEXT, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS purchaseOrders (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, items TEXT NOT NULL, totalAmount REAL NOT NULL, status TEXT NOT NULL, approvalStatus TEXT NOT NULL, paymentStatus TEXT, paidAmount REAL, orderDate INTEGER NOT NULL, expectedDate INTEGER, receivedDate INTEGER, invoiceNumber TEXT, poNumber TEXT, preparedBy TEXT, approvedBy TEXT, receivedBy TEXT, shopId TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, storeName TEXT NOT NULL, location TEXT, tillNumber TEXT, kraPin TEXT, receiptFooter TEXT, ownerModeEnabled INTEGER DEFAULT 0, autoApproveOwnerActions INTEGER DEFAULT 1, cashSweepEnabled INTEGER DEFAULT 1, cashDrawerLimit REAL DEFAULT 5000, salesTills TEXT, defaultOpeningFloat REAL DEFAULT 0, accessControl TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS salesTills (id TEXT PRIMARY KEY, name TEXT NOT NULL, isActive INTEGER DEFAULT 1, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, iconName TEXT NOT NULL, color TEXT NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS expenseAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS financialAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, balance REAL NOT NULL DEFAULT 0, businessId TEXT, accountNumber TEXT, updated_at INTEGER);
+CREATE TRIGGER IF NOT EXISTS financialAccounts_non_negative_balance_guard BEFORE UPDATE OF balance ON financialAccounts WHEN NEW.balance < -0.0001 BEGIN SELECT RAISE(ABORT, 'Insufficient account balance.'); END;
 CREATE TABLE IF NOT EXISTS financialAccountAdjustments (id TEXT PRIMARY KEY, accountId TEXT NOT NULL, amount REAL NOT NULL, direction TEXT NOT NULL, balanceBefore REAL NOT NULL, balanceAfter REAL NOT NULL, reason TEXT, userName TEXT, timestamp INTEGER NOT NULL, businessId TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS mpesaCallbacks (checkoutRequestId TEXT PRIMARY KEY, merchantRequestId TEXT, resultCode INTEGER, resultDesc TEXT, amount REAL, receiptNumber TEXT, phoneNumber TEXT, businessId TEXT, timestamp INTEGER, utilizedTransactionId TEXT, utilizedCustomerId TEXT, utilizedCustomerName TEXT, utilizedAt INTEGER);
+CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber);
+CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_utilized ON mpesaCallbacks(businessId, utilizedTransactionId);
 CREATE TABLE IF NOT EXISTS mpesaCredentials (businessId TEXT PRIMARY KEY, settingsId TEXT, environment TEXT NOT NULL DEFAULT 'sandbox', accountType TEXT NOT NULL DEFAULT 'paybill', product TEXT NOT NULL DEFAULT 'M-PESA EXPRESS', shortcode TEXT, storeNumber TEXT, consumerKeyCipher TEXT, consumerSecretCipher TEXT, passkeyCipher TEXT, credentialsVersion TEXT DEFAULT 'enc:v2', lastTestAt INTEGER, lastTestStatus TEXT, lastTestMessage TEXT, created_at INTEGER, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS billingPayments (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, phone TEXT, amount REAL NOT NULL, reference TEXT, checkoutRequestId TEXT UNIQUE, merchantRequestId TEXT, receiptNumber TEXT, resultCode INTEGER, resultDesc TEXT, status TEXT NOT NULL DEFAULT 'PENDING', createdAt INTEGER, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS deviceSyncStatus (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, deviceId TEXT NOT NULL, cashierName TEXT, lastSyncAt INTEGER, updated_at INTEGER);
@@ -177,6 +249,23 @@ function canReadTable(role: string, table: string, service: boolean): boolean {
   return true;
 }
 
+async function canReadTableDataByPolicy(
+  db: D1Database,
+  businessId: string,
+  principal: any,
+  service: boolean,
+  table: string,
+): Promise<boolean> {
+  if (service || isAdminLike(String(principal?.role || ''))) return true;
+  if (ADMIN_ONLY_READ_TABLES.has(table)) return false;
+  const features = TABLE_ACCESS_FEATURES[table];
+  if (!features?.length) return true;
+  for (const feature of features) {
+    if (await canReadServerFeature(db, businessId, principal, service, feature)) return true;
+  }
+  return false;
+}
+
 async function ensureCoreSchema(db: D1Database): Promise<void> {
   const statements = SCHEMA_SQL.split(';').map(s => s.trim()).filter(Boolean);
   for (const statement of statements) {
@@ -184,6 +273,8 @@ async function ensureCoreSchema(db: D1Database): Promise<void> {
   }
   await ensureUserSetupColumns(db);
   await ensureBusinessBillingColumns(db);
+  await ensureCustomerDebtScopeColumns(db);
+  await ensureInventoryIntegritySchema(db);
 }
 
 async function ensureUserSetupColumns(db: D1Database): Promise<void> {
@@ -224,6 +315,120 @@ async function ensureBusinessBillingColumns(db: D1Database): Promise<void> {
       updated_at INTEGER
     )
   `).run();
+}
+
+async function ensureCustomerDebtScopeColumns(db: D1Database): Promise<void> {
+  const statements = [
+    'ALTER TABLE customers ADD COLUMN shopId TEXT',
+    'ALTER TABLE customerPayments ADD COLUMN shopId TEXT',
+    'ALTER TABLE salesInvoices ADD COLUMN shiftId TEXT',
+    'ALTER TABLE salesInvoices ADD COLUMN shopId TEXT',
+    'ALTER TABLE transactions ADD COLUMN shopId TEXT',
+    'CREATE INDEX IF NOT EXISTS idx_customerPayments_code ON customerPayments(businessId, transactionCode)',
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_customerPayments_unique_code ON customerPayments(businessId, transactionCode) WHERE transactionCode IS NOT NULL AND transactionCode != ''",
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_salesInvoices_business_number ON salesInvoices(businessId, invoiceNumber)',
+    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber)',
+    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_utilized ON mpesaCallbacks(businessId, utilizedTransactionId)',
+  ];
+  for (const sql of statements) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS customerPayments_balance_guard
+      BEFORE INSERT ON customerPayments
+      WHEN NEW.amount > 0
+      BEGIN
+        SELECT RAISE(ABORT, 'Customer was not found.')
+        WHERE NOT EXISTS (
+          SELECT 1 FROM customers
+          WHERE id = NEW.customerId
+            AND businessId = NEW.businessId
+        );
+        SELECT RAISE(ABORT, 'Payment cannot exceed the customer balance.')
+        WHERE (
+          SELECT COALESCE(balance, 0)
+          FROM customers
+          WHERE id = NEW.customerId
+            AND businessId = NEW.businessId
+        ) + 0.01 < NEW.amount;
+      END
+    `).run();
+  } catch {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS customerPayments_code_guard
+      BEFORE INSERT ON customerPayments
+      WHEN NEW.transactionCode IS NOT NULL AND NEW.transactionCode != ''
+      BEGIN
+        SELECT RAISE(ABORT, 'This payment code has already been used.')
+        WHERE EXISTS (
+          SELECT 1 FROM customerPayments
+          WHERE businessId = NEW.businessId
+            AND UPPER(COALESCE(transactionCode, '')) = UPPER(NEW.transactionCode)
+        );
+      END
+    `).run();
+  } catch {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS customerPayments_invoice_allocation_guard
+      BEFORE INSERT ON customerPayments
+      WHEN NEW.allocations IS NOT NULL AND TRIM(NEW.allocations) != ''
+      BEGIN
+        SELECT RAISE(ABORT, 'Payment allocations are invalid.')
+        WHERE json_valid(NEW.allocations) = 0;
+        SELECT RAISE(ABORT, 'Payment allocation refers to an invoice that was not found.')
+        WHERE EXISTS (
+          SELECT 1
+          FROM json_each(NEW.allocations) allocation
+          WHERE UPPER(COALESCE(json_extract(allocation.value, '$.sourceType'), '')) = 'INVOICE'
+            AND NOT EXISTS (
+              SELECT 1
+              FROM salesInvoices invoice
+              WHERE invoice.id = json_extract(allocation.value, '$.sourceId')
+                AND invoice.customerId = NEW.customerId
+                AND invoice.businessId = NEW.businessId
+            )
+        );
+        SELECT RAISE(ABORT, 'Cannot allocate payment to a cancelled invoice.')
+        WHERE EXISTS (
+          SELECT 1
+          FROM json_each(NEW.allocations) allocation
+          JOIN salesInvoices invoice
+            ON invoice.id = json_extract(allocation.value, '$.sourceId')
+           AND invoice.customerId = NEW.customerId
+           AND invoice.businessId = NEW.businessId
+          WHERE UPPER(COALESCE(json_extract(allocation.value, '$.sourceType'), '')) = 'INVOICE'
+            AND invoice.status = 'CANCELLED'
+        );
+        SELECT RAISE(ABORT, 'Payment allocation exceeds an invoice balance.')
+        WHERE EXISTS (
+          SELECT 1
+          FROM json_each(NEW.allocations) allocation
+          JOIN salesInvoices invoice
+            ON invoice.id = json_extract(allocation.value, '$.sourceId')
+           AND invoice.customerId = NEW.customerId
+           AND invoice.businessId = NEW.businessId
+          WHERE UPPER(COALESCE(json_extract(allocation.value, '$.sourceType'), '')) = 'INVOICE'
+            AND CAST(COALESCE(json_extract(allocation.value, '$.amount'), 0) AS REAL) > COALESCE(invoice.balance, invoice.total, 0) + 0.01
+        );
+      END
+    `).run();
+  } catch {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS customerPayments_immutable_money_guard
+      BEFORE UPDATE OF customerId, amount, allocations, businessId ON customerPayments
+      BEGIN
+        SELECT RAISE(ABORT, 'Customer payment records cannot be edited after saving.')
+        WHERE COALESCE(NEW.customerId, '') != COALESCE(OLD.customerId, '')
+           OR ABS(COALESCE(NEW.amount, 0) - COALESCE(OLD.amount, 0)) > 0.0001
+           OR COALESCE(NEW.allocations, '') != COALESCE(OLD.allocations, '')
+           OR COALESCE(NEW.businessId, '') != COALESCE(OLD.businessId, '');
+      END
+    `).run();
+  } catch {}
 }
 
 async function ensureHrSchema(db: D1Database): Promise<void> {
@@ -285,6 +490,7 @@ async function ensureSettingsSchema(db: D1Database): Promise<void> {
 
 async function ensurePickedCashAccount(db: D1Database, businessId: string) {
   await db.prepare('CREATE TABLE IF NOT EXISTS financialAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, balance REAL NOT NULL DEFAULT 0, businessId TEXT, accountNumber TEXT, updated_at INTEGER)').run();
+  await db.prepare("CREATE TRIGGER IF NOT EXISTS financialAccounts_non_negative_balance_guard BEFORE UPDATE OF balance ON financialAccounts WHEN NEW.balance < -0.0001 BEGIN SELECT RAISE(ABORT, 'Insufficient account balance.'); END").run();
   const id = `picked_cash_${businessId}`;
   const now = Date.now();
   await db.prepare(`
@@ -354,6 +560,154 @@ async function existingRowsById(db: D1Database, table: string, businessId: strin
     .all();
   (results as any[]).forEach(row => rows.set(String(row.id), deserializeRow(row)));
   return rows;
+}
+
+function requireHrEnum(value: unknown, allowed: Set<string>, fallback: string, label: string): string {
+  const normalized = String(value ?? fallback).trim().toUpperCase();
+  if (!allowed.has(normalized)) throw new PolicyError(`${label} is invalid.`, 400);
+  return normalized;
+}
+
+function normalizeHrDate(value: unknown, label: string, required = false): number | null {
+  if (value === undefined || value === null || value === '') {
+    if (required) throw new PolicyError(`${label} is required.`, 400);
+    return null;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) throw new PolicyError(`${label} is invalid.`, 400);
+  return Math.round(n);
+}
+
+function normalizeHrTime(value: unknown, label: string): string {
+  const text = trimText(value, 16) || '';
+  if (!text) return '';
+  if (!/^\d{1,2}:\d{2}$/.test(text)) throw new PolicyError(`${label} is invalid.`, 400);
+  const [hoursRaw, minutesRaw] = text.split(':');
+  const hours = Number(hoursRaw);
+  const minutes = Number(minutesRaw);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    throw new PolicyError(`${label} is invalid.`, 400);
+  }
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+async function ensureHrStaffReferences(db: D1Database, businessId: string, items: any[]): Promise<Set<string>> {
+  const staffIds = Array.from(new Set(items.map(item => trimText(item?.staffId, 160)).filter(Boolean))) as string[];
+  const existing = await existingRowsById(db, 'hrStaff', businessId, staffIds);
+  for (const staffId of staffIds) {
+    if (!existing.has(staffId)) throw new PolicyError('Staff member was not found for this HR record.', 409);
+  }
+  return new Set(staffIds);
+}
+
+async function hardenHrWrites(db: D1Database, businessId: string, table: string, items: any[]) {
+  const now = Date.now();
+
+  if (table === 'hrStaff') {
+    for (const item of items) {
+      item.id = trimText(item.id, 160) || crypto.randomUUID();
+      item.fullName = trimText(item.fullName, 120);
+      item.roleTitle = trimText(item.roleTitle, 120);
+      if (!item.fullName) throw new PolicyError('Staff name is required.', 400);
+      if (!item.roleTitle) throw new PolicyError('Staff job title is required.', 400);
+      item.phone = trimText(item.phone, 40);
+      item.email = trimText(item.email, 120);
+      item.department = trimText(item.department, 80);
+      item.nationalId = trimText(item.nationalId, 80);
+      item.kraPin = trimText(item.kraPin, 80);
+      item.nhifNumber = trimText(item.nhifNumber, 80);
+      item.nssfNumber = trimText(item.nssfNumber, 80);
+      item.hireDate = normalizeHrDate(item.hireDate, 'Hire date');
+      item.status = requireHrEnum(item.status, HR_STAFF_STATUSES, 'ACTIVE', 'Staff status');
+      item.payCycle = requireHrEnum(item.payCycle, HR_PAY_CYCLES, 'MONTHLY', 'Pay cycle');
+      item.baseSalary = roundMoney(asNumber(item.baseSalary));
+      if (item.baseSalary < 0 || item.baseSalary > 50_000_000) throw new PolicyError('Base salary is invalid.', 400);
+      item.emergencyContact = trimText(item.emergencyContact, 160);
+      item.notes = trimText(item.notes, 1000);
+      item.businessId = businessId;
+      item.updated_at = now;
+      delete item.shopId;
+      delete item[LEGACY_SCOPE_COLUMN];
+    }
+    return;
+  }
+
+  await ensureHrStaffReferences(db, businessId, items);
+
+  if (table === 'hrStaffDocuments') {
+    for (const item of items) {
+      item.id = trimText(item.id, 160) || crypto.randomUUID();
+      item.staffId = trimText(item.staffId, 160);
+      item.name = trimText(item.name, 160);
+      item.documentType = trimText(item.documentType, 80) || 'Document';
+      if (!item.name) throw new PolicyError('Document name is required.', 400);
+      item.documentNumber = trimText(item.documentNumber, 120);
+      item.issueDate = normalizeHrDate(item.issueDate, 'Issue date');
+      item.expiryDate = normalizeHrDate(item.expiryDate, 'Expiry date');
+      if (item.issueDate && item.expiryDate && item.expiryDate < item.issueDate) {
+        throw new PolicyError('Document expiry cannot be before issue date.', 400);
+      }
+      item.fileName = trimText(item.fileName, 160);
+      item.fileUrl = trimText(item.fileUrl, 500);
+      item.notes = trimText(item.notes, 1000);
+      item.businessId = businessId;
+      item.updated_at = now;
+      delete item.shopId;
+      delete item[LEGACY_SCOPE_COLUMN];
+    }
+    return;
+  }
+
+  if (table === 'hrAttendance') {
+    const seen = new Map<string, string>();
+    for (const item of items) {
+      item.id = trimText(item.id, 160) || crypto.randomUUID();
+      item.staffId = trimText(item.staffId, 160);
+      item.date = normalizeHrDate(item.date, 'Attendance date', true);
+      item.status = requireHrEnum(item.status, HR_ATTENDANCE_STATUSES, 'PRESENT', 'Attendance status');
+      item.checkIn = ['ABSENT', 'OFF_DAY', 'ON_LEAVE'].includes(item.status) ? '' : normalizeHrTime(item.checkIn, 'Check-in time');
+      item.checkOut = ['ABSENT', 'OFF_DAY', 'ON_LEAVE'].includes(item.status) ? '' : normalizeHrTime(item.checkOut, 'Check-out time');
+      item.hoursWorked = ['ABSENT', 'OFF_DAY', 'ON_LEAVE'].includes(item.status) ? 0 : roundMoney(asNumber(item.hoursWorked));
+      if (item.hoursWorked < 0 || item.hoursWorked > 24) throw new PolicyError('Attendance hours are invalid.', 400);
+      if (['PRESENT', 'LATE', 'HALF_DAY'].includes(item.status) && item.hoursWorked <= 0) {
+        throw new PolicyError('Attendance hours are required for worked days.', 400);
+      }
+      const key = `${item.staffId}:${item.date}`;
+      const seenId = seen.get(key);
+      if (seenId && seenId !== item.id) throw new PolicyError('Attendance already exists for this staff member and date.', 409);
+      seen.set(key, item.id);
+      const duplicate = await db.prepare('SELECT id FROM hrAttendance WHERE businessId = ? AND staffId = ? AND date = ? AND id != ? LIMIT 1')
+        .bind(businessId, item.staffId, item.date, item.id)
+        .first<any>();
+      if (duplicate?.id) throw new PolicyError('Attendance already exists for this staff member and date.', 409);
+      item.notes = trimText(item.notes, 1000);
+      item.businessId = businessId;
+      item.updated_at = now;
+      delete item.shopId;
+      delete item[LEGACY_SCOPE_COLUMN];
+    }
+    return;
+  }
+
+  if (table === 'hrPayrollAdjustments') {
+    for (const item of items) {
+      item.id = trimText(item.id, 160) || crypto.randomUUID();
+      item.staffId = trimText(item.staffId, 160);
+      item.type = requireHrEnum(item.type, HR_PAYROLL_TYPES, 'DEDUCTION', 'Payroll type');
+      item.status = requireHrEnum(item.status, HR_PAYROLL_STATUSES, 'ACTIVE', 'Payroll status');
+      item.label = trimText(item.label, 160);
+      if (!item.label) throw new PolicyError('Payroll label is required.', 400);
+      item.amount = roundMoney(asNumber(item.amount));
+      if (item.amount <= 0 || item.amount > 50_000_000) throw new PolicyError('Payroll amount is invalid.', 400);
+      item.effectiveDate = normalizeHrDate(item.effectiveDate, 'Payroll date', true);
+      item.recurring = Number(item.recurring) ? 1 : 0;
+      item.notes = trimText(item.notes, 1000);
+      item.businessId = businessId;
+      item.updated_at = now;
+      delete item.shopId;
+      delete item[LEGACY_SCOPE_COLUMN];
+    }
+  }
 }
 
 async function protectCustomerTotals(db: D1Database, businessId: string, principalRole: string, service: boolean, items: any[]) {
@@ -487,15 +841,27 @@ function cleanLegacyScopeFields(items: any[]) {
   items.forEach(item => { delete item[LEGACY_SCOPE_COLUMN]; });
 }
 
-function redactRows(table: string, rows: Record<string, any>[]): Record<string, any>[] {
-  if (table === 'users') return rows.map(row => {
+function rowsForPrincipal(table: string, rows: Record<string, any>[], principal: any, service: boolean): Record<string, any>[] {
+  if (service || isAdminLike(String(principal?.role || '')) || String(principal?.role || '') === 'MANAGER') return rows;
+  if (String(principal?.role || '') !== 'CASHIER') return rows;
+  if (table === 'shifts') {
+    return rows.map(row => Object.fromEntries(
+      Object.entries(row).filter(([key]) => CASHIER_SAFE_SHIFT_FIELDS.has(key))
+    ));
+  }
+  return rows;
+}
+
+function redactRows(table: string, rows: Record<string, any>[], principal?: any, service = false): Record<string, any>[] {
+  const visibleRows = rowsForPrincipal(table, rows, principal, service);
+  if (table === 'users') return visibleRows.map(row => {
     const out = { ...row };
     delete out.password;
     delete out.pin;
     delete out[LEGACY_SCOPE_COLUMN];
     return out;
   });
-  return rows.map(row => {
+  return visibleRows.map(row => {
     const out = { ...row };
     if (table === 'settings') {
       delete out.mpesaConsumerKey;
@@ -569,6 +935,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     if (table === 'settings') await ensureSettingsSchema(env.DB);
     if (table === 'financialAccounts' && businessId) await ensurePickedCashAccount(env.DB, businessId);
     if (table === 'financialAccountAdjustments') await ensureFinancialAccountAdjustmentSchema(env.DB);
+    if (table === 'customers' || table === 'customerPayments' || table === 'salesInvoices' || table === 'transactions') await ensureCustomerDebtScopeColumns(env.DB);
+    if (table === 'products' || table === 'stockMovements' || table === 'stockAdjustmentRequests' || table === 'purchaseOrders' || table === 'creditNotes' || table === 'refunds' || table === 'expenses') await ensureInventoryIntegritySchema(env.DB);
     if (table === 'loginAttempts') {
       await env.DB.prepare('CREATE TABLE IF NOT EXISTS loginAttempts (id TEXT PRIMARY KEY, count INTEGER DEFAULT 0, lockedUntil INTEGER, updated_at INTEGER)').run();
     }
@@ -595,6 +963,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       if (table === 'billingPayments' && principal.role !== 'ADMIN' && principal.role !== 'ROOT' && !service) {
         return new Response(JSON.stringify({ error: 'Admin access required.' }), { status: 403, headers: jsonHeaders() });
       }
+      if (!await canReadTableDataByPolicy(env.DB, businessId, principal, service, table)) {
+        return new Response(JSON.stringify([]), { headers: jsonHeaders() });
+      }
 
       let results: any[] = [];
       if (table === 'users' && !isAdminLike(principal.role)) {
@@ -613,7 +984,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         const query = await env.DB.prepare(`SELECT * FROM ${table} WHERE businessId = ?`).bind(businessId).all();
         results = (query.results as any[]) || [];
       }
-      return new Response(JSON.stringify(redactRows(table, results.map(deserializeRow))), { headers: jsonHeaders() });
+      return new Response(JSON.stringify(redactRows(table, results.map(deserializeRow), principal, service)), { headers: jsonHeaders() });
     }
 
     if (request.method === 'POST') {
@@ -633,6 +1004,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
       if (table === 'loginAttempts' && principal.role !== 'ROOT' && !service) {
         return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });
+      }
+
+      const domainWriteMessage = domainApiWriteMessage(table);
+      if (domainWriteMessage) {
+        return new Response(JSON.stringify({ error: domainWriteMessage }), { status: 409, headers: jsonHeaders() });
       }
 
       if (!canWriteTable(principal.role, table, service)) {
@@ -688,6 +1064,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             service,
           }, items);
         }
+        if (HR_TABLES.has(table)) {
+          await hardenHrWrites(env.DB, businessId!, table, items);
+        }
       } catch (err: any) {
         const status = err instanceof PolicyError ? err.status : 400;
         return new Response(JSON.stringify({ error: err?.message || 'Request was rejected.' }), { status, headers: jsonHeaders() });
@@ -701,7 +1080,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       const sql = `INSERT OR REPLACE INTO ${table} (${cols.map(c => '"' + c + '"').join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
       const stmt = env.DB.prepare(sql);
       const batch = items.map(item => stmt.bind(...cols.map(col => serializeValue(item[col]))));
-      await env.DB.batch([...batch, ...sideEffects]);
+      try {
+        await env.DB.batch([...batch, ...sideEffects]);
+      } catch (err: any) {
+        const message = String(err?.message || '');
+        if (table === 'transactions' && message.includes('Insufficient stock')) {
+          return new Response(JSON.stringify({ error: 'Insufficient stock for one or more sale items.' }), { status: 409, headers: jsonHeaders() });
+        }
+        throw err;
+      }
       return new Response(JSON.stringify({ success: true, count: items.length }), { headers: jsonHeaders() });
     }
 
@@ -713,13 +1100,25 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       }
       if (!id) return new Response(JSON.stringify({ error: 'ID required for DELETE' }), { status: 400, headers: jsonHeaders() });
 
+      if (table === 'customerPayments') {
+        return new Response(JSON.stringify({ error: 'Customer payments cannot be deleted from the generic data API.' }), { status: 409, headers: jsonHeaders() });
+      }
+      if (table === 'salesTills') {
+        return new Response(JSON.stringify({ error: 'Sales tills cannot be deleted from the generic data API.' }), { status: 409, headers: jsonHeaders() });
+      }
+      const domainWriteMessage = domainApiWriteMessage(table);
+      if (domainWriteMessage) {
+        return new Response(JSON.stringify({ error: domainWriteMessage }), { status: 409, headers: jsonHeaders() });
+      }
       if (!service && COMMAND_ONLY_WRITE_TABLES.has(table)) {
         return new Response(JSON.stringify({ error: `Deletes from ${table} must use the domain API.` }), { status: 409, headers: jsonHeaders() });
       }
 
       if (table === 'businesses') {
         if (principal.role !== 'ROOT' && !service) return new Response(JSON.stringify({ error: 'Root access required' }), { status: 403, headers: jsonHeaders() });
-        const cascadeTables = Array.from(ALLOWED_TABLES).filter(t => !UNSCOPED_TABLES.has(t) && t !== 'system');
+        await ensureCoreSchema(env.DB);
+        const cascadeTables = Array.from(new Set([...ALLOWED_TABLES, ...HIDDEN_BUSINESS_TABLES]))
+          .filter(t => !UNSCOPED_TABLES.has(t) && t !== 'system');
         const batch = cascadeTables.map(t => env.DB.prepare(`DELETE FROM ${t} WHERE businessId = ?`).bind(id));
         batch.push(env.DB.prepare('DELETE FROM businesses WHERE id = ?').bind(id));
         await env.DB.batch(batch);
@@ -746,6 +1145,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
         if (table === 'financialAccounts') {
           return new Response(JSON.stringify({ error: 'The Main account is built in and cannot be deleted.' }), { status: 409, headers: jsonHeaders() });
+        }
+        if (table === 'hrStaff') {
+          const row = await env.DB.prepare(`
+            SELECT
+              (SELECT COUNT(*) FROM hrStaffDocuments WHERE businessId = ? AND staffId = ?) +
+              (SELECT COUNT(*) FROM hrAttendance WHERE businessId = ? AND staffId = ?) +
+              (SELECT COUNT(*) FROM hrPayrollAdjustments WHERE businessId = ? AND staffId = ?) AS count
+          `).bind(businessId, id, businessId, id, businessId, id).first<any>();
+          if (Number(row?.count || 0) > 0) {
+            return new Response(JSON.stringify({ error: 'Staff has HR history. Delete related HR records first or change status to Exited.' }), { status: 409, headers: jsonHeaders() });
+          }
         }
         if (table === 'users' && !service && principal.role !== 'ROOT') {
           if (id === principal.userId) {

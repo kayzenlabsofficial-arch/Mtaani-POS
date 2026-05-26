@@ -3,6 +3,7 @@ import { Ban, CircleDollarSign, Minus, Package, Plus, ScanBarcode, Search, Shopp
 import type { CartItem } from '../../store';
 import { isBundleProduct } from '../../utils/bundleInventory';
 import { expiryBadgeClass, getExpiryInfo } from '../../utils/expiry';
+import { isLowStockProduct } from '../../utils/inventoryIntegrity';
 import { productDiscountLabel, productSalePrice, productUnitDiscount } from '../../utils/productPricing';
 
 export const MaterialIcon = ({ name, className = '', style = {} }: { name: string; className?: string; style?: React.CSSProperties }) => {
@@ -28,7 +29,7 @@ export const MaterialIcon = ({ name, className = '', style = {} }: { name: strin
 export function ProductTile({ product, onAdd, recentlyAdded }: { key?: React.Key; product: any; onAdd: (product: any) => void; recentlyAdded: boolean }) {
   const stock = product.stockQuantity || 0;
   const isOut = stock <= 0;
-  const isLow = !isOut && stock <= (product.reorderPoint || 5);
+  const isLow = isLowStockProduct(product);
   const expiry = getExpiryInfo(product);
   const salePrice = productSalePrice(product);
   const discountLabel = productDiscountLabel(product);

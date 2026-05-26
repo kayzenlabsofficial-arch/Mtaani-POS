@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { DEFAULT_SHOP_ID } from '../inventoryIntegrity';
 
 interface Env {
   DB: D1Database;
@@ -10,7 +11,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -51,7 +52,7 @@ async function salesCount(db: D1Database, businessId: string, start: number, end
         WHERE businessId = ?
           AND timestamp >= ?
           AND timestamp < ?
-          AND UPPER(COALESCE(status, '')) NOT IN ('VOIDED', 'QUOTE')
+          AND UPPER(COALESCE(status, '')) NOT IN ('VOIDED', 'QUOTE', 'REFUNDED')
       `,
       [businessId, start, end],
     ),
@@ -72,18 +73,19 @@ async function salesCount(db: D1Database, businessId: string, start: number, end
   return Number(transactions?.count || 0) + Number(invoices?.count || 0);
 }
 
-async function expenseTotal(db: D1Database, businessId: string, start: number, end: number) {
+async function expenseTotal(db: D1Database, businessId: string, shopId: string, start: number, end: number) {
   const row = await safeFirst<{ total: number }>(
     db,
     `
       SELECT COALESCE(SUM(amount), 0) AS total
       FROM expenses
       WHERE businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
         AND timestamp >= ?
         AND timestamp < ?
-        AND UPPER(COALESCE(status, '')) != 'REJECTED'
+        AND UPPER(COALESCE(status, 'APPROVED')) = 'APPROVED'
     `,
-    [businessId, start, end],
+    [businessId, DEFAULT_SHOP_ID, shopId, start, end],
   );
   return Number(row?.total || 0);
 }
@@ -130,7 +132,7 @@ async function lowStockCount(db: D1Database, businessId: string) {
         ? Math.max(0, Math.min(...bundleRows.map(row => Math.floor(Number(productStock.get(row.id) || 0) / row.quantity))))
         : 0;
     }
-    return stock <= Number(product.reorderPoint || 5);
+    return stock > 0 && stock <= Number(product.reorderPoint || 5);
   }).length;
 }
 
@@ -152,20 +154,22 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const todayStart = safeDayStart(url.searchParams.get('todayStart'));
   const todayEnd = todayStart + DAY_MS;
   const yesterdayStart = todayStart - DAY_MS;
+  const shopId = String(request.headers.get('X-Shop-ID') || url.searchParams.get('shopId') || DEFAULT_SHOP_ID).trim() || DEFAULT_SHOP_ID;
 
   const [lowStock, customersServed, previousCustomersServed, totalExpenses, previousExpenses] = await Promise.all([
     lowStockCount(env.DB, businessId),
     salesCount(env.DB, businessId, todayStart, todayEnd),
     salesCount(env.DB, businessId, yesterdayStart, todayStart),
-    expenseTotal(env.DB, businessId, todayStart, todayEnd),
-    expenseTotal(env.DB, businessId, yesterdayStart, todayStart),
+    expenseTotal(env.DB, businessId, shopId, todayStart, todayEnd),
+    expenseTotal(env.DB, businessId, shopId, yesterdayStart, todayStart),
   ]);
+  const canReturnExpenseTotals = auth.service || ['ROOT', 'ADMIN', 'MANAGER'].includes(String(auth.principal.role || '').toUpperCase());
 
   return json({
     lowStockCount: Number(lowStock || 0),
     customersServed,
     previousCustomersServed,
-    totalExpenses,
-    previousExpenses,
+    totalExpenses: canReturnExpenseTotals ? totalExpenses : 0,
+    previousExpenses: canReturnExpenseTotals ? previousExpenses : 0,
   });
 };

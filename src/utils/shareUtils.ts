@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { lineDiscountAmount, lineNetAmount, transactionOriginalNetTotal } from './posMoney';
+import { customerStatementCreditAmount } from './reportAnalytics';
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
 const M = 14;          // page margin mm
@@ -1165,7 +1166,7 @@ function buildPDF(record: any, supplier?: any, bizName?: string, location?: stri
   switch (record?.recordType) {
     case 'SALE':             return buildReceipt(record, bizName, location);
     case 'REFUND':           return buildRefundPDF(record, bizName, location);
-    case 'EXPENSE':          return buildReceipt(record, bizName, location); // fallback or buildExpense with location
+    case 'EXPENSE':          return buildExpense(record, bizName);
     case 'SALES_INVOICE':    return buildSalesInvoicePDF(record, bizName, location);
     case 'PURCHASE_ORDER':   return buildPO(record, supplier, bizName);
     case 'SUPPLIER_PAYMENT': return buildRemittance(record, supplier?.company || supplier, bizName);
@@ -1251,10 +1252,7 @@ export async function generateAndDownloadCustomerStatement(customer: any, sales:
   y = hLine(doc, y + 2);
 
   const creditAmount = (sale: any) => {
-    if (sale.recordType === 'SALES_INVOICE') return safe(sale.total);
-    if (sale.paymentMethod === 'CREDIT') return transactionOriginalNetTotal(sale);
-    if (sale.paymentMethod === 'SPLIT' && sale.splitPayments?.secondaryMethod === 'CREDIT') return safe(sale.splitPayments.secondaryAmount);
-    return 0;
+    return customerStatementCreditAmount(sale);
   };
   const rows = [
     ...(sales || []).map(sale => [

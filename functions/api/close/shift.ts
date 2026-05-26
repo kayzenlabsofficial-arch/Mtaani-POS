@@ -1,5 +1,7 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { DEFAULT_SHOP_ID } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
+import { calculateServerCloseReportTotals } from './reportMath';
 
 interface Env {
   DB: D1Database;
@@ -10,7 +12,7 @@ const CLOSE_SHIFT_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER', 'CASHIER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -19,45 +21,6 @@ function json(data: unknown, status = 200) {
 function n(value: unknown, fallback = 0) { const x = Number(value); return Number.isFinite(x) ? x : fallback; }
 function s(value: unknown, max = 160) { return String(value ?? '').trim().slice(0, max); }
 function nonNegative(value: unknown) { return Math.max(0, n(value)); }
-
-function parseMaybeJson(value: unknown): any {
-  if (!value) return null;
-  if (typeof value !== 'string') return value;
-  try { return JSON.parse(value); } catch { return null; }
-}
-
-function splitDetails(record: any) {
-  return parseMaybeJson(record?.splitPayments) || parseMaybeJson(record?.splitData)?.splitPayments || parseMaybeJson(record?.splitData) || null;
-}
-
-function transactionNetTotal(record: any) {
-  const subtotal = n(record?.subtotal);
-  const discount = Math.max(0, n(record?.discountAmount ?? record?.discount));
-  if (subtotal > 0 && discount > 0) return Math.max(0, Math.round((subtotal - discount) * 100) / 100);
-  return n(record?.total);
-}
-
-function paymentAmount(record: any, method: 'CASH' | 'MPESA' | 'PDQ' | 'CREDIT') {
-  const paymentMethod = String(record?.paymentMethod || '').toUpperCase();
-  if (paymentMethod === method) return transactionNetTotal(record);
-  if (paymentMethod !== 'SPLIT') return 0;
-  const split = splitDetails(record);
-  if (method === 'CASH') return n(split?.cashAmount);
-  return String(split?.secondaryMethod || '').toUpperCase() === method ? n(split?.secondaryAmount) : 0;
-}
-
-function recordInShift(record: any, since: number, until: number, shiftId?: string | null) {
-  if (shiftId && record?.shiftId) return String(record.shiftId) === String(shiftId);
-  const ts = n(record?.timestamp || record?.issueDate);
-  return ts >= since && ts <= until;
-}
-
-function cashRefundAmount(record: any) {
-  if (String(record?.status || 'APPROVED').toUpperCase() === 'REJECTED') return 0;
-  const source = String(record?.source || '').toUpperCase();
-  if (source === 'TILL' || source === 'MIXED') return n(record?.cashAmount ?? record?.amount);
-  return n(record?.cashAmount);
-}
 
 function ownsShift(shift: any, userId: string, userName: string) {
   const cashierId = s(shift?.cashierId, 160);
@@ -101,6 +64,7 @@ const END_OF_DAY_REPORTS_SCHEMA = `
       cashierId TEXT,
       cashierName TEXT NOT NULL,
       closeBreakdown TEXT,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -122,6 +86,7 @@ const SHIFTS_SCHEMA = `
       closeBreakdown TEXT,
       status TEXT NOT NULL,
       lastSyncAt INTEGER,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -155,6 +120,7 @@ const END_OF_DAY_REPORT_COLUMNS = [
   'cashierId',
   'cashierName',
   'closeBreakdown',
+  'shopId',
   'businessId',
   'updated_at',
 ];
@@ -174,6 +140,7 @@ const SHIFT_COLUMNS = [
   'closeBreakdown',
   'status',
   'lastSyncAt',
+  'shopId',
   'businessId',
   'updated_at',
 ];
@@ -241,6 +208,7 @@ async function ensureCloseShiftSchema(db: D1Database) {
     'ALTER TABLE endOfDayReports ADD COLUMN remittanceTotal REAL',
     'ALTER TABLE endOfDayReports ADD COLUMN cashierId TEXT',
     'ALTER TABLE endOfDayReports ADD COLUMN closeBreakdown TEXT',
+    'ALTER TABLE endOfDayReports ADD COLUMN shopId TEXT',
     'ALTER TABLE endOfDayReports ADD COLUMN businessId TEXT',
     'ALTER TABLE endOfDayReports ADD COLUMN updated_at INTEGER',
     'ALTER TABLE shifts ADD COLUMN lastSyncAt INTEGER',
@@ -252,8 +220,20 @@ async function ensureCloseShiftSchema(db: D1Database) {
     'ALTER TABLE shifts ADD COLUMN expectedCash REAL',
     'ALTER TABLE shifts ADD COLUMN cashVariance REAL',
     'ALTER TABLE shifts ADD COLUMN closeBreakdown TEXT',
+    'ALTER TABLE shifts ADD COLUMN shopId TEXT',
     'ALTER TABLE shifts ADD COLUMN businessId TEXT',
     'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE salesInvoices ADD COLUMN shiftId TEXT',
+    'ALTER TABLE salesInvoices ADD COLUMN shopId TEXT',
+    `UPDATE shifts SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE endOfDayReports SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    'DROP INDEX IF EXISTS idx_shifts_one_open_till',
+    'DROP INDEX IF EXISTS idx_shifts_one_open_cashier',
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_open_till ON shifts(businessId, COALESCE(NULLIF(shopId, ''), 'single-shop'), tillId) WHERE UPPER(COALESCE(status, '')) = 'OPEN' AND COALESCE(tillId, '') != ''",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_open_cashier ON shifts(businessId, COALESCE(NULLIF(shopId, ''), 'single-shop'), cashierId) WHERE UPPER(COALESCE(status, '')) = 'OPEN' AND COALESCE(cashierId, '') != ''",
+    'CREATE INDEX IF NOT EXISTS idx_endofday_business_shop_timestamp ON endOfDayReports(businessId, shopId, timestamp)',
+    'CREATE INDEX IF NOT EXISTS idx_shifts_business_shop_status ON shifts(businessId, shopId, status)',
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_salesInvoices_business_number ON salesInvoices(businessId, invoiceNumber)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
@@ -266,37 +246,37 @@ async function pendingCount(db: D1Database, label: string, sql: string, binds: u
   return n(row?.count) > 0 ? label : null;
 }
 
-async function pendingShiftApprovals(db: D1Database, businessId: string, shiftId: string, startTime: number, until: number) {
+async function pendingShiftApprovals(db: D1Database, businessId: string, shopId: string, shiftId: string, startTime: number, until: number) {
   const checks = await Promise.all([
     pendingCount(
       db,
       'expenses',
-      `SELECT COUNT(*) AS count FROM expenses WHERE businessId = ? AND status = 'PENDING' AND (shiftId = ? OR (COALESCE(shiftId, '') = '' AND timestamp >= ? AND timestamp <= ?))`,
-      [businessId, shiftId, startTime, until],
+      `SELECT COUNT(*) AS count FROM expenses WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND status = 'PENDING' AND (shiftId = ? OR (COALESCE(shiftId, '') = '' AND timestamp >= ? AND timestamp <= ?))`,
+      [businessId, DEFAULT_SHOP_ID, shopId, shiftId, startTime, until],
     ),
     pendingCount(
       db,
       'cash picks',
-      `SELECT COUNT(*) AS count FROM cashPicks WHERE businessId = ? AND status = 'PENDING' AND (shiftId = ? OR (COALESCE(shiftId, '') = '' AND timestamp >= ? AND timestamp <= ?))`,
-      [businessId, shiftId, startTime, until],
+      `SELECT COUNT(*) AS count FROM cashPicks WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND status = 'PENDING' AND (shiftId = ? OR (COALESCE(shiftId, '') = '' AND timestamp >= ? AND timestamp <= ?))`,
+      [businessId, DEFAULT_SHOP_ID, shopId, shiftId, startTime, until],
     ),
     pendingCount(
       db,
       'refund approvals',
-      `SELECT COUNT(*) AS count FROM transactions WHERE businessId = ? AND status = 'PENDING_REFUND' AND (shiftId = ? OR (COALESCE(shiftId, '') = '' AND timestamp >= ? AND timestamp <= ?))`,
-      [businessId, shiftId, startTime, until],
+      `SELECT COUNT(*) AS count FROM transactions WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND status = 'PENDING_REFUND' AND (shiftId = ? OR (COALESCE(shiftId, '') = '' AND timestamp >= ? AND timestamp <= ?))`,
+      [businessId, DEFAULT_SHOP_ID, shopId, shiftId, startTime, until],
     ),
     pendingCount(
       db,
       'purchase orders',
-      `SELECT COUNT(*) AS count FROM purchaseOrders WHERE businessId = ? AND approvalStatus = 'PENDING' AND orderDate >= ? AND orderDate <= ?`,
-      [businessId, startTime, until],
+      `SELECT COUNT(*) AS count FROM purchaseOrders WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND approvalStatus = 'PENDING' AND orderDate >= ? AND orderDate <= ?`,
+      [businessId, DEFAULT_SHOP_ID, shopId, startTime, until],
     ),
     pendingCount(
       db,
       'stock adjustments',
-      `SELECT COUNT(*) AS count FROM stockAdjustmentRequests WHERE businessId = ? AND status = 'PENDING' AND timestamp >= ? AND timestamp <= ?`,
-      [businessId, startTime, until],
+      `SELECT COUNT(*) AS count FROM stockAdjustmentRequests WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND status = 'PENDING' AND timestamp >= ? AND timestamp <= ?`,
+      [businessId, DEFAULT_SHOP_ID, shopId, startTime, until],
     ),
   ]);
   return checks.filter(Boolean) as string[];
@@ -305,6 +285,7 @@ async function pendingShiftApprovals(db: D1Database, businessId: string, shiftId
 async function buildServerShiftReport(
   db: D1Database,
   businessId: string,
+  shopId: string,
   shiftId: string,
   startTime: number,
   until: number,
@@ -315,9 +296,9 @@ async function buildServerShiftReport(
   const shift = await db.prepare(`
     SELECT *
     FROM shifts
-    WHERE id = ? AND businessId = ?
+    WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
     LIMIT 1
-  `).bind(shiftId, businessId).first<any>().catch(() => null);
+  `).bind(shiftId, businessId, DEFAULT_SHOP_ID, shopId).first<any>().catch(() => null);
 
   if (shift && !service && String(principal?.role || '').toUpperCase() === 'CASHIER') {
     const userId = s(principal?.userId, 160);
@@ -338,52 +319,48 @@ async function buildServerShiftReport(
     supplierPayments,
     customerPayments,
   ] = await Promise.all([
-    safeRows(db, `SELECT total, subtotal, discountAmount, discount, tax, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
-    safeRows(db, `SELECT total, subtotal, tax, balance, issueDate, timestamp, status, shiftId FROM salesInvoices WHERE businessId = ? AND COALESCE(issueDate, timestamp, 0) >= ? AND COALESCE(issueDate, timestamp, 0) <= ?`, [businessId, since, until]),
-    safeRows(db, `SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
-    safeRows(db, `SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
-    safeRows(db, `SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
-    safeRows(db, `SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
-    safeRows(db, `SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT total, subtotal, discountAmount, discount, tax, items, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
+    safeRows(db, `SELECT total, subtotal, tax, balance, issueDate, timestamp, status, shiftId FROM salesInvoices WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND COALESCE(issueDate, timestamp, 0) >= ? AND COALESCE(issueDate, timestamp, 0) <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
+    safeRows(db, `SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
   ]);
 
-  const txs = transactions.filter(row => recordInShift(row, since, until, shiftId) && !['VOIDED', 'QUOTE'].includes(String(row.status || '').toUpperCase()));
-  const invoiceRows = invoices.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || '').toUpperCase() !== 'CANCELLED');
-  const expenseRows = expenses.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED');
-  const pickRows = picks.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED');
-  const refundRows = refunds.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || 'APPROVED').toUpperCase() !== 'REJECTED');
-  const supplierRows = supplierPayments.filter(row => recordInShift(row, since, until, shiftId));
-  const customerRows = customerPayments.filter(row => recordInShift(row, since, until, shiftId));
-
   const openingCash = nonNegative(shift?.openingCash ?? clientReport?.openingCash);
-  const cashSales = txs.reduce((sum, row) => sum + paymentAmount(row, 'CASH'), 0);
-  const mpesaSales = txs.reduce((sum, row) => sum + paymentAmount(row, 'MPESA'), 0);
-  const pdqSales = txs.reduce((sum, row) => sum + paymentAmount(row, 'PDQ'), 0);
-  const customerCashPayments = customerRows
-    .filter(row => String(row.paymentMethod || '').toUpperCase() === 'CASH')
-    .reduce((sum, row) => sum + n(row.amount), 0);
-  const customerMpesaPayments = customerRows
-    .filter(row => String(row.paymentMethod || '').toUpperCase() === 'MPESA')
-    .reduce((sum, row) => sum + n(row.amount), 0);
-  const grossSales = txs.reduce((sum, row) => sum + n(row.subtotal ?? row.total), 0)
-    + invoiceRows.reduce((sum, row) => sum + n(row.subtotal ?? row.total), 0);
-  const totalSales = txs.reduce((sum, row) => sum + transactionNetTotal(row), 0)
-    + invoiceRows.reduce((sum, row) => sum + n(row.total), 0);
-  const taxTotal = txs.reduce((sum, row) => sum + n(row.tax), 0)
-    + invoiceRows.reduce((sum, row) => sum + n(row.tax), 0);
-  const totalExpenses = expenseRows
-    .filter(row => String(row.source || '').toUpperCase() === 'TILL')
-    .reduce((sum, row) => sum + n(row.amount), 0);
-  const supplierPaymentsTotal = supplierRows
-    .filter(row => String(row.source || '').toUpperCase() === 'TILL')
-    .reduce((sum, row) => sum + n(row.amount), 0);
-  const remittanceTotal = totalExpenses + supplierPaymentsTotal;
-  const totalPicks = pickRows.reduce((sum, row) => sum + n(row.amount), 0);
-  const totalRefunds = refundRows.reduce((sum, row) => sum + n(row.amount), 0);
-  const cashRefunds = refundRows.reduce((sum, row) => sum + cashRefundAmount(row), 0);
+  const closeTotals = calculateServerCloseReportTotals({
+    transactions,
+    invoices,
+    expenses,
+    picks,
+    refunds,
+    supplierPayments,
+    customerPayments,
+    openingCash,
+    since,
+    until,
+    shiftId,
+  });
+  const txs = closeTotals.txs;
+  const invoiceRows = closeTotals.invoices;
+  const cashSales = closeTotals.cashSales;
+  const mpesaSales = closeTotals.mpesaSales;
+  const pdqSales = closeTotals.pdqSales;
+  const customerCashPayments = closeTotals.customerCashPayments;
+  const customerMpesaPayments = closeTotals.customerMpesaPayments;
+  const grossSales = closeTotals.grossSales;
+  const totalSales = closeTotals.totalSales;
+  const taxTotal = closeTotals.taxTotal;
+  const totalExpenses = closeTotals.totalExpenses;
+  const supplierPaymentsTotal = closeTotals.supplierPaymentsTotal;
+  const remittanceTotal = closeTotals.remittanceTotal;
+  const totalPicks = closeTotals.totalPicks;
+  const totalRefunds = closeTotals.totalRefunds;
+  const cashRefunds = closeTotals.cashRefunds;
   const closingCash = nonNegative(clientReport?.closingCash ?? clientReport?.reportedCash);
-  const expectedBeforePicks = Math.round((openingCash + cashSales + customerCashPayments - remittanceTotal - cashRefunds) * 100) / 100;
-  const expectedCash = Math.max(0, Math.round((expectedBeforePicks - totalPicks) * 100) / 100);
+  const expectedBeforePicks = closeTotals.expectedBeforePicks;
+  const expectedCash = closeTotals.expectedCash;
   const reportedCash = nonNegative(clientReport?.reportedCash ?? closingCash);
   const difference = Math.round((reportedCash + totalPicks - expectedBeforePicks) * 100) / 100;
 

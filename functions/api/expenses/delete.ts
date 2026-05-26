@@ -1,5 +1,6 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
+import { canPerformServerAction } from '../settingsPolicy';
 
 interface Env {
   DB: D1Database;
@@ -55,6 +56,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!businessId || !expenseId) return json({ error: 'Business and expense are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
+    }
+    if (!await canPerformServerAction(env.DB, businessId, auth.principal, auth.service, 'expense.delete')) {
+      return json({ error: 'Expense deletion is locked for this staff role.' }, 403);
     }
 
     await ensureSchema(env.DB);

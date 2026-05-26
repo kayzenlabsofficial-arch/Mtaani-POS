@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { ensureInventoryIntegritySchema, inventoryShopIdFromRequest } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -11,13 +12,14 @@ type ReceiveLine = {
   receivedQuantity: number;
   unitCost: number;
   sellingPrice?: number;
+  expiryDate?: number | null;
 };
 
 const RECEIVER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -72,6 +74,8 @@ async function ensureSchema(db: D1Database) {
       reference TEXT,
       businessId TEXT,
       shiftId TEXT,
+      shopId TEXT,
+      expiryDate INTEGER,
       updated_at INTEGER
     )
   `).run();
@@ -91,7 +95,13 @@ async function ensureSchema(db: D1Database) {
     )
   `).run();
   try { await db.prepare('ALTER TABLE purchaseOrders ADD COLUMN receivedBy TEXT').run(); } catch {}
+  try { await db.prepare('ALTER TABLE purchaseOrders ADD COLUMN shopId TEXT').run(); } catch {}
   try { await db.prepare('ALTER TABLE products ADD COLUMN supplierIds TEXT').run(); } catch {}
+  try { await db.prepare('ALTER TABLE products ADD COLUMN expiryTracking INTEGER DEFAULT 0').run(); } catch {}
+  try { await db.prepare('ALTER TABLE products ADD COLUMN expiryDate INTEGER').run(); } catch {}
+  try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN shopId TEXT').run(); } catch {}
+  try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN expiryDate INTEGER').run(); } catch {}
+  await ensureInventoryIntegritySchema(db);
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -107,6 +117,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
+    const shopId = inventoryShopIdFromRequest(request, body);
     const purchaseOrderId = String(body?.purchaseOrderId || body?.id || '').trim();
     const invoiceNumber = trimText(body?.invoiceNumber, 80);
     const receivedBy = trimText(body?.receivedBy || auth.principal.userName || 'Staff', 120) || 'Staff';
@@ -125,6 +136,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       LIMIT 1
     `).bind(purchaseOrderId, businessId).first<any>();
     if (!po) throw new PolicyError('Purchase order was not found.', 404);
+    if (po.shopId && String(po.shopId) !== shopId) throw new PolicyError('Purchase order was not found in this shop.', 404);
     if (po.approvalStatus !== 'APPROVED') throw new PolicyError('Purchase order must be approved before receiving.', 409);
     if (po.status === 'RECEIVED') throw new PolicyError('Purchase order has already been received.', 409);
 
@@ -160,10 +172,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const sellingPrice = raw?.sellingPrice === '' || raw?.sellingPrice === null || raw?.sellingPrice === undefined
         ? undefined
         : roundMoney(asNumber(raw?.sellingPrice));
+      const expiryDate = raw?.expiryDate === '' || raw?.expiryDate === null || raw?.expiryDate === undefined
+        ? null
+        : Math.max(0, asNumber(raw?.expiryDate));
       if (receivedQuantity < 0 || unitCost < 0 || (sellingPrice !== undefined && sellingPrice < 0)) {
         throw new PolicyError('Received quantities and prices cannot be negative.', 400);
       }
-      submittedLines.set(productId, { productId, receivedQuantity, unitCost, sellingPrice });
+      if (raw?.expiryDate !== undefined && raw?.expiryDate !== null && raw?.expiryDate !== '' && !expiryDate) {
+        throw new PolicyError('Enter a valid expiry date for received stock.', 400);
+      }
+      submittedLines.set(productId, { productId, receivedQuantity, unitCost, sellingPrice, expiryDate });
     }
 
     const updatedItems = savedItems.map(item => {
@@ -173,6 +191,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         ...item,
         receivedQuantity: submitted ? submitted.receivedQuantity : asNumber(item?.receivedQuantity),
         unitCost: submitted ? submitted.unitCost : roundMoney(asNumber(item?.unitCost)),
+        expiryDate: submitted ? submitted.expiryDate ?? null : item?.expiryDate ?? null,
       };
     });
 
@@ -189,12 +208,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
       const productId = String(item.productId || '').trim();
       const product = await env.DB.prepare(`
-        SELECT id, name, stockQuantity, sellingPrice, supplierIds, discountType, discountValue
+        SELECT id, name, stockQuantity, sellingPrice, supplierIds, discountType, discountValue, expiryTracking, expiryDate, shopId
         FROM products
         WHERE id = ? AND businessId = ?
         LIMIT 1
       `).bind(productId, businessId).first<any>();
       if (!product) throw new PolicyError(`Product "${item.name || productId}" was not found.`, 404);
+      if (product.shopId && String(product.shopId) !== shopId) throw new PolicyError(`Product "${product.name}" was not found in this shop.`, 404);
 
       const submitted = submittedLines.get(productId);
       const nextSellingPrice = submitted?.sellingPrice && submitted.sellingPrice > 0
@@ -205,6 +225,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         throw new PolicyError(`Selling price for "${product.name}" cannot be below buying price unless the product has a discount.`, 400);
       }
       const nextSupplierIds = Array.from(new Set([...parseSupplierIds(product.supplierIds), po.supplierId]));
+      const submittedExpiry = submitted?.expiryDate ?? null;
+      const existingExpiryDate = asNumber(product.expiryDate);
+      const nextExpiryDate = submittedExpiry
+        ? existingExpiryDate > 0 ? Math.min(existingExpiryDate, submittedExpiry) : submittedExpiry
+        : null;
+      const expiryFields = nextExpiryDate ? ', expiryTracking = 1, expiryDate = ?' : '';
 
       statements.push(
         env.DB.prepare(`
@@ -214,11 +240,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
               sellingPrice = ?,
               supplierIds = ?,
               updated_at = ?
+              ${expiryFields}
           WHERE id = ? AND businessId = ?
-        `).bind(quantity, roundMoney(asNumber(item.unitCost)), nextSellingPrice, JSON.stringify(nextSupplierIds), now, productId, businessId),
+        `).bind(...(nextExpiryDate
+          ? [quantity, roundMoney(asNumber(item.unitCost)), nextSellingPrice, JSON.stringify(nextSupplierIds), now, nextExpiryDate, productId, businessId]
+          : [quantity, roundMoney(asNumber(item.unitCost)), nextSellingPrice, JSON.stringify(nextSupplierIds), now, productId, businessId])),
         env.DB.prepare(`
-          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, expiryDate, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
           productId,
@@ -228,6 +257,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           `${po.poNumber || po.id} Inv:${invoiceNumber}`,
           businessId,
           body?.shiftId || null,
+          shopId,
+          submittedExpiry,
           now,
         )
       );
@@ -244,6 +275,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
             receivedDate = ?,
             invoiceNumber = ?,
             receivedBy = ?,
+            shopId = COALESCE(NULLIF(shopId, ''), ?),
             updated_at = ?
         WHERE id = ? AND businessId = ?
       `).bind(
@@ -252,6 +284,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         now,
         invoiceNumber,
         receivedBy,
+        shopId,
         now,
         purchaseOrderId,
         businessId,
@@ -287,7 +320,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       receivedItemCount: updatedItems.filter(item => asNumber(item.receivedQuantity) > 0).length,
     });
   } catch (err: any) {
-    const status = err instanceof PolicyError ? err.status : 500;
-    return json({ error: err?.message || 'Could not receive purchase order.' }, status);
+    const message = String(err?.message || '');
+    const duplicateInvoice = message.includes('idx_purchaseOrders_supplier_invoice') || message.includes('supplierId') && message.includes('invoiceNumber');
+    const status = err instanceof PolicyError ? err.status : duplicateInvoice ? 409 : 500;
+    return json({ error: duplicateInvoice ? 'This supplier invoice number has already been received.' : err?.message || 'Could not receive purchase order.' }, status);
   }
 };

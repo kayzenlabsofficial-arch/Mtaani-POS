@@ -1,5 +1,7 @@
 import type { Principal } from '../authUtils';
+import { DEFAULT_SHOP_ID, ensureInventoryIntegritySchema } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
+import { canPerformServerAction } from '../settingsPolicy';
 
 type RefundLine = { productId: string; quantity: number };
 
@@ -78,6 +80,7 @@ export async function ensureRefundSchema(db: D1Database) {
       approvedBy TEXT,
       pendingRefundItems TEXT,
       shiftId TEXT,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -99,6 +102,7 @@ export async function ensureRefundSchema(db: D1Database) {
       expiryDate INTEGER,
       isBundle INTEGER DEFAULT 0,
       components TEXT,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -201,6 +205,7 @@ export async function ensureRefundSchema(db: D1Database) {
       reference TEXT,
       businessId TEXT,
       shiftId TEXT,
+      shopId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -209,17 +214,20 @@ export async function ensureRefundSchema(db: D1Database) {
     'ALTER TABLE transactions ADD COLUMN pendingRefundItems TEXT',
     'ALTER TABLE transactions ADD COLUMN businessId TEXT',
     'ALTER TABLE transactions ADD COLUMN shiftId TEXT',
+    'ALTER TABLE transactions ADD COLUMN shopId TEXT',
     'ALTER TABLE transactions ADD COLUMN updated_at INTEGER',
     'ALTER TABLE products ADD COLUMN businessId TEXT',
     'ALTER TABLE products ADD COLUMN expiryTracking INTEGER DEFAULT 0',
     'ALTER TABLE products ADD COLUMN expiryDate INTEGER',
     'ALTER TABLE products ADD COLUMN isBundle INTEGER DEFAULT 0',
     'ALTER TABLE products ADD COLUMN components TEXT',
+    'ALTER TABLE products ADD COLUMN shopId TEXT',
     'ALTER TABLE products ADD COLUMN updated_at INTEGER',
     'ALTER TABLE productIngredients ADD COLUMN businessId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN reference TEXT',
     'ALTER TABLE stockMovements ADD COLUMN businessId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN shopId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
     'ALTER TABLE financialAccounts ADD COLUMN accountNumber TEXT',
     'ALTER TABLE financialAccounts ADD COLUMN updated_at INTEGER',
@@ -252,6 +260,7 @@ export async function ensureRefundSchema(db: D1Database) {
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
+  await ensureInventoryIntegritySchema(db);
 }
 
 async function loadTransaction(db: D1Database, businessId: string, transactionId: string) {
@@ -293,14 +302,64 @@ function refundLinesFor(transaction: any, itemsToReturn?: RefundLine[]): RefundL
   return lines;
 }
 
-function refundAmountFor(transaction: any, lines: RefundLine[]) {
+export function refundAmountFor(transaction: any, lines: RefundLine[]) {
   const txItems = asArray(transaction.items);
-  const amount = lines.reduce((sum, line) => {
+  const grossRefundAmount = roundMoney(lines.reduce((sum, line) => {
+    const item = txItems.find(row => row.productId === line.productId);
+    return sum + (Math.max(0, asNumber(item?.snapshotPrice)) * line.quantity);
+  }, 0));
+  if (grossRefundAmount <= 0) return 0;
+
+  const directLineNetAmount = roundMoney(lines.reduce((sum, line) => {
     const item = txItems.find(row => row.productId === line.productId);
     const unitAmount = Math.max(0, asNumber(item?.snapshotPrice) - asNumber(item?.discountAmount));
     return sum + (unitAmount * line.quantity);
-  }, 0);
-  return roundMoney(Math.min(asNumber(transaction.total), amount || asNumber(transaction.total)));
+  }, 0));
+  const originalGross = originalGrossSubtotal(transaction);
+  const originalNet = originalNetTotal(transaction);
+  const itemDiscountTotal = transactionItemDiscountTotal(transaction);
+  const expectedDiscount = transactionExpectedDiscount(transaction);
+  const itemDiscountsCoverTransactionDiscount = itemDiscountTotal > 0 && itemDiscountTotal >= expectedDiscount - 0.01;
+  const proportionalNet = originalGross > 0
+    ? roundMoney(originalNet * Math.min(1, grossRefundAmount / originalGross))
+    : directLineNetAmount;
+  const amount = itemDiscountsCoverTransactionDiscount ? directLineNetAmount : proportionalNet;
+  return roundMoney(Math.min(originalNet, Math.max(0, amount)));
+}
+
+function lineGrossAmount(item: any, quantity = asNumber(item?.quantity)) {
+  return roundMoney(Math.max(0, asNumber(item?.snapshotPrice)) * Math.max(0, quantity));
+}
+
+function lineDiscountAmount(item: any, quantity = asNumber(item?.quantity)) {
+  const unitDiscount = Math.min(Math.max(0, asNumber(item?.snapshotPrice)), Math.max(0, asNumber(item?.discountAmount)));
+  return roundMoney(unitDiscount * Math.max(0, quantity));
+}
+
+function originalGrossSubtotal(transaction: any) {
+  const itemGross = roundMoney(asArray(transaction.items).reduce((sum, item) => sum + lineGrossAmount(item), 0));
+  return itemGross > 0 ? itemGross : roundMoney(Math.max(0, asNumber(transaction?.subtotal ?? transaction?.total)));
+}
+
+function transactionItemDiscountTotal(transaction: any) {
+  return roundMoney(asArray(transaction.items).reduce((sum, item) => sum + lineDiscountAmount(item), 0));
+}
+
+function transactionExpectedDiscount(transaction: any) {
+  const storedDiscount = Math.max(0, asNumber(transaction?.discountAmount ?? transaction?.discount));
+  const itemDiscount = transactionItemDiscountTotal(transaction);
+  return roundMoney(Math.max(storedDiscount, itemDiscount));
+}
+
+export function originalNetTotal(transaction: any) {
+  const subtotal = Math.max(0, asNumber(transaction?.subtotal));
+  const discount = transactionExpectedDiscount(transaction);
+  if (subtotal > 0 && discount > 0) return roundMoney(Math.max(0, subtotal - discount));
+  const itemNet = roundMoney(asArray(transaction.items).reduce((sum, item) => {
+    return sum + Math.max(0, lineGrossAmount(item) - lineDiscountAmount(item));
+  }, 0));
+  if (itemNet > 0) return itemNet;
+  return roundMoney(Math.max(0, asNumber(transaction?.total)));
 }
 
 function parseMaybeJson(value: unknown): any {
@@ -384,9 +443,9 @@ async function availableTillCashForShift(db: D1Database, businessId: string, shi
   ]);
 
   const txRows = transactions.filter(row => recordInShift(row, since, until, shiftId) && !['VOIDED', 'QUOTE'].includes(String(row.status || '').toUpperCase()));
-  const expenseRows = expenses.filter(row => recordInShift(row, since, until, shiftId) && String(row.source || '').toUpperCase() === 'TILL' && String(row.status || '').toUpperCase() !== 'REJECTED');
-  const pickRows = picks.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED');
-  const refundRows = refunds.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || 'APPROVED').toUpperCase() !== 'REJECTED');
+  const expenseRows = expenses.filter(row => recordInShift(row, since, until, shiftId) && String(row.source || 'TILL').toUpperCase() === 'TILL' && String(row.status || 'APPROVED').toUpperCase() === 'APPROVED');
+  const pickRows = picks.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || 'APPROVED').toUpperCase() === 'APPROVED');
+  const refundRows = refunds.filter(row => recordInShift(row, since, until, shiftId) && String(row.status || 'APPROVED').toUpperCase() === 'APPROVED');
   const supplierRows = supplierPayments.filter(row => recordInShift(row, since, until, shiftId) && String(row.source || '').toUpperCase() === 'TILL');
   const customerRows = customerPayments.filter(row => recordInShift(row, since, until, shiftId) && String(row.paymentMethod || '').toUpperCase() === 'CASH');
 
@@ -402,21 +461,39 @@ async function availableTillCashForShift(db: D1Database, businessId: string, shi
 
 function makeRefundNumber(now: number) {
   const day = new Date(now).toISOString().slice(2, 10).replace(/-/g, '');
-  return `REF-${day}-${String(now).slice(-5)}`;
+  return `REF-${day}-${String(now).slice(-5)}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
 }
 
-function refundDocumentItems(transaction: any, lines: RefundLine[]) {
+function refundDocumentItems(transaction: any, lines: RefundLine[], refundAmount: number) {
   const txItems = asArray(transaction.items);
-  return lines.map(line => {
+  const expectedDiscount = transactionExpectedDiscount(transaction);
+  const itemDiscountTotal = transactionItemDiscountTotal(transaction);
+  const itemDiscountsCoverTransactionDiscount = itemDiscountTotal > 0 && itemDiscountTotal >= expectedDiscount - 0.01;
+  const grossRefundTotal = roundMoney(lines.reduce((sum, line) => {
+    const item = txItems.find(row => row.productId === line.productId) || {};
+    return sum + lineGrossAmount(item, line.quantity);
+  }, 0));
+  const rows = lines.map(line => {
     const item = txItems.find(row => row.productId === line.productId) || {};
     const unitAmount = Math.max(0, asNumber(item.snapshotPrice) - asNumber(item.discountAmount));
+    const grossAmount = lineGrossAmount(item, line.quantity);
     return {
       productId: line.productId,
       name: trimText(item.name || line.productId, 160),
       quantity: line.quantity,
-      amount: roundMoney(unitAmount * line.quantity),
+      amount: itemDiscountsCoverTransactionDiscount
+        ? roundMoney(unitAmount * line.quantity)
+        : grossRefundTotal > 0
+          ? roundMoney(refundAmount * (grossAmount / grossRefundTotal))
+          : roundMoney(unitAmount * line.quantity),
     };
   });
+  const allocated = rows.reduce((sum, row) => sum + asNumber(row.amount), 0);
+  const drift = roundMoney(refundAmount - allocated);
+  if (rows.length > 0 && Math.abs(drift) >= 0.01) {
+    rows[rows.length - 1].amount = roundMoney(asNumber(rows[rows.length - 1].amount) + drift);
+  }
+  return rows;
 }
 
 function normalizeRefundLines(lines: RefundLine[]): RefundLine[] {
@@ -557,9 +634,13 @@ function auditStatement(db: D1Database, args: {
 export async function prepareRefundRequest(db: D1Database, args: {
   businessId: string;
   principal: Principal;
+  service?: boolean;
   transactionId: string;
   itemsToReturn?: RefundLine[];
 }) {
+  if (!await canPerformServerAction(db, args.businessId, args.principal, !!args.service, 'sale.refund.request')) {
+    throw new PolicyError('Refund requests are locked for this staff role.', 403);
+  }
   const tx = await loadTransaction(db, args.businessId, args.transactionId);
   if (tx.status === 'PENDING_REFUND') {
     const pendingLines = normalizeRefundLines(asArray(tx.pendingRefundItems));
@@ -678,8 +759,8 @@ export async function prepareRefundApproval(db: D1Database, args: {
     );
     statements.push(
       db.prepare(`
-        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         productId,
@@ -689,6 +770,7 @@ export async function prepareRefundApproval(db: D1Database, args: {
         `Return #${txRef}`,
         args.businessId,
         refundShift.id || null,
+        tx.shopId || DEFAULT_SHOP_ID,
         now,
       )
     );
@@ -705,7 +787,7 @@ export async function prepareRefundApproval(db: D1Database, args: {
   tx.pendingRefundItems = undefined;
   tx.approvedBy = trimText(args.approvedBy || args.principal.userName, 120);
   tx.updated_at = now;
-  const refundId = `refund_${tx.id}_${now}`;
+  const refundId = `refund_${tx.id}_${now}_${crypto.randomUUID().slice(0, 8)}`;
   const refundNumber = makeRefundNumber(now);
   const receiptNumber = trimText(tx.receiptNumber || tx.invoiceNumber || tx.id, 160);
   const refundDocument = {
@@ -717,7 +799,7 @@ export async function prepareRefundApproval(db: D1Database, args: {
     cashAmount: cashRefundAmount,
     paymentMethod: 'CASH',
     source: 'TILL',
-    items: refundDocumentItems(tx, lines),
+    items: refundDocumentItems(tx, lines, refundAmount),
     timestamp: now,
     cashierName: args.principal.userName || null,
     approvedBy: tx.approvedBy,

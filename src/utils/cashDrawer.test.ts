@@ -68,6 +68,35 @@ describe('cash drawer integrity', () => {
     expect(available.availableCashSales).toBe(190);
   });
 
+  it('does not display pending requests as cash already removed from the drawer', () => {
+    const drawer = calculateCashDrawer({
+      transactions: [],
+      expenses: [{ amount: 50, source: 'TILL', status: 'PENDING', timestamp: 1000, shiftId: 'shift-1' }],
+      cashPicks: [{ amount: 30, status: 'PENDING', timestamp: 1000, shiftId: 'shift-1' }],
+      refunds: [{ amount: 20, cashAmount: 20, source: 'TILL', status: 'PENDING', timestamp: 1000, shiftId: 'shift-1' }],
+      openingCash: 100,
+      since: 0,
+      shiftId: 'shift-1',
+    });
+
+    expect(drawer.tillExpenses).toBe(0);
+    expect(drawer.cashPicks).toBe(0);
+    expect(drawer.cashRefunds).toBe(0);
+    expect(drawer.actualCashDrawer).toBe(100);
+
+    const available = calculateShiftCashFromSales({
+      transactions: [],
+      expenses: [{ amount: 50, source: 'TILL', status: 'PENDING', timestamp: 1000, shiftId: 'shift-1' }],
+      cashPicks: [{ amount: 30, status: 'PENDING', timestamp: 1000, shiftId: 'shift-1' }],
+      refunds: [{ amount: 20, cashAmount: 20, source: 'TILL', status: 'PENDING', timestamp: 1000, shiftId: 'shift-1' }],
+      openingCash: 100,
+      since: 0,
+      shiftId: 'shift-1',
+    });
+
+    expect(available.availableCashSales).toBe(100);
+  });
+
   it('keeps M-Pesa credit collections out of cash sales and direct M-Pesa sales', () => {
     const drawer = calculateCashDrawer(baseRows);
     const directMpesaSales = baseRows.transactions

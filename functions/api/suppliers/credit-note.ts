@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { ensureInventoryIntegritySchema, inventoryShopIdFromRequest } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -11,7 +12,7 @@ const CREDIT_NOTE_DELETE_ROLES = new Set(['ROOT', 'ADMIN']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -65,6 +66,7 @@ async function ensureSchema(db: D1Database) {
       quantity REAL,
       businessId TEXT,
       shiftId TEXT,
+      shopId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -78,6 +80,7 @@ async function ensureSchema(db: D1Database) {
       reference TEXT,
       businessId TEXT,
       shiftId TEXT,
+      shopId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -104,12 +107,15 @@ async function ensureSchema(db: D1Database) {
     'ALTER TABLE creditNotes ADD COLUMN quantity REAL',
     'ALTER TABLE creditNotes ADD COLUMN businessId TEXT',
     'ALTER TABLE creditNotes ADD COLUMN shiftId TEXT',
+    'ALTER TABLE creditNotes ADD COLUMN shopId TEXT',
     'ALTER TABLE creditNotes ADD COLUMN updated_at INTEGER',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN shopId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
+  await ensureInventoryIntegritySchema(db);
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -131,6 +137,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
+    const shopId = inventoryShopIdFromRequest(request, body);
     const supplierId = String(body?.supplierId || '').trim();
     if (!businessId) return json({ error: 'Business is required.' }, 400);
     if (action !== 'DELETE' && !supplierId) return json({ error: 'Supplier is required.' }, 400);
@@ -176,8 +183,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ?`)
             .bind(item.quantity, now, item.productId, businessId),
           env.DB.prepare(`
-            INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).bind(
             crypto.randomUUID(),
             item.productId,
@@ -187,6 +194,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
             `Reversed credit note: ${existing.reference || creditNoteId} - ${product.name}`,
             businessId,
             existing.shiftId || null,
+            existing.shopId || shopId,
             now,
           )
         );
@@ -235,12 +243,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     for (const item of itemInputs) {
       if (item.quantity <= 0) throw new PolicyError('Return quantity must be greater than zero.', 400);
       const product = await env.DB.prepare(`
-        SELECT id, name, stockQuantity, costPrice, sellingPrice, unit
+        SELECT id, name, stockQuantity, costPrice, sellingPrice, unit, shopId
         FROM products
         WHERE id = ? AND businessId = ?
         LIMIT 1
       `).bind(item.productId, businessId).first<any>();
       if (!product) throw new PolicyError('Selected product was not found.', 404);
+      if (product.shopId && String(product.shopId) !== shopId) throw new PolicyError(`Selected product was not found in this shop.`, 404);
       if (item.quantity > asNumber(product.stockQuantity) + 0.0001) {
         throw new PolicyError(`Cannot return more than available stock for ${product.name} (${asNumber(product.stockQuantity)}).`, 409);
       }
@@ -278,14 +287,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       productId: returnItems.length === 1 ? primaryItem?.productId : null,
       quantity: returnItems.length === 1 ? primaryItem?.quantity : null,
       shiftId: body?.shiftId || null,
+      shopId,
       businessId,
       updated_at: now,
     };
 
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(`
-        INSERT INTO creditNotes (id, supplierId, amount, reference, timestamp, reason, status, allocatedTo, items, productId, quantity, businessId, shiftId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO creditNotes (id, supplierId, amount, reference, timestamp, reason, status, allocatedTo, items, productId, quantity, businessId, shiftId, shopId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         creditNote.id,
         creditNote.supplierId,
@@ -300,17 +310,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         creditNote.quantity,
         businessId,
         creditNote.shiftId,
+        creditNote.shopId,
         now,
       ),
     ];
 
     for (const item of returnItems) {
       statements.push(
-        env.DB.prepare(`UPDATE products SET stockQuantity = MAX(0, COALESCE(stockQuantity, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ?`)
+        env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) - ?, updated_at = ? WHERE id = ? AND businessId = ?`)
           .bind(item.quantity, now, item.productId, businessId),
         env.DB.prepare(`
-          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
           item.productId,
@@ -320,6 +331,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           `Supplier Return: ${reference} - ${item.name}`,
           businessId,
           body?.shiftId || null,
+          shopId,
           now,
         )
       );
@@ -346,7 +358,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB.batch(statements);
     return json({ success: true, creditNote });
   } catch (err: any) {
-    const status = err instanceof PolicyError ? err.status : 500;
-    return json({ error: err?.message || 'Could not record supplier credit note.' }, status);
+    const message = String(err?.message || '');
+    const stockRace = message.includes('Insufficient stock');
+    const status = err instanceof PolicyError ? err.status : stockRace ? 409 : 500;
+    return json({ error: stockRace ? 'Insufficient stock for one or more returned products.' : err?.message || 'Could not record supplier credit note.' }, status);
   }
 };

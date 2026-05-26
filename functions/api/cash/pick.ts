@@ -192,9 +192,9 @@ async function availableCashForPick(db: D1Database, businessId: string, since: n
       .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
   ]);
   const txRows = (transactions.results || []).filter(row => inShiftScope(row, since, shiftId) && !['VOIDED', 'QUOTE'].includes(String(row.status || '').toUpperCase()));
-  const expenseRows = (expenses.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL' && String(row.status || '').toUpperCase() !== 'REJECTED');
-  const pickRows = (picks.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED');
-  const refundRows = (refunds.results || []).filter(row => inShiftScope(row, since, shiftId));
+  const expenseRows = (expenses.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.source || 'TILL').toUpperCase() === 'TILL' && String(row.status || 'APPROVED').toUpperCase() === 'APPROVED');
+  const pickRows = (picks.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.status || 'APPROVED').toUpperCase() === 'APPROVED');
+  const refundRows = (refunds.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.status || 'APPROVED').toUpperCase() === 'APPROVED');
   const supplierRows = (supplierPayments.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL');
   const customerRows = (customerPayments.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.paymentMethod || '').toUpperCase() === 'CASH');
   const cashSales = txRows.reduce((sum, row) => sum + cashAmountFromTransaction(row), 0);

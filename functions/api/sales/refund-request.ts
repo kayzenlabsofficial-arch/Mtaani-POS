@@ -36,6 +36,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await ensureRefundSchema(env.DB);
     const prepared = await prepareRefundRequest(env.DB, {
       businessId, principal: auth.principal,
+      service: auth.service,
       transactionId,
       itemsToReturn: body?.itemsToReturn,
     });

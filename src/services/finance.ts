@@ -10,6 +10,14 @@ export interface MainAccountAdjustInput {
   businessId: string;
 }
 
+export interface MainAccountReconcileResponse {
+  success: boolean;
+  posted: number;
+  skipped: number;
+  anomalies: Array<{ source: string; id: string; message: string }>;
+  account: any;
+}
+
 export const MainAccountService = {
   ensure(input: { businessId: string }) {
     return apiRequest<{ success: boolean; account: any }>('/api/finance/account', {
@@ -33,6 +41,17 @@ export const MainAccountService = {
         amount: input.amount,
         reason: input.reason,
         userName: input.userName,
+      },
+    });
+  },
+
+  reconcileMpesa(input: { businessId: string }) {
+    return apiRequest<MainAccountReconcileResponse>('/api/finance/account', {
+      method: 'POST',
+      businessId: input.businessId,
+      body: {
+        action: 'RECONCILE_MPESA',
+        businessId: input.businessId,
       },
     });
   },

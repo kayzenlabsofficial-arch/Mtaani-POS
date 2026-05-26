@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { DEFAULT_SHOP_ID } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +11,7 @@ const OPEN_SHIFT_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER', 'CASHIER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -46,6 +47,7 @@ async function ensureOpenShiftSchema(db: D1Database) {
       closeBreakdown TEXT,
       status TEXT NOT NULL,
       lastSyncAt INTEGER,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -76,11 +78,22 @@ async function ensureOpenShiftSchema(db: D1Database) {
     'ALTER TABLE shifts ADD COLUMN cashVariance REAL',
     'ALTER TABLE shifts ADD COLUMN closeBreakdown TEXT',
     'ALTER TABLE shifts ADD COLUMN lastSyncAt INTEGER',
+    'ALTER TABLE shifts ADD COLUMN shopId TEXT',
     'ALTER TABLE shifts ADD COLUMN businessId TEXT',
     'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
     'ALTER TABLE salesTills ADD COLUMN isActive INTEGER DEFAULT 1',
     'ALTER TABLE salesTills ADD COLUMN businessId TEXT',
     'ALTER TABLE salesTills ADD COLUMN updated_at INTEGER',
+  ]) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
+  for (const sql of [
+    `UPDATE shifts SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    'DROP INDEX IF EXISTS idx_shifts_one_open_till',
+    'DROP INDEX IF EXISTS idx_shifts_one_open_cashier',
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_open_till ON shifts(businessId, COALESCE(NULLIF(shopId, ''), 'single-shop'), tillId) WHERE UPPER(COALESCE(status, '')) = 'OPEN' AND COALESCE(tillId, '') != ''",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_open_cashier ON shifts(businessId, COALESCE(NULLIF(shopId, ''), 'single-shop'), cashierId) WHERE UPPER(COALESCE(status, '')) = 'OPEN' AND COALESCE(cashierId, '') != ''",
+    'CREATE INDEX IF NOT EXISTS idx_shifts_business_shop_status ON shifts(businessId, shopId, status)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
@@ -92,6 +105,13 @@ function ownsShift(shift: any, userId: string, userName: string) {
   return (userId && cashierId === userId)
     || (userName && cashierName === userName.toLowerCase())
     || (userId && String(shift?.id || '').includes(`_${userId}`));
+}
+
+function isOpenShiftConstraintError(err: any) {
+  const message = String(err?.message || err || '').toLowerCase();
+  return message.includes('unique constraint')
+    || message.includes('idx_shifts_one_open_till')
+    || message.includes('idx_shifts_one_open_cashier');
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -108,11 +128,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!businessId || !canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
+    const shopId = text(request.headers.get('X-Shop-ID') || body?.shopId || DEFAULT_SHOP_ID, 160) || DEFAULT_SHOP_ID;
 
     await ensureOpenShiftSchema(env.DB);
 
-    const userId = text(body?.cashierId || auth.principal.userId, 160);
-    const userName = text(body?.cashierName || auth.principal.userName, 120) || 'Staff';
+    const userId = auth.service
+      ? text(body?.cashierId || auth.principal.userId, 160)
+      : text(auth.principal.userId, 160);
+    const userName = auth.service
+      ? text(body?.cashierName || auth.principal.userName, 120) || 'Staff'
+      : text(auth.principal.userName, 120) || 'Staff';
     const tillId = text(body?.tillId, 160);
     const tillName = text(body?.tillName, 120);
     if (!tillId || !tillName) throw new PolicyError('Choose a till before opening a shift.', 400);
@@ -120,8 +145,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const openShifts = await env.DB.prepare(`
       SELECT *
       FROM shifts
-      WHERE businessId = ? AND UPPER(COALESCE(status, '')) = 'OPEN'
-    `).bind(businessId).all<any>();
+      WHERE businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
+        AND UPPER(COALESCE(status, '')) = 'OPEN'
+    `).bind(businessId, DEFAULT_SHOP_ID, shopId).all<any>();
     const rows = (openShifts.results || []) as any[];
     const ownOpenShift = rows.find(shift => ownsShift(shift, userId, userName));
     if (ownOpenShift) {
@@ -154,32 +181,50 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       tillName,
       openingCash: nonNegative(body?.openingCash),
       status: 'OPEN',
+      shopId,
       businessId,
       updated_at: now,
     };
 
-    await env.DB.batch([
-      env.DB.prepare(`
-        INSERT INTO shifts (id, startTime, cashierId, cashierName, tillId, tillName, openingCash, status, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(shift.id, shift.startTime, shift.cashierId, shift.cashierName, shift.tillId, shift.tillName, shift.openingCash, shift.status, businessId, now),
-      env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        crypto.randomUUID(),
-        now,
-        auth.principal.userId || null,
-        auth.principal.userName || null,
-        'shift.open',
-        'shift',
-        shift.id,
-        'INFO',
-        `Opened ${shift.tillName} shift with opening cash Ksh ${shift.openingCash.toLocaleString()}.`,
-        businessId,
-        now,
-      ),
-    ]);
+    try {
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO shifts (id, startTime, cashierId, cashierName, tillId, tillName, openingCash, status, shopId, businessId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(shift.id, shift.startTime, shift.cashierId, shift.cashierName, shift.tillId, shift.tillName, shift.openingCash, shift.status, shopId, businessId, now),
+        env.DB.prepare(`
+          INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          now,
+          auth.principal.userId || null,
+          auth.principal.userName || null,
+          'shift.open',
+          'shift',
+          shift.id,
+          'INFO',
+          `Opened ${shift.tillName} shift with opening cash Ksh ${shift.openingCash.toLocaleString()}.`,
+          businessId,
+          now,
+        ),
+      ]);
+    } catch (insertErr: any) {
+      if (!isOpenShiftConstraintError(insertErr)) throw insertErr;
+      const retry = await env.DB.prepare(`
+        SELECT *
+        FROM shifts
+        WHERE businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
+          AND UPPER(COALESCE(status, '')) = 'OPEN'
+      `).bind(businessId, DEFAULT_SHOP_ID, shopId).all<any>();
+      const retryRows = (retry.results || []) as any[];
+      const ownRetry = retryRows.find(row => ownsShift(row, userId, userName));
+      if (ownRetry) return json({ success: true, shift: ownRetry, idempotent: true });
+      const busyRetry = retryRows.find(row => text(row.tillId, 160) === tillId);
+      if (busyRetry) throw new PolicyError(`${text(busyRetry.tillName, 120) || 'This till'} is already open.`, 409);
+      throw new PolicyError('A shift is already open for this cashier or till.', 409);
+    }
 
     return json({ success: true, shift, idempotent: false });
   } catch (err: any) {

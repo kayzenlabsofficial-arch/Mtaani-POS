@@ -8,6 +8,8 @@ import {
 import type { DashboardModel } from './types';
 
 export default function DashboardMobile({ model }: { model: DashboardModel }) {
+  const showSalesTrend = model.canSeeSalesData && model.salesTrendData.length > 0;
+
   return (
     <div className="space-y-4 pb-24">
       <DashboardHeader model={model} compact />
@@ -25,7 +27,7 @@ export default function DashboardMobile({ model }: { model: DashboardModel }) {
 
       <div className="space-y-4 px-3 sm:px-0">
         <MoneyBreakdownPanel model={model} />
-        {model.canSeeSalesData && <SalesChartPanel model={model} />}
+        {showSalesTrend && <SalesChartPanel model={model} />}
       </div>
     </div>
   );

@@ -53,7 +53,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     body: requestBody,
     headers: optionHeaders,
     businessId: optionBusinessId,
-    shopId: _optionShopId,
+    shopId: optionShopId,
     requireOnline: _requireOnline,
     requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
     ...requestOptions
@@ -67,6 +67,8 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   if (apiKey) headers['X-API-Key'] = apiKey;
   const businessId = optionBusinessId ?? state.activeBusinessId;
   if (businessId) headers['X-Business-ID'] = businessId;
+  const shopId = optionShopId ?? state.activeShopId;
+  if (shopId) headers['X-Shop-ID'] = shopId;
 
   let body: BodyInit | undefined;
   if (requestBody !== undefined) {

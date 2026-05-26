@@ -43,6 +43,12 @@ const toDayStart = (value: string) => {
   d.setHours(0, 0, 0, 0);
   return d.getTime();
 };
+const clientId = (prefix: string) => {
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${random}`;
+};
 
 const isVatLine = (line: Pick<SalesInvoiceItem, 'taxCategory'>) => line.taxCategory === 'A';
 const lineAmount = (line: Pick<SalesInvoiceItem, 'quantity' | 'unitPrice'>) => (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0);
@@ -85,6 +91,8 @@ export default function SalesInvoicesTabMobile() {
   const [selectedInvoice, setSelectedInvoice] = React.useState<SalesInvoice | null>(null);
   const [paymentInvoice, setPaymentInvoice] = React.useState<SalesInvoice | null>(null);
   const [paymentForm, setPaymentForm] = React.useState({ amount: '', method: 'CASH' as 'CASH' | 'MPESA' | 'BANK' | 'PDQ' | 'CHEQUE', reference: '' });
+  const [draftInvoiceId, setDraftInvoiceId] = React.useState(() => clientId('sales_invoice'));
+  const [draftPaymentId, setDraftPaymentId] = React.useState(() => clientId('customer_payment'));
   const [isSaving, setIsSaving] = React.useState(false);
 
   const customers = useLiveQuery(
@@ -154,6 +162,7 @@ export default function SalesInvoicesTabMobile() {
     setInvoiceForm({ customerId: '', dueDate: plusDaysInput(14), notes: '' });
     setLineInput({ itemType: 'SERVICE', itemId: '', name: '', quantity: '1', unitPrice: '', taxCategory: 'A' });
     setLines([]);
+    setDraftInvoiceId(clientId('sales_invoice'));
   };
 
   const selectCatalogItem = (id: string) => {
@@ -228,11 +237,13 @@ export default function SalesInvoicesTabMobile() {
     setIsSaving(true);
     try {
       const result = await SalesInvoiceService.create({
+        invoiceId: draftInvoiceId,
         customerId: customer.id,
         items: lines.map(({ id, ...line }) => line),
         dueDate: invoiceForm.dueDate ? toDayStart(invoiceForm.dueDate) : undefined,
         notes: invoiceForm.notes.trim() || undefined,
         preparedBy: currentUser?.name || 'Staff',
+        shiftId: currentShiftId,
         shopId: activeShopId,
         businessId: activeBusinessId,
       });
@@ -305,6 +316,7 @@ export default function SalesInvoicesTabMobile() {
     setIsSaving(true);
     try {
       await CustomerService.recordPayment({
+        id: draftPaymentId,
         customerId: paymentInvoice.customerId,
         amount,
         paymentMethod: paymentForm.method,
@@ -324,6 +336,7 @@ export default function SalesInvoicesTabMobile() {
       const updated = await db.salesInvoices.get(paymentInvoice.id);
       setPaymentInvoice(null);
       setPaymentForm({ amount: '', method: 'CASH', reference: '' });
+      setDraftPaymentId(clientId('customer_payment'));
       setSelectedInvoice(updated || paymentInvoice);
       success((updated?.balance || 0) <= 0 ? 'Invoice cleared.' : 'Balance reduced.');
     } catch (err: any) {
@@ -345,6 +358,7 @@ export default function SalesInvoicesTabMobile() {
         invoiceId: invoice.id,
         businessId: activeBusinessId,
         shopId: activeShopId,
+        shiftId: currentShiftId,
       });
       await Promise.allSettled([
         db.salesInvoices.reload(),
@@ -727,6 +741,7 @@ export default function SalesInvoicesTabMobile() {
               <button
                 type="button"
                 onClick={() => {
+                  setDraftPaymentId(clientId('customer_payment'));
                   setPaymentInvoice(selectedInvoice);
                   setPaymentForm({ amount: String(selectedInvoice.balance || ''), method: 'CASH', reference: '' });
                   setSelectedInvoice(null);

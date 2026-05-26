@@ -6,6 +6,7 @@ export type PurchaseReceiveLine = {
   receivedQuantity: number;
   unitCost: number;
   sellingPrice?: number;
+  expiryDate?: number | null;
 };
 
 export type PurchaseReceiveResponse = {

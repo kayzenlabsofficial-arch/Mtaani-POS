@@ -261,7 +261,7 @@ async function migrateLegacySettings(db: D1Database, businessId: string, keyMate
 
   const next: CredentialRow = {
     businessId,
-    settingsId: row?.settingsId || settings.id || `core_${businessId}`,
+    settingsId: `core_${businessId}`,
     environment: row?.environment || normalizeMpesaEnv(settings.mpesaEnv),
     accountType: row?.accountType || normalizeMpesaType(settings.mpesaType),
     product: row?.product || DEFAULT_MPESA_PRODUCT,
@@ -339,7 +339,7 @@ export async function saveMpesaCredentials(
   const shortcode = cleanText(input.shortcode) || cleanText(settings?.tillNumber) || cleanText(existing?.shortcode);
   const next: CredentialRow = {
     businessId,
-    settingsId: existing?.settingsId || settings?.id || `core_${businessId}`,
+    settingsId: `core_${businessId}`,
     environment: normalizeMpesaEnv(input.env ?? existing?.environment),
     accountType: normalizeMpesaType(input.type ?? existing?.accountType),
     product: normalizeProduct(input.product ?? existing?.product),

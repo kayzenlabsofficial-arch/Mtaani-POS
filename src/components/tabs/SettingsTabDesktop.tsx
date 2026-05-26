@@ -28,7 +28,7 @@ import {
 } from '../../utils/hardware';
 import { BusinessSettingsService } from '../../services/businessSettings';
 import { getShopMpesaSettings, saveShopMpesaSettings, testShopMpesaSettings, type MpesaSettingsStatus } from '../../services/mpesaSettings';
-import { normalizeTillCount, parseSalesTillRows, parseSalesTills, serializeSalesTills, type SalesTill } from '../../utils/tills';
+import { normalizeTillCount, parseSalesTillRows, parseSalesTills, scopeSalesTillIds, serializeSalesTills, type SalesTill } from '../../utils/tills';
 
 type SettingsSectionId = 'business' | 'tills' | 'mpesa' | 'hardware' | 'owner' | 'system';
 
@@ -410,6 +410,10 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
       setIsUpdating(true);
       try {
         if (!activeBusinessId) return error('Please log in again.');
+        const normalizedTills = scopeSalesTillIds(
+          normalizeTillCount(tillSettings.count, tillSettings.tills),
+          activeBusinessId,
+        );
         await BusinessSettingsService.save({
           businessId: activeBusinessId,
           settings: {
@@ -424,33 +428,11 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
             autoApproveOwnerActions: ownerSettings.autoApproveOwnerActions ? 1 : 0,
             cashSweepEnabled: ownerSettings.cashSweepEnabled ? 1 : 0,
             cashDrawerLimit: Number(ownerSettings.cashDrawerLimit) || DEFAULT_CASH_DRAWER_LIMIT,
-            salesTills: serializeSalesTills(tillSettings.tills),
+            salesTills: serializeSalesTills(normalizedTills),
             defaultOpeningFloat: Math.max(0, Number(tillSettings.openingFloat) || 0),
             businessId: activeBusinessId,
           },
         });
-        const normalizedTills = normalizeTillCount(tillSettings.count, tillSettings.tills);
-        const existingTillRows = await db.salesTills.where('businessId').equals(activeBusinessId).toArray();
-        const activeTillIds = new Set(normalizedTills.map(till => till.id));
-        const now = Date.now();
-        const rowsToPersist = [
-          ...normalizedTills.map((till, index) => ({
-            id: till.id || `till-${index + 1}`,
-            name: till.name || `Till ${index + 1}`,
-            isActive: 1,
-            businessId: activeBusinessId,
-            updated_at: now,
-          })),
-          ...existingTillRows
-            .filter(row => !activeTillIds.has(row.id))
-            .map(row => ({
-              ...row,
-              isActive: 0,
-              businessId: activeBusinessId,
-              updated_at: now,
-            })),
-        ];
-        await db.salesTills.bulkPut(rowsToPersist);
         await Promise.all([db.settings.reload(), db.salesTills.reload()]);
         setEditingSection(null);
         success('Business settings saved.');

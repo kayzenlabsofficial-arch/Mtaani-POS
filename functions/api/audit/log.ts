@@ -33,8 +33,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     `).bind(
       id,
       now,
-      trimText(body?.userId || auth.principal.userId, 160) || null,
-      trimText(body?.userName || auth.principal.userName, 160) || null,
+      trimText(auth.principal.userId, 160) || null,
+      trimText(auth.principal.userName, 160) || null,
       trimText(body?.action, 160) || 'audit.event',
       trimText(body?.entity, 120) || null,
       trimText(body?.entityId, 160) || null,

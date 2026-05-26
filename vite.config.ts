@@ -42,6 +42,26 @@ function productionJsObfuscator(): Plugin {
   };
 }
 
+function manualChunks(id: string): string | undefined {
+  const normalized = id.replace(/\\/g, '/');
+
+  if (normalized.includes('/node_modules/')) {
+    if (normalized.includes('/react/') || normalized.includes('/react-dom/')) return 'vendor-react';
+    if (normalized.includes('/recharts/')) return 'vendor-charts';
+    if (
+      normalized.includes('/jspdf') ||
+      normalized.includes('/jspdf-autotable') ||
+      normalized.includes('/html2canvas') ||
+      normalized.includes('/pdfjs-dist')
+    ) return 'vendor-pdf';
+    if (normalized.includes('/lucide-react/')) return 'vendor-icons';
+    if (normalized.includes('/dexie/') || normalized.includes('/zustand/')) return 'vendor-data';
+    return undefined;
+  }
+
+  return undefined;
+}
+
 export default defineConfig(() => {
   return {
     plugins: [
@@ -90,14 +110,10 @@ export default defineConfig(() => {
     build: {
       rollupOptions: {
         output: {
-          manualChunks: {
-            'vendor-react': ['react', 'react-dom'],
-            'vendor-charts': ['recharts'],
-            'vendor-utils': ['dexie', 'jspdf', 'html2canvas', 'lucide-react'],
-          }
+          manualChunks
         }
       },
-      chunkSizeWarningLimit: 1000,
+      chunkSizeWarningLimit: 1500,
     },
     server: {
       // HMR can be disabled with DISABLE_HMR during automated edits.

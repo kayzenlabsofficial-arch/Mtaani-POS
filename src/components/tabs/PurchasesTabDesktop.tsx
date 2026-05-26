@@ -10,6 +10,7 @@ import { belongsToActiveShop } from '../../utils/shopScope';
 import { PurchaseService } from '../../services/purchases';
 import { productsForSupplier } from '../../utils/supplierProducts';
 import { reloadBestEffort } from '../../utils/reloads';
+import { dateInputToExpiryMs, expiryMsToDateInput } from '../../utils/expiry';
 
 const inventoryOrderPrice = (product?: Product | null) => {
   const costPrice = Number(product?.costPrice || 0);
@@ -35,6 +36,7 @@ export default function PurchasesTabDesktop() {
   const [receiveQuantities, setReceiveQuantities] = useState<{ [productId: string]: number }>({}); 
   const [receiveUnitCosts, setReceiveUnitCosts] = useState<{ [productId: string]: number }>({});
   const [receiveSellingPrices, setReceiveSellingPrices] = useState<{ [productId: string]: number }>({});
+  const [receiveExpiryDates, setReceiveExpiryDates] = useState<{ [productId: string]: string }>({});
   const [isSaving, setIsSaving] = useState(false);
 
   const activeShopId = useStore(state => state.activeShopId);
@@ -131,15 +133,18 @@ export default function PurchasesTabDesktop() {
       const initialQty: {[id: string]: number} = {};
       const initialCost: {[id: string]: number} = {};
       const initialSell: {[id: string]: number} = {};
+      const initialExpiry: {[id: string]: string} = {};
       po.items.forEach(item => {
           initialQty[item.productId] = item.expectedQuantity;
           initialCost[item.productId] = item.unitCost;
           const p = allProducts?.find(x => x.id === item.productId);
           if (p) initialSell[item.productId] = p.sellingPrice;
+          if ((p as any)?.expiryTracking || (p as any)?.expiryDate) initialExpiry[item.productId] = expiryMsToDateInput((p as any)?.expiryDate);
       });
       setReceiveQuantities(initialQty);
       setReceiveUnitCosts(initialCost);
       setReceiveSellingPrices(initialSell);
+      setReceiveExpiryDates(initialExpiry);
       setReceiveInvoices({ ...receiveInvoices, [po.id]: '' });
       setIsReceivePOModalOpen(true);
   };
@@ -186,6 +191,7 @@ export default function PurchasesTabDesktop() {
                 receivedQuantity: item.receivedQuantity,
                 unitCost: item.unitCost,
                 sellingPrice: receiveSellingPrices[item.productId],
+                expiryDate: dateInputToExpiryMs(receiveExpiryDates[item.productId]),
             })),
         });
 
@@ -496,7 +502,7 @@ export default function PurchasesTabDesktop() {
                                     />
                                  </div>
                               </div>
-                              <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-200/50">
+                               <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-200/50 md:grid-cols-3">
                                  <div>
                                     <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Verified unit cost</label>
                                     <input 
@@ -507,8 +513,8 @@ export default function PurchasesTabDesktop() {
                                         className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-2 text-[11px] font-black text-slate-900 outline-none focus:border-blue-600" 
                                     />
                                  </div>
-                                 <div>
-                                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Update sell price</label>
+                                  <div>
+                                     <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Update sell price</label>
                                     <input 
                                         type="number" 
                                         data-testid={`purchase-receive-sell-${item.productId}`}
@@ -516,9 +522,19 @@ export default function PurchasesTabDesktop() {
                                         onChange={e => setReceiveSellingPrices({...receiveSellingPrices, [item.productId]: Number(e.target.value)})} 
                                         className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-2 text-[11px] font-black text-slate-900 outline-none focus:border-blue-600" 
                                         placeholder="No change"
-                                    />
-                                 </div>
-                              </div>
+                                     />
+                                  </div>
+                                  <div>
+                                     <label className="block text-[8px] font-black text-slate-400 uppercase mb-1.5 ml-1">Expiry date</label>
+                                     <input
+                                        type="date"
+                                        data-testid={`purchase-receive-expiry-${item.productId}`}
+                                        value={receiveExpiryDates[item.productId] || ''}
+                                        onChange={e => setReceiveExpiryDates({...receiveExpiryDates, [item.productId]: e.target.value})}
+                                        className="w-full rounded-lg border-2 border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-900 outline-none focus:border-blue-600"
+                                     />
+                                  </div>
+                               </div>
                            </div>
                         ))}
                     </div>

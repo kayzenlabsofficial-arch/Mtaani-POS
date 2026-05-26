@@ -166,7 +166,7 @@ export function MetricTile({ metric }: { metric: DashboardMetric }) {
         )}
       </div>
       <p className="mt-7 text-sm font-medium uppercase text-slate-800">{metric.label}</p>
-      <p className={`mt-2 text-2xl font-black tabular-nums text-slate-950 ${metric.locked ? 'blur-sm' : ''}`}>{metric.value}</p>
+      <p className="mt-2 text-2xl font-black tabular-nums text-slate-950">{metric.value}</p>
       {metric.locked && (
         <div className="absolute inset-0 flex items-end justify-end bg-white/30 p-4">
           <span className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600">Locked</span>
@@ -182,8 +182,8 @@ function MoneyBreakdownItem({ item }: { item: DashboardMoneyBreakdown }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-black uppercase tracking-widest text-slate-500">{item.label}</p>
-          <p className={`mt-2 text-xl font-black tabular-nums text-slate-950 ${item.locked ? 'blur-sm' : ''}`}>{item.value}</p>
-          <p className={`mt-1 text-[11px] font-semibold text-slate-500 ${item.locked ? 'blur-[3px]' : ''}`}>{item.detail}</p>
+          <p className="mt-2 text-xl font-black tabular-nums text-slate-950">{item.value}</p>
+          <p className="mt-1 text-[11px] font-semibold text-slate-500">{item.detail}</p>
         </div>
         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${item.tone}`}>
           <MaterialIcon name={item.icon} className="text-lg" />
@@ -237,7 +237,7 @@ export function SalesChartPanel({ model }: { model: DashboardModel }) {
     return () => observer.disconnect();
   }, []);
 
-  if (!model.canSeeSalesData) return null;
+  if (!model.canSeeSalesData || model.salesTrendData.length === 0) return null;
 
   return (
     <section className="flex h-full min-h-[360px] flex-col rounded-lg border-2 border-slate-200 bg-white p-4">

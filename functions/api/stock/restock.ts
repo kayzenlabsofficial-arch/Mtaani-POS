@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { ensureInventoryIntegritySchema, inventoryShopIdFromRequest, isBundleInventoryRow } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +11,7 @@ const STOCK_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -44,6 +45,7 @@ async function ensureSchema(db: D1Database) {
       reference TEXT,
       businessId TEXT,
       shiftId TEXT,
+      shopId TEXT,
       expiryDate INTEGER,
       updated_at INTEGER
     )
@@ -64,9 +66,11 @@ async function ensureSchema(db: D1Database) {
     )
   `).run();
   try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN shiftId TEXT').run(); } catch {}
+  try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN shopId TEXT').run(); } catch {}
   try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN expiryDate INTEGER').run(); } catch {}
   try { await db.prepare('ALTER TABLE products ADD COLUMN expiryTracking INTEGER DEFAULT 0').run(); } catch {}
   try { await db.prepare('ALTER TABLE products ADD COLUMN expiryDate INTEGER').run(); } catch {}
+  await ensureInventoryIntegritySchema(db);
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -82,6 +86,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
+    const shopId = inventoryShopIdFromRequest(request, body);
     const productId = String(body?.productId || '').trim();
     if (!businessId || !productId) return json({ error: 'Business and product are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
@@ -99,12 +104,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     await ensureSchema(env.DB);
     const product = await env.DB.prepare(`
-      SELECT id, name, stockQuantity, costPrice, expiryDate
+      SELECT id, name, stockQuantity, costPrice, expiryDate, isBundle, shopId
       FROM products
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(productId, businessId).first<any>();
     if (!product) throw new PolicyError('Product was not found.', 404);
+    if (product.shopId && String(product.shopId) !== shopId) throw new PolicyError('Product was not found in this shop.', 404);
+    if (isBundleInventoryRow(product)) throw new PolicyError('Bulk item stock is calculated from ingredients and cannot be restocked directly.', 400);
 
     const now = Date.now();
     const updateFields = ['stockQuantity = COALESCE(stockQuantity, 0) + ?'];
@@ -133,8 +140,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB.batch([
       updateProduct,
       env.DB.prepare(`
-        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, expiryDate, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, expiryDate, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         productId,
@@ -144,6 +151,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         trimText(body?.reference, 160) || 'Manual stock adjustment',
         businessId,
         body?.shiftId || null,
+        shopId,
         expiryDate,
         now,
       ),

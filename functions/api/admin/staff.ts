@@ -11,7 +11,7 @@ const ADMIN_ROLES = new Set(['ROOT', 'ADMIN']);
 const STAFF_ROLES = new Set(['ADMIN', 'MANAGER', 'CASHIER']);
 
 const corsHeaders = {
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
 };
 
@@ -71,6 +71,33 @@ async function adminCount(db: D1Database, businessId: string) {
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
+
+export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  try {
+    if (!env.DB) return json({ error: 'DB binding missing' }, 500);
+    const auth = await authorizeRequest(request, env);
+    if (!auth.ok) return auth.response;
+    if (!auth.service && !ADMIN_ROLES.has(auth.principal.role)) {
+      return json({ error: 'Admin access required.' }, 403);
+    }
+
+    const businessId = String(request.headers.get('X-Business-ID') || auth.principal.businessId || '').trim();
+    if (!businessId || !canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
+
+    await ensureSchema(env.DB);
+    const { results } = await env.DB.prepare(`
+      SELECT id, name, role, businessId, mustChangePassword, isBootstrapAdmin, updated_at
+      FROM users
+      WHERE businessId = ?
+      ORDER BY CASE role WHEN 'ADMIN' THEN 0 WHEN 'MANAGER' THEN 1 ELSE 2 END, lower(name)
+    `).bind(businessId).all<any>();
+
+    return json({ success: true, users: results || [] });
+  } catch (err: any) {
+    const status = err instanceof PolicyError ? err.status : 500;
+    return json({ error: err?.message || 'Could not load staff.' }, status);
+  }
+};
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {

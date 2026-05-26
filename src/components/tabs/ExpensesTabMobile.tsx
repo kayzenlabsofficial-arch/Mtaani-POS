@@ -16,6 +16,13 @@ import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSessio
 import { ExpenseService } from '../../services/expenses';
 import { pickedCashAccountId, singleFinanceAccount } from '../../utils/financeAccount';
 import { belongsToActiveShop } from '../../utils/shopScope';
+import {
+  expenseLifecycleTotals,
+  isBundleExpenseProduct,
+  normalizeExpenseSource,
+  normalizeExpenseStatus,
+  shopExpenseProductEligibility,
+} from '../../utils/expenseIntegrity';
 
 type ExpenseDateRange = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL';
 type ExpenseSourceFilter = 'ALL' | 'TILL' | 'ACCOUNT' | 'SHOP';
@@ -111,9 +118,11 @@ export default function ExpensesTabMobile() {
     since: currentShiftStart,
     shiftId: currentShiftId,
   });
-  const todayTillExpenses = drawer.tillExpenses;
-  const todayAccountExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'ACCOUNT' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const todayShopExpenses = (allExpenses || []).filter(e => (e.timestamp || 0) >= todayStartMs && e.source === 'SHOP' && e.status !== 'REJECTED').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const todayExpenseTotals = expenseLifecycleTotals((allExpenses || []).filter(e => (Number(e.timestamp) || 0) >= todayStartMs));
+  const todayTillExpenses = todayExpenseTotals.bySource.TILL.approved;
+  const todayAccountExpenses = todayExpenseTotals.bySource.ACCOUNT.approved;
+  const todayShopExpenses = todayExpenseTotals.bySource.SHOP.approved;
+  const todayPendingExpenses = todayExpenseTotals.pendingTotal;
   const actualCashDrawer = Math.max(0, drawer.actualCashDrawer);
   const productById = React.useMemo(() => {
     const map = new Map<string, any>();
@@ -122,10 +131,11 @@ export default function ExpensesTabMobile() {
   }, [products]);
   const selectedShopProduct = shopExpenseForm.productId ? productById.get(shopExpenseForm.productId) : null;
   const shopExpenseQuantity = Number(shopExpenseForm.quantity) || 0;
-  const shopExpenseUnitCost = Number(selectedShopProduct?.costPrice || 0);
-  const shopExpenseAmount = Math.round(Math.max(0, shopExpenseUnitCost * Math.max(0, shopExpenseQuantity)) * 100) / 100;
+  const shopExpenseEligibility = shopExpenseProductEligibility(selectedShopProduct, shopExpenseQuantity);
+  const shopExpenseUnitCost = shopExpenseEligibility.unitCost;
+  const shopExpenseAmount = shopExpenseEligibility.amount;
   const productOptions = React.useMemo(() => (products || [])
-    .filter(product => Number(product.stockQuantity || 0) > 0)
+    .filter(product => !isBundleExpenseProduct(product) && Number(product.stockQuantity || 0) > 0)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
     .map(product => ({
       value: product.id,
@@ -208,29 +218,19 @@ export default function ExpensesTabMobile() {
           error("You do not have permission to create expenses.");
           return;
       }
-      if (!selectedShopProduct) {
-          error("Select the product being expensed.");
+      const eligibility = shopExpenseProductEligibility(selectedShopProduct, shopExpenseQuantity);
+      if (!eligibility.ok) {
+          error(eligibility.message || "The selected product cannot be expensed.");
           return;
       }
-      if (shopExpenseQuantity <= 0) {
-          error("Enter a valid quantity.");
-          return;
-      }
-      if (shopExpenseQuantity > Number(selectedShopProduct.stockQuantity || 0)) {
-          error(`Only ${Number(selectedShopProduct.stockQuantity || 0).toLocaleString()} ${selectedShopProduct.unit || 'pcs'} available.`);
-          return;
-      }
-      if (shopExpenseUnitCost <= 0) {
-          error(`Set a cost price for ${selectedShopProduct.name} before expensing it from stock.`);
-          return;
-      }
+      if (!selectedShopProduct) return;
 
       setIsSaving(true);
       try {
         const autoApprove = shouldAutoApproveOwnerAction(businessSettings, currentUser);
         const expenseRecord = {
            id: crypto.randomUUID(),
-           amount: shopExpenseAmount,
+           amount: eligibility.amount,
            category: 'Shop product',
            description: shopExpenseForm.description.trim() || `Shop use: ${selectedShopProduct.name}`,
            timestamp: Date.now(),
@@ -296,13 +296,14 @@ export default function ExpensesTabMobile() {
   };
 
   const sourceBadge = (source?: string) => {
-    if (source === 'SHOP') return { label: 'Shop stock', className: 'bg-blue-50 text-blue-700 border-blue-100' };
-    if (source === 'TILL') return { label: 'Till', className: 'bg-slate-50 text-slate-700 border-slate-200' };
+    const normalized = normalizeExpenseSource(source);
+    if (normalized === 'SHOP') return { label: 'Shop stock', className: 'bg-blue-50 text-blue-700 border-blue-100' };
+    if (normalized === 'TILL') return { label: 'Till', className: 'bg-slate-50 text-slate-700 border-slate-200' };
     return { label: 'Main account', className: 'bg-slate-50 text-slate-700 border-slate-200' };
   };
 
   const statusBadge = (status?: string) => {
-    const normalized = String(status || 'APPROVED').toUpperCase();
+    const normalized = normalizeExpenseStatus(status);
     if (normalized === 'PENDING') return { label: 'Pending', className: 'bg-yellow-50 text-yellow-700 border-yellow-100' };
     if (normalized === 'REJECTED') return { label: 'Rejected', className: 'bg-rose-50 text-rose-600 border-rose-100' };
     return { label: 'Approved', className: 'bg-emerald-50 text-emerald-600 border-emerald-100' };
@@ -314,8 +315,8 @@ export default function ExpensesTabMobile() {
     .filter(e => {
       const query = expenseSearch.trim().toLowerCase();
       const timestamp = Number(e.timestamp) || 0;
-      const status = String(e.status || 'APPROVED').toUpperCase();
-      const source = String(e.source || 'ACCOUNT').toUpperCase();
+      const status = normalizeExpenseStatus(e.status);
+      const source = normalizeExpenseSource(e.source);
       const category = String(e.category || 'General');
       const productName = e.productId ? productById.get(e.productId)?.name || '' : '';
       const searchMatch = query.length === 0
@@ -327,7 +328,8 @@ export default function ExpensesTabMobile() {
       return searchMatch && dateMatch && sourceMatch && statusMatch && categoryMatch;
     })
     .sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
-  const filteredExpenseTotal = filteredExpenses.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
+  const filteredExpenseTotals = expenseLifecycleTotals(filteredExpenses);
+  const filteredExpenseTotal = filteredExpenseTotals.approvedTotal;
   const hasExpenseFilters = expenseSearch.trim().length > 0
     || expenseDateRange !== 'MONTH'
     || expenseSourceFilter !== 'ALL'
@@ -376,11 +378,11 @@ export default function ExpensesTabMobile() {
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Till expenses</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Till approved</p>
             <p className="mt-1 text-xl font-black tabular-nums text-slate-950">Ksh {todayTillExpenses.toLocaleString()}</p>
           </div>
           <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Main account</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Main approved</p>
             <p className="mt-1 text-xl font-black tabular-nums text-slate-950">Ksh {todayAccountExpenses.toLocaleString()}</p>
           </div>
           <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
@@ -388,10 +390,15 @@ export default function ExpensesTabMobile() {
             <p className="mt-1 text-xl font-black tabular-nums text-blue-700">Ksh {actualCashDrawer.toLocaleString()}</p>
           </div>
           <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Shop products</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Shop approved</p>
             <p className="mt-1 text-xl font-black tabular-nums text-slate-950">Ksh {todayShopExpenses.toLocaleString()}</p>
           </div>
         </div>
+        {todayPendingExpenses > 0 && (
+          <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-amber-600">
+            Pending requests today: Ksh {todayPendingExpenses.toLocaleString()}
+          </p>
+        )}
       </section>
 
       <section className="rounded-lg border-2 border-slate-200 bg-white p-2 shadow-sm">
@@ -445,8 +452,13 @@ export default function ExpensesTabMobile() {
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Filters</p>
                 <p className="truncate text-sm font-black text-slate-900">
-                  Ksh {filteredExpenseTotal.toLocaleString()} across {filteredExpenses.length} record{filteredExpenses.length === 1 ? '' : 's'}
+                  Approved Ksh {filteredExpenseTotal.toLocaleString()} across {filteredExpenses.length} record{filteredExpenses.length === 1 ? '' : 's'}
                 </p>
+                {filteredExpenseTotals.pendingCount > 0 && (
+                  <p className="mt-0.5 text-[10px] font-black uppercase tracking-widest text-amber-600">
+                    Pending Ksh {filteredExpenseTotals.pendingTotal.toLocaleString()}
+                  </p>
+                )}
               </div>
             </div>
             <div className="no-scrollbar flex max-w-full gap-1 overflow-x-auto rounded-lg border-2 border-slate-200 bg-white p-1">
@@ -558,7 +570,7 @@ export default function ExpensesTabMobile() {
                 options={productOptions}
                 placeholder="Select stock item"
                 searchPlaceholder="Search product, category, or barcode..."
-                emptyText="No in-stock products found"
+                emptyText="No eligible in-stock products found"
                 buttonClassName="h-12 border-2 border-slate-200 bg-white font-bold"
                 menuClassName="z-[160]"
               />
@@ -609,7 +621,7 @@ export default function ExpensesTabMobile() {
           <button
             type="button"
             onClick={handleSaveShopExpense}
-            disabled={!canCreateExpense || !selectedShopProduct || shopExpenseQuantity <= 0 || shopExpenseQuantity > Number(selectedShopProduct?.stockQuantity || 0) || shopExpenseUnitCost <= 0 || isSaving}
+            disabled={!canCreateExpense || !shopExpenseEligibility.ok || isSaving}
             className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-[11px] font-black uppercase tracking-widest text-white transition-all hover:bg-blue-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <PackageMinus size={17} />
@@ -623,6 +635,8 @@ export default function ExpensesTabMobile() {
          {filteredExpenses.map(expense => {
            const source = sourceBadge(expense.source);
            const status = statusBadge(expense.status);
+           const normalizedSource = normalizeExpenseSource(expense.source);
+           const normalizedStatus = normalizeExpenseStatus(expense.status);
            const amount = Number(expense.amount) || 0;
            const timestamp = Number(expense.timestamp) || Date.now();
            const product = expense.productId ? productById.get(expense.productId) : null;
@@ -633,10 +647,10 @@ export default function ExpensesTabMobile() {
                       <FileMinus size={28} />
                    </div>
                    <div className="min-w-0">
-                      <h4 className="text-base font-black text-slate-900 truncate leading-tight">{expense.source === 'SHOP' ? product?.name || expense.category || 'Shop product' : expense.category || 'General'}</h4>
+                      <h4 className="text-base font-black text-slate-900 truncate leading-tight">{normalizedSource === 'SHOP' ? product?.name || expense.category || 'Shop product' : expense.category || 'General'}</h4>
                       <div className="flex items-center gap-2.5 mt-1">
                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate max-w-[120px] sm:max-w-none">
-                           {expense.source === 'SHOP' && expense.quantity ? `${Number(expense.quantity).toLocaleString()} ${product?.unit || 'pcs'} - ` : ''}{expense.description || 'General operational cost'}
+                           {normalizedSource === 'SHOP' && expense.quantity ? `${Number(expense.quantity).toLocaleString()} ${product?.unit || 'pcs'} - ` : ''}{expense.description || 'General operational cost'}
                          </span>
                          <span className="w-1 h-1 rounded-full bg-slate-200 shrink-0" />
                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Calendar size={10}/> {new Date(timestamp).toLocaleDateString()}</span>
@@ -663,7 +677,7 @@ export default function ExpensesTabMobile() {
                          )}
                       </div>
                    </div>
-                   {isAdmin && (
+                   {isAdmin && normalizedStatus !== 'APPROVED' && (
                       <button 
                         onClick={() => handleDeleteExpense(expense.id)}
                         className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-rose-100 bg-rose-50 text-rose-600 transition-all hover:bg-rose-600 hover:text-white"

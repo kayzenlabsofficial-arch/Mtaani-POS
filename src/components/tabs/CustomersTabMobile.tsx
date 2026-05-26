@@ -10,7 +10,8 @@ import MobileModal from '../shared/MobileModal';
 import { belongsToActiveShop } from '../../utils/shopScope';
 import { CustomerService } from '../../services/customers';
 import { getCurrentShiftId } from '../../utils/shiftSession';
-import { transactionOriginalNetTotal } from '../../utils/posMoney';
+import { customerStatementCreditAmount } from '../../utils/reportAnalytics';
+import { generateAndDownloadCustomerStatement } from '../../utils/shareUtils';
 
 type DebtSourceType = 'SALE' | 'INVOICE';
 type DebtAllocation = { sourceType: DebtSourceType; sourceId: string; amount: number };
@@ -29,6 +30,14 @@ type CustomerDebtSource = {
 };
 
 const money = (value: number) => `Ksh ${Math.max(0, Number(value) || 0).toLocaleString()}`;
+const clientId = (prefix: string) => {
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${random}`;
+};
+const paymentIdFromRequest = (requestId: string) =>
+  `customer_payment_${String(requestId || `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
 function sourceKey(sourceType: DebtSourceType, sourceId: string) {
   return `${sourceType}:${sourceId}`;
@@ -72,6 +81,7 @@ export default function CustomersTabMobile() {
   const [selectedDebtRecord, setSelectedDebtRecord] = useState<any | null>(null);
   const statementPageSize = 50;
   const [paymentForm, setPaymentForm] = useState({
+    id: clientId('customer_payment'),
     amount: '',
     method: 'CASH' as CustomerPayment['paymentMethod'],
     reference: '',
@@ -148,11 +158,7 @@ export default function CustomersTabMobile() {
   const statementCustomer = statementCustomerId ? allCustomers.find(c => c.id === statementCustomerId) || null : null;
 
   const getCreditAmount = (sale: Transaction) => {
-    if (sale.paymentMethod === 'CREDIT') return transactionOriginalNetTotal(sale);
-    if (sale.paymentMethod === 'SPLIT' && sale.splitPayments?.secondaryMethod === 'CREDIT') {
-      return Number(sale.splitPayments.secondaryAmount || 0);
-    }
-    return 0;
+    return customerStatementCreditAmount(sale);
   };
 
   const creditSales = (statementSales || [])
@@ -365,7 +371,7 @@ export default function CustomersTabMobile() {
       setStatementViewTab('STATEMENT');
       setStatementDateMode('ALL');
       setStatementPage(1);
-      setPaymentForm({ amount: Number(customer.balance || 0) > 0 ? String(customer.balance) : '', method: 'CASH', reference: '' });
+      setPaymentForm({ id: clientId('customer_payment'), amount: Number(customer.balance || 0) > 0 ? String(customer.balance) : '', method: 'CASH', reference: '' });
   }
 
   const openEditCustomer = (c: Customer) => {
@@ -461,6 +467,7 @@ export default function CustomersTabMobile() {
         if (editingCustomer) {
           try {
             const paymentResult = await CustomerService.recordPayment({
+              id: paymentIdFromRequest(requestId),
               customerId: editingCustomer.id,
               amount,
               paymentMethod: 'MPESA',
@@ -510,6 +517,7 @@ export default function CustomersTabMobile() {
     try {
       const allocations = buildPaymentAllocations(amount);
       await CustomerService.recordPayment({
+        id: paymentForm.id,
         customerId: statementCustomer.id,
         amount,
         paymentMethod: paymentForm.method,
@@ -526,7 +534,7 @@ export default function CustomersTabMobile() {
         db.customers.reload(),
         db.salesInvoices.reload(),
       ]);
-      setPaymentForm({ amount: '', method: 'CASH', reference: '' });
+      setPaymentForm({ id: clientId('customer_payment'), amount: '', method: 'CASH', reference: '' });
       success(amount >= (statementCustomer.balance || 0) ? "Customer balance cleared." : "Payment recorded.");
     } catch (err: any) {
       error("Failed to record payment: " + err.message);
@@ -538,7 +546,6 @@ export default function CustomersTabMobile() {
   const handleExportStatement = async () => {
     if (!statementCustomer) return;
     try {
-      const { generateAndDownloadCustomerStatement } = await import('../../utils/shareUtils');
       await generateAndDownloadCustomerStatement(
         statementCustomer,
         [...filteredCreditSales, ...filteredStatementInvoices.map(invoice => ({ ...invoice, recordType: 'SALES_INVOICE' }))],

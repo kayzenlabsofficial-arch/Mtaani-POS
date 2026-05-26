@@ -18,6 +18,8 @@ function CashierNotice() {
 }
 
 export default function DashboardDesktop({ model }: { model: DashboardModel }) {
+  const showSalesTrend = model.canSeeSalesData && model.salesTrendData.length > 0;
+
   return (
     <div className="space-y-5 pb-10">
       <DashboardHeader model={model} />
@@ -36,10 +38,12 @@ export default function DashboardDesktop({ model }: { model: DashboardModel }) {
 
       {model.canSeeSalesData ? (
         <div className="grid grid-cols-12 gap-5">
-          <div className="col-span-8 h-full">
-            <SalesChartPanel model={model} />
-          </div>
-          <div className="col-span-4 space-y-5">
+          {showSalesTrend && (
+            <div className="col-span-8 h-full">
+              <SalesChartPanel model={model} />
+            </div>
+          )}
+          <div className={`${showSalesTrend ? 'col-span-4' : 'col-span-12'} space-y-5`}>
             <MoneyBreakdownPanel model={model} />
           </div>
         </div>

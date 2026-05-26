@@ -11,7 +11,7 @@ import { approveRefundTransaction, requestRefundApproval } from '../../utils/app
 import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { getBusinessSettings } from '../../utils/settings';
 import { getCurrentShiftId } from '../../utils/shiftSession';
-import { refundedAmountFromReturnedLines, transactionOriginalNetTotal } from '../../utils/posMoney';
+import { refundNetAmountForLines, refundNetAmountForRemainingItems, refundedAmountFromReturnedLines, transactionOriginalNetTotal } from '../../utils/posMoney';
 
 
 interface RefundsTabProps {
@@ -114,7 +114,7 @@ export default function RefundsTabMobile({ setActiveTab }: RefundsTabProps) {
           entity: 'transaction',
           entityId: t.id,
           severity: autoApprove ? 'INFO' : 'WARN',
-          details: `${autoApprove ? 'Refund processed' : 'Refund request submitted'} for Ksh ${(t.total || 0).toLocaleString()}`,
+          details: `${autoApprove ? 'Refund processed' : 'Refund request submitted'} for Ksh ${(itemsToReturn?.length ? refundNetAmountForLines(t as any, itemsToReturn) : refundNetAmountForRemainingItems(t as any)).toLocaleString()}`,
         });
         
         setSelectedRecord(null);

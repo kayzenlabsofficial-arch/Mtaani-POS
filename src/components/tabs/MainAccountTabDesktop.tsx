@@ -22,7 +22,7 @@ import { MainAccountService, type MainAccountAdjustMode } from '../../services/f
 import { MAIN_ACCOUNT_NAME, MAIN_ACCOUNT_NUMBER, mainAccountId, singleFinanceAccount } from '../../utils/financeAccount';
 
 type MainAccountDateRange = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL';
-type MainAccountLogSource = 'Cash pick' | 'Expense' | 'Supplier payment' | 'Adjustment';
+type MainAccountLogSource = 'Cash pick' | 'Expense' | 'Supplier payment' | 'Adjustment' | 'M-Pesa sale' | 'M-Pesa customer payment';
 
 type MainAccountLog = {
   id: string;
@@ -108,6 +108,7 @@ export default function MainAccountTabDesktop() {
   const [adjustReason, setAdjustReason] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isEnsuring, setIsEnsuring] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
   const ensureAttemptedRef = React.useRef(false);
 
   const { success, error } = useToast();
@@ -216,14 +217,27 @@ export default function MainAccountTabDesktop() {
       .map((adjustment: FinancialAccountAdjustment) => {
         const amount = Number(adjustment.amount || 0);
         const isOut = amount < 0;
+        const id = String(adjustment.id || '');
+        const isMpesaSale = id.startsWith('mpesa_sale_');
+        const isMpesaCustomerPayment = id.startsWith('mpesa_customer_payment_');
         return {
           id: `adjustment-${adjustment.id}`,
           timestamp: Number(adjustment.timestamp || 0),
           direction: isOut ? 'OUT' as const : 'IN' as const,
           amount: Math.abs(amount),
-          title: adjustment.direction === 'SET' ? 'Balance correction' : 'Manual adjustment',
+          title: isMpesaSale
+            ? 'M-Pesa sale'
+            : isMpesaCustomerPayment
+              ? 'M-Pesa customer payment'
+              : adjustment.direction === 'SET'
+                ? 'Balance correction'
+                : 'Manual adjustment',
           detail: adjustment.reason || 'Manual adjustment',
-          source: 'Adjustment' as const,
+          source: isMpesaSale
+            ? 'M-Pesa sale' as const
+            : isMpesaCustomerPayment
+              ? 'M-Pesa customer payment' as const
+              : 'Adjustment' as const,
           userName: adjustment.userName,
         };
       });
@@ -310,6 +324,32 @@ export default function MainAccountTabDesktop() {
     }
   };
 
+  const handleReconcileMpesa = async () => {
+    if (!activeBusinessId || isReconciling) return;
+    if (!isAdminUser) {
+      error('Only admin can reconcile M-Pesa money.');
+      return;
+    }
+    setIsReconciling(true);
+    try {
+      const result = await MainAccountService.reconcileMpesa({ businessId: activeBusinessId });
+      await Promise.all([
+        db.financialAccounts.reload(),
+        db.financialAccountAdjustments.reload(),
+        db.auditLogs.reload(),
+      ]);
+      if (result.anomalies?.length) {
+        error(`M-Pesa reconcile posted ${result.posted}. ${result.anomalies.length} item${result.anomalies.length === 1 ? '' : 's'} need review.`);
+      } else {
+        success(`M-Pesa reconcile complete. Posted ${result.posted}, skipped ${result.skipped}.`);
+      }
+    } catch (err: any) {
+      error(err?.message || 'Could not reconcile M-Pesa money.');
+    } finally {
+      setIsReconciling(false);
+    }
+  };
+
   const clearFilters = () => {
     setDateRange('MONTH');
     setStartDate(todayInput);
@@ -346,6 +386,15 @@ export default function MainAccountTabDesktop() {
             >
               <RefreshCw size={16} className={isEnsuring ? 'animate-spin' : ''} />
               Refresh
+            </button>
+            <button
+              type="button"
+              onClick={handleReconcileMpesa}
+              disabled={!isAdminUser || !activeBusinessId || isReconciling}
+              className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-emerald-700 bg-white px-4 text-xs font-black text-emerald-700 transition-all hover:bg-emerald-50 disabled:border-slate-200 disabled:text-slate-300"
+            >
+              <RefreshCw size={16} className={isReconciling ? 'animate-spin' : ''} />
+              Reconcile M-Pesa
             </button>
             <button
               type="button"

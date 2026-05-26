@@ -12,6 +12,8 @@ import { useState, useEffect } from 'react';
 import { getApiKey } from './runtimeConfig';
 import { cacheTableRows, readCachedTableRows, type OfflineCacheTable } from './offline/localdb';
 import { enqueueOutbox } from './offline/localdb';
+import { normalizedShopId } from './utils/inventoryIntegrity';
+import { useStore } from './store';
 
 // ── Global change event bus ────────────────────────────────────────────────
 // Any CloudTable mutation fires this so useLiveQuery hooks re-run.
@@ -92,8 +94,6 @@ function sanitizeRowsForClient(table: string, rows: any[]): any[] {
 }
 
 async function d1Fetch(table: string, method: string, body?: any): Promise<any> {
-  // Lazy import to avoid circular dependency with store.ts
-  const { useStore } = await import('./store');
   const businessId = useStore.getState().activeBusinessId;
   const apiKey = await getApiKey();
   const headers: Record<string, string> = { 
@@ -203,8 +203,6 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
 }
 
 async function d1Delete(table: string, id: string): Promise<void> {
-  // Lazy import to avoid circular dependency with store.ts
-  const { useStore } = await import('./store');
   const businessId = useStore.getState().activeBusinessId;
   const apiKey = await getApiKey();
   const headers: Record<string, string> = { 
@@ -254,7 +252,6 @@ export class CloudTable<T extends { id: string }> {
       return { key: `${this.name}:unscoped`, canHydrate: true };
     }
 
-    const { useStore } = await import('./store');
     const businessId = useStore.getState().activeBusinessId;
 
     if (!businessId) {
@@ -414,7 +411,7 @@ export class CloudTable<T extends { id: string }> {
     };
 
     return {
-      equals: (v: any) => makeOp(field === 'shopId' ? () => true : r => (r[field] as any) === v),
+      equals: (v: any) => makeOp(field === 'shopId' ? r => normalizedShopId((r as any)[field]) === normalizedShopId(v) : r => (r[field] as any) === v),
       between: (low: any, high: any, includeLow = true, includeHigh = false) => makeOp(r => {
         const value = r[field] as any;
         const aboveLow = includeLow ? value >= low : value > low;
@@ -504,7 +501,6 @@ export class CloudTable<T extends { id: string }> {
       ) {
         try {
           // Queue for sync (idempotencyKey = transaction.id)
-          const { useStore } = await import('./store');
           const businessId = useStore.getState().activeBusinessId;
           if (businessId) {
             await enqueueOutbox({
@@ -694,8 +690,6 @@ export function startBackgroundSync(intervalMs = 30000) {
   if (syncTimer) return;
   
   syncTimer = setInterval(async () => {
-    // Lazy import to check if we are logged in
-    const { useStore } = await import('./store');
     const businessId = useStore.getState().activeBusinessId;
     if (!businessId) return;
 

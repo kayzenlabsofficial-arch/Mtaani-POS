@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Download, FileText, Loader2, Maximize2, PackagePlus, Printer, RotateCcw, Share2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Transaction } from '../../db';
@@ -8,7 +8,7 @@ import { getBusinessSettings } from '../../utils/settings';
 import { canPerform } from '../../utils/accessControl';
 import { downloadDocumentBlob, generateAndShareDocument, generateDocumentPdfBlob } from '../../utils/shareUtils';
 import { useTillCash } from '../../hooks/useTillCash';
-import { usePhoneUi } from '../../hooks/usePhoneUi';
+import { refundNetAmountForLines, refundNetAmountForRemainingItems } from '../../utils/posMoney';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 interface DocumentDetailsModalProps {
@@ -45,7 +45,19 @@ type PdfPageImage = {
   width: number;
 };
 
-function PhonePdfCanvasPreview({ blob, title }: { blob: Blob | null; title: string }) {
+function PdfCanvasPreview({
+  blob,
+  filename,
+  onDownload,
+  title,
+  zoom,
+}: {
+  blob: Blob | null;
+  filename: string;
+  onDownload: () => void;
+  title: string;
+  zoom: number;
+}) {
   const [pages, setPages] = useState<PdfPageImage[]>([]);
   const [isRendering, setIsRendering] = useState(false);
   const [renderError, setRenderError] = useState('');
@@ -67,9 +79,9 @@ function PhonePdfCanvasPreview({ blob, title }: { blob: Blob | null; title: stri
         (pdfjs as any).GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
         const data = new Uint8Array(await blob.arrayBuffer());
-        const pdf = await (pdfjs as any).getDocument({ data }).promise;
+        const pdf = await (pdfjs as any).getDocument({ data, disableWorker: true }).promise;
         const nextPages: PdfPageImage[] = [];
-        const renderScale = Math.max(1.5, Math.min(2.4, window.devicePixelRatio || 1.5));
+        const renderScale = Math.max(1.6, Math.min(2.6, window.devicePixelRatio || 1.6));
 
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
           if (cancelled) break;
@@ -94,8 +106,8 @@ function PhonePdfCanvasPreview({ blob, title }: { blob: Blob | null; title: stri
         await pdf.destroy?.();
         if (!cancelled) setPages(nextPages);
       } catch (err: any) {
-        console.error('Mobile PDF render failed:', err);
-        if (!cancelled) setRenderError(err?.message || 'Could not render this PDF on the phone.');
+        console.error('PDF render failed:', err);
+        if (!cancelled) setRenderError(err?.message || 'Could not render this PDF preview.');
       } finally {
         if (!cancelled) setIsRendering(false);
       }
@@ -107,23 +119,32 @@ function PhonePdfCanvasPreview({ blob, title }: { blob: Blob | null; title: stri
 
   if (isRendering && pages.length === 0) {
     return (
-      <div className="flex min-h-72 items-center justify-center rounded-lg bg-white text-sm font-bold text-slate-500">
-        Rendering PDF...
+      <div className="flex min-h-96 items-center justify-center rounded-lg bg-white text-sm font-bold text-slate-500">
+        <Loader2 size={18} className="mr-2 animate-spin text-blue-700" />
+        Rendering PDF preview...
       </div>
     );
   }
 
   if (renderError) {
     return (
-      <div className="flex min-h-72 flex-col items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white p-5 text-center">
-        <p className="text-sm font-black text-slate-900">PDF preview could not render on this phone.</p>
+      <div className="flex min-h-96 flex-col items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white p-5 text-center">
+        <p className="text-sm font-black text-slate-900">PDF preview could not render.</p>
         <p className="text-xs font-semibold text-slate-500">{renderError}</p>
+        <button
+          type="button"
+          onClick={onDownload}
+          className="mt-2 flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-xs font-bold text-white"
+        >
+          <Download size={15} />
+          Download {filename}.pdf
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-3 pb-4">
+    <div className="space-y-3 pb-4" data-pdf-zoom={zoom}>
       {pages.map(page => (
         <img
           key={page.page}
@@ -180,7 +201,6 @@ export default function DocumentPdfModalView({
   const currentUser = useStore(state => state.currentUser);
   const isAdmin = useStore(state => state.isAdmin);
   const activeBusinessId = useStore(state => state.activeBusinessId);
-  const isPhoneUi = usePhoneUi();
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   const supplier = useLiveQuery(
     () => (selectedRecord?.recordType === 'SUPPLIER_PAYMENT' || selectedRecord?.recordType === 'PURCHASE_ORDER' || selectedRecord?.recordType === 'CREDIT_NOTE')
@@ -189,7 +209,6 @@ export default function DocumentPdfModalView({
     [selectedRecord]
   );
   const tillCash = useTillCash();
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [objectUrl, setObjectUrl] = useState('');
   const [preparedRecord, setPreparedRecord] = useState<any | null>(null);
@@ -215,7 +234,12 @@ export default function DocumentPdfModalView({
     (selectedRecord?.recordType === 'SALE' && selectedRecord?.status === 'PENDING_REFUND')
   );
   const canReceive = !!(onReceive && isPO && selectedRecord?.approvalStatus === 'APPROVED' && selectedRecord?.status === 'PENDING');
-  const refundAmount = Math.max(0, Number(selectedRecord?.total || 0));
+  const pendingRefundLines = parseList(selectedRecord?.pendingRefundItems);
+  const refundAmount = isSale
+    ? (pendingRefundLines.length > 0
+      ? refundNetAmountForLines(selectedRecord, pendingRefundLines)
+      : refundNetAmountForRemainingItems(selectedRecord))
+    : 0;
   const refundBlocked = isAdmin && isSale && refundAmount > 0 && (!tillCash.hasOpenShift || tillCash.actualCashDrawer + 0.01 < refundAmount);
 
   useEffect(() => {
@@ -312,7 +336,7 @@ export default function DocumentPdfModalView({
     : isZoomCustom
       ? `${pdfZoom}%`
       : '100%';
-  const frameMaxWidth = isReceiptSized ? 'none' : '100%';
+  const frameMaxWidth = isReceiptSized || isZoomCustom ? 'none' : '100%';
 
   const changeZoom = (delta: number) => {
     setIsZoomCustom(true);
@@ -325,9 +349,29 @@ export default function DocumentPdfModalView({
   };
 
   const printPdf = () => {
+    if (!objectUrl) {
+      if (pdfBlob) downloadDocumentBlob(pdfBlob, filename);
+      return;
+    }
     try {
-      iframeRef.current?.contentWindow?.focus();
-      iframeRef.current?.contentWindow?.print();
+      const printFrame = document.createElement('iframe');
+      printFrame.src = viewerUrl;
+      printFrame.title = `${title} print`;
+      printFrame.style.position = 'fixed';
+      printFrame.style.right = '0';
+      printFrame.style.bottom = '0';
+      printFrame.style.width = '0';
+      printFrame.style.height = '0';
+      printFrame.style.border = '0';
+      printFrame.onload = () => {
+        try {
+          printFrame.contentWindow?.focus();
+          printFrame.contentWindow?.print();
+        } finally {
+          window.setTimeout(() => printFrame.remove(), 1000);
+        }
+      };
+      document.body.appendChild(printFrame);
     } catch {
       if (pdfBlob) downloadDocumentBlob(pdfBlob, filename);
     }
@@ -463,7 +507,7 @@ export default function DocumentPdfModalView({
         </header>
 
         <div className={`min-h-0 flex-1 overflow-auto bg-slate-200 ${isReceiptSized ? 'p-3 sm:p-5' : 'p-0 sm:p-3'}`}>
-          {viewerUrl ? (
+          {pdfBlob ? (
             <div className="flex h-full min-h-0 w-full flex-col">
               <div className="mb-2 flex items-center justify-center gap-1 sm:hidden">
                 <button
@@ -498,17 +542,13 @@ export default function DocumentPdfModalView({
                 className="mx-auto min-h-0 flex-1"
                 style={{ width: frameWidth, maxWidth: frameMaxWidth }}
               >
-                {isPhoneUi ? (
-                  <PhonePdfCanvasPreview blob={pdfBlob} title={title} />
-                ) : (
-                  <iframe
-                    key={`${viewerUrl}-${pdfZoom}-${isZoomCustom ? 'custom' : 'fit'}-${isReceiptSized ? 'receipt' : 'page'}`}
-                    ref={iframeRef}
-                    src={viewerUrl}
-                    title={title}
-                    className="h-full w-full border-0 bg-white sm:rounded-lg sm:shadow-sm"
-                  />
-                )}
+                <PdfCanvasPreview
+                  blob={pdfBlob}
+                  filename={filename}
+                  onDownload={() => downloadDocumentBlob(pdfBlob, filename)}
+                  title={title}
+                  zoom={pdfZoom}
+                />
               </div>
             </div>
           ) : (
@@ -520,6 +560,11 @@ export default function DocumentPdfModalView({
 
         {(canReceive || isPendingApproval || (isSale && canRequestRefund) || extraActions) && (
           <footer className="shrink-0 border-t border-slate-200 bg-white p-3 sm:p-4">
+            {isSale && canRequestRefund && (
+              <div className="mb-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-800">
+                Cash refund from till: {moneyText(refundAmount)}. The till must have enough cash before approval.
+              </div>
+            )}
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               {extraActions}
 

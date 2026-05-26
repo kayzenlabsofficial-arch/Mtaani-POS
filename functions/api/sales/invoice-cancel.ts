@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { ensureInventoryIntegritySchema } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +11,7 @@ const INVOICE_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -47,6 +48,7 @@ async function ensureSchema(db: D1Database) {
       reference TEXT,
       businessId TEXT,
       shiftId TEXT,
+      shopId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -65,6 +67,15 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+  for (const sql of [
+    'ALTER TABLE salesInvoices ADD COLUMN shiftId TEXT',
+    'ALTER TABLE salesInvoices ADD COLUMN shopId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN shopId TEXT',
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_salesInvoices_business_number ON salesInvoices(businessId, invoiceNumber)',
+  ]) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
+  await ensureInventoryIntegritySchema(db);
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -121,8 +132,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ?`)
           .bind(quantity, now, line.itemId, businessId),
         env.DB.prepare(`
-          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
           line.itemId,
@@ -132,6 +143,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           `Cancelled invoice ${invoice.invoiceNumber}`,
           businessId,
           body?.shiftId || null,
+          invoice.shopId || body?.shopId || 'single-shop',
           now,
         )
       );

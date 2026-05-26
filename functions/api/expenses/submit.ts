@@ -9,7 +9,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -28,7 +28,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!auth.ok) return auth.response;
 
     const body = await request.json().catch(() => null) as any;
-    const expense = body?.expense || body;
+    const expense = { ...(body?.expense || body || {}) };
+    if (!expense.shopId) expense.shopId = String(request.headers.get('X-Shop-ID') || '').trim() || undefined;
     const businessId = String(request.headers.get('X-Business-ID') || expense?.businessId || '').trim();
     if (!businessId) return json({ error: 'Business is required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
@@ -44,7 +45,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (prepared.statements.length) await env.DB.batch(prepared.statements);
     return json({ success: true, expense: prepared.expense, idempotent: prepared.idempotent });
   } catch (err: any) {
-    const status = err instanceof PolicyError ? err.status : 500;
-    return json({ error: err?.message || 'Could not save expense.' }, status);
+    const message = String(err?.message || '');
+    const insufficientStock = message.includes('Insufficient stock');
+    const insufficientAccount = message.includes('Insufficient account balance');
+    const status = err instanceof PolicyError ? err.status : insufficientStock || insufficientAccount ? 409 : 500;
+    const errorMessage = insufficientStock
+      ? 'Insufficient stock for the selected shop item.'
+      : insufficientAccount
+        ? 'Insufficient funds in the Main account.'
+        : err?.message || 'Could not save expense.';
+    return json({ error: errorMessage }, status);
   }
 };

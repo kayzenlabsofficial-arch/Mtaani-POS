@@ -1,7 +1,26 @@
 import type { BillingPayment, Business, User } from '../db';
 import { apiRequest } from './apiClient';
 
+export type SafeStaffUser = Omit<User, 'password'> & {
+  pin?: never;
+};
+
+export type DeviceSyncRow = {
+  deviceId: string;
+  cashierName?: string | null;
+  lastSyncAt?: number | null;
+  updated_at?: number | null;
+};
+
 export const StaffService = {
+  list(input: { businessId: string; shopId?: string | null }) {
+    return apiRequest<{ success: boolean; users: SafeStaffUser[] }>('/api/admin/staff', {
+      method: 'GET',
+      businessId: input.businessId,
+      shopId: input.shopId,
+    });
+  },
+
   save(input: {
     user: Partial<User> & { password?: string };
     businessId: string;
@@ -28,6 +47,16 @@ export const StaffService = {
     return apiRequest<{ success: boolean; userId: string; mustChangePassword?: boolean }>('/api/admin/staff', {
       method: 'POST',
       body: { action: 'RESET_PASSWORD', ...input },
+      businessId: input.businessId,
+      shopId: input.shopId,
+    });
+  },
+};
+
+export const AdminStatusService = {
+  deviceSync(input: { businessId: string; shopId?: string | null }) {
+    return apiRequest<{ success: boolean; rows: DeviceSyncRow[] }>('/api/sync/status', {
+      method: 'GET',
       businessId: input.businessId,
       shopId: input.shopId,
     });

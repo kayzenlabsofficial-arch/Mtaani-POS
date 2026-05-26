@@ -34,6 +34,7 @@ async function ensureSchema(db: D1Database) {
       email TEXT,
       totalSpent REAL,
       balance REAL,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -59,6 +60,7 @@ async function ensureSchema(db: D1Database) {
     'ALTER TABLE customers ADD COLUMN email TEXT',
     'ALTER TABLE customers ADD COLUMN totalSpent REAL',
     'ALTER TABLE customers ADD COLUMN balance REAL',
+    'ALTER TABLE customers ADD COLUMN shopId TEXT',
     'ALTER TABLE customers ADD COLUMN businessId TEXT',
     'ALTER TABLE customers ADD COLUMN updated_at INTEGER',
   ]) {
@@ -125,6 +127,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const customer = body?.customer || body || {};
     const name = trimText(customer.name, 120);
     if (!name) return json({ error: 'Customer name is required.' }, 400);
+    const shopId = trimText(customer.shopId || body?.shopId, 160) || null;
     const id = customerId || crypto.randomUUID();
     const existing = await env.DB.prepare(`
       SELECT *
@@ -140,15 +143,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       email: trimText(customer.email, 120),
       totalSpent: Number(existing?.totalSpent || 0),
       balance: Number(existing?.balance || 0),
+      shopId: existing?.shopId || shopId,
       businessId,
       updated_at: now,
     };
 
     await env.DB.batch([
       env.DB.prepare(`
-        INSERT OR REPLACE INTO customers (id, name, phone, email, totalSpent, balance, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(savedCustomer.id, savedCustomer.name, savedCustomer.phone, savedCustomer.email, savedCustomer.totalSpent, savedCustomer.balance, savedCustomer.businessId, now),
+        INSERT OR REPLACE INTO customers (id, name, phone, email, totalSpent, balance, shopId, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(savedCustomer.id, savedCustomer.name, savedCustomer.phone, savedCustomer.email, savedCustomer.totalSpent, savedCustomer.balance, savedCustomer.shopId, savedCustomer.businessId, now),
       env.DB.prepare(`
         INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

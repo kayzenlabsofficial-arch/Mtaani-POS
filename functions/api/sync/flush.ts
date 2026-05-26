@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { ensureInventoryIntegritySchema } from '../inventoryIntegrity';
 import { hardenTransactionBatch, PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -15,7 +16,7 @@ type Mutation = {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(body: any, status = 200) {
@@ -59,7 +60,7 @@ async function ensureSyncSchema(db: D1Database) {
 
   await db.prepare('CREATE TABLE IF NOT EXISTS productIngredients (id TEXT PRIMARY KEY, productId TEXT NOT NULL, ingredientProductId TEXT NOT NULL, quantity REAL NOT NULL, businessId TEXT, updated_at INTEGER)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId)').run();
-  await db.prepare('CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, businessId TEXT, shiftId TEXT, expiryDate INTEGER, updated_at INTEGER)').run();
+  await db.prepare('CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, businessId TEXT, shiftId TEXT, shopId TEXT, expiryDate INTEGER, updated_at INTEGER)').run();
 
   const migrations = [
     'ALTER TABLE transactions ADD COLUMN businessId TEXT',
@@ -96,12 +97,14 @@ async function ensureSyncSchema(db: D1Database) {
     'ALTER TABLE stockMovements ADD COLUMN reference TEXT',
     'ALTER TABLE stockMovements ADD COLUMN businessId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN shopId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN expiryDate INTEGER',
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
   ];
   for (const sql of migrations) {
     try { await db.prepare(sql).run(); } catch {}
   }
+  await ensureInventoryIntegritySchema(db);
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {
@@ -207,7 +210,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     }
   } catch (err: any) {
     console.error('[Sync Flush Error]', err?.message || err);
-    return json({ error: err?.message || 'Offline sync failed.' }, 500);
+    const message = String(err?.message || '');
+    const stockRace = message.includes('Insufficient stock');
+    return json({ error: stockRace ? 'Insufficient stock for one or more offline sale items.' : err?.message || 'Offline sync failed.' }, stockRace ? 409 : 500);
   }
 
   return json({ success: true, applied: validMutations.length, skipped: skippedCount });

@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { ensureInventoryIntegritySchema } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +11,7 @@ const APPROVER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -34,6 +35,7 @@ async function ensureSchema(db: D1Database) {
       status TEXT NOT NULL,
       preparedBy TEXT,
       approvedBy TEXT,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -56,9 +58,11 @@ async function ensureSchema(db: D1Database) {
 
   try { await db.prepare('ALTER TABLE stockAdjustmentRequests ADD COLUMN preparedBy TEXT').run(); } catch {}
   try { await db.prepare('ALTER TABLE stockAdjustmentRequests ADD COLUMN approvedBy TEXT').run(); } catch {}
+  try { await db.prepare('ALTER TABLE stockAdjustmentRequests ADD COLUMN shopId TEXT').run(); } catch {}
   try { await db.prepare('ALTER TABLE stockAdjustmentRequests ADD COLUMN requestedQuantity REAL').run(); } catch {}
   try { await db.prepare('ALTER TABLE stockAdjustmentRequests ADD COLUMN businessId TEXT').run(); } catch {}
   try { await db.prepare('ALTER TABLE stockAdjustmentRequests ADD COLUMN updated_at INTEGER').run(); } catch {}
+  await ensureInventoryIntegritySchema(db);
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });

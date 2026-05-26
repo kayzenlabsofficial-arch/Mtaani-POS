@@ -6,6 +6,8 @@ import {
   lineTaxForTransaction,
   netItemQuantity,
   paymentAmountForMethod,
+  refundNetAmountForLines,
+  refundNetAmountForRemainingItems,
   refundedAmountFromReturnedLines,
   transactionExpectedDiscount,
   transactionNetMetrics,
@@ -66,6 +68,18 @@ describe('POS money integrity helpers', () => {
     expect(transactionNetMetrics(partialRefund).netTotal).toBe(45);
   });
 
+  it('keeps refunded sales out of reported net sales without erasing the original tender', () => {
+    const refundedSale = {
+      ...discountedCashSale,
+      status: 'REFUNDED',
+      total: 90,
+      items: [{ ...discountedCashSale.items[0], returnedQuantity: 2 }],
+    };
+
+    expect(transactionNetMetrics(refundedSale).netTotal).toBe(0);
+    expect(paymentAmountForMethod(refundedSale, 'CASH')).toBe(90);
+  });
+
   it('allocates transaction-level discounts across product report rows', () => {
     const sale = {
       subtotal: 200,
@@ -85,6 +99,25 @@ describe('POS money integrity helpers', () => {
     expect(lineNetRevenueForTransaction(sale, sale.items[1], metrics)).toBe(135);
     expect(lineTaxForTransaction(sale, sale.items[0], metrics)).toBe(6.21);
     expect(lineTaxForTransaction(sale, sale.items[1], metrics)).toBe(18.62);
+  });
+
+  it('allocates transaction-level discounts across partial refund values', () => {
+    const sale = {
+      subtotal: 200,
+      discountAmount: 20,
+      total: 180,
+      tax: 24.83,
+      status: 'PAID',
+      paymentMethod: 'CASH',
+      items: [
+        { productId: 'a', name: 'A', quantity: 1, snapshotPrice: 50, discountAmount: 0 },
+        { productId: 'b', name: 'B', quantity: 1, snapshotPrice: 150, discountAmount: 0 },
+      ],
+    };
+
+    expect(refundNetAmountForLines(sale, [{ productId: 'a', quantity: 1 }])).toBe(45);
+    expect(refundNetAmountForLines(sale, [{ productId: 'b', quantity: 1 }])).toBe(135);
+    expect(refundNetAmountForRemainingItems(sale)).toBe(180);
   });
 
   it('keeps split tenders tied to the sale total without creating extra sales', () => {

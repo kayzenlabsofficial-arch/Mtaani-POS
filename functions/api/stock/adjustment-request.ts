@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { ensureInventoryIntegritySchema, inventoryShopIdFromRequest, isBundleInventoryRow } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +11,7 @@ const REQUEST_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER', 'CASHIER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -43,6 +44,7 @@ async function ensureSchema(db: D1Database) {
       status TEXT NOT NULL,
       preparedBy TEXT,
       approvedBy TEXT,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -70,12 +72,14 @@ async function ensureSchema(db: D1Database) {
     'requestedQuantity REAL',
     'preparedBy TEXT',
     'approvedBy TEXT',
+    'shopId TEXT',
     'businessId TEXT',
     'updated_at INTEGER',
   ];
   for (const column of adjustmentColumns) {
     try { await db.prepare(`ALTER TABLE stockAdjustmentRequests ADD COLUMN ${column}`).run(); } catch {}
   }
+  await ensureInventoryIntegritySchema(db);
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -91,6 +95,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
+    const shopId = inventoryShopIdFromRequest(request, body);
     const productId = trimText(body?.productId, 160);
     if (!businessId || !productId) return json({ error: 'Business and product are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
@@ -99,12 +104,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     await ensureSchema(env.DB);
     const product = await env.DB.prepare(`
-      SELECT id, name, stockQuantity
+      SELECT id, name, stockQuantity, isBundle, shopId
       FROM products
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(productId, businessId).first<any>();
     if (!product) throw new PolicyError('Product was not found.', 404);
+    if (product.shopId && String(product.shopId) !== shopId) throw new PolicyError('Product was not found in this shop.', 404);
+    if (isBundleInventoryRow(product)) throw new PolicyError('Bulk item stock is calculated from ingredients and cannot be adjusted directly.', 400);
 
     const newQty = asNumber(body?.newQty);
     if (newQty < 0) throw new PolicyError('New stock quantity cannot be negative.', 400);
@@ -125,14 +132,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       timestamp: now,
       status: 'PENDING',
       preparedBy: trimText(body?.preparedBy || auth.principal.userName || 'Staff', 120),
+      shopId,
       businessId,
       updated_at: now,
     };
 
     await env.DB.batch([
       env.DB.prepare(`
-        INSERT INTO stockAdjustmentRequests (id, productId, productName, oldQty, newQty, requestedQuantity, reason, timestamp, status, preparedBy, approvedBy, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO stockAdjustmentRequests (id, productId, productName, oldQty, newQty, requestedQuantity, reason, timestamp, status, preparedBy, approvedBy, shopId, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         adjustment.id,
         adjustment.productId,
@@ -145,6 +153,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         adjustment.status,
         adjustment.preparedBy,
         null,
+        adjustment.shopId,
         businessId,
         now,
       ),

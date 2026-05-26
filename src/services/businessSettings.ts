@@ -3,7 +3,7 @@ import { apiRequest } from './apiClient';
 
 export const BusinessSettingsService = {
   save(input: { settings: Partial<BusinessSettings> & { id?: string }; businessId: string }) {
-    return apiRequest<{ success: boolean; settings: BusinessSettings }>('/api/settings/business', {
+    return apiRequest<{ success: boolean; settings: BusinessSettings; salesTills?: Array<{ id: string; name: string; isActive: boolean }> }>('/api/settings/business', {
       method: 'POST',
       body: { settings: input.settings },
       businessId: input.businessId,

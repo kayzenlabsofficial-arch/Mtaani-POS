@@ -16,6 +16,7 @@ import { dateInputToExpiryMs, expiryBadgeClass, expiryMsToDateInput, formatExpir
 import { normaliseDiscountType, productDiscountLabel, productSalePrice } from '../../utils/productPricing';
 import { normaliseSupplierIds } from '../../utils/supplierProducts';
 import { lineNetAmount, netItemQuantity } from '../../utils/posMoney';
+import { isLowStockProduct, stockMovementTotals } from '../../utils/inventoryIntegrity';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -144,7 +145,7 @@ export default function InventoryTabMobile() {
     const stock = product.stockQuantity || 0;
     const expiryStatus = getExpiryInfo(product).status;
     if (stockStatusFilter === 'OUT_OF_STOCK') return stock <= 0;
-    if (stockStatusFilter === 'ALMOST_OUT') return stock > 0 && stock <= (product.reorderPoint || 5);
+    if (stockStatusFilter === 'ALMOST_OUT') return isLowStockProduct(product);
     if (stockStatusFilter === 'EXPIRY_RISK') return expiryStatus === 'EXPIRED' || expiryStatus === 'TODAY' || expiryStatus === 'SOON';
     return true;
   });
@@ -164,10 +165,7 @@ export default function InventoryTabMobile() {
 
   const totalValue = displayProducts.reduce((a, p) => a + ((p.stockQuantity || 0) * (p.sellingPrice || 0)), 0) || 0;
   const outOfStock = displayProducts.filter(p => (p.stockQuantity || 0) <= 0).length || 0;
-  const lowStock = displayProducts.filter(p => {
-    const qty = p.stockQuantity || 0;
-    return qty > 0 && qty <= (p.reorderPoint || 5);
-  }).length || 0;
+  const lowStock = displayProducts.filter(isLowStockProduct).length || 0;
   const expiringSoon = displayProducts.filter(p => {
     const status = getExpiryInfo(p).status;
     return status === 'SOON' || status === 'TODAY';
@@ -286,6 +284,7 @@ export default function InventoryTabMobile() {
 
   const handleRestock = async () => {
     if (!selectedProduct || !activeBusinessId || !activeShopId || isSavingRestock) return;
+    if (isBundleProduct(selectedProduct)) return error('Bulk item stock is calculated from ingredients.');
     const qty = Number(restockQty);
     if (qty <= 0) return error('Enter a valid stock quantity.');
     setIsSavingRestock(true);
@@ -327,8 +326,9 @@ export default function InventoryTabMobile() {
   const revenue = productSales.reduce((sum, row) => sum + lineNetAmount(row.item, netItemQuantity(row.tx, row.item)), 0);
   const cost = productSales.reduce((sum, row) => sum + (netItemQuantity(row.tx, row.item) * (Number(row.item.snapshotCost ?? selectedProduct?.costPrice ?? 0) || 0)), 0);
   const grossProfit = revenue - cost;
-  const movementIn = (selectedMovements || []).filter(m => m.type === 'IN' || m.quantity > 0).reduce((sum, m) => sum + Math.abs(Number(m.quantity) || 0), 0);
-  const movementOut = (selectedMovements || []).filter(m => m.type !== 'IN' && m.quantity < 0).reduce((sum, m) => sum + Math.abs(Number(m.quantity) || 0), 0);
+  const movementTotals = stockMovementTotals(selectedMovements || []);
+  const movementIn = movementTotals.in;
+  const movementOut = movementTotals.out;
   const chartData = Array.from({ length: 8 }).map((_, idx) => {
     const day = new Date();
     day.setDate(day.getDate() - (7 - idx));
@@ -521,7 +521,7 @@ export default function InventoryTabMobile() {
           ) : sorted.map(product => {
             const stock = product.stockQuantity || 0;
             const isOut = stock <= 0;
-            const isLow = !isOut && stock <= (product.reorderPoint || 5);
+            const isLow = isLowStockProduct(product);
             const expiry = getExpiryInfo(product);
 
             return (

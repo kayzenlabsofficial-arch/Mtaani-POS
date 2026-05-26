@@ -2,6 +2,7 @@ import { db, type Expense, type Transaction } from '../db';
 import { ExpenseService } from '../services/expenses';
 import { SalesService } from '../services/sales';
 import { pickedCashAccountId } from './financeAccount';
+import { shopExpenseProductEligibility } from './expenseIntegrity';
 import { reloadBestEffort } from './reloads';
 
 interface ApprovalContext {
@@ -26,7 +27,8 @@ export async function ensureExpenseCanBeApproved(expense: Expense): Promise<void
   if (expense.source === 'SHOP') {
     if (!(expense as any).productId) throw new Error('Select the stock item being expensed.');
     const product = await db.products.get((expense as any).productId);
-    if (!product) throw new Error('Selected shop item was not found.');
+    const eligibility = shopExpenseProductEligibility(product, (expense as any).quantity);
+    if (!eligibility.ok) throw new Error(eligibility.message || 'Selected shop item cannot be expensed.');
   }
 }
 

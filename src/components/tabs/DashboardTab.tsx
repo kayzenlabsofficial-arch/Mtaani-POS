@@ -5,13 +5,15 @@ import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
 import { canUseOwnerMode, getCashDrawerLimit, isOwnerCashSweepEnabled, isOwnerModeEnabled, shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
+import { isLowStockProduct } from '../../utils/inventoryIntegrity';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
 import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSession';
 import { getBusinessSettings } from '../../utils/settings';
 import { generateAndShareDocument } from '../../utils/shareUtils';
 import { getDefaultOpeningFloat, parseSalesTillRows, parseSalesTills } from '../../utils/tills';
 import { belongsToActiveShop } from '../../utils/shopScope';
-import { cashRefundAmount, paymentAmountForMethod, transactionOriginalNetTotal } from '../../utils/posMoney';
+import { paymentAmountForMethod, transactionNetMetrics } from '../../utils/posMoney';
+import { calculateCloseReportTotals } from '../../utils/reportAnalytics';
 import { CashService, ClosingService, ShiftService } from '../../services/operations';
 import { apiRequest } from '../../services/apiClient';
 import { canAccessFeature, shouldBlurFeature } from '../../utils/accessControl';
@@ -41,19 +43,20 @@ function percentChange(current: number, previous: number) {
 
 function recordInShift(record: any, since: number, until: number, shiftId?: string) {
   if (shiftId && record?.shiftId) return record.shiftId === shiftId;
-  const ts = Number(record?.timestamp || record?.issueDate || 0);
+  const ts = Number(record?.timestamp || record?.issueDate || record?.orderDate || 0);
   return ts >= since && ts <= until;
 }
 
-function splitFundedRemittance(cashSales: number, expenses: number, supplierPayments: number) {
-  const rawRemittance = Math.max(0, expenses + supplierPayments);
-  const remittanceTotal = Math.min(Math.max(0, cashSales), rawRemittance);
-  if (rawRemittance <= 0 || remittanceTotal <= 0) {
-    return { totalExpenses: 0, supplierPaymentsTotal: 0, remittanceTotal: 0 };
-  }
-  const totalExpenses = Math.round(Math.min(expenses, remittanceTotal * (expenses / rawRemittance)) * 100) / 100;
-  const supplierPaymentsTotal = Math.round((remittanceTotal - totalExpenses) * 100) / 100;
-  return { totalExpenses, supplierPaymentsTotal, remittanceTotal };
+function approvedMoneyStatus(record: { status?: string }) {
+  return String(record?.status || 'APPROVED').toUpperCase() === 'APPROVED';
+}
+
+function reportableTransactionStatus(record: { status?: string }) {
+  return !['VOIDED', 'QUOTE'].includes(String(record?.status || '').toUpperCase());
+}
+
+function activeInvoiceStatus(record: { status?: string }) {
+  return String(record?.status || '').toUpperCase() !== 'CANCELLED';
 }
 
 type ClosureStats = {
@@ -125,16 +128,20 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   const { success, error, warning } = useToast();
   const isCashier = currentUser?.role === 'CASHIER';
   const todayStart = getTodayStartMs();
+  const todayEnd = todayStart + DAY_MS;
   const yesterdayStart = todayStart - DAY_MS;
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
+  const privilegedDashboardAccess = currentUser?.role === 'ADMIN' || currentUser?.role === 'ROOT';
   const dailySalesModeOpen = canAccessFeature(currentUser, businessSettings, 'dashboard.dailySales')
     && !shouldBlurFeature(currentUser, businessSettings, 'dashboard.dailySales');
   const moneyBreakdownModeOpen = canAccessFeature(currentUser, businessSettings, 'dashboard.moneyBreakdown')
     && !shouldBlurFeature(currentUser, businessSettings, 'dashboard.moneyBreakdown');
   const salesTrendModeOpen = canAccessFeature(currentUser, businessSettings, 'dashboard.salesTrend')
     && !shouldBlurFeature(currentUser, businessSettings, 'dashboard.salesTrend');
-  const canSeeSalesData = currentUser?.role === 'ADMIN' || currentUser?.role === 'ROOT' || dailySalesModeOpen || moneyBreakdownModeOpen || salesTrendModeOpen;
+  const canSeeSalesData = privilegedDashboardAccess || dailySalesModeOpen || moneyBreakdownModeOpen || salesTrendModeOpen;
   const canLoadDashboardTotals = canSeeSalesData;
+  const canShowSalesCountMetric = privilegedDashboardAccess || dailySalesModeOpen;
+  const canShowExpenseMetric = privilegedDashboardAccess || moneyBreakdownModeOpen;
 
   const products = useLiveQuery(
     () => activeBusinessId && canLoadDashboardTotals
@@ -258,26 +265,29 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   }, [activeBusinessId, activeShopId, canLoadDashboardTotals], 0);
 
   const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
-  const lowStockItems = displayProducts.filter(p => (p.stockQuantity || 0) <= (p.reorderPoint || 5)).slice(0, 5) || [];
+  const lowStockProducts = displayProducts.filter(isLowStockProduct) || [];
+  const transactionDashboardTotal = (transaction: any) => transactionNetMetrics(transaction).netTotal;
+  const transactionDashboardGross = (transaction: any) => transactionNetMetrics(transaction).netSubtotal;
+  const hasDashboardSaleValue = (transaction: any) => transactionDashboardTotal(transaction) > 0.01;
   const todaysDailySummary = (shopDailySummaries || []).find(summary => {
     const summaryDate = Number(summary.date || summary.timestamp || 0);
-    return summaryDate >= todayStart && summaryDate < todayStart + DAY_MS;
+    return summaryDate >= todayStart && summaryDate < todayEnd;
   });
-  const todaysTransactions = (shopTransactions || []).filter(t => (t.timestamp || 0) >= todayStart && t.status !== 'VOIDED' && t.status !== 'QUOTE');
-  const todaysInvoices = (shopSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= todayStart && invoice.status !== 'CANCELLED');
-  const yesterdaysTransactions = (shopTransactions || []).filter(t => (t.timestamp || 0) >= yesterdayStart && (t.timestamp || 0) < todayStart && t.status !== 'VOIDED' && t.status !== 'QUOTE');
-  const yesterdaysInvoices = (shopSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= yesterdayStart && (invoice.issueDate || 0) < todayStart && invoice.status !== 'CANCELLED');
-  const todaysExpenses = (shopExpenses || []).filter(expense => (expense.timestamp || 0) >= todayStart && expense.status !== 'REJECTED')
+  const todaysTransactions = (shopTransactions || []).filter(t => (t.timestamp || 0) >= todayStart && (t.timestamp || 0) < todayEnd && reportableTransactionStatus(t));
+  const todaysInvoices = (shopSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= todayStart && (invoice.issueDate || 0) < todayEnd && activeInvoiceStatus(invoice));
+  const yesterdaysTransactions = (shopTransactions || []).filter(t => (t.timestamp || 0) >= yesterdayStart && (t.timestamp || 0) < todayStart && reportableTransactionStatus(t));
+  const yesterdaysInvoices = (shopSalesInvoices || []).filter(invoice => (invoice.issueDate || 0) >= yesterdayStart && (invoice.issueDate || 0) < todayStart && activeInvoiceStatus(invoice));
+  const todaysExpenses = (shopExpenses || []).filter(expense => (expense.timestamp || 0) >= todayStart && (expense.timestamp || 0) < todayEnd && approvedMoneyStatus(expense))
     .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
-  const yesterdaysExpenses = (shopExpenses || []).filter(expense => (expense.timestamp || 0) >= yesterdayStart && (expense.timestamp || 0) < todayStart && expense.status !== 'REJECTED')
+  const yesterdaysExpenses = (shopExpenses || []).filter(expense => (expense.timestamp || 0) >= yesterdayStart && (expense.timestamp || 0) < todayStart && approvedMoneyStatus(expense))
     .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
-  const todaysSalesCount = todaysTransactions.length + todaysInvoices.length;
-  const totalRevenue = todaysTransactions.reduce((a, t) => a + transactionOriginalNetTotal(t), 0)
+  const todaysSalesCount = todaysTransactions.filter(hasDashboardSaleValue).length + todaysInvoices.length;
+  const totalRevenue = todaysTransactions.reduce((a, t) => a + transactionDashboardTotal(t), 0)
     + todaysInvoices.reduce((a, invoice) => a + Number(invoice.total || 0), 0);
-  const yesterdaysSalesCount = yesterdaysTransactions.length + yesterdaysInvoices.length;
-  const yesterdaysRevenue = yesterdaysTransactions.reduce((a, t) => a + transactionOriginalNetTotal(t), 0)
+  const yesterdaysSalesCount = yesterdaysTransactions.filter(hasDashboardSaleValue).length + yesterdaysInvoices.length;
+  const yesterdaysRevenue = yesterdaysTransactions.reduce((a, t) => a + transactionDashboardTotal(t), 0)
     + yesterdaysInvoices.reduce((a, invoice) => a + Number(invoice.total || 0), 0);
-  const todaysCustomerPayments = (shopCustomerPayments || []).filter(payment => (payment.timestamp || 0) >= todayStart);
+  const todaysCustomerPayments = (shopCustomerPayments || []).filter(payment => (payment.timestamp || 0) >= todayStart && (payment.timestamp || 0) < todayEnd);
   const todayCashSales = todaysTransactions.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'CASH'), 0);
   const todayMpesaSales = todaysTransactions.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'MPESA'), 0);
   const todayCreditSales = todaysTransactions.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'CREDIT'), 0);
@@ -289,12 +299,12 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const todayInvoiceCredit = todaysInvoices
     .filter(invoice => invoice.status !== 'PAID')
-    .reduce((sum, invoice) => sum + Number(invoice.balance || 0), 0);
+    .reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
   const todayTillTotal = todayCashSales + todayCashRepayments;
   const todayCreditTotal = todayCreditSales + todayInvoiceCredit;
   const salesTrendData = React.useMemo(() => {
-    const txs = (shopTransactions || []).filter(t => t.status !== 'VOIDED' && t.status !== 'QUOTE');
-    const invoices = (shopSalesInvoices || []).filter(invoice => invoice.status !== 'CANCELLED');
+    const txs = (shopTransactions || []).filter(reportableTransactionStatus);
+    const invoices = (shopSalesInvoices || []).filter(activeInvoiceStatus);
     if (trendView === 'WEEK') {
       return Array.from({ length: 7 }, (_, index) => {
         const start = localDayStart(Date.now() - (6 - index) * DAY_MS);
@@ -304,7 +314,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
           time: day,
           sales: txs
             .filter(t => (t.timestamp || 0) >= start && (t.timestamp || 0) < end)
-            .reduce((sum, t) => sum + transactionOriginalNetTotal(t), 0)
+            .reduce((sum, t) => sum + transactionDashboardTotal(t), 0)
             + invoices
               .filter(invoice => (invoice.issueDate || 0) >= start && (invoice.issueDate || 0) < end)
               .reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
@@ -321,7 +331,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         time: `${String(hour).padStart(2, '0')}:00`,
         sales: txs
           .filter(t => (t.timestamp || 0) >= start && (t.timestamp || 0) < end)
-          .reduce((sum, t) => sum + transactionOriginalNetTotal(t), 0)
+          .reduce((sum, t) => sum + transactionDashboardTotal(t), 0)
           + invoices
             .filter(invoice => (invoice.issueDate || 0) >= start && (invoice.issueDate || 0) < end)
             .reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
@@ -450,72 +460,29 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
   };
 
   const getClosureStats = (since: number, until = Date.now(), shiftId?: string) => {
-    const txs = (shopTransactions || []).filter(t => recordInShift(t, since, until, shiftId) && !['VOIDED', 'QUOTE'].includes(String(t.status || '').toUpperCase()));
-    const invoices = (shopSalesInvoices || []).filter(invoice => recordInShift(invoice, since, until, shiftId) && String(invoice.status || '').toUpperCase() !== 'CANCELLED');
-    const expenses = (shopExpenses || []).filter(e => recordInShift(e, since, until, shiftId) && String(e.status || '').toUpperCase() !== 'REJECTED');
-    const picks = (shopCashPicks || []).filter(p => recordInShift(p, since, until, shiftId) && String(p.status || '').toUpperCase() !== 'REJECTED');
-    const refunds = (shopRefunds || []).filter(r => recordInShift(r, since, until, shiftId) && String(r.status || 'APPROVED').toUpperCase() !== 'REJECTED');
-    const supplierPayments = (shopSupplierPayments || []).filter(p => recordInShift(p, since, until, shiftId));
-    const customerPayments = (shopCustomerPayments || []).filter(p => recordInShift(p, since, until, shiftId));
     const shift = (shopShifts || []).find(row => row.id === shiftId) || (ownOpenShift?.id === shiftId ? ownOpenShift : null);
     const openingCash = Number(shift?.openingCash || 0);
-    const cashSales = txs.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'CASH'), 0);
-    const mpesaSales = txs.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'MPESA'), 0);
-    const pdqSales = txs.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'PDQ'), 0);
-    const customerCashPayments = customerPayments
-      .filter(payment => String(payment.paymentMethod || '').toUpperCase() === 'CASH')
-      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-    const customerMpesaPayments = customerPayments
-      .filter(payment => String(payment.paymentMethod || '').toUpperCase() === 'MPESA')
-      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-    const totalRefunds = refunds.reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
-    const cashRefunds = refunds.reduce((sum, refund) => sum + cashRefundAmount(refund), 0);
-    const grossSales = txs.reduce((sum, tx) => sum + Number(tx.subtotal ?? tx.total ?? 0), 0)
-      + invoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || invoice.total || 0), 0);
-    const totalSales = txs.reduce((sum, tx) => sum + transactionOriginalNetTotal(tx), 0)
-      + invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
-    const taxTotal = txs.reduce((sum, tx) => sum + Number(tx.tax || 0), 0)
-      + invoices.reduce((sum, invoice) => sum + Number(invoice.tax || 0), 0);
-    const rawTotalExpenses = expenses.filter(e => String(e.source || '').toUpperCase() === 'TILL').reduce((sum, e) => sum + Number(e.amount || 0), 0);
-    const rawSupplierPaymentsTotal = supplierPayments.filter(p => String(p.source || '').toUpperCase() === 'TILL').reduce((sum, p) => sum + Number(p.amount || 0), 0);
-    const totalExpenses = rawTotalExpenses;
-    const supplierPaymentsTotal = rawSupplierPaymentsTotal;
-    const remittanceTotal = totalExpenses + supplierPaymentsTotal;
-    const totalPicks = picks.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-    const expectedClosingCash = Math.max(0, openingCash + cashSales + customerCashPayments - remittanceTotal - cashRefunds - totalPicks);
-    const cashierVariance = 0;
-
-    return {
-      txs,
-      invoices,
-      expenses,
-      picks,
-      refunds,
-      supplierPayments,
-      customerPayments,
+    const stats = calculateCloseReportTotals({
+      transactions: shopTransactions || [],
+      salesInvoices: shopSalesInvoices || [],
+      expenses: shopExpenses || [],
+      picks: shopCashPicks || [],
+      refunds: shopRefunds || [],
+      supplierPayments: shopSupplierPayments || [],
+      customerPayments: shopCustomerPayments || [],
       openingCash,
-      grossSales,
-      totalSales,
-      taxTotal,
-      cashSales,
-      customerCashPayments,
-      mpesaSales,
-      customerMpesaPayments,
-      pdqSales,
-      totalExpenses,
-      supplierPaymentsTotal,
-      remittanceTotal,
-      totalPicks,
-      totalRefunds,
-      cashRefunds,
-      expectedCash: expectedClosingCash,
-      cashierVariance,
+      since,
+      until,
+      shiftId,
+    });
+    return {
+      ...stats,
+      cashierVariance: 0,
     };
   };
 
-  const rowActualCash = (expectedCash: number, totalPicks: number) => Math.max(0, expectedCash - totalPicks);
   const closedShiftRows = (shopReports || [])
-    .filter(report => Number(report.timestamp || 0) >= todayStart)
+    .filter(report => Number(report.timestamp || 0) >= todayStart && Number(report.timestamp || 0) < todayEnd)
     .sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0))
     .map((report, index) => {
       const totalPicks = Number(report.totalPicks || 0);
@@ -847,7 +814,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       warning('Close all open shifts before closing the business day.');
       return;
     }
-    const todaysReports = (shopReports || []).filter(report => (report.timestamp || 0) >= since);
+    const todaysReports = (shopReports || []).filter(report => (report.timestamp || 0) >= since && (report.timestamp || 0) < todayEnd);
     if (!todaysReports.length) {
       warning('Close at least one shift before closing the business day.');
       return;
@@ -913,7 +880,7 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     },
     {
       label: 'Low stock products',
-      value: lowStockItems.length,
+      value: lowStockProducts.length,
       sub: '',
       icon: 'warning',
     },
@@ -996,9 +963,9 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
 
   const accessControlledDashboardMetrics = [
     dailySalesModeOpen ? dashboardMetrics[0] : lockedDashboardMetrics[0],
-    canLoadDashboardTotals ? dashboardMetrics[1] : cashierDashboardCards[1],
+    canShowSalesCountMetric ? dashboardMetrics[1] : cashierDashboardCards[1],
     canLoadDashboardTotals ? dashboardMetrics[2] : cashierDashboardCards[2],
-    canLoadDashboardTotals ? dashboardMetrics[3] : cashierDashboardCards[3],
+    canShowExpenseMetric ? dashboardMetrics[3] : lockedDashboardMetrics[3],
   ];
 
   const lockedMoneyBreakdown = [

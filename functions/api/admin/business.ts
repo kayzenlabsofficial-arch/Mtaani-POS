@@ -9,6 +9,7 @@ import {
   setBusinessBillingState,
   text,
 } from '../billing/_utils';
+import { normalizeBusinessSettingsInput } from '../settings/business';
 
 interface Env {
   DB: D1Database;
@@ -220,9 +221,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const businessId = crypto.randomUUID();
       const userId = crypto.randomUUID();
       const bootstrapPassword = requireBootstrapPassword(env);
-      const settingsId = `core_${businessId}`;
-      const tillId = `till-1-${businessId}`.slice(0, 120);
-      const salesTills = JSON.stringify([{ id: tillId, name: 'Till 1', isActive: true }]);
+      const { saved: initialSettings, tills: initialTills } = normalizeBusinessSettingsInput({
+        storeName: name,
+        location: 'Nairobi, Kenya',
+        tillNumber: '',
+        kraPin: '',
+        receiptFooter: 'Thank you for shopping!',
+        ownerModeEnabled: 0,
+        autoApproveOwnerActions: 1,
+        cashSweepEnabled: 1,
+        cashDrawerLimit: 5000,
+        salesTills: [{ id: 'till-1', name: 'Till 1', isActive: true }],
+        defaultOpeningFloat: 0,
+        accessControl: '',
+      }, {}, businessId, now);
+      const initialTill = initialTills[0];
 
       await env.DB.batch([
         env.DB.prepare(`
@@ -245,12 +258,28 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
             ownerModeEnabled, autoApproveOwnerActions, cashSweepEnabled, cashDrawerLimit,
             salesTills, defaultOpeningFloat, accessControl, businessId, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, 0, 1, 1, 5000, ?, 0, '', ?, ?)
-        `).bind(settingsId, name, 'Nairobi, Kenya', '', '', 'Thank you for shopping!', salesTills, businessId, now),
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          initialSettings.id,
+          initialSettings.storeName,
+          initialSettings.location,
+          initialSettings.tillNumber,
+          initialSettings.kraPin,
+          initialSettings.receiptFooter,
+          initialSettings.ownerModeEnabled,
+          initialSettings.autoApproveOwnerActions,
+          initialSettings.cashSweepEnabled,
+          initialSettings.cashDrawerLimit,
+          initialSettings.salesTills,
+          initialSettings.defaultOpeningFloat,
+          initialSettings.accessControl,
+          businessId,
+          now,
+        ),
         env.DB.prepare(`
           INSERT INTO salesTills (id, name, isActive, businessId, updated_at)
           VALUES (?, ?, 1, ?, ?)
-        `).bind(tillId, 'Till 1', businessId, now),
+        `).bind(initialTill.id, initialTill.name, businessId, now),
       ]);
 
       return json({ success: true, businessId });

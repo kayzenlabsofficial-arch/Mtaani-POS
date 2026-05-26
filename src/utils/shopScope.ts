@@ -1,3 +1,5 @@
+import { belongsToShop } from './inventoryIntegrity';
+
 export function belongsToActiveShop(row: { shopId?: string | null }, activeShopId?: string | null): boolean {
-  return true;
+  return belongsToShop(row, activeShopId);
 }

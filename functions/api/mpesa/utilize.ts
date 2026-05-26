@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { createMainAccountCreditStatements, mpesaAmountForTransaction } from '../finance/mainAccountPosting';
 
 interface Env {
   DB: D1Database;
@@ -26,11 +27,6 @@ function normaliseCode(value: unknown) {
 function asNumber(value: unknown, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
-}
-
-function parseMaybeJson(value: unknown) {
-  if (!value || typeof value !== 'string') return value;
-  try { return JSON.parse(value); } catch { return value; }
 }
 
 async function ensureMpesaLedgerSchema(db: D1Database) {
@@ -91,13 +87,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     await ensureMpesaLedgerSchema(env.DB);
     const transaction = await env.DB.prepare(`
-      SELECT id, customerId, customerName, total, paymentMethod, splitPayments
+      SELECT id, customerId, customerName, total, paymentMethod, splitPayments, status
       FROM transactions
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(transactionId, businessId).first<any>();
 
     if (!transaction) return json({ error: 'POS receipt not found for this M-Pesa utilization.' }, 404);
+    if (['VOIDED', 'QUOTE'].includes(String(transaction.status || '').toUpperCase())) {
+      return json({ error: 'This receipt cannot receive an M-Pesa utilization.' }, 409);
+    }
 
     const payment = await env.DB.prepare(`
       SELECT *
@@ -115,11 +114,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!payment) return json({ error: 'M-Pesa payment not found.' }, 404);
     if (Number(payment.resultCode) !== 0) return json({ error: payment.resultDesc || 'M-Pesa payment is not paid.' }, 409);
 
-    const splitPayments = parseMaybeJson(transaction.splitPayments) as any;
-    const expectedMpesaAmount = String(transaction.paymentMethod || '').toUpperCase() === 'SPLIT'
-      && String(splitPayments?.secondaryMethod || '').toUpperCase() === 'MPESA'
-        ? asNumber(splitPayments?.secondaryAmount, 0)
-        : asNumber(transaction.total, 0);
+    const expectedMpesaAmount = mpesaAmountForTransaction(transaction);
+    if (expectedMpesaAmount <= 0) {
+      return json({ error: 'This receipt does not contain an M-Pesa amount.' }, 409);
+    }
     if (expectedMpesaAmount > 0 && asNumber(payment.amount, 0) + 0.01 < expectedMpesaAmount) {
       return json({ error: `M-Pesa paid amount is below the receipt amount.` }, 409);
     }
@@ -143,20 +141,35 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return json({ error: 'This M-Pesa payment is already tied to another POS receipt.' }, 409);
     }
 
-    await env.DB.prepare(`
-      UPDATE mpesaCallbacks
-      SET utilizedTransactionId = ?,
-          utilizedCustomerId = ?,
-          utilizedCustomerName = ?,
-          utilizedAt = ?
-      WHERE checkoutRequestId = ?
-    `).bind(
-      transactionId,
-      customerId || transaction.customerId || null,
-      customerName || transaction.customerName || null,
-      Date.now(),
-      payment.checkoutRequestId,
-    ).run();
+    const posting = await createMainAccountCreditStatements(env.DB, {
+      kind: 'MPESA_SALE',
+      businessId,
+      sourceId: transactionId,
+      amount: expectedMpesaAmount,
+      reference: payment.receiptNumber || payment.checkoutRequestId || code,
+      customerName: customerName || transaction.customerName,
+      userId: auth.principal.userId || null,
+      userName: auth.principal.userName || 'Manager',
+    });
+    if (posting.anomaly) return json({ error: posting.anomaly.message }, 409);
+
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE mpesaCallbacks
+        SET utilizedTransactionId = ?,
+            utilizedCustomerId = ?,
+            utilizedCustomerName = ?,
+            utilizedAt = ?
+        WHERE checkoutRequestId = ?
+      `).bind(
+        transactionId,
+        customerId || transaction.customerId || null,
+        customerName || transaction.customerName || null,
+        Date.now(),
+        payment.checkoutRequestId,
+      ),
+      ...posting.statements,
+    ]);
 
     return json({ success: true, utilizationStatus: 'UTILIZED' });
   } catch (err: any) {

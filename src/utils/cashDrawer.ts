@@ -1,4 +1,5 @@
 import { cashRefundAmount, paymentAmountForMethod } from './posMoney';
+import { isApprovedExpense, normalizeExpenseSource } from './expenseIntegrity';
 
 type TransactionLike = {
   total?: number;
@@ -63,6 +64,10 @@ function recordInShiftCashScope(record: { timestamp?: number; shiftId?: string }
   return (record.timestamp || 0) >= since;
 }
 
+function isApprovedCashMovement(record: { status?: string }): boolean {
+  return String(record?.status || 'APPROVED').toUpperCase() === 'APPROVED';
+}
+
 function cashAmountFromRefund(refund: RefundLike): number {
   return cashRefundAmount(refund);
 }
@@ -102,15 +107,15 @@ export function calculateCashDrawer({
     .reduce((sum, t) => sum + cashAmountFromTransaction(t), 0);
 
   const tillExpenses = expenses
-    .filter(e => recordInShiftCashScope(e, since, shiftId) && String(e.source || '').toUpperCase() === 'TILL' && String(e.status || '').toUpperCase() !== 'REJECTED')
+    .filter(e => recordInShiftCashScope(e, since, shiftId) && normalizeExpenseSource(e.source) === 'TILL' && isApprovedExpense(e))
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
   const picked = cashPicks
-    .filter(p => recordInShiftCashScope(p, since, shiftId) && String(p.status || '').toUpperCase() !== 'REJECTED')
+    .filter(p => recordInShiftCashScope(p, since, shiftId) && isApprovedCashMovement(p))
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   const cashRefunds = refunds
-    .filter(r => recordInShiftCashScope(r, since, shiftId))
+    .filter(r => recordInShiftCashScope(r, since, shiftId) && isApprovedCashMovement(r))
     .reduce((sum, r) => sum + cashAmountFromRefund(r), 0);
 
   const supplierTillPayments = supplierPayments
@@ -168,15 +173,15 @@ export function calculateShiftCashFromSales({
     .reduce((sum, t) => sum + cashAmountFromTransaction(t), 0);
 
   const tillExpenses = expenses
-    .filter(e => recordInShiftCashScope(e, since, shiftId) && String(e.source || '').toUpperCase() === 'TILL' && String(e.status || '').toUpperCase() !== 'REJECTED')
+    .filter(e => recordInShiftCashScope(e, since, shiftId) && normalizeExpenseSource(e.source) === 'TILL' && isApprovedExpense(e))
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
   const picked = cashPicks
-    .filter(p => recordInShiftCashScope(p, since, shiftId) && String(p.status || '').toUpperCase() !== 'REJECTED')
+    .filter(p => recordInShiftCashScope(p, since, shiftId) && isApprovedCashMovement(p))
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   const cashRefunds = refunds
-    .filter(r => recordInShiftCashScope(r, since, shiftId))
+    .filter(r => recordInShiftCashScope(r, since, shiftId) && isApprovedCashMovement(r))
     .reduce((sum, r) => sum + cashAmountFromRefund(r), 0);
 
   const supplierTillPayments = supplierPayments

@@ -39,6 +39,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   const auth = await authorizeRequest(request, env);
   if (!auth.ok) return auth.response;
+  if (!auth.service && auth.principal.role !== 'ADMIN' && auth.principal.role !== 'ROOT') {
+    return json({ error: 'Admin access required.' }, 403);
+  }
   if (!env.DB) return json({ error: 'DB binding missing' }, 500);
   await ensureDeviceSyncSchema(env.DB);
 

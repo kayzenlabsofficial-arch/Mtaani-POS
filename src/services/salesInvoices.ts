@@ -9,6 +9,7 @@ export type SalesInvoiceCommandResponse = {
 
 export const SalesInvoiceService = {
   create(input: {
+    invoiceId?: string;
     customerId: string;
     items: SalesInvoiceItem[];
     dueDate?: number;
@@ -40,4 +41,3 @@ export const SalesInvoiceService = {
     });
   },
 };
-

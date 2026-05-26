@@ -1,5 +1,8 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { ensureInventoryIntegritySchema } from '../inventoryIntegrity';
 import { hardenTransactionBatch, PolicyError } from '../salesSecurity';
+import { canPerformServerAction } from '../settingsPolicy';
+import { createMainAccountCreditStatements, mpesaAmountForTransaction } from '../finance/mainAccountPosting';
 
 interface Env {
   DB: D1Database;
@@ -8,7 +11,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -52,17 +55,6 @@ function normaliseCode(value: unknown) {
 function parseMaybeJson(value: unknown) {
   if (!value || typeof value !== 'string') return value;
   try { return JSON.parse(value); } catch { return value; }
-}
-
-function expectedMpesaAmount(tx: any) {
-  const splitPayments = parseMaybeJson(tx.splitPayments) as any;
-  if (
-    String(tx.paymentMethod || '').toUpperCase() === 'SPLIT' &&
-    String(splitPayments?.secondaryMethod || '').toUpperCase() === 'MPESA'
-  ) {
-    return asNumber(splitPayments?.secondaryAmount, 0);
-  }
-  return asNumber(tx.total, 0);
 }
 
 function mpesaReferenceFor(tx: any) {
@@ -129,9 +121,11 @@ async function ensureCheckoutSchema(db: D1Database) {
   for (const sql of [
     'ALTER TABLE idempotencyKeys ADD COLUMN transactionId TEXT',
     'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_transaction ON idempotencyKeys(businessId, transactionId)',
-    'CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, businessId TEXT, shiftId TEXT, updated_at INTEGER)',
+    'CREATE TABLE IF NOT EXISTS stockMovements (id TEXT PRIMARY KEY, productId TEXT NOT NULL, type TEXT NOT NULL, quantity REAL NOT NULL, timestamp INTEGER NOT NULL, reference TEXT, businessId TEXT, shiftId TEXT, shopId TEXT, updated_at INTEGER)',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN shopId TEXT',
     'ALTER TABLE transactions ADD COLUMN shiftId TEXT',
+    'ALTER TABLE transactions ADD COLUMN shopId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedTransactionId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT',
@@ -141,6 +135,7 @@ async function ensureCheckoutSchema(db: D1Database) {
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
+  await ensureInventoryIntegritySchema(db);
 }
 
 async function ensureCheckoutSchemaCached(db: D1Database) {
@@ -202,9 +197,13 @@ async function getExistingTransaction(db: D1Database, businessId: string, transa
   return row ? deserializeRow(row) : null;
 }
 
-async function verifyMpesaPayment(db: D1Database, businessId: string, tx: any): Promise<D1PreparedStatement[]> {
+async function verifyMpesaPayment(db: D1Database, businessId: string, tx: any): Promise<{
+  amount: number;
+  payment: any;
+  statements: D1PreparedStatement[];
+} | null> {
   const code = mpesaReferenceFor(tx);
-  if (!code) return [];
+  if (!code) return null;
 
   const payment = await db.prepare(`
     SELECT *
@@ -227,27 +226,31 @@ async function verifyMpesaPayment(db: D1Database, businessId: string, tx: any): 
     throw new PolicyError('This M-Pesa payment is already tied to another POS receipt.', 409);
   }
 
-  const amount = expectedMpesaAmount(tx);
+  const amount = mpesaAmountForTransaction(tx);
   if (amount > 0 && asNumber(payment.amount, 0) + 0.01 < amount) {
     throw new PolicyError('M-Pesa paid amount is below the receipt amount.', 409);
   }
 
-  return [
-    db.prepare(`
-      UPDATE mpesaCallbacks
-      SET utilizedTransactionId = ?,
-          utilizedCustomerId = ?,
-          utilizedCustomerName = ?,
-          utilizedAt = ?
-      WHERE checkoutRequestId = ?
-    `).bind(
-      tx.id,
-      tx.customerId || null,
-      tx.customerName || null,
-      Date.now(),
-      payment.checkoutRequestId,
-    ),
-  ];
+  return {
+    amount,
+    payment,
+    statements: [
+      db.prepare(`
+        UPDATE mpesaCallbacks
+        SET utilizedTransactionId = ?,
+            utilizedCustomerId = ?,
+            utilizedCustomerName = ?,
+            utilizedAt = ?
+        WHERE checkoutRequestId = ?
+      `).bind(
+        tx.id,
+        tx.customerId || null,
+        tx.customerName || null,
+        Date.now(),
+        payment.checkoutRequestId,
+      ),
+    ],
+  };
 }
 
 async function transactionInsert(db: D1Database, tx: any) {
@@ -303,6 +306,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     await ensureCheckoutSchemaCached(env.DB);
+    if (!await canPerformServerAction(env.DB, businessId, auth.principal, auth.service, 'sale.checkout')) {
+      return json({ error: 'Checkout is locked for this staff role.' }, 403);
+    }
 
     const transactionId = String(tx.id || crypto.randomUUID()).trim();
     tx.id = transactionId;
@@ -339,7 +345,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     let mpesaStatements: D1PreparedStatement[] = [];
     try {
-      mpesaStatements = await verifyMpesaPayment(env.DB, businessId, tx);
+      const mpesaVerification = await verifyMpesaPayment(env.DB, businessId, tx);
+      if (mpesaVerification) {
+        mpesaStatements = [...mpesaVerification.statements];
+        if (mpesaVerification.amount > 0) {
+          const posting = await createMainAccountCreditStatements(env.DB, {
+            kind: 'MPESA_SALE',
+            businessId,
+            sourceId: tx.id,
+            amount: mpesaVerification.amount,
+            reference: mpesaVerification.payment.receiptNumber || mpesaVerification.payment.checkoutRequestId || tx.mpesaCode || tx.mpesaReference,
+            customerName: tx.customerName,
+            userId: auth.principal.userId || null,
+            userName: auth.principal.userName || tx.cashierName || 'Cashier',
+          });
+          if (posting.anomaly) throw new PolicyError(posting.anomaly.message, 409);
+          mpesaStatements.push(...posting.statements);
+        }
+      }
     } catch (err: any) {
       const status = err instanceof PolicyError ? err.status : 400;
       return json({ error: err?.message || 'M-Pesa payment could not be verified.' }, status);
@@ -370,6 +393,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ success: true, transaction: tx });
   } catch (err: any) {
     console.error('[Checkout Error]', err);
-    return json({ error: err?.message || 'Checkout failed.' }, 500);
+    const message = String(err?.message || '');
+    const stockRace = message.includes('Insufficient stock');
+    return json({ error: stockRace ? 'Insufficient stock for one or more sale items.' : err?.message || 'Checkout failed.' }, stockRace ? 409 : 500);
   }
 };

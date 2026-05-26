@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { ensureInventoryIntegritySchema, inventoryShopIdFromRequest } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +11,7 @@ const APPROVER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -40,6 +41,7 @@ async function ensureSchema(db: D1Database) {
       updated_at INTEGER
     )
   `).run();
+  await ensureInventoryIntegritySchema(db);
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -55,6 +57,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
+    const shopId = inventoryShopIdFromRequest(request, body);
     const purchaseOrderId = String(body?.purchaseOrderId || body?.id || '').trim();
     const action = String(body?.action || '').trim().toUpperCase();
     if (!businessId || !purchaseOrderId) return json({ error: 'Business and purchase order are required.' }, 400);
@@ -65,12 +68,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     await ensureSchema(env.DB);
     const po = await env.DB.prepare(`
-      SELECT id, poNumber, approvalStatus, status
+      SELECT id, poNumber, approvalStatus, status, shopId
       FROM purchaseOrders
       WHERE id = ? AND businessId = ?
       LIMIT 1
     `).bind(purchaseOrderId, businessId).first<any>();
     if (!po) throw new PolicyError('Purchase order was not found.', 404);
+    if (po.shopId && String(po.shopId) !== shopId) throw new PolicyError('Purchase order was not found in this shop.', 404);
     if (po.status === 'RECEIVED') throw new PolicyError('Received purchase orders cannot be changed.', 409);
     if (po.approvalStatus !== 'PENDING' && po.approvalStatus !== (action === 'APPROVE' ? 'APPROVED' : 'REJECTED')) {
       throw new PolicyError('This purchase order has already been processed.', 409);

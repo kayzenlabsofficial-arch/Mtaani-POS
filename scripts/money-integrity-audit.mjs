@@ -22,6 +22,7 @@ const lineNet = (item, quantity = money(item?.quantity)) => {
   const discount = Math.min(price, Math.max(0, money(item?.discountAmount)));
   return roundMoney(Math.max(0, (price - discount) * Math.max(0, quantity)));
 };
+const refundLineTotal = (refund) => roundMoney(asArray(refund?.items).reduce((sum, item) => sum + money(item?.amount), 0));
 const transactionExpectedTotal = (tx) => {
   const subtotal = Math.max(0, money(tx?.subtotal));
   const storedDiscount = Math.max(0, money(tx?.discountAmount ?? tx?.discount));
@@ -90,6 +91,7 @@ async function main() {
 
   const transactionsById = new Map(transactions.map(tx => [String(tx.id || ''), tx]));
   const invoicesById = new Map(salesInvoices.map(invoice => [String(invoice.id || ''), invoice]));
+  const refundedByOriginal = new Map();
 
   for (const tx of transactions) {
     const expected = transactionExpectedTotal(tx);
@@ -105,17 +107,80 @@ async function main() {
   }
 
   for (const refund of refunds) {
+    const status = String(refund.status || 'APPROVED').toUpperCase();
+    if (status !== 'APPROVED') continue;
+    const amount = money(refund.amount);
+    const cashAmount = money(refund.cashAmount ?? refund.amount);
+    if (String(refund.paymentMethod || '').toUpperCase() !== 'CASH') {
+      findings.push({
+        type: 'REFUND_NOT_CASH',
+        severity: 'HIGH',
+        message: `Refund ${refund.refundNumber || refund.id} is marked as ${refund.paymentMethod || '(blank)'} instead of CASH.`,
+      });
+    }
+    if (String(refund.source || '').toUpperCase() !== 'TILL') {
+      findings.push({
+        type: 'REFUND_NOT_FROM_TILL',
+        severity: 'HIGH',
+        message: `Refund ${refund.refundNumber || refund.id} source is ${refund.source || '(blank)'} instead of TILL.`,
+      });
+    }
+    if (Math.abs(cashAmount - amount) > 0.01) {
+      findings.push({
+        type: 'REFUND_CASH_AMOUNT_MISMATCH',
+        severity: 'HIGH',
+        message: `Refund ${refund.refundNumber || refund.id} has amount ${amount} but cashAmount ${cashAmount}.`,
+      });
+    }
+    if (!String(refund.shiftId || '').trim()) {
+      findings.push({
+        type: 'REFUND_MISSING_SHIFT',
+        severity: 'MEDIUM',
+        message: `Refund ${refund.refundNumber || refund.id} has no shiftId, so till cash cannot be tied to a shift.`,
+      });
+    }
+
+    const itemTotal = refundLineTotal(refund);
+    if (asArray(refund.items).length > 0 && Math.abs(itemTotal - amount) > 0.01) {
+      findings.push({
+        type: 'REFUND_ITEM_TOTAL_MISMATCH',
+        severity: 'HIGH',
+        message: `Refund ${refund.refundNumber || refund.id} item total ${itemTotal} does not match refund amount ${amount}.`,
+      });
+    }
+
     const original = transactionsById.get(String(refund.originalTransactionId || ''));
     if (!original) continue;
     const maxRefund = transactionExpectedTotal(original);
-    if (money(refund.amount) > maxRefund + 0.01) {
+    if (amount > maxRefund + 0.01) {
       findings.push({
         type: 'REFUND_EXCEEDS_ORIGINAL',
         severity: 'HIGH',
-        message: `Refund ${refund.refundNumber || refund.id} amount ${money(refund.amount)} exceeds original net sale ${maxRefund}.`,
+        message: `Refund ${refund.refundNumber || refund.id} amount ${amount} exceeds original net sale ${maxRefund}.`,
+      });
+    }
+    const originalId = String(refund.originalTransactionId || '');
+    refundedByOriginal.set(originalId, roundMoney((refundedByOriginal.get(originalId) || 0) + amount));
+  }
+
+  for (const [originalId, refunded] of refundedByOriginal.entries()) {
+    const original = transactionsById.get(originalId);
+    if (!original) continue;
+    const maxRefund = transactionExpectedTotal(original);
+    if (refunded > maxRefund + 0.01) {
+      findings.push({
+        type: 'REFUND_TOTAL_EXCEEDS_ORIGINAL',
+        severity: 'HIGH',
+        message: `Approved refunds allocate ${refunded} to sale ${originalId}, above original net sale ${maxRefund}.`,
       });
     }
   }
+
+  findings.push(...duplicateKeyFindings(
+    refunds.filter(refund => String(refund.refundNumber || '').trim()),
+    refund => `${refund.businessId || 'unknown'}:${String(refund.refundNumber || '').trim().toUpperCase()}`,
+    'Refund receipt',
+  ));
 
   findings.push(...duplicateKeyFindings(
     salesInvoices,

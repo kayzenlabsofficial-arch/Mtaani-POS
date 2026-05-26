@@ -16,20 +16,28 @@ import { db } from '../../db';
 import { useStore } from '../../store';
 import { canPerform } from '../../utils/accessControl';
 import { enrichProductsWithBundleStock } from '../../utils/bundleInventory';
+import { isLowStockProduct } from '../../utils/inventoryIntegrity';
 import { belongsToActiveShop } from '../../utils/shopScope';
 import { getBusinessSettings } from '../../utils/settings';
+import { generateAndDownloadProductPerformanceReport, generateAndDownloadProfitLossReport } from '../../utils/shareUtils';
+import { roundMoney } from '../../utils/posMoney';
 import {
-  lineNetRevenueForTransaction,
-  lineTaxForTransaction,
-  netItemQuantity,
-  roundMoney,
-  transactionItems as txItems,
-  transactionNetMetrics,
-} from '../../utils/posMoney';
+  calculateCreditCollections,
+  calculateProfitLossPeriod,
+  creditSalesAmountForTransaction,
+  reportableTransaction,
+} from '../../utils/profitLoss';
+import {
+  buildCashierPerformance,
+  buildCategoryPerformance,
+  buildHourlySalesData,
+  buildProductPerformance,
+  buildSalesTrendBuckets,
+  type ReportProductPerformanceRow as ProductPerformanceRow,
+} from '../../utils/reportAnalytics';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 const DAY_MS = 24 * 60 * 60 * 1000;
-const REPORTABLE_TRANSACTION_STATUSES = new Set(['PAID', 'UNPAID', 'PARTIAL_REFUND', 'PENDING_REFUND', 'REFUNDED']);
 type ReportDateRange = 'TODAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'MONTHLY' | 'CUSTOM' | 'ALL';
 type ReportView = 'OVERVIEW' | 'PROFIT_EXPENSES' | 'SALES_TRENDS' | 'PRODUCTS' | 'CASHIERS';
 type ProfitLossExportMode = 'INDIVIDUAL' | 'COMPARISON';
@@ -39,55 +47,6 @@ type PeriodBounds = {
   end: number;
   label: string;
 };
-
-type ProductPerformanceRow = {
-  id: string;
-  name: string;
-  group: string;
-  unit: string;
-  qty: number;
-  revenue: number;
-  cogs: number;
-  profit: number;
-  tax: number;
-  stock: number | null;
-  source: 'Product' | 'Service' | 'Custom';
-  avgPrice: number;
-  margin: number;
-  share: number;
-};
-
-function invoiceItems(invoice: any): any[] {
-  const items = invoice?.items;
-  if (Array.isArray(items)) return items;
-  if (typeof items === 'string') {
-    try {
-      const parsed = JSON.parse(items);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
-function purchaseItems(purchaseOrder: any): any[] {
-  const items = purchaseOrder?.items;
-  if (Array.isArray(items)) return items;
-  if (typeof items === 'string') {
-    try {
-      const parsed = JSON.parse(items);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
-function reportableTransaction(transaction: any) {
-  return REPORTABLE_TRANSACTION_STATUSES.has(String(transaction?.status || '').toUpperCase());
-}
 
 function formatPeriodLabel(start: number, end: number) {
   const startDate = new Date(start);
@@ -115,18 +74,6 @@ function previousPeriodBounds(current: PeriodBounds, range: ReportDateRange): Pe
   const end = current.start - 1;
   const start = end - span + 1;
   return { start, end, label: formatPeriodLabel(start, end) };
-}
-
-function expenseBreakdownFor(expenses: any[]) {
-  const totals = expenses.reduce<Record<string, number>>((acc, expense) => {
-    const category = String(expense?.category || 'General');
-    acc[category] = (acc[category] || 0) + (Number(expense?.amount) || 0);
-    return acc;
-  }, {});
-
-  return Object.entries(totals)
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value);
 }
 
 function useChartSize() {
@@ -296,242 +243,102 @@ export default function ReportsTabContent() {
   const { start: startTime, end: endTime, label: periodLabel } = getPeriodBounds();
   const filteredTransactions = allTransactions.filter(t => t.timestamp >= startTime && t.timestamp <= endTime && reportableTransaction(t));
   const filteredSalesInvoices = allSalesInvoices.filter(invoice => invoice.issueDate >= startTime && invoice.issueDate <= endTime && invoice.status !== 'CANCELLED');
-  const filteredExpenses = allExpenses.filter(e => e.timestamp >= startTime && e.timestamp <= endTime && e.status === 'APPROVED');
   const filteredCustomerPayments = allCustomerPayments.filter(payment => Number(payment.timestamp || 0) >= startTime && Number(payment.timestamp || 0) <= endTime);
-  const mpesaCreditCollections = filteredCustomerPayments
-    .filter(payment => String(payment.paymentMethod || '').toUpperCase() === 'MPESA')
-    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  const cashCreditCollections = filteredCustomerPayments
-    .filter(payment => String(payment.paymentMethod || '').toUpperCase() === 'CASH')
-    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  const totalCreditCollections = mpesaCreditCollections + cashCreditCollections;
+  const creditCollectionSummary = calculateCreditCollections(filteredCustomerPayments);
+  const mpesaCreditCollections = creditCollectionSummary.byMethod.MPESA || 0;
+  const cashCreditCollections = creditCollectionSummary.byMethod.CASH || 0;
+  const totalCreditCollections = creditCollectionSummary.total;
+  const otherCreditCollections = Math.max(0, totalCreditCollections - mpesaCreditCollections - cashCreditCollections);
   const displayProducts = enrichProductsWithBundleStock(allProducts || [], productIngredients || []);
+  const reportPeriodBounds = { start: startTime, end: endTime, label: periodLabel };
   const productPeriodBounds = getPeriodBoundsFor(productDateRange, productSelectedMonth, productCustomStart, productCustomEnd);
-  const productPeriodTransactions = allTransactions.filter(t => t.timestamp >= productPeriodBounds.start && t.timestamp <= productPeriodBounds.end && reportableTransaction(t));
-  const productPeriodSalesInvoices = allSalesInvoices.filter(invoice => invoice.issueDate >= productPeriodBounds.start && invoice.issueDate <= productPeriodBounds.end && invoice.status !== 'CANCELLED');
-  const filteredTransactionMetrics = filteredTransactions.map(transaction => ({
-    transaction,
-    metrics: transactionNetMetrics(transaction),
-  }));
-  const salesDocumentCount = filteredTransactionMetrics.filter(row => row.metrics.netTotal > 0).length + filteredSalesInvoices.length;
-
-  // 2. Complex Financial & Operational Analytics
-  let totalRevenue = 0;
-  let estimatedCOGS = 0;
-  let totalTax = 0;
-  const productPerf: Record<string, { name: string, qty: number, revenue: number, profit: number }> = {};
-  const categoryPerf: Record<string, { revenue: number, profit: number }> = {};
-  const cashierPerf: Record<string, { revenue: number, orders: number }> = {};
-  const hourlySales = Array.from({ length: 24 }).map((_, i) => ({ hour: i, revenue: 0 }));
-  
-  filteredTransactionMetrics.forEach(({ transaction: t, metrics }) => {
-    totalRevenue += metrics.netTotal;
-    totalTax += metrics.netTax;
-    
-    const cashier = t.cashierName || 'Unknown';
-    if (!cashierPerf[cashier]) cashierPerf[cashier] = { revenue: 0, orders: 0 };
-    cashierPerf[cashier].revenue += metrics.netTotal;
-    if (metrics.netTotal > 0) cashierPerf[cashier].orders += 1;
-
-    const hour = new Date(t.timestamp).getHours();
-    hourlySales[hour].revenue += metrics.netTotal;
-
-    txItems(t).forEach(item => {
-      const productId = String(item.productId || '').trim();
-      if (!productId) return;
-      const netQty = netItemQuantity(t, item);
-      if (netQty <= 0) return;
-      const purchase = allPurchases?.find(p => purchaseItems(p).some(pi => pi.productId === productId));
-      const cost = Number(item.snapshotCost ?? purchaseItems(purchase).find(pi => pi.productId === productId)?.unitCost ?? (item.snapshotPrice * 0.7)) || 0;
-      const lineRevenue = lineNetRevenueForTransaction(t, item, metrics);
-      const itemProfit = lineRevenue - (cost * netQty);
-      estimatedCOGS += (cost * netQty);
-
-      if (!productPerf[productId]) {
-        productPerf[productId] = { name: item.name || productId, qty: 0, revenue: 0, profit: 0 };
-      }
-      productPerf[productId].qty += netQty;
-      productPerf[productId].revenue += lineRevenue;
-      productPerf[productId].profit += itemProfit;
-
-      const productObj = displayProducts.find(p => p.id === productId);
-      const category = productObj?.category || 'Uncategorized';
-      if (!categoryPerf[category]) categoryPerf[category] = { revenue: 0, profit: 0 };
-      categoryPerf[category].revenue += lineRevenue;
-      categoryPerf[category].profit += itemProfit;
-    });
-  });
-
-  filteredSalesInvoices.forEach(invoice => {
-    totalRevenue += Number(invoice.total || 0);
-    totalTax += Number(invoice.tax || 0);
-
-    const cashier = invoice.preparedBy || 'Staff';
-    if (!cashierPerf[cashier]) cashierPerf[cashier] = { revenue: 0, orders: 0 };
-    cashierPerf[cashier].revenue += Number(invoice.total || 0);
-    cashierPerf[cashier].orders += 1;
-
-    const hour = new Date(invoice.issueDate).getHours();
-    hourlySales[hour].revenue += Number(invoice.total || 0);
-
-    invoiceItems(invoice).forEach(item => {
-      const qty = Number(item.quantity || 0);
-      const unitPrice = Number(item.unitPrice || 0);
-      const lineRevenue = qty * unitPrice + (item.taxCategory === 'A' ? qty * unitPrice * 0.16 : 0);
-      const productObj = item.itemType === 'PRODUCT' && item.itemId ? displayProducts.find(p => p.id === item.itemId) : undefined;
-      const cost = productObj ? Number(productObj.costPrice || unitPrice * 0.7) : 0;
-      const key = item.itemId || `${item.itemType}-${item.name}`;
-      const itemProfit = lineRevenue - (cost * qty);
-      estimatedCOGS += cost * qty;
-
-      if (!productPerf[key]) {
-        productPerf[key] = { name: item.name, qty: 0, revenue: 0, profit: 0 };
-      }
-      productPerf[key].qty += qty;
-      productPerf[key].revenue += lineRevenue;
-      productPerf[key].profit += itemProfit;
-
-      const category = productObj?.category || (item.itemType === 'SERVICE' ? 'Services' : 'Custom Sales');
-      if (!categoryPerf[category]) categoryPerf[category] = { revenue: 0, profit: 0 };
-      categoryPerf[category].revenue += lineRevenue;
-      categoryPerf[category].profit += itemProfit;
-    });
-  });
-
-  const totalExpenseAmount = filteredExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
-  const grossSales = filteredTransactionMetrics.reduce((sum, row) => sum + row.metrics.netSubtotal, 0)
-    + filteredSalesInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || invoice.total || 0), 0);
-  const totalDiscounts = filteredTransactionMetrics.reduce((sum, row) => sum + row.metrics.netDiscount, 0);
-  const taxImpact = deductTaxInPL ? totalTax : 0;
-  const grossProfit = totalRevenue - estimatedCOGS - taxImpact;
-  const netProfit = grossProfit - totalExpenseAmount;
-  const averageBasket = salesDocumentCount > 0 ? totalRevenue / salesDocumentCount : 0;
-  const topProducts = Object.values(productPerf).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-  const topProductShare = topProducts.length > 0 && totalRevenue > 0 ? (topProducts[0].revenue / totalRevenue) * 100 : 0;
-  const lowStockCount = displayProducts.filter(p => (p.stockQuantity || 0) <= 5).length;
-  const creditTransactions = filteredTransactions.filter(
-    t => t.paymentMethod === 'CREDIT' || (t.paymentMethod === 'SPLIT' && t.splitPayments?.secondaryMethod === 'CREDIT')
-  ).length + filteredSalesInvoices.filter(invoice => invoice.status === 'SENT' || invoice.status === 'PARTIAL').length;
-  const creditSalesAmount = filteredTransactionMetrics.reduce((sum, { transaction: t, metrics }) => {
-    if (t.paymentMethod === 'CREDIT') return sum + metrics.netTotal;
-    if (t.paymentMethod === 'SPLIT' && t.splitPayments?.secondaryMethod === 'CREDIT') return sum + (Number(t.splitPayments.secondaryAmount || 0) * metrics.ratio);
-    return sum;
-  }, 0) + filteredSalesInvoices.reduce((sum, invoice) => sum + Number(invoice.balance || 0), 0);
-
-  // Chart Data Formatting
-  const salesTrendData = Array.from({ length: 7 }).map((_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    const dayStart = new Date(d).setHours(0,0,0,0);
-    const dayEnd = new Date(d).setHours(23,59,59,999);
-    const daySales = allTransactions.filter(t => t.timestamp >= dayStart && t.timestamp <= dayEnd && reportableTransaction(t)).reduce((s, t) => s + transactionNetMetrics(t).netTotal, 0)
-      + allSalesInvoices.filter(invoice => invoice.issueDate >= dayStart && invoice.issueDate <= dayEnd && invoice.status !== 'CANCELLED').reduce((s, invoice) => s + Number(invoice.total || 0), 0);
-    return { name: d.toLocaleDateString('en-US', { weekday: 'short' }), revenue: daySales };
-  });
-
-  const categoryData = Object.entries(categoryPerf).map(([name, data]) => ({ name, ...data })).sort((a,b) => b.revenue - a.revenue).slice(0, 6);
-  const fullExpenseBreakdown = expenseBreakdownFor(filteredExpenses);
-  const expenseData = fullExpenseBreakdown.map(item => ({
-    name: item.name,
-    value: item.value,
-  })).slice(0, 5);
-
-  const currentProfitLossPeriod = {
+  const currentProfitLossPeriod = calculateProfitLossPeriod({
     label: periodLabel,
+    bounds: reportPeriodBounds,
+    transactions: allTransactions,
+    salesInvoices: allSalesInvoices,
+    expenses: allExpenses,
+    products: displayProducts,
+    purchaseOrders: allPurchases,
+    deductTaxInPL,
+  });
+  const {
     grossSales,
     discounts: totalDiscounts,
     totalRevenue,
     cogs: estimatedCOGS,
     grossProfit,
-    grossProfitWithVat: totalRevenue - estimatedCOGS,
-    grossProfitWithoutVat: totalRevenue - totalTax - estimatedCOGS,
     expenses: totalExpenseAmount,
     netProfit,
-    netProfitWithVat: totalRevenue - estimatedCOGS - totalExpenseAmount,
-    netProfitWithoutVat: totalRevenue - totalTax - estimatedCOGS - totalExpenseAmount,
     tax: totalTax,
     creditSales: creditSalesAmount,
     orderCount: salesDocumentCount,
     expenseBreakdown: fullExpenseBreakdown,
-  };
+  } = currentProfitLossPeriod;
+
+  const currentProductPerformanceRows = buildProductPerformance({
+    transactions: allTransactions,
+    salesInvoices: allSalesInvoices,
+    products: displayProducts,
+    purchaseOrders: allPurchases,
+    bounds: reportPeriodBounds,
+  });
+  const productPerformanceRows = buildProductPerformance({
+    transactions: allTransactions,
+    salesInvoices: allSalesInvoices,
+    products: displayProducts,
+    purchaseOrders: allPurchases,
+    bounds: productPeriodBounds,
+  });
+  const averageBasket = salesDocumentCount > 0 ? totalRevenue / salesDocumentCount : 0;
+  const topProducts = currentProductPerformanceRows
+    .filter(row => row.revenue > 0)
+    .slice(0, 5)
+    .map(row => ({ name: row.name, qty: row.qty, revenue: row.revenue, profit: row.profit }));
+  const topProductShare = topProducts.length > 0 && totalRevenue > 0 ? (topProducts[0].revenue / totalRevenue) * 100 : 0;
+  const lowStockCount = displayProducts.filter(isLowStockProduct).length;
+  const creditTransactions = filteredTransactions.filter(
+    t => creditSalesAmountForTransaction(t) > 0
+  ).length + filteredSalesInvoices.filter(invoice => invoice.status === 'SENT' || invoice.status === 'PARTIAL').length;
+
+  // Chart Data Formatting
+  const salesTrendData = buildSalesTrendBuckets({
+    transactions: allTransactions,
+    salesInvoices: allSalesInvoices,
+    bounds: reportPeriodBounds,
+    rangeHint: dateRange,
+  }).map(row => ({ name: row.name, revenue: row.revenue }));
+
+  const categoryData = buildCategoryPerformance({
+    transactions: allTransactions,
+    salesInvoices: allSalesInvoices,
+    products: displayProducts,
+    purchaseOrders: allPurchases,
+    bounds: reportPeriodBounds,
+  }).slice(0, 6);
+  const expenseData = fullExpenseBreakdown.map(item => ({
+    name: item.name,
+    value: item.value,
+  })).slice(0, 5);
 
   const buildProfitLossPeriod = (bounds: PeriodBounds) => {
-    const periodTransactions = allTransactions.filter(t => t.timestamp >= bounds.start && t.timestamp <= bounds.end && reportableTransaction(t));
-    const periodSalesInvoices = allSalesInvoices.filter(invoice => invoice.issueDate >= bounds.start && invoice.issueDate <= bounds.end && invoice.status !== 'CANCELLED');
-    const periodExpenses = allExpenses.filter(e => e.timestamp >= bounds.start && e.timestamp <= bounds.end && e.status === 'APPROVED');
-    const periodTransactionMetrics = periodTransactions.map(transaction => ({
-      transaction,
-      metrics: transactionNetMetrics(transaction),
-    }));
-
-    let periodRevenue = 0;
-    let periodTax = 0;
-    let periodCogs = 0;
-
-    periodTransactionMetrics.forEach(({ transaction: t, metrics }) => {
-      periodRevenue += metrics.netTotal;
-      periodTax += metrics.netTax;
-
-      txItems(t).forEach(item => {
-        const netQty = netItemQuantity(t, item);
-        if (netQty <= 0) return;
-        const purchase = allPurchases?.find(p => purchaseItems(p).some(pi => pi.productId === item.productId));
-        const cost = Number(item.snapshotCost ?? purchaseItems(purchase).find(pi => pi.productId === item.productId)?.unitCost ?? (item.snapshotPrice * 0.7)) || 0;
-        periodCogs += cost * netQty;
-      });
-    });
-
-    periodSalesInvoices.forEach(invoice => {
-      periodRevenue += Number(invoice.total || 0);
-      periodTax += Number(invoice.tax || 0);
-
-      invoiceItems(invoice).forEach(item => {
-        const qty = Number(item.quantity || 0);
-        const unitPrice = Number(item.unitPrice || 0);
-        const productObj = item.itemType === 'PRODUCT' && item.itemId ? displayProducts.find(p => p.id === item.itemId) : undefined;
-        const cost = productObj ? Number(productObj.costPrice || unitPrice * 0.7) : 0;
-        periodCogs += cost * qty;
-      });
-    });
-
-    const periodExpensesTotal = periodExpenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
-    const periodGrossSales = periodTransactionMetrics.reduce((sum, row) => sum + row.metrics.netSubtotal, 0)
-      + periodSalesInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || invoice.total || 0), 0);
-    const periodDiscounts = periodTransactionMetrics.reduce((sum, row) => sum + row.metrics.netDiscount, 0);
-    const periodOrderCount = periodTransactionMetrics.filter(row => row.metrics.netTotal > 0).length + periodSalesInvoices.length;
-    const periodCreditSales = periodTransactionMetrics.reduce((sum, { transaction: t, metrics }) => {
-      if (t.paymentMethod === 'CREDIT') return sum + metrics.netTotal;
-      if (t.paymentMethod === 'SPLIT' && t.splitPayments?.secondaryMethod === 'CREDIT') return sum + (Number(t.splitPayments.secondaryAmount || 0) * metrics.ratio);
-      return sum;
-    }, 0) + periodSalesInvoices.reduce((sum, invoice) => sum + Number(invoice.balance || 0), 0);
-    const periodGrossProfitWithVat = periodRevenue - periodCogs;
-    const periodGrossProfitWithoutVat = periodRevenue - periodTax - periodCogs;
-    const periodNetProfitWithVat = periodGrossProfitWithVat - periodExpensesTotal;
-    const periodNetProfitWithoutVat = periodGrossProfitWithoutVat - periodExpensesTotal;
-    const periodSelectedGrossProfit = deductTaxInPL ? periodGrossProfitWithoutVat : periodGrossProfitWithVat;
-    const periodSelectedNetProfit = deductTaxInPL ? periodNetProfitWithoutVat : periodNetProfitWithVat;
-
-    return {
+    return calculateProfitLossPeriod({
       label: bounds.label,
-      grossSales: periodGrossSales,
-      discounts: periodDiscounts,
-      totalRevenue: periodRevenue,
-      cogs: periodCogs,
-      grossProfit: periodSelectedGrossProfit,
-      grossProfitWithVat: periodGrossProfitWithVat,
-      grossProfitWithoutVat: periodGrossProfitWithoutVat,
-      expenses: periodExpensesTotal,
-      netProfit: periodSelectedNetProfit,
-      netProfitWithVat: periodNetProfitWithVat,
-      netProfitWithoutVat: periodNetProfitWithoutVat,
-      tax: periodTax,
-      creditSales: periodCreditSales,
-      orderCount: periodOrderCount,
-      expenseBreakdown: expenseBreakdownFor(periodExpenses),
-    };
+      bounds,
+      transactions: allTransactions,
+      salesInvoices: allSalesInvoices,
+      expenses: allExpenses,
+      products: displayProducts,
+      purchaseOrders: allPurchases,
+      deductTaxInPL,
+    });
   };
 
-  const topCashiers = Object.entries(cashierPerf).map(([name, data]) => ({ name, ...data })).sort((a,b) => b.revenue - a.revenue);
+  const topCashiers = buildCashierPerformance({
+    transactions: allTransactions,
+    salesInvoices: allSalesInvoices,
+    bounds: reportPeriodBounds,
+  });
   const profitExpenseTrendData = (() => {
     const chartEnd = endTime || Date.now();
     const now = new Date(chartEnd);
@@ -591,128 +398,18 @@ export default function ReportsTabContent() {
 
     return rows;
   })();
-  const hourlySalesData = hourlySales.map(row => ({
-    name: `${String(row.hour).padStart(2, '0')}:00`,
-    revenue: roundMoney(row.revenue),
-  }));
+  const hourlySalesData = buildHourlySalesData({
+    transactions: allTransactions,
+    salesInvoices: allSalesInvoices,
+    bounds: reportPeriodBounds,
+  }).map(row => ({ name: row.name, revenue: row.revenue }));
   const cashierChartData = topCashiers.slice(0, 6).map(row => ({
     name: row.name,
     revenue: roundMoney(row.revenue),
     orders: row.orders,
   }));
 
-  const productPerformanceMap: Record<string, ProductPerformanceRow> = {};
-  const ensureProductRow = (
-    id: string,
-    name: string,
-    group: string,
-    unit: string,
-    stock: number | null,
-    source: ProductPerformanceRow['source']
-  ) => {
-    if (!productPerformanceMap[id]) {
-      productPerformanceMap[id] = {
-        id,
-        name,
-        group,
-        unit,
-        stock,
-        source,
-        qty: 0,
-        revenue: 0,
-        cogs: 0,
-        profit: 0,
-        tax: 0,
-        avgPrice: 0,
-        margin: 0,
-        share: 0,
-      };
-    }
-    return productPerformanceMap[id];
-  };
-
-  displayProducts.forEach(product => {
-    ensureProductRow(
-      product.id,
-      product.name,
-      product.category || 'Uncategorized',
-      product.unit || 'units',
-      Number(product.stockQuantity ?? 0),
-      'Product'
-    );
-  });
-
-  productPeriodTransactions.forEach(transaction => {
-    const metrics = transactionNetMetrics(transaction);
-    txItems(transaction).forEach(item => {
-      const productId = String(item.productId || '').trim();
-      if (!productId) return;
-      const netQty = netItemQuantity(transaction, item);
-      if (netQty <= 0) return;
-
-      const productObj = displayProducts.find(p => p.id === productId);
-      const purchase = allPurchases?.find(p => purchaseItems(p).some(pi => pi.productId === productId));
-      const purchaseLine = purchaseItems(purchase).find(pi => pi.productId === productId);
-      const unitCost = Number(item.snapshotCost ?? purchaseLine?.unitCost ?? productObj?.costPrice ?? (Number(item.snapshotPrice || 0) * 0.7)) || 0;
-      const lineRevenue = lineNetRevenueForTransaction(transaction, item, metrics);
-      const lineCogs = unitCost * netQty;
-      const lineTax = lineTaxForTransaction(transaction, item, metrics);
-      const row = ensureProductRow(
-        productId,
-        item.name || productObj?.name || 'Unnamed product',
-        productObj?.category || item.category || 'Uncategorized',
-        item.unit || productObj?.unit || 'units',
-        productObj ? Number(productObj.stockQuantity ?? 0) : null,
-        'Product'
-      );
-
-      row.qty += netQty;
-      row.revenue += lineRevenue;
-      row.cogs += lineCogs;
-      row.profit += lineRevenue - lineCogs;
-      row.tax += lineTax;
-    });
-  });
-
-  productPeriodSalesInvoices.forEach(invoice => {
-    invoiceItems(invoice).forEach(item => {
-      const qty = Number(item.quantity || 0);
-      if (qty <= 0) return;
-
-      const unitPrice = Number(item.unitPrice || 0);
-      const baseLineRevenue = qty * unitPrice;
-      const lineTax = item.taxCategory === 'A' ? baseLineRevenue * 0.16 : 0;
-      const lineRevenue = baseLineRevenue + lineTax;
-      const productObj = item.itemType === 'PRODUCT' && item.itemId ? displayProducts.find(p => p.id === item.itemId) : undefined;
-      const source = item.itemType === 'SERVICE' ? 'Service' : item.itemType === 'CUSTOM' ? 'Custom' : 'Product';
-      const unitCost = productObj ? Number(productObj.costPrice ?? unitPrice * 0.7) || 0 : 0;
-      const key = productObj?.id || `${source}:${String(item.name || 'Item').trim().toLowerCase()}`;
-      const row = ensureProductRow(
-        key,
-        item.name || productObj?.name || 'Invoice item',
-        productObj?.category || (source === 'Service' ? 'Services' : source === 'Custom' ? 'Custom Sales' : 'Uncategorized'),
-        productObj?.unit || 'units',
-        productObj ? Number(productObj.stockQuantity ?? 0) : null,
-        source
-      );
-
-      row.qty += qty;
-      row.revenue += lineRevenue;
-      row.cogs += unitCost * qty;
-      row.profit += lineRevenue - (unitCost * qty);
-      row.tax += lineTax;
-    });
-  });
-
-  const productTotalRevenue = Object.values(productPerformanceMap).reduce((sum, row) => sum + row.revenue, 0);
-  const productPerformanceRows = Object.values(productPerformanceMap)
-    .map(row => ({
-      ...row,
-      avgPrice: row.qty > 0 ? row.revenue / row.qty : 0,
-      margin: row.revenue > 0 ? (row.profit / row.revenue) * 100 : 0,
-      share: productTotalRevenue > 0 ? (row.revenue / productTotalRevenue) * 100 : 0,
-    }))
-    .sort((a, b) => b.revenue - a.revenue || a.name.localeCompare(b.name));
+  const productTotalRevenue = productPerformanceRows.reduce((sum, row) => sum + row.revenue, 0);
   const productGroups = Array.from(new Set(productPerformanceRows.map(row => row.group))).sort((a, b) => a.localeCompare(b));
   const selectedProductSet = new Set(selectedProductIds);
   const selectedProductGroupSet = new Set(selectedProductGroups);
@@ -785,7 +482,6 @@ export default function ReportsTabContent() {
   const handleExportProductPerformance = async () => {
     setIsExportingProducts(true);
     try {
-      const { generateAndDownloadProductPerformanceReport } = await import('../../utils/shareUtils');
       await generateAndDownloadProductPerformanceReport({
         title: `Product-Performance-${productDateRange}-${new Date().toISOString().split('T')[0]}`,
         periodLabel: productPeriodBounds.label,
@@ -816,7 +512,6 @@ export default function ReportsTabContent() {
   const handleExportProfitLoss = async () => {
     setIsSharing(true);
     try {
-      const { generateAndDownloadProfitLossReport } = await import('../../utils/shareUtils');
       const periods = [currentProfitLossPeriod];
       const exportMode: ProfitLossExportMode = 'INDIVIDUAL';
       await generateAndDownloadProfitLossReport({
@@ -1154,7 +849,7 @@ export default function ReportsTabContent() {
                   <SummaryRow metric="Low stock items" value={`${lowStockCount} items`} target="Less than 10" ok={lowStockCount < 10} />
                   <SummaryRow metric="Credit sales" value={`${creditTransactions} sales`} target="Under 15%" ok={salesDocumentCount === 0 || creditTransactions <= (salesDocumentCount * 0.15)} />
                   <SummaryRow metric="M-Pesa credit collections" value={`Ksh ${Math.floor(mpesaCreditCollections).toLocaleString()}`} target="Not counted as sales" ok />
-                  <SummaryRow metric="Total credit collections" value={`Ksh ${Math.floor(totalCreditCollections).toLocaleString()}`} target={`${cashCreditCollections > 0 ? `Cash Ksh ${Math.floor(cashCreditCollections).toLocaleString()}` : 'No cash collections'}`} ok />
+                  <SummaryRow metric="Total credit collections" value={`Ksh ${Math.floor(totalCreditCollections).toLocaleString()}`} target={`${otherCreditCollections > 0 ? `Other Ksh ${Math.floor(otherCreditCollections).toLocaleString()}` : cashCreditCollections > 0 ? `Cash Ksh ${Math.floor(cashCreditCollections).toLocaleString()}` : 'No other collections'}`} ok />
                 </tbody>
               </table>
             </div>
@@ -1450,7 +1145,7 @@ export default function ReportsTabContent() {
                         <td className="border border-slate-200 px-3 py-2 text-right font-bold tabular-nums text-slate-500">Ksh {Math.round(row.cogs).toLocaleString()}</td>
                         <td className={`border border-slate-200 px-3 py-2 text-right font-black tabular-nums ${row.profit < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>Ksh {Math.round(row.profit).toLocaleString()}</td>
                         <td className="border border-slate-200 px-3 py-2 text-right font-black tabular-nums text-slate-900">{row.margin.toFixed(1)}%</td>
-                        <td className={`border border-slate-200 px-3 py-2 text-right font-black tabular-nums ${row.stock !== null && row.stock <= 5 ? 'text-rose-600' : 'text-slate-900'}`}>
+                        <td className={`border border-slate-200 px-3 py-2 text-right font-black tabular-nums ${isLowStockProduct({ stockQuantity: row.stock, reorderPoint: row.reorderPoint }) ? 'text-rose-600' : 'text-slate-900'}`}>
                           {row.stock === null ? '-' : row.stock.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                         </td>
                         <td className="border border-slate-200 px-3 py-2 text-right font-bold tabular-nums text-slate-500">{row.share.toFixed(1)}%</td>

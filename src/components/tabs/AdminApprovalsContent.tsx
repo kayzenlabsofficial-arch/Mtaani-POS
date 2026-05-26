@@ -13,6 +13,7 @@ import { ExpenseService } from '../../services/expenses';
 import { SalesService } from '../../services/sales';
 import { CashService } from '../../services/operations';
 import { getCurrentShiftId } from '../../utils/shiftSession';
+import { refundNetAmountForLines, refundNetAmountForRemainingItems } from '../../utils/posMoney';
 
 type ApprovalTabId = 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'STOCK' | 'CASH_PICKS';
 type ApprovalMode = 'desktop' | 'mobile';
@@ -43,6 +44,26 @@ const formatDate = (timestamp?: number) => timestamp ? new Date(timestamp).toLoc
 const formatDateTime = (timestamp?: number) => timestamp ? new Date(timestamp).toLocaleString() : 'Unknown time';
 
 const firstReceiptPart = (id?: string) => id ? id.split('-')[0].toUpperCase() : 'Unknown';
+
+function parseRefundLines(value: unknown): { productId: string; quantity: number }[] {
+  if (Array.isArray(value)) return value as { productId: string; quantity: number }[];
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function pendingRefundAmount(transaction: Transaction): number {
+  const lines = parseRefundLines(transaction.pendingRefundItems);
+  return lines.length > 0
+    ? refundNetAmountForLines(transaction as any, lines)
+    : refundNetAmountForRemainingItems(transaction as any);
+}
 
 export default function AdminApprovalsContent({ DocumentDetailsModal, mode }: AdminApprovalsContentProps) {
   const currentUser = useStore(state => state.currentUser);
@@ -98,6 +119,7 @@ export default function AdminApprovalsContent({ DocumentDetailsModal, mode }: Ad
 
   const handleApproveAdjustment = async (req: StockAdjustmentRequest) => {
     if (!activeShopId || !activeBusinessId) return;
+    if (!window.confirm(`Approve stock change for ${req.productName || 'this product'}?`)) return;
     try {
       await StockService.approveAdjustment({
         requestId: req.id,
@@ -195,6 +217,7 @@ export default function AdminApprovalsContent({ DocumentDetailsModal, mode }: Ad
 
   const handleRejectAdjustment = async (id: string) => {
     if (!activeShopId || !activeBusinessId) return;
+    if (!window.confirm('Reject this stock adjustment request?')) return;
     try {
       await StockService.rejectAdjustment({
         requestId: id,
@@ -225,6 +248,7 @@ export default function AdminApprovalsContent({ DocumentDetailsModal, mode }: Ad
 
   const handleConfirmBanking = async (id: string) => {
     if (!activeShopId || !activeBusinessId) return;
+    if (!window.confirm('Confirm this cash pick as banked to the Main account?')) return;
     try {
       await CashService.approvePick({ cashPickId: id, businessId: activeBusinessId, shopId: activeShopId });
       await Promise.allSettled([db.cashPicks.reload(), db.financialAccounts.reload()]);
@@ -297,7 +321,7 @@ export default function AdminApprovalsContent({ DocumentDetailsModal, mode }: Ad
               <p className="mt-1 text-[11px] font-black text-rose-600">Cash refund from till</p>
             </div>
             <div className="shrink-0 text-right">
-              <p className="text-base font-black text-slate-950">{moneyText(transaction.total)}</p>
+              <p className="text-base font-black text-slate-950">{moneyText(pendingRefundAmount(transaction))}</p>
               <p className="mt-1 text-[10px] font-bold text-slate-500">Pending refund</p>
             </div>
             <ChevronRight size={18} className="shrink-0 text-slate-400 group-hover:text-blue-600" />

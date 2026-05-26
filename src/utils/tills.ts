@@ -71,6 +71,25 @@ export function normalizeTillCount(count: unknown, existing: SalesTill[] = DEFAU
   });
 }
 
+export function scopeSalesTillIds(tills: SalesTill[], businessId: string): SalesTill[] {
+  const businessKey = String(businessId || 'business').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 42) || 'business';
+  const seen = new Set<string>();
+  return tills.map((till, index) => {
+    const fallbackId = `${businessKey}-till-${index + 1}`;
+    const rawId = String(till.id || '').trim();
+    const needsScopedId = !rawId || /^till-\d+$/i.test(rawId);
+    const baseId = (needsScopedId ? fallbackId : rawId).slice(0, 80) || fallbackId;
+    let id = baseId;
+    let suffix = 2;
+    while (seen.has(id)) {
+      id = `${baseId.slice(0, 76)}-${suffix}`.slice(0, 80);
+      suffix += 1;
+    }
+    seen.add(id);
+    return { ...till, id };
+  });
+}
+
 export function serializeSalesTills(tills: SalesTill[]): string {
   return JSON.stringify(tills.map((till, index) => ({
     id: String(till.id || `till-${index + 1}`).trim() || `till-${index + 1}`,

@@ -1,14 +1,18 @@
 import { authorizeRequest, canAccessBusiness, verifyPassword } from '../authUtils';
 import { getMpesaPublicStatus, saveMpesaCredentials } from './credentialStore';
+import {
+  clearMpesaSettingsAttempts,
+  ensureMpesaSettingsAttemptTable,
+  getMpesaSettingsLockMinutes,
+  mpesaSettingsAttemptId,
+  recordFailedMpesaSettingsAttempt,
+} from './settingsLockout';
 
 interface Env {
   DB: D1Database;
   API_SECRET?: string;
   MPESA_CREDENTIAL_ENCRYPTION_KEY?: string;
 }
-
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_MS = 30 * 60 * 1000;
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -27,30 +31,39 @@ function json(body: any, status = 200) {
   });
 }
 
-async function ensureAttemptTable(db: D1Database) {
-  await db.prepare('CREATE TABLE IF NOT EXISTS loginAttempts (id TEXT PRIMARY KEY, count INTEGER DEFAULT 0, lockedUntil INTEGER, updated_at INTEGER)').run();
-}
-
-async function rejectIfLocked(db: D1Database, id: string) {
-  const row = await db.prepare('SELECT count, lockedUntil FROM loginAttempts WHERE id = ?').bind(id).first<any>();
-  if (row?.lockedUntil && Date.now() < Number(row.lockedUntil)) {
-    const minutes = Math.ceil((Number(row.lockedUntil) - Date.now()) / 60000);
-    return json({ error: `M-Pesa settings are locked. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.` }, 423);
-  }
-  return null;
-}
-
-async function recordFailedAttempt(db: D1Database, id: string) {
-  const row = await db.prepare('SELECT count, lockedUntil FROM loginAttempts WHERE id = ?').bind(id).first<any>();
-  const count = Number(row?.count || 0) + 1;
-  const lockedUntil = count >= MAX_ATTEMPTS ? Date.now() + LOCKOUT_MS : null;
-  await db.prepare('INSERT OR REPLACE INTO loginAttempts (id, count, lockedUntil, updated_at) VALUES (?, ?, ?, ?)')
-    .bind(id, count, lockedUntil, Date.now())
-    .run();
-}
-
-async function clearAttempts(db: D1Database, id: string) {
-  await db.prepare('DELETE FROM loginAttempts WHERE id = ?').bind(id).run();
+async function auditMpesaSettingsSave(db: D1Database, principal: any, businessId: string) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS auditLogs (
+      id TEXT PRIMARY KEY,
+      ts INTEGER NOT NULL,
+      userId TEXT,
+      userName TEXT,
+      action TEXT NOT NULL,
+      entity TEXT,
+      entityId TEXT,
+      severity TEXT NOT NULL,
+      details TEXT,
+      businessId TEXT,
+      updated_at INTEGER
+    )
+  `).run();
+  const now = Date.now();
+  await db.prepare(`
+    INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    crypto.randomUUID(),
+    now,
+    principal.userId || null,
+    principal.userName || null,
+    'settings.mpesa.save',
+    'mpesaCredentials',
+    businessId,
+    'WARN',
+    'Updated encrypted M-Pesa settings.',
+    businessId,
+    now,
+  ).run();
 }
 
 export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
@@ -89,26 +102,31 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: 'Please sign in as the administrator making this change.' }, 403);
   }
 
-  await ensureAttemptTable(env.DB);
-  const attemptId = `MPESA_SETTINGS:${businessId}:${userId}`;
-  const locked = await rejectIfLocked(env.DB, attemptId);
-  if (locked) return locked;
+  const needsPasswordCheck = !auth.service && auth.principal.role !== 'ROOT';
+  const attemptId = mpesaSettingsAttemptId(businessId, userId);
+  if (needsPasswordCheck) {
+    await ensureMpesaSettingsAttemptTable(env.DB);
+    const lockedMinutes = await getMpesaSettingsLockMinutes(env.DB, attemptId);
+    if (lockedMinutes > 0) {
+      return json({ error: `M-Pesa settings are locked. Try again in ${lockedMinutes} minute${lockedMinutes === 1 ? '' : 's'}.` }, 423);
+    }
+  }
 
-  const user = auth.service || auth.principal.role === 'ROOT'
+  const user = !needsPasswordCheck
     ? null
     : await env.DB.prepare('SELECT id, name, role, password FROM users WHERE id = ? AND businessId = ? LIMIT 1')
       .bind(userId, businessId)
       .first<any>();
 
-  if (!auth.service && auth.principal.role !== 'ROOT' && (!user || user.role !== 'ADMIN')) {
+  if (needsPasswordCheck && (!user || user.role !== 'ADMIN')) {
     return json({ error: 'Only an administrator can change M-Pesa settings.' }, 403);
   }
-  const passwordOk = auth.service || auth.principal.role === 'ROOT' ? true : await verifyPassword(adminPassword, String(user?.password || ''));
+  const passwordOk = !needsPasswordCheck ? true : await verifyPassword(adminPassword, String(user?.password || ''));
   if (!passwordOk) {
-    await recordFailedAttempt(env.DB, attemptId);
+    await recordFailedMpesaSettingsAttempt(env.DB, attemptId);
     return json({ error: 'Security check failed. Enter the admin password.' }, 401);
   }
-  await clearAttempts(env.DB, attemptId);
+  if (needsPasswordCheck) await clearMpesaSettingsAttempts(env.DB, attemptId);
 
   try {
     const status = await saveMpesaCredentials(
@@ -117,6 +135,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
       body?.credentials || {},
       env.MPESA_CREDENTIAL_ENCRYPTION_KEY,
     );
+    await auditMpesaSettingsSave(env.DB, auth.principal, businessId);
     return json({ success: true, status });
   } catch (err: any) {
     const safeMessage = String(err?.message || '').includes('safe storage key')

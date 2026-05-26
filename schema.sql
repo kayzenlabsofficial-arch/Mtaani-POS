@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS products (
     expiryDate INTEGER,
     isBundle INTEGER DEFAULT 0,
     components TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -58,6 +59,13 @@ CREATE TABLE IF NOT EXISTS productIngredients (
     updated_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId);
+
+CREATE TRIGGER IF NOT EXISTS products_non_negative_stock_guard
+BEFORE UPDATE OF stockQuantity ON products
+WHEN NEW.stockQuantity < -0.0001
+BEGIN
+    SELECT RAISE(ABORT, 'Insufficient stock.');
+END;
 
 CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
@@ -88,6 +96,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     approvedBy TEXT,
     pendingRefundItems TEXT,
     shiftId TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -119,6 +128,7 @@ CREATE TABLE IF NOT EXISTS refunds (
     approvedBy TEXT,
     status TEXT NOT NULL DEFAULT 'APPROVED',
     shiftId TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -138,9 +148,20 @@ CREATE TABLE IF NOT EXISTS shifts (
     closeBreakdown TEXT,
     status TEXT NOT NULL,
     lastSyncAt INTEGER,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_open_till
+ON shifts(businessId, shopId, tillId)
+WHERE UPPER(COALESCE(status, '')) = 'OPEN'
+  AND COALESCE(tillId, '') != '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_open_cashier
+ON shifts(businessId, shopId, cashierId)
+WHERE UPPER(COALESCE(status, '')) = 'OPEN'
+  AND COALESCE(cashierId, '') != '';
 
 CREATE TABLE IF NOT EXISTS endOfDayReports (
     id TEXT PRIMARY KEY,
@@ -170,6 +191,7 @@ CREATE TABLE IF NOT EXISTS endOfDayReports (
     cashierId TEXT,
     cashierName TEXT NOT NULL,
     closeBreakdown TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -183,6 +205,7 @@ CREATE TABLE IF NOT EXISTS stockMovements (
     reference TEXT,
     businessId TEXT,
     shiftId TEXT,
+    shopId TEXT,
     expiryDate INTEGER,
     updated_at INTEGER
 );
@@ -202,6 +225,7 @@ CREATE TABLE IF NOT EXISTS expenses (
     preparedBy TEXT,
     approvedBy TEXT,
     shiftId TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -276,6 +300,7 @@ CREATE TABLE IF NOT EXISTS customers (
     email TEXT,
     totalSpent REAL,
     balance REAL,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -291,9 +316,45 @@ CREATE TABLE IF NOT EXISTS customerPayments (
     timestamp INTEGER NOT NULL,
     preparedBy TEXT,
     shiftId TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
+
+CREATE INDEX IF NOT EXISTS idx_customerPayments_code ON customerPayments(businessId, transactionCode);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customerPayments_unique_code ON customerPayments(businessId, transactionCode)
+    WHERE transactionCode IS NOT NULL AND transactionCode != '';
+
+CREATE TRIGGER IF NOT EXISTS customerPayments_balance_guard
+BEFORE INSERT ON customerPayments
+WHEN NEW.amount > 0
+BEGIN
+    SELECT RAISE(ABORT, 'Customer was not found.')
+    WHERE NOT EXISTS (
+        SELECT 1 FROM customers
+        WHERE id = NEW.customerId
+          AND businessId = NEW.businessId
+    );
+    SELECT RAISE(ABORT, 'Payment cannot exceed the customer balance.')
+    WHERE (
+        SELECT COALESCE(balance, 0)
+        FROM customers
+        WHERE id = NEW.customerId
+          AND businessId = NEW.businessId
+    ) + 0.01 < NEW.amount;
+END;
+
+CREATE TRIGGER IF NOT EXISTS customerPayments_code_guard
+BEFORE INSERT ON customerPayments
+WHEN NEW.transactionCode IS NOT NULL AND NEW.transactionCode != ''
+BEGIN
+    SELECT RAISE(ABORT, 'This payment code has already been used.')
+    WHERE EXISTS (
+        SELECT 1 FROM customerPayments
+        WHERE businessId = NEW.businessId
+          AND UPPER(COALESCE(transactionCode, '')) = UPPER(NEW.transactionCode)
+    );
+END;
 
 CREATE TABLE IF NOT EXISTS serviceItems (
     id TEXT PRIMARY KEY,
@@ -325,9 +386,66 @@ CREATE TABLE IF NOT EXISTS salesInvoices (
     dueDate INTEGER,
     notes TEXT,
     preparedBy TEXT,
+    shiftId TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_salesInvoices_business_number ON salesInvoices(businessId, invoiceNumber);
+
+CREATE TRIGGER IF NOT EXISTS customerPayments_invoice_allocation_guard
+BEFORE INSERT ON customerPayments
+WHEN NEW.allocations IS NOT NULL AND TRIM(NEW.allocations) != ''
+BEGIN
+    SELECT RAISE(ABORT, 'Payment allocations are invalid.')
+    WHERE json_valid(NEW.allocations) = 0;
+    SELECT RAISE(ABORT, 'Payment allocation refers to an invoice that was not found.')
+    WHERE EXISTS (
+        SELECT 1
+        FROM json_each(NEW.allocations) allocation
+        WHERE UPPER(COALESCE(json_extract(allocation.value, '$.sourceType'), '')) = 'INVOICE'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM salesInvoices invoice
+              WHERE invoice.id = json_extract(allocation.value, '$.sourceId')
+                AND invoice.customerId = NEW.customerId
+                AND invoice.businessId = NEW.businessId
+          )
+    );
+    SELECT RAISE(ABORT, 'Cannot allocate payment to a cancelled invoice.')
+    WHERE EXISTS (
+        SELECT 1
+        FROM json_each(NEW.allocations) allocation
+        JOIN salesInvoices invoice
+          ON invoice.id = json_extract(allocation.value, '$.sourceId')
+         AND invoice.customerId = NEW.customerId
+         AND invoice.businessId = NEW.businessId
+        WHERE UPPER(COALESCE(json_extract(allocation.value, '$.sourceType'), '')) = 'INVOICE'
+          AND invoice.status = 'CANCELLED'
+    );
+    SELECT RAISE(ABORT, 'Payment allocation exceeds an invoice balance.')
+    WHERE EXISTS (
+        SELECT 1
+        FROM json_each(NEW.allocations) allocation
+        JOIN salesInvoices invoice
+          ON invoice.id = json_extract(allocation.value, '$.sourceId')
+         AND invoice.customerId = NEW.customerId
+         AND invoice.businessId = NEW.businessId
+        WHERE UPPER(COALESCE(json_extract(allocation.value, '$.sourceType'), '')) = 'INVOICE'
+          AND CAST(COALESCE(json_extract(allocation.value, '$.amount'), 0) AS REAL) > COALESCE(invoice.balance, invoice.total, 0) + 0.01
+    );
+END;
+
+CREATE TRIGGER IF NOT EXISTS customerPayments_immutable_money_guard
+BEFORE UPDATE OF customerId, amount, allocations, businessId ON customerPayments
+BEGIN
+    SELECT RAISE(ABORT, 'Customer payment records cannot be edited after saving.')
+    WHERE COALESCE(NEW.customerId, '') != COALESCE(OLD.customerId, '')
+       OR ABS(COALESCE(NEW.amount, 0) - COALESCE(OLD.amount, 0)) > 0.0001
+       OR COALESCE(NEW.allocations, '') != COALESCE(OLD.allocations, '')
+       OR COALESCE(NEW.businessId, '') != COALESCE(OLD.businessId, '');
+END;
 
 CREATE TABLE IF NOT EXISTS suppliers (
     id TEXT PRIMARY KEY,
@@ -378,6 +496,7 @@ CREATE TABLE IF NOT EXISTS creditNotes (
     quantity REAL,
     businessId TEXT,
     shiftId TEXT,
+    shopId TEXT,
     updated_at INTEGER
 );
 
@@ -405,6 +524,7 @@ CREATE TABLE IF NOT EXISTS dailySummaries (
     totalVariance REAL NOT NULL,
     shiftReports TEXT,
     timestamp INTEGER NOT NULL,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -422,6 +542,7 @@ CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (
     status TEXT NOT NULL,
     preparedBy TEXT,
     approvedBy TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -443,6 +564,7 @@ CREATE TABLE IF NOT EXISTS purchaseOrders (
     preparedBy TEXT,
     approvedBy TEXT,
     receivedBy TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -484,8 +606,22 @@ CREATE TABLE IF NOT EXISTS categories (
 
 -- Performance indexes
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
+CREATE INDEX IF NOT EXISTS idx_products_business_shop ON products(businessId, shopId);
 CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp);
 CREATE INDEX IF NOT EXISTS idx_stockmovements_product ON stockMovements(productId);
+CREATE INDEX IF NOT EXISTS idx_stockmovements_business_shop_product ON stockMovements(businessId, shopId, productId);
+CREATE INDEX IF NOT EXISTS idx_stockadjustments_business_shop ON stockAdjustmentRequests(businessId, shopId);
+CREATE INDEX IF NOT EXISTS idx_purchaseorders_business_shop ON purchaseOrders(businessId, shopId);
+CREATE INDEX IF NOT EXISTS idx_creditnotes_business_shop ON creditNotes(businessId, shopId);
+CREATE INDEX IF NOT EXISTS idx_expenses_business_shop_timestamp ON expenses(businessId, shopId, timestamp);
+CREATE INDEX IF NOT EXISTS idx_expenses_business_status_timestamp ON expenses(businessId, status, timestamp);
+CREATE INDEX IF NOT EXISTS idx_endofday_business_shop_timestamp ON endOfDayReports(businessId, shopId, timestamp);
+CREATE INDEX IF NOT EXISTS idx_shifts_business_shop_status ON shifts(businessId, shopId, status);
+CREATE INDEX IF NOT EXISTS idx_dailySummaries_business_shop_date ON dailySummaries(businessId, shopId, date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_purchaseOrders_business_poNumber ON purchaseOrders(businessId, poNumber)
+    WHERE poNumber IS NOT NULL AND poNumber != '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_purchaseOrders_supplier_invoice ON purchaseOrders(businessId, supplierId, invoiceNumber)
+    WHERE invoiceNumber IS NOT NULL AND invoiceNumber != '';
 CREATE INDEX IF NOT EXISTS idx_salesInvoices_customer ON salesInvoices(customerId);
 
 CREATE TABLE IF NOT EXISTS mpesaCallbacks (
@@ -503,6 +639,9 @@ CREATE TABLE IF NOT EXISTS mpesaCallbacks (
     utilizedCustomerName TEXT,
     utilizedAt INTEGER
 );
+
+CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber);
+CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_utilized ON mpesaCallbacks(businessId, utilizedTransactionId);
 
 CREATE TABLE IF NOT EXISTS mpesaCredentials (
     businessId TEXT PRIMARY KEY,
@@ -556,6 +695,13 @@ CREATE TABLE IF NOT EXISTS financialAccounts (
     accountNumber TEXT,
     updated_at INTEGER
 );
+
+CREATE TRIGGER IF NOT EXISTS financialAccounts_non_negative_balance_guard
+BEFORE UPDATE OF balance ON financialAccounts
+WHEN NEW.balance < -0.0001
+BEGIN
+    SELECT RAISE(ABORT, 'Insufficient account balance.');
+END;
 
 CREATE TABLE IF NOT EXISTS financialAccountAdjustments (
     id TEXT PRIMARY KEY,

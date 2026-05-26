@@ -156,7 +156,7 @@ export function MoreOptionsMenu({ onTabChange, onLogout, onClose, currentUser, b
     { id: 'EXPENSES', label: 'Expenses', icon: 'payments', color: 'bg-rose-500' },
     { id: 'MAIN_ACCOUNT', label: 'Main account', icon: 'account_balance', color: 'bg-blue-700' },
     { id: 'REFUNDS', label: 'Returns', icon: 'keyboard_return', color: 'bg-amber-500' },
-    { id: 'DOCUMENTS', label: 'Receipts', icon: 'receipt_long', color: 'bg-violet-500' },
+    { id: 'DOCUMENTS', label: 'Documents', icon: 'receipt_long', color: 'bg-violet-500' },
   ].filter(item => canOpenTab(currentUser, businessSettings, item.id));
   const management = [
     { id: 'SUPPLIERS', label: 'Suppliers', icon: 'local_shipping', color: 'bg-teal-500' },

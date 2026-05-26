@@ -26,6 +26,11 @@ export type TransactionLike = {
   items?: SaleItemLike[] | string;
 };
 
+export type RefundLineLike = {
+  productId?: string;
+  quantity?: number;
+};
+
 export type TransactionNetMetrics = {
   ratio: number;
   netSubtotal: number;
@@ -122,10 +127,50 @@ export function transactionOriginalNetTotal(transaction: TransactionLike): numbe
 }
 
 export function refundedAmountFromReturnedLines(transaction: TransactionLike): number {
-  const amount = transactionItems(transaction).reduce((sum, item) => {
-    return sum + lineNetAmount(item, asMoneyNumber(item?.returnedQuantity));
-  }, 0);
-  return roundMoney(Math.min(transactionOriginalNetTotal(transaction), amount));
+  const lines = transactionItems(transaction).map(item => ({
+    productId: item.productId,
+    quantity: asMoneyNumber(item?.returnedQuantity),
+  }));
+  return refundNetAmountForLines(transaction, lines);
+}
+
+export function refundNetAmountForLines(transaction: TransactionLike, lines: RefundLineLike[]): number {
+  const items = transactionItems(transaction);
+  const quantityByProductId = new Map<string, number>();
+  for (const line of lines || []) {
+    const productId = String(line?.productId || '').trim();
+    const quantity = Math.max(0, asMoneyNumber(line?.quantity));
+    if (!productId || quantity <= 0) continue;
+    quantityByProductId.set(productId, roundMoney((quantityByProductId.get(productId) || 0) + quantity));
+  }
+
+  const returnedGross = roundMoney(items.reduce((sum, item) => {
+    return sum + lineGrossAmount(item, quantityByProductId.get(String(item.productId || '')) || 0);
+  }, 0));
+  if (returnedGross <= 0) return 0;
+
+  const directReturnedNet = roundMoney(items.reduce((sum, item) => {
+    return sum + lineNetAmount(item, quantityByProductId.get(String(item.productId || '')) || 0);
+  }, 0));
+  const originalGross = transactionOriginalGrossSubtotal(transaction);
+  const originalNet = transactionOriginalNetTotal(transaction);
+  const itemDiscountTotal = transactionItemDiscountTotal(transaction);
+  const expectedDiscount = transactionExpectedDiscount(transaction);
+  const itemDiscountsCoverTransactionDiscount = itemDiscountTotal > 0 && itemDiscountTotal >= expectedDiscount - 0.01;
+  const proportionalNet = originalGross > 0
+    ? roundMoney(originalNet * Math.min(1, returnedGross / originalGross))
+    : directReturnedNet;
+
+  const amount = itemDiscountsCoverTransactionDiscount ? directReturnedNet : proportionalNet;
+  return roundMoney(Math.min(originalNet, Math.max(0, amount)));
+}
+
+export function refundNetAmountForRemainingItems(transaction: TransactionLike): number {
+  const lines = transactionItems(transaction).map(item => ({
+    productId: item.productId,
+    quantity: Math.max(0, asMoneyNumber(item?.quantity) - asMoneyNumber(item?.returnedQuantity)),
+  }));
+  return refundNetAmountForLines(transaction, lines);
 }
 
 export function transactionNetMetrics(transaction: TransactionLike): TransactionNetMetrics {

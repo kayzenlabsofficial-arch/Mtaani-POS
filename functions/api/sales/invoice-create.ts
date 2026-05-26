@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { ensureInventoryIntegritySchema } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +11,7 @@ const INVOICE_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -63,6 +64,7 @@ async function ensureSchema(db: D1Database) {
       reference TEXT,
       businessId TEXT,
       shiftId TEXT,
+      shopId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -97,27 +99,34 @@ async function ensureSchema(db: D1Database) {
 
   for (const sql of [
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN shopId TEXT',
     'ALTER TABLE serviceItems ADD COLUMN isActive INTEGER DEFAULT 1',
     "ALTER TABLE serviceItems ADD COLUMN taxCategory TEXT DEFAULT 'A'",
     'ALTER TABLE serviceItems ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE salesInvoices ADD COLUMN shiftId TEXT',
+    'ALTER TABLE salesInvoices ADD COLUMN shopId TEXT',
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_salesInvoices_business_number ON salesInvoices(businessId, invoiceNumber)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
+  await db.prepare(`
+    CREATE TRIGGER IF NOT EXISTS products_non_negative_stock_guard
+    BEFORE UPDATE OF stockQuantity ON products
+    WHEN NEW.stockQuantity < -0.0001
+    BEGIN
+      SELECT RAISE(ABORT, 'Insufficient stock.');
+    END
+  `).run();
+  await ensureInventoryIntegritySchema(db);
 }
 
 async function nextInvoiceNumber(db: D1Database, businessId: string) {
-  const { results } = await db.prepare(`
-    SELECT invoiceNumber
+  const row = await db.prepare(`
+    SELECT MAX(CAST(SUBSTR(invoiceNumber, 5) AS INTEGER)) AS maxNumber
     FROM salesInvoices
     WHERE businessId = ? AND invoiceNumber LIKE 'INV-%'
-    ORDER BY issueDate DESC
-    LIMIT 500
-  `).bind(businessId).all();
-  const max = ((results || []) as any[]).reduce((highest, row) => {
-    const match = String(row.invoiceNumber || '').match(/INV-(\d+)/i);
-    const num = match ? Number(match[1]) : 0;
-    return Number.isFinite(num) && num > highest ? num : highest;
-  }, 0);
+  `).bind(businessId).first<any>();
+  const max = asNumber(row?.maxNumber);
   return `INV-${String(max + 1).padStart(4, '0')}`;
 }
 
@@ -135,6 +144,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
     const customerId = String(body?.customerId || '').trim();
+    const shopId = trimText(body?.shopId, 160) || null;
+    const shiftId = trimText(body?.shiftId, 180) || null;
     if (!businessId || !customerId) return json({ error: 'Business and customer are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
@@ -262,14 +273,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       dueDate: body?.dueDate ? asNumber(body.dueDate) : null,
       notes: trimText(body?.notes, 500) || null,
       preparedBy: trimText(body?.preparedBy || auth.principal.userName, 120) || 'Staff',
+      shiftId,
+      shopId,
       businessId,
       updated_at: now,
     };
 
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(`
-        INSERT INTO salesInvoices (id, invoiceNumber, customerId, customerName, customerPhone, customerEmail, items, subtotal, tax, total, paidAmount, balance, status, issueDate, dueDate, notes, preparedBy, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO salesInvoices (id, invoiceNumber, customerId, customerName, customerPhone, customerEmail, items, subtotal, tax, total, paidAmount, balance, status, issueDate, dueDate, notes, preparedBy, shiftId, shopId, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         invoice.id,
         invoice.invoiceNumber,
@@ -288,6 +301,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         invoice.dueDate,
         invoice.notes,
         invoice.preparedBy,
+        invoice.shiftId,
+        invoice.shopId,
         businessId,
         now,
       ),
@@ -302,11 +317,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     for (const [productId, deduction] of stockDeductions.entries()) {
       statements.push(
-        env.DB.prepare(`UPDATE products SET stockQuantity = MAX(0, COALESCE(stockQuantity, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ?`)
+        env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) - ?, updated_at = ? WHERE id = ? AND businessId = ?`)
           .bind(deduction.quantity, now, productId, businessId),
         env.DB.prepare(`
-          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
           productId,
@@ -316,6 +331,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           `Invoice ${invoiceNumber}`,
           businessId,
           body?.shiftId || null,
+          shopId,
           now,
         )
       );
@@ -342,7 +358,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB.batch(statements);
     return json({ success: true, invoice });
   } catch (err: any) {
-    const status = err instanceof PolicyError ? err.status : 500;
-    return json({ error: err?.message || 'Could not create sales invoice.' }, status);
+    const message = String(err?.message || '');
+    const isStockRace = message.includes('Insufficient stock');
+    const isDuplicateInvoiceNumber = message.includes('UNIQUE') && message.includes('salesInvoices');
+    const status = err instanceof PolicyError ? err.status : isStockRace || isDuplicateInvoiceNumber ? 409 : 500;
+    return json({
+      error: isStockRace
+        ? 'Insufficient stock for one or more invoice products.'
+        : isDuplicateInvoiceNumber
+          ? 'Invoice number already exists.'
+          : err?.message || 'Could not create sales invoice.',
+    }, status);
   }
 };

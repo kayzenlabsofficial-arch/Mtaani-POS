@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { ensureInventoryIntegritySchema, inventoryShopIdFromRequest } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +11,7 @@ const PURCHASE_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -70,6 +71,7 @@ async function ensureSchema(db: D1Database) {
       preparedBy TEXT,
       approvedBy TEXT,
       receivedBy TEXT,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -100,6 +102,7 @@ async function ensureSchema(db: D1Database) {
     'preparedBy TEXT',
     'approvedBy TEXT',
     'receivedBy TEXT',
+    'shopId TEXT',
     'businessId TEXT',
     'updated_at INTEGER',
   ];
@@ -107,6 +110,7 @@ async function ensureSchema(db: D1Database) {
     try { await db.prepare(`ALTER TABLE purchaseOrders ADD COLUMN ${column}`).run(); } catch {}
   }
   try { await db.prepare('ALTER TABLE products ADD COLUMN supplierIds TEXT').run(); } catch {}
+  await ensureInventoryIntegritySchema(db);
 }
 
 async function nextPoNumber(db: D1Database, businessId: string) {
@@ -138,6 +142,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
+    const shopId = inventoryShopIdFromRequest(request, body);
     const supplierId = String(body?.supplierId || '').trim();
     if (!businessId || !supplierId) return json({ error: 'Business and supplier are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
@@ -202,7 +207,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const now = Date.now();
     const id = purchaseOrderId || `po_${businessId}_${crypto.randomUUID()}`;
-    const poNumber = existing?.poNumber || await nextPoNumber(env.DB, businessId);
+    let poNumber = existing?.poNumber || await nextPoNumber(env.DB, businessId);
     const totalAmount = roundMoney(items.reduce((sum, item) => sum + (item.expectedQuantity * item.unitCost), 0));
     const approvalStatus = autoApprove ? 'APPROVED' : 'PENDING';
     const preparedBy = trimText(existing?.preparedBy || body?.preparedBy || auth.principal.userName, 120) || 'Staff';
@@ -223,50 +228,62 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       preparedBy,
       approvedBy: autoApprove ? (auth.principal.userName || preparedBy) : existing?.approvedBy || null,
       receivedBy: existing?.receivedBy || null,
+      shopId: trimText(existing?.shopId || body?.shopId || shopId, 160) || shopId,
       businessId,
       updated_at: now,
     };
 
-    await env.DB.batch([
-      env.DB.prepare(`
-        INSERT OR REPLACE INTO purchaseOrders (id, supplierId, items, totalAmount, status, approvalStatus, paymentStatus, paidAmount, orderDate, expectedDate, receivedDate, invoiceNumber, poNumber, preparedBy, approvedBy, receivedBy, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        purchaseOrder.id,
-        supplierId,
-        JSON.stringify(items),
-        totalAmount,
-        purchaseOrder.status,
-        approvalStatus,
-        purchaseOrder.paymentStatus,
-        purchaseOrder.paidAmount,
-        purchaseOrder.orderDate,
-        purchaseOrder.expectedDate,
-        purchaseOrder.receivedDate,
-        purchaseOrder.invoiceNumber,
-        poNumber,
-        preparedBy,
-        purchaseOrder.approvedBy,
-        purchaseOrder.receivedBy,
-        businessId,
-        now,
-      ),
-      env.DB.prepare(`
-        INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        crypto.randomUUID(),
-        now,
-        auth.principal.userId || null,
-        auth.principal.userName || null,
-        existing ? 'purchase.update' : 'purchase.create',
-        'purchaseOrder',
-        id,
-        autoApprove ? 'INFO' : 'WARN',
-        `${existing ? 'Updated' : 'Created'} ${poNumber}.`,
-        businessId, now,
-      ),
-    ]);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      purchaseOrder.poNumber = poNumber;
+      try {
+        await env.DB.batch([
+          env.DB.prepare(`
+            INSERT OR REPLACE INTO purchaseOrders (id, supplierId, items, totalAmount, status, approvalStatus, paymentStatus, paidAmount, orderDate, expectedDate, receivedDate, invoiceNumber, poNumber, preparedBy, approvedBy, receivedBy, shopId, businessId, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).bind(
+            purchaseOrder.id,
+            supplierId,
+            JSON.stringify(items),
+            totalAmount,
+            purchaseOrder.status,
+            approvalStatus,
+            purchaseOrder.paymentStatus,
+            purchaseOrder.paidAmount,
+            purchaseOrder.orderDate,
+            purchaseOrder.expectedDate,
+            purchaseOrder.receivedDate,
+            purchaseOrder.invoiceNumber,
+            purchaseOrder.poNumber,
+            preparedBy,
+            purchaseOrder.approvedBy,
+            purchaseOrder.receivedBy,
+            purchaseOrder.shopId,
+            businessId,
+            now,
+          ),
+          env.DB.prepare(`
+            INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).bind(
+            crypto.randomUUID(),
+            now,
+            auth.principal.userId || null,
+            auth.principal.userName || null,
+            existing ? 'purchase.update' : 'purchase.create',
+            'purchaseOrder',
+            id,
+            autoApprove ? 'INFO' : 'WARN',
+            `${existing ? 'Updated' : 'Created'} ${purchaseOrder.poNumber}.`,
+            businessId, now,
+          ),
+        ]);
+        break;
+      } catch (err: any) {
+        const duplicatePo = !existing && String(err?.message || '').includes('idx_purchaseOrders_business_poNumber');
+        if (!duplicatePo || attempt === 2) throw err;
+        poNumber = await nextPoNumber(env.DB, businessId);
+      }
+    }
 
     return json({ success: true, purchaseOrder, autoApproved: autoApprove });
   } catch (err: any) {

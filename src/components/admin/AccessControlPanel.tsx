@@ -89,6 +89,17 @@ function CountText({ label, value, tone = 'slate' }: { label: string; value: num
   );
 }
 
+const featureLabels = new Map(
+  ACCESS_CONTROL_GROUPS.flatMap(group => group.features.map(feature => [feature.id, feature.label] as const)),
+);
+
+function modeSummaryLabels(config: Record<AccessFeatureId, AccessMode>, mode: AccessMode) {
+  return Object.entries(config)
+    .filter(([, value]) => value === mode)
+    .map(([feature]) => featureLabels.get(feature as AccessFeatureId) || feature)
+    .slice(0, 8);
+}
+
 export default function AccessControlPanel() {
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const [activeRole, setActiveRole] = React.useState<ManagedRole>('CASHIER');
@@ -165,6 +176,9 @@ export default function AccessControlPanel() {
       open: values.filter(mode => mode === 'OPEN').length,
       blurred: values.filter(mode => mode === 'BLURRED').length,
       locked: values.filter(mode => mode === 'LOCKED').length,
+      openLabels: modeSummaryLabels(savedAccessControl[role.id], 'OPEN'),
+      blurredLabels: modeSummaryLabels(savedAccessControl[role.id], 'BLURRED'),
+      lockedLabels: modeSummaryLabels(savedAccessControl[role.id], 'LOCKED'),
     };
   });
 
@@ -197,12 +211,12 @@ export default function AccessControlPanel() {
         <div className="border-b border-slate-200 pb-4">
           <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Permission report</p>
           <h4 className="mt-2 text-xl font-black text-slate-950">Staff role access</h4>
-          <p className="mt-1 text-xs font-bold text-slate-500">Summary of what each role can open, view blurred, or cannot access.</p>
+          <p className="mt-1 text-xs font-bold text-slate-500">Owner preview of what each role can open, see masked, or cannot use.</p>
         </div>
         <div className="divide-y divide-slate-200">
         {roleSummaries.map(role => (
-          <div key={role.id} className="py-4">
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div key={role.id} className="py-5">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
               <div className="min-w-0">
                 <h4 className="text-base font-black text-slate-950">{role.label}</h4>
                 <p className="mt-1 text-xs font-bold text-slate-500">{role.description}</p>
@@ -211,6 +225,26 @@ export default function AccessControlPanel() {
                 <CountText label="Open" value={role.open} tone="blue" />
                 <CountText label="Blurred" value={role.blurred} />
                 <CountText label="Locked" value={role.locked} tone="rose" />
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Can open</p>
+                <p className="mt-2 text-sm font-bold leading-6 text-slate-700">
+                  {role.openLabels.length ? role.openLabels.join(', ') : 'Nothing selected'}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Masked</p>
+                <p className="mt-2 text-sm font-bold leading-6 text-slate-700">
+                  {role.blurredLabels.length ? role.blurredLabels.join(', ') : 'No masked values'}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-rose-700">Blocked</p>
+                <p className="mt-2 text-sm font-bold leading-6 text-slate-700">
+                  {role.lockedLabels.length ? role.lockedLabels.join(', ') : 'Nothing blocked'}
+                </p>
               </div>
             </div>
           </div>

@@ -245,13 +245,13 @@ async function availableTillCash(db: D1Database, businessId: string, shift: any)
     .filter(row => inShiftScope(row, since, shiftId) && !['VOIDED', 'QUOTE'].includes(String(row.status || '').toUpperCase()))
     .reduce((sum, row) => sum + cashAmountFromTransaction(row), 0);
   const tillExpenses = ((expenses.results || []) as any[])
-    .filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL' && String(row.status || '').toUpperCase() !== 'REJECTED')
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.source || 'TILL').toUpperCase() === 'TILL' && String(row.status || 'APPROVED').toUpperCase() === 'APPROVED')
     .reduce((sum, row) => sum + asNumber(row.amount), 0);
   const picked = ((picks.results || []) as any[])
-    .filter(row => inShiftScope(row, since, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED')
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.status || 'APPROVED').toUpperCase() === 'APPROVED')
     .reduce((sum, row) => sum + asNumber(row.amount), 0);
   const cashRefunds = ((refunds.results || []) as any[])
-    .filter(row => inShiftScope(row, since, shiftId))
+    .filter(row => inShiftScope(row, since, shiftId) && String(row.status || 'APPROVED').toUpperCase() === 'APPROVED')
     .reduce((sum, row) => sum + cashAmountFromRefund(row), 0);
   const supplierTillPayments = ((supplierPayments.results || []) as any[])
     .filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL')

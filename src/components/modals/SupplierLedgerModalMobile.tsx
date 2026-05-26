@@ -3,7 +3,7 @@ import { X, Truck, FileText, DollarSign, Plus, Calendar, ChevronRight, CheckCirc
 import { useLiveQuery } from '../../clouddb';
 import { db, type Product, type Supplier } from '../../db';
 import { useToast } from '../../context/ToastContext';
-import { shareDocument } from '../../utils/shareUtils';
+import { generateAndDownloadStatement, shareDocument } from '../../utils/shareUtils';
 import { SearchableSelect } from '../shared/SearchableSelectMobile';
 import { SupplierService } from '../../services/suppliers';
 import { useStore } from '../../store';
@@ -221,7 +221,6 @@ export default function SupplierLedgerModalMobile({ supplier, onClose, onEdit, o
     if (!supplier) return;
     setIsSharing(true);
     try {
-      const { generateAndDownloadStatement } = await import('../../utils/shareUtils');
       await generateAndDownloadStatement(supplier, filteredInvoices, filteredPayments, filteredCreditNotes);
       success("Statement created.");
     } catch (err) {

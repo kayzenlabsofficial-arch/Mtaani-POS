@@ -1,5 +1,6 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
 import { PolicyError } from '../salesSecurity';
+import { createMainAccountCreditStatements } from '../finance/mainAccountPosting';
 
 interface Env {
   DB: D1Database;
@@ -39,6 +40,10 @@ function roundMoney(value: number) {
 
 function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
+}
+
+function normaliseCode(value: unknown) {
+  return String(value || '').replace(/\s+/g, '').trim().toUpperCase();
 }
 
 function ownsShift(shift: any, principal: any) {
@@ -131,8 +136,26 @@ async function ensureSchema(db: D1Database) {
       timestamp INTEGER NOT NULL,
       preparedBy TEXT,
       shiftId TEXT,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
+    )
+  `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS mpesaCallbacks (
+      checkoutRequestId TEXT PRIMARY KEY,
+      merchantRequestId TEXT,
+      resultCode INTEGER,
+      resultDesc TEXT,
+      amount REAL,
+      receiptNumber TEXT,
+      phoneNumber TEXT,
+      businessId TEXT,
+      timestamp INTEGER,
+      utilizedTransactionId TEXT,
+      utilizedCustomerId TEXT,
+      utilizedCustomerName TEXT,
+      utilizedAt INTEGER
     )
   `).run();
   await db.prepare(`
@@ -177,14 +200,176 @@ async function ensureSchema(db: D1Database) {
     'ALTER TABLE customerPayments ADD COLUMN allocations TEXT',
     'ALTER TABLE customerPayments ADD COLUMN preparedBy TEXT',
     'ALTER TABLE customerPayments ADD COLUMN shiftId TEXT',
+    'ALTER TABLE customerPayments ADD COLUMN shopId TEXT',
     'ALTER TABLE customerPayments ADD COLUMN businessId TEXT',
     'ALTER TABLE customerPayments ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedTransactionId TEXT',
+    'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT',
+    'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT',
+    'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedAt INTEGER',
+    'CREATE INDEX IF NOT EXISTS idx_customerPayments_code ON customerPayments(businessId, transactionCode)',
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_customerPayments_unique_code ON customerPayments(businessId, transactionCode) WHERE transactionCode IS NOT NULL AND transactionCode != ''",
+    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber)',
+    'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_utilized ON mpesaCallbacks(businessId, utilizedTransactionId)',
     'ALTER TABLE shifts ADD COLUMN cashierId TEXT',
     'ALTER TABLE shifts ADD COLUMN businessId TEXT',
     'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
+
+  await db.prepare(`
+    CREATE TRIGGER IF NOT EXISTS customerPayments_balance_guard
+    BEFORE INSERT ON customerPayments
+    WHEN NEW.amount > 0
+    BEGIN
+      SELECT RAISE(ABORT, 'Customer was not found.')
+      WHERE NOT EXISTS (
+        SELECT 1 FROM customers
+        WHERE id = NEW.customerId
+          AND businessId = NEW.businessId
+      );
+      SELECT RAISE(ABORT, 'Payment cannot exceed the customer balance.')
+      WHERE (
+        SELECT COALESCE(balance, 0)
+        FROM customers
+        WHERE id = NEW.customerId
+          AND businessId = NEW.businessId
+      ) + 0.01 < NEW.amount;
+      END
+  `).run();
+  await db.prepare(`
+    CREATE TRIGGER IF NOT EXISTS customerPayments_code_guard
+    BEFORE INSERT ON customerPayments
+    WHEN NEW.transactionCode IS NOT NULL AND NEW.transactionCode != ''
+    BEGIN
+      SELECT RAISE(ABORT, 'This payment code has already been used.')
+      WHERE EXISTS (
+        SELECT 1 FROM customerPayments
+        WHERE businessId = NEW.businessId
+          AND UPPER(COALESCE(transactionCode, '')) = UPPER(NEW.transactionCode)
+      );
+    END
+  `).run();
+  await db.prepare(`
+    CREATE TRIGGER IF NOT EXISTS customerPayments_invoice_allocation_guard
+    BEFORE INSERT ON customerPayments
+    WHEN NEW.allocations IS NOT NULL AND TRIM(NEW.allocations) != ''
+    BEGIN
+      SELECT RAISE(ABORT, 'Payment allocations are invalid.')
+      WHERE json_valid(NEW.allocations) = 0;
+      SELECT RAISE(ABORT, 'Payment allocation refers to an invoice that was not found.')
+      WHERE EXISTS (
+        SELECT 1
+        FROM json_each(NEW.allocations) allocation
+        WHERE UPPER(COALESCE(json_extract(allocation.value, '$.sourceType'), '')) = 'INVOICE'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM salesInvoices invoice
+            WHERE invoice.id = json_extract(allocation.value, '$.sourceId')
+              AND invoice.customerId = NEW.customerId
+              AND invoice.businessId = NEW.businessId
+          )
+      );
+      SELECT RAISE(ABORT, 'Cannot allocate payment to a cancelled invoice.')
+      WHERE EXISTS (
+        SELECT 1
+        FROM json_each(NEW.allocations) allocation
+        JOIN salesInvoices invoice
+          ON invoice.id = json_extract(allocation.value, '$.sourceId')
+         AND invoice.customerId = NEW.customerId
+         AND invoice.businessId = NEW.businessId
+        WHERE UPPER(COALESCE(json_extract(allocation.value, '$.sourceType'), '')) = 'INVOICE'
+          AND invoice.status = 'CANCELLED'
+      );
+      SELECT RAISE(ABORT, 'Payment allocation exceeds an invoice balance.')
+      WHERE EXISTS (
+        SELECT 1
+        FROM json_each(NEW.allocations) allocation
+        JOIN salesInvoices invoice
+          ON invoice.id = json_extract(allocation.value, '$.sourceId')
+         AND invoice.customerId = NEW.customerId
+         AND invoice.businessId = NEW.businessId
+        WHERE UPPER(COALESCE(json_extract(allocation.value, '$.sourceType'), '')) = 'INVOICE'
+          AND CAST(COALESCE(json_extract(allocation.value, '$.amount'), 0) AS REAL) > COALESCE(invoice.balance, invoice.total, 0) + 0.01
+      );
+    END
+  `).run();
+  await db.prepare(`
+    CREATE TRIGGER IF NOT EXISTS customerPayments_immutable_money_guard
+    BEFORE UPDATE OF customerId, amount, allocations, businessId ON customerPayments
+    BEGIN
+      SELECT RAISE(ABORT, 'Customer payment records cannot be edited after saving.')
+      WHERE COALESCE(NEW.customerId, '') != COALESCE(OLD.customerId, '')
+         OR ABS(COALESCE(NEW.amount, 0) - COALESCE(OLD.amount, 0)) > 0.0001
+         OR COALESCE(NEW.allocations, '') != COALESCE(OLD.allocations, '')
+         OR COALESCE(NEW.businessId, '') != COALESCE(OLD.businessId, '');
+    END
+  `).run();
+}
+
+async function mpesaUtilizationStatement(
+  db: D1Database,
+  businessId: string,
+  paymentId: string,
+  customerId: string,
+  customerName: string,
+  payment: any,
+  amount: number,
+  now: number,
+) {
+  const code = normaliseCode(payment.transactionCode || payment.referenceCode || payment.mpesaCode || payment.mpesaReference);
+  if (!code) throw new PolicyError('Enter a valid M-Pesa receipt or request code for this customer payment.', 400);
+
+  const duplicatePayment = await db.prepare(`
+    SELECT id
+    FROM customerPayments
+    WHERE businessId = ?
+      AND id != ?
+      AND UPPER(COALESCE(transactionCode, '')) = ?
+    LIMIT 1
+  `).bind(businessId, paymentId, code).first<any>();
+  if (duplicatePayment) throw new PolicyError('This M-Pesa code has already been used for a customer payment.', 409);
+
+  const ledgerPayment = await db.prepare(`
+    SELECT *
+    FROM mpesaCallbacks
+    WHERE businessId = ?
+      AND (
+        UPPER(COALESCE(receiptNumber, '')) = ?
+        OR UPPER(COALESCE(checkoutRequestId, '')) = ?
+        OR UPPER(COALESCE(merchantRequestId, '')) = ?
+      )
+    ORDER BY CASE WHEN resultCode = 0 THEN 0 ELSE 1 END, timestamp DESC
+    LIMIT 1
+  `).bind(businessId, code, code, code).first<any>();
+
+  if (!ledgerPayment) throw new PolicyError('M-Pesa payment was not found in the payment ledger.', 404);
+  if (asNumber(ledgerPayment.resultCode, -1) !== 0) {
+    throw new PolicyError(ledgerPayment.resultDesc || 'M-Pesa payment is not paid.', 409);
+  }
+  if (Math.abs(asNumber(ledgerPayment.amount) - amount) > 0.01) {
+    throw new PolicyError('M-Pesa paid amount must match the customer payment amount.', 409);
+  }
+
+  const marker = `customer_payment:${paymentId}`;
+  if (ledgerPayment.utilizedTransactionId && ledgerPayment.utilizedTransactionId !== marker) {
+    throw new PolicyError('This M-Pesa payment is already tied to another receipt or customer payment.', 409);
+  }
+
+  return {
+    code,
+    ledgerPayment,
+    statement: db.prepare(`
+      UPDATE mpesaCallbacks
+      SET utilizedTransactionId = ?,
+          utilizedCustomerId = ?,
+          utilizedCustomerName = ?,
+          utilizedAt = ?
+      WHERE checkoutRequestId = ?
+        AND (utilizedTransactionId IS NULL OR utilizedTransactionId = ?)
+    `).bind(marker, customerId, customerName || null, now, ledgerPayment.checkoutRequestId, marker),
+  };
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -202,6 +387,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const payment = body?.payment || body || {};
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || payment.businessId || '').trim();
     const customerId = String(payment.customerId || body?.customerId || '').trim();
+    const shopId = trimText(payment.shopId || body?.shopId, 160) || null;
     if (!businessId || !customerId) return json({ error: 'Business and customer are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
@@ -246,7 +432,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (SHIFT_PAYMENT_METHODS.has(paymentMethod)) {
       await requireOpenPaymentShift(env.DB, businessId, payment.shiftId, auth.principal, auth.service);
     }
-    const allocations = parseAllocations(payment.allocations);
+    const now = Date.now();
+    const mpesaUsage = paymentMethod === 'MPESA'
+      ? await mpesaUtilizationStatement(env.DB, businessId, paymentId, customerId, customer.name, payment, amount, now)
+      : null;
+    const transactionCode = mpesaUsage?.code || trimText(payment.transactionCode || payment.referenceCode, 80) || null;
+    let allocations = parseAllocations(payment.allocations);
     const allocationTotal = roundMoney(allocations.reduce((sum, allocation) => sum + allocation.amount, 0));
     if (allocationTotal > amount + 0.01) throw new PolicyError('Payment allocations exceed the payment amount.', 400);
 
@@ -260,8 +451,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       });
     }
 
+    const saleCreditTotals = new Map<string, number>();
     const paidBySource = new Map<string, number>();
-    if (requestedBySource.size > 0) {
+    if (requestedBySource.size > 0 || allocationTotal < amount - 0.01) {
       const { results } = await env.DB.prepare(`
         SELECT allocations
         FROM customerPayments
@@ -274,6 +466,63 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         }
       }
     }
+
+    let unallocatedAmount = roundMoney(amount - Array.from(requestedBySource.values()).reduce((sum, allocation) => sum + allocation.amount, 0));
+    if (unallocatedAmount > 0.01) {
+      const autoSources: { sourceType: Allocation['sourceType']; sourceId: string; timestamp: number; remaining: number }[] = [];
+      const { results: invoiceRows } = await env.DB.prepare(`
+        SELECT id, balance, issueDate, status
+        FROM salesInvoices
+        WHERE customerId = ?
+          AND businessId = ?
+          AND status != 'CANCELLED'
+          AND COALESCE(balance, 0) > 0
+      `).bind(customerId, businessId).all();
+      for (const invoice of (invoiceRows || []) as any[]) {
+        const key = `INVOICE:${invoice.id}`;
+        const alreadyRequested = requestedBySource.get(key)?.amount || 0;
+        const remaining = roundMoney(Math.max(0, asNumber(invoice.balance) - alreadyRequested));
+        if (remaining > 0.01) {
+          autoSources.push({ sourceType: 'INVOICE', sourceId: invoice.id, timestamp: asNumber(invoice.issueDate), remaining });
+        }
+      }
+
+      const { results: saleRows } = await env.DB.prepare(`
+        SELECT id, customerId, total, subtotal, discountAmount, discount, paymentMethod, splitPayments, status, timestamp
+        FROM transactions
+        WHERE customerId = ?
+          AND businessId = ?
+          AND status NOT IN ('VOIDED', 'QUOTE')
+      `).bind(customerId, businessId).all();
+      for (const sale of (saleRows || []) as any[]) {
+        const creditTotal = creditAmountForSale(sale);
+        if (creditTotal <= 0) continue;
+        saleCreditTotals.set(sale.id, creditTotal);
+        const key = `SALE:${sale.id}`;
+        const alreadyPaid = paidBySource.get(key) || 0;
+        const alreadyRequested = requestedBySource.get(key)?.amount || 0;
+        const remaining = roundMoney(Math.max(0, creditTotal - alreadyPaid - alreadyRequested));
+        if (remaining > 0.01) {
+          autoSources.push({ sourceType: 'SALE', sourceId: sale.id, timestamp: asNumber(sale.timestamp), remaining });
+        }
+      }
+
+      autoSources.sort((a, b) => a.timestamp - b.timestamp);
+      for (const source of autoSources) {
+        if (unallocatedAmount <= 0.01) break;
+        const applied = roundMoney(Math.min(unallocatedAmount, source.remaining));
+        if (applied <= 0) continue;
+        const key = `${source.sourceType}:${source.sourceId}`;
+        const existing = requestedBySource.get(key);
+        requestedBySource.set(key, {
+          sourceType: source.sourceType,
+          sourceId: source.sourceId,
+          amount: roundMoney((existing?.amount || 0) + applied),
+        });
+        unallocatedAmount = roundMoney(unallocatedAmount - applied);
+      }
+    }
+    allocations = Array.from(requestedBySource.values());
 
     for (const allocation of requestedBySource.values()) {
       if (allocation.sourceType === 'INVOICE') {
@@ -298,6 +547,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (!sale || sale.customerId !== customerId) throw new PolicyError('Payment allocation refers to a sale that was not found.', 404);
       if (sale.status === 'VOIDED' || sale.status === 'QUOTE') throw new PolicyError('Cannot allocate payment to a non-credit sale.', 409);
       const creditTotal = creditAmountForSale(sale);
+      saleCreditTotals.set(allocation.sourceId, creditTotal);
       if (creditTotal <= 0) throw new PolicyError('Payment allocation refers to a sale without customer credit.', 409);
       const alreadyPaid = paidBySource.get(`SALE:${allocation.sourceId}`) || 0;
       if (allocation.amount > Math.max(0, creditTotal - alreadyPaid) + 0.01) {
@@ -305,41 +555,74 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
     }
 
-    const now = Date.now();
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(`
-        INSERT INTO customerPayments (id, customerId, amount, paymentMethod, transactionCode, reference, allocations, timestamp, preparedBy, shiftId, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO customerPayments (id, customerId, amount, paymentMethod, transactionCode, reference, allocations, timestamp, preparedBy, shiftId, shopId, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         paymentId,
         customerId,
         amount,
         paymentMethod,
-        trimText(payment.transactionCode || payment.referenceCode, 80) || null,
+        transactionCode,
         trimText(payment.reference, 180) || `${paymentMethod} payment from ${customer.name}`,
         allocations.length ? JSON.stringify(allocations) : null,
         asNumber(payment.timestamp, now),
         trimText(payment.preparedBy || body?.preparedBy || auth.principal.userName, 120) || 'Staff',
         trimText(payment.shiftId, 180) || null,
+        shopId,
         businessId,
         now,
       ),
       env.DB.prepare(`UPDATE customers SET balance = MAX(0, COALESCE(balance, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ?`)
         .bind(amount, now, customerId, businessId),
     ];
+    if (mpesaUsage) {
+      statements.push(mpesaUsage.statement);
+      const posting = await createMainAccountCreditStatements(env.DB, {
+        kind: 'MPESA_CUSTOMER_PAYMENT',
+        businessId,
+        sourceId: paymentId,
+        amount,
+        reference: mpesaUsage.ledgerPayment.receiptNumber || mpesaUsage.ledgerPayment.checkoutRequestId || transactionCode,
+        customerName: customer.name,
+        userId: auth.principal.userId || null,
+        userName: auth.principal.userName || trimText(payment.preparedBy || body?.preparedBy, 120) || 'Staff',
+      });
+      if (posting.anomaly) throw new PolicyError(posting.anomaly.message, 409);
+      statements.push(...posting.statements);
+    }
 
-    for (const allocation of allocations) {
-      if (allocation.sourceType !== 'INVOICE') continue;
-      statements.push(
-        env.DB.prepare(`
-          UPDATE salesInvoices
-          SET paidAmount = MIN(COALESCE(total, 0), COALESCE(paidAmount, 0) + ?),
-              balance = MAX(0, COALESCE(balance, total, 0) - ?),
-              status = CASE WHEN MAX(0, COALESCE(balance, total, 0) - ?) <= 0 THEN 'PAID' ELSE 'PARTIAL' END,
-              updated_at = ?
-          WHERE id = ? AND customerId = ? AND businessId = ?
-        `).bind(allocation.amount, allocation.amount, allocation.amount, now, allocation.sourceId, customerId, businessId)
-      );
+    for (const allocation of requestedBySource.values()) {
+      if (allocation.sourceType === 'INVOICE') {
+        statements.push(
+          env.DB.prepare(`
+            UPDATE salesInvoices
+            SET paidAmount = MIN(COALESCE(total, 0), COALESCE(paidAmount, 0) + ?),
+                balance = MAX(0, COALESCE(balance, total, 0) - ?),
+                status = CASE WHEN MAX(0, COALESCE(balance, total, 0) - ?) <= 0 THEN 'PAID' ELSE 'PARTIAL' END,
+                updated_at = ?
+            WHERE id = ? AND customerId = ? AND businessId = ?
+          `).bind(allocation.amount, allocation.amount, allocation.amount, now, allocation.sourceId, customerId, businessId)
+        );
+        continue;
+      }
+
+      const paidAfter = roundMoney((paidBySource.get(`SALE:${allocation.sourceId}`) || 0) + allocation.amount);
+      const creditTotal = saleCreditTotals.get(allocation.sourceId) || 0;
+      if (creditTotal > 0 && paidAfter + 0.01 >= creditTotal) {
+        statements.push(
+          env.DB.prepare(`
+            UPDATE transactions
+            SET status = 'PAID',
+                updated_at = ?
+            WHERE id = ?
+              AND customerId = ?
+              AND businessId = ?
+              AND status = 'UNPAID'
+          `).bind(now, allocation.sourceId, customerId, businessId)
+        );
+      }
     }
 
     statements.push(
@@ -371,7 +654,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       allocationCount: allocations.length,
     });
   } catch (err: any) {
-    const status = err instanceof PolicyError ? err.status : 500;
-    return json({ error: err?.message || 'Could not record customer payment.' }, status);
+    const message = String(err?.message || '');
+    const guardedAllocation = message.includes('Payment allocation')
+      || message.includes('Cannot allocate payment')
+      || message.includes('Payment cannot exceed the customer balance')
+      || message.includes('Customer was not found')
+      || message.includes('Customer payment records cannot be edited');
+    const status = err instanceof PolicyError ? err.status : guardedAllocation ? 409 : 500;
+    return json({ error: guardedAllocation ? message : err?.message || 'Could not record customer payment.' }, status);
   }
 };

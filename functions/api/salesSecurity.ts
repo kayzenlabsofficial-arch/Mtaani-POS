@@ -1,4 +1,5 @@
 import type { Principal } from './authUtils';
+import { DEFAULT_SHOP_ID, trimInventoryText } from './inventoryIntegrity';
 
 export class PolicyError extends Error {
   status: number;
@@ -339,6 +340,7 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
     }
 
     tx.businessId = businessId;
+    tx.shopId = trimInventoryText(tx.shopId, 160) || DEFAULT_SHOP_ID;
     tx.status = desiredStatus;
     tx.timestamp = clamp(asNumber(tx.timestamp, now), 0, now + 5 * 60 * 1000);
     tx.updated_at = now;
@@ -502,13 +504,13 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
 
         const txRef = txId.split('-')[0].toUpperCase();
         sideEffects.push(
-          db.prepare(`UPDATE products SET stockQuantity = MAX(0, stockQuantity - ?), updated_at = ? WHERE id = ? AND businessId = ?`)
+          db.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) - ?, updated_at = ? WHERE id = ? AND businessId = ?`)
             .bind(quantity, now, productId, businessId)
         );
         sideEffects.push(
           db.prepare(
-            `INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           ).bind(
             crypto.randomUUID(),
             productId,
@@ -518,6 +520,7 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
             `${sourceLabel} #${txRef}`,
             businessId,
             tx.shiftId || null,
+            tx.shopId,
             now,
           )
         );

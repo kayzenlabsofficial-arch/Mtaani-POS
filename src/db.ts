@@ -5,7 +5,8 @@
  * Dexie/IndexedDB is no longer used.
  */
 
-import { CloudTable, setupRemoteDB } from './clouddb';
+import { CloudTable, setupRemoteDB, startBackgroundSync } from './clouddb';
+import { useStore } from './store';
 
 // ── Interfaces (unchanged) ─────────────────────────────────────────────────
 
@@ -364,6 +365,7 @@ export interface SalesInvoice {
   dueDate?: number;
   notes?: string;
   preparedBy?: string;
+  shiftId?: string;
   shopId: string;
   businessId: string;
   updated_at?: number;
@@ -444,7 +446,7 @@ export interface Expense {
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   preparedBy?: string;
   approvedBy?: string;
-  source: 'PETTY_CASH' | 'TILL' | 'ACCOUNT' | 'SHOP';
+  source: 'TILL' | 'ACCOUNT' | 'SHOP';
   accountId?: string; // Link to FinancialAccount if source is ACCOUNT
   productId?: string;
   quantity?: number;
@@ -477,7 +479,7 @@ export interface HRStaff {
   payCycle: HRPayCycle;
   emergencyContact?: string;
   notes?: string;
-  shopId: string;
+  shopId?: string;
   businessId: string;
   updated_at?: number;
 }
@@ -493,7 +495,7 @@ export interface HRStaffDocument {
   fileName?: string;
   fileUrl?: string;
   notes?: string;
-  shopId: string;
+  shopId?: string;
   businessId: string;
   updated_at?: number;
 }
@@ -507,7 +509,7 @@ export interface HRAttendance {
   status: HRAttendanceStatus;
   hoursWorked?: number;
   notes?: string;
-  shopId: string;
+  shopId?: string;
   businessId: string;
   updated_at?: number;
 }
@@ -522,7 +524,7 @@ export interface HRPayrollAdjustment {
   recurring: boolean | number;
   status: HRPayrollStatus;
   notes?: string;
-  shopId: string;
+  shopId?: string;
   businessId: string;
   updated_at?: number;
 }
@@ -609,6 +611,7 @@ export interface PurchaseOrderItem {
   expectedQuantity: number;
   receivedQuantity: number;
   unitCost: number;
+  expiryDate?: number | null;
 }
 
 export interface PurchaseOrder {
@@ -741,8 +744,6 @@ class MtaaniCloudDB {
 
   /** Force reload all data from cloud. Use for 'Hard Sync' buttons. */
   async sync(): Promise<void> {
-    // Lazy import to break the circular dependency: db → store → db
-    const { useStore } = await import('./store');
     const state = useStore.getState();
     const role = state.currentUser?.role;
     const canSyncSalesData = role === 'ROOT' || role === 'ADMIN' || role === 'MANAGER';
@@ -818,12 +819,10 @@ export const db = new MtaaniCloudDB();
 
 // ── Background Sync Wire-up ────────────────────────────────────────────────
 if (typeof window !== 'undefined') {
-  import('./clouddb').then(({ startBackgroundSync }) => {
-    // clouddb dispatches 'db:sync-request' on window so this listener fires.
-    window.addEventListener('db:sync-request', () => {
-      db.sync().catch(console.error);
-    });
-    // Start the 30s background sync loop
-    startBackgroundSync(30000);
+  // clouddb dispatches 'db:sync-request' on window so this listener fires.
+  window.addEventListener('db:sync-request', () => {
+    db.sync().catch(console.error);
   });
+  // Start the 30s background sync loop.
+  startBackgroundSync(30000);
 }

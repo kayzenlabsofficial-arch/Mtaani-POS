@@ -10,6 +10,7 @@ import DocumentDetailsModal from '../modals/DocumentDetailsModal';
 import { getAssignedHardware, getHardwareProfile, printReceiptViaAssignedPrinter } from '../../utils/hardware';
 import { getBusinessSettings } from '../../utils/settings';
 import { belongsToActiveShop } from '../../utils/shopScope';
+import { isLowStockProduct } from '../../utils/inventoryIntegrity';
 import { calculateCartTotals } from '../../utils/productPricing';
 import { canPerform } from '../../utils/accessControl';
 import HeldOrdersModal from '../register/HeldOrdersModal';
@@ -104,7 +105,7 @@ export default function RegisterTab({
     const score = (product: any) => {
       const quantity = product.stockQuantity || 0;
       if (quantity <= 0) return 2;
-      if (quantity <= (product.reorderPoint || 5)) return 1;
+      if (isLowStockProduct(product)) return 1;
       return 0;
     };
     return score(a) - score(b);

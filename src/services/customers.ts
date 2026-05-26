@@ -39,6 +39,7 @@ export const CustomerService = {
   },
 
   recordPayment(input: {
+    id?: string;
     customerId: string;
     amount: number;
     paymentMethod: CustomerPayment['paymentMethod'];

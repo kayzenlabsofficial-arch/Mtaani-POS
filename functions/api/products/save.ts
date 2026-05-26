@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { ensureInventoryIntegritySchema, inventoryShopIdFromRequest } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +11,7 @@ const PRODUCT_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -72,6 +73,7 @@ async function ensureSchema(db: D1Database) {
       expiryDate INTEGER,
       isBundle INTEGER DEFAULT 0,
       components TEXT,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -96,6 +98,7 @@ async function ensureSchema(db: D1Database) {
       reference TEXT,
       businessId TEXT,
       shiftId TEXT,
+      shopId TEXT,
       expiryDate INTEGER,
       updated_at INTEGER
     )
@@ -129,6 +132,7 @@ async function ensureSchema(db: D1Database) {
     'expiryDate INTEGER',
     'isBundle INTEGER DEFAULT 0',
     'components TEXT',
+    'shopId TEXT',
     'businessId TEXT',
     'updated_at INTEGER',
   ];
@@ -137,7 +141,9 @@ async function ensureSchema(db: D1Database) {
   }
   try { await db.prepare('CREATE INDEX IF NOT EXISTS idx_productIngredients_product ON productIngredients(productId)').run(); } catch {}
   try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN shiftId TEXT').run(); } catch {}
+  try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN shopId TEXT').run(); } catch {}
   try { await db.prepare('ALTER TABLE stockMovements ADD COLUMN expiryDate INTEGER').run(); } catch {}
+  await ensureInventoryIntegritySchema(db);
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -154,6 +160,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json().catch(() => null) as any;
     const productInput = body?.product || body || {};
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || productInput.businessId || '').trim();
+    const shopId = inventoryShopIdFromRequest(request, body);
     if (!businessId) return json({ error: 'Business is required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
@@ -236,6 +243,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       expiryDate,
       isBundle: isBundle ? 1 : 0,
       components: isBundle ? cleanIngredients.map((row: any) => ({ productId: row.ingredientProductId, quantity: row.quantity })) : [],
+      shopId: trimText(existing?.shopId || productInput.shopId || body?.shopId || shopId, 160) || shopId,
       businessId,
       updated_at: now,
     };
@@ -247,8 +255,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(`
-        INSERT OR REPLACE INTO products (id, name, category, sellingPrice, costPrice, discountType, discountValue, taxCategory, stockQuantity, unit, barcode, reorderPoint, supplierIds, expiryTracking, expiryDate, isBundle, components, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO products (id, name, category, sellingPrice, costPrice, discountType, discountValue, taxCategory, stockQuantity, unit, barcode, reorderPoint, supplierIds, expiryTracking, expiryDate, isBundle, components, shopId, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         product.id,
         product.name,
@@ -267,6 +275,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         product.expiryDate,
         product.isBundle,
         JSON.stringify(product.components),
+        product.shopId,
         businessId,
         now,
       ),
@@ -287,8 +296,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!existing && !isBundle && product.stockQuantity > 0) {
       statements.push(
         env.DB.prepare(`
-          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, expiryDate, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, expiryDate, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
           product.id,
@@ -298,6 +307,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           'Opening stock',
           businessId,
           null,
+          product.shopId,
           product.expiryDate,
           now,
         )

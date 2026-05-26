@@ -5,7 +5,6 @@ import { db, type Transaction } from '../db';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { getProductIngredients, isBundleProduct } from '../utils/bundleInventory';
 import { SalesService } from '../services/sales';
-import { flushOutboxNow } from '../offline/offlineSync';
 import { cacheTableRows, readCachedTableRows } from '../offline/localdb';
 import { getCurrentShiftId } from '../utils/shiftSession';
 import { calculateCartTotals, productUnitDiscount } from '../utils/productPricing';
@@ -15,6 +14,11 @@ const shiftBelongsToUser = (shift: any, user: any) => {
   return shift?.cashierId === user?.id || shift?.cashierName === user?.name || (user?.id && shiftId.includes(`_${user.id}_`));
 };
 const SINGLE_SHOP_ID = 'single-shop';
+
+const flushOfflineOutbox = async () => {
+  const { flushOutboxNow } = await import('../offline/offlineSync');
+  return flushOutboxNow();
+};
 
 export function useMtaaniPOS() {
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'TILLS' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'HR' | 'REPORTS' | 'SETTINGS' | 'ADMIN_PANEL'>('DASHBOARD');
@@ -112,7 +116,7 @@ export function useMtaaniPOS() {
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      flushOutboxNow()
+      flushOfflineOutbox()
         .then(result => {
           if (result.flushed > 0) success(`${result.flushed} offline sale${result.flushed === 1 ? '' : 's'} synced.`);
           return db.sync();
@@ -251,7 +255,7 @@ export function useMtaaniPOS() {
   const handleSync = async () => {
     setIsSyncing(true);
     try { 
-      await flushOutboxNow();
+      await flushOfflineOutbox();
       await db.sync(); 
       success("Synced successfully."); 
     } catch (err: any) {
@@ -456,7 +460,7 @@ export function useMtaaniPOS() {
       ]);
       
       if (isOnline) {
-        flushOutboxNow().then(() => db.sync()).catch(() => {});
+        flushOfflineOutbox().then(() => db.sync()).catch(() => {});
       }
       return completedTransaction;
     } catch (err: any) {

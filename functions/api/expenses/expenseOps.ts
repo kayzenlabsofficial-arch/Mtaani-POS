@@ -1,8 +1,20 @@
 import type { Principal } from '../authUtils';
+import { calculateServerCloseReportTotals } from '../close/reportMath';
+import { DEFAULT_SHOP_ID, ensureInventoryIntegritySchema, isBundleInventoryRow } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
+import { canPerformServerAction } from '../settingsPolicy';
 
 const APPROVER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 const STAFF_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER', 'CASHIER']);
+
+export const FINANCIAL_ACCOUNTS_NON_NEGATIVE_BALANCE_TRIGGER = `
+  CREATE TRIGGER IF NOT EXISTS financialAccounts_non_negative_balance_guard
+  BEFORE UPDATE OF balance ON financialAccounts
+  WHEN NEW.balance < -0.0001
+  BEGIN
+    SELECT RAISE(ABORT, 'Insufficient account balance.');
+  END
+`;
 
 function asNumber(value: unknown, fallback = 0) {
   const n = Number(value);
@@ -15,35 +27,6 @@ function trimText(value: unknown, max = 160): string {
 
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
-}
-
-function parseMaybeJson(value: unknown): any {
-  if (!value) return null;
-  if (typeof value !== 'string') return value;
-  try { return JSON.parse(value); } catch { return null; }
-}
-
-function transactionNetTotal(row: any): number {
-  const subtotal = asNumber(row?.subtotal);
-  const discount = Math.max(0, asNumber(row?.discountAmount ?? row?.discount));
-  if (subtotal > 0 && discount > 0) return Math.max(0, roundMoney(subtotal - discount));
-  return asNumber(row?.total);
-}
-
-function cashAmountFromTransaction(row: any): number {
-  const method = String(row?.paymentMethod || '').toUpperCase();
-  if (method === 'CASH') return transactionNetTotal(row);
-  if (method !== 'SPLIT') return 0;
-  const splitData = parseMaybeJson(row?.splitData);
-  const split = parseMaybeJson(row?.splitPayments) || splitData?.splitPayments || splitData || {};
-  return asNumber(split.cashAmount);
-}
-
-function cashAmountFromRefund(row: any): number {
-  if (String(row?.status || 'APPROVED').toUpperCase() === 'REJECTED') return 0;
-  const source = String(row?.source || '').toUpperCase();
-  if (source === 'TILL' || source === 'MIXED') return asNumber(row?.cashAmount ?? row?.amount);
-  return asNumber(row?.cashAmount);
 }
 
 function inShiftScope(row: any, since: number, shiftId?: string | null): boolean {
@@ -103,6 +86,7 @@ export async function ensureExpenseActionSchema(db: D1Database) {
       preparedBy TEXT,
       approvedBy TEXT,
       shiftId TEXT,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -135,6 +119,7 @@ export async function ensureExpenseActionSchema(db: D1Database) {
       expiryDate INTEGER,
       isBundle INTEGER DEFAULT 0,
       components TEXT,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -164,6 +149,7 @@ export async function ensureExpenseActionSchema(db: D1Database) {
       reference TEXT,
       businessId TEXT,
       shiftId TEXT,
+      shopId TEXT,
       updated_at INTEGER
     )
   `).run();
@@ -195,6 +181,7 @@ export async function ensureExpenseActionSchema(db: D1Database) {
     'ALTER TABLE expenses ADD COLUMN preparedBy TEXT',
     'ALTER TABLE expenses ADD COLUMN approvedBy TEXT',
     'ALTER TABLE expenses ADD COLUMN shiftId TEXT',
+    'ALTER TABLE expenses ADD COLUMN shopId TEXT',
     'ALTER TABLE expenses ADD COLUMN businessId TEXT',
     'ALTER TABLE expenses ADD COLUMN updated_at INTEGER',
     'ALTER TABLE financialAccounts ADD COLUMN accountNumber TEXT',
@@ -202,16 +189,22 @@ export async function ensureExpenseActionSchema(db: D1Database) {
     'ALTER TABLE products ADD COLUMN businessId TEXT',
     'ALTER TABLE products ADD COLUMN expiryTracking INTEGER DEFAULT 0',
     'ALTER TABLE products ADD COLUMN expiryDate INTEGER',
+    'ALTER TABLE products ADD COLUMN shopId TEXT',
     'ALTER TABLE products ADD COLUMN updated_at INTEGER',
     'ALTER TABLE stockMovements ADD COLUMN businessId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
+    'ALTER TABLE stockMovements ADD COLUMN shopId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
     'ALTER TABLE shifts ADD COLUMN cashierId TEXT',
     'ALTER TABLE shifts ADD COLUMN businessId TEXT',
     'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
+    'CREATE INDEX IF NOT EXISTS idx_expenses_business_shop_timestamp ON expenses(businessId, shopId, timestamp)',
+    'CREATE INDEX IF NOT EXISTS idx_expenses_business_status_timestamp ON expenses(businessId, status, timestamp)',
+    FINANCIAL_ACCOUNTS_NON_NEGATIVE_BALANCE_TRIGGER,
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
+  await ensureInventoryIntegritySchema(db);
 }
 
 function sameExpenseIdentity(existing: Record<string, any>, next: Record<string, any>) {
@@ -293,7 +286,8 @@ async function requireOpenTillExpenseShift(
   if (String(shift.status || '').toUpperCase() !== 'OPEN') {
     throw new PolicyError('Till expenses can only use an open shift.', 409);
   }
-  if (!service && principal && !ownsShift(shift, principal)) {
+  const canUseAnyOpenShift = service || APPROVER_ROLES.has(String(principal?.role || '').toUpperCase());
+  if (!canUseAnyOpenShift && principal && !ownsShift(shift, principal)) {
     throw new PolicyError('You can only pay till expenses from your own shift.', 403);
   }
   return shift;
@@ -308,9 +302,10 @@ async function availableTillCashForExpense(
   const since = asNumber(shift?.startTime);
   const shiftId = trimText(shift?.id, 180);
   const openingCash = asNumber(shift?.openingCash);
+  const until = Date.now();
   const [transactions, expenses, picks, refunds, supplierPayments, customerPayments] = await Promise.all([
-    db.prepare(`SELECT total, subtotal, discountAmount, discount, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT total, subtotal, tax, discountAmount, discount, items, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`)
+      .bind(businessId, since, until).all<any>().catch(() => ({ results: [] })),
     db.prepare(`SELECT id, amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ?`)
       .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
     db.prepare(`SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND timestamp >= ?`)
@@ -323,29 +318,51 @@ async function availableTillCashForExpense(
       .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
   ]);
 
-  const txRows = ((transactions.results || []) as any[])
-    .filter(row => inShiftScope(row, since, shiftId) && !['VOIDED', 'QUOTE'].includes(String(row.status || '').toUpperCase()));
-  const expenseRows = ((expenses.results || []) as any[])
-    .filter(row => trimText(row.id, 160) !== excludeExpenseId)
-    .filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL' && String(row.status || '').toUpperCase() !== 'REJECTED');
-  const pickRows = ((picks.results || []) as any[])
-    .filter(row => inShiftScope(row, since, shiftId) && String(row.status || '').toUpperCase() !== 'REJECTED');
-  const refundRows = ((refunds.results || []) as any[])
-    .filter(row => inShiftScope(row, since, shiftId) && String(row.status || 'APPROVED').toUpperCase() !== 'REJECTED');
-  const supplierRows = ((supplierPayments.results || []) as any[])
-    .filter(row => inShiftScope(row, since, shiftId) && String(row.source || '').toUpperCase() === 'TILL');
-  const customerRows = ((customerPayments.results || []) as any[])
-    .filter(row => inShiftScope(row, since, shiftId) && String(row.paymentMethod || '').toUpperCase() === 'CASH');
+  return calculateTillCashAvailableForExpenseRows({
+    transactions: transactions.results || [],
+    expenses: expenses.results || [],
+    picks: picks.results || [],
+    refunds: refunds.results || [],
+    supplierPayments: supplierPayments.results || [],
+    customerPayments: customerPayments.results || [],
+    openingCash,
+    since,
+    until,
+    shiftId,
+    excludeExpenseId,
+  });
+}
 
-  return Math.max(0, roundMoney(
-    openingCash
-    + txRows.reduce((sum, row) => sum + cashAmountFromTransaction(row), 0)
-    + customerRows.reduce((sum, row) => sum + asNumber(row.amount), 0)
-    - expenseRows.reduce((sum, row) => sum + asNumber(row.amount), 0)
-    - pickRows.reduce((sum, row) => sum + asNumber(row.amount), 0)
-    - refundRows.reduce((sum, row) => sum + cashAmountFromRefund(row), 0)
-    - supplierRows.reduce((sum, row) => sum + asNumber(row.amount), 0),
-  ));
+export function calculateTillCashAvailableForExpenseRows(args: {
+  transactions?: any[];
+  expenses?: any[];
+  picks?: any[];
+  refunds?: any[];
+  supplierPayments?: any[];
+  customerPayments?: any[];
+  openingCash?: number;
+  since: number;
+  until: number;
+  shiftId?: string | null;
+  excludeExpenseId?: string;
+}) {
+  const since = asNumber(args.since);
+  const shiftId = trimText(args.shiftId, 180);
+  const expenses = (args.expenses || []).filter(row => trimText(row?.id, 160) !== args.excludeExpenseId);
+  const closeTotals = calculateServerCloseReportTotals({
+    transactions: (args.transactions || []).filter(row => inShiftScope(row, since, shiftId)),
+    invoices: [],
+    expenses,
+    picks: args.picks || [],
+    refunds: args.refunds || [],
+    supplierPayments: args.supplierPayments || [],
+    customerPayments: args.customerPayments || [],
+    openingCash: args.openingCash || 0,
+    since,
+    until: args.until,
+    shiftId,
+  });
+  return Math.max(0, roundMoney(closeTotals.expectedCash));
 }
 
 async function effectStatementsForApprovedExpense(
@@ -366,8 +383,14 @@ async function effectStatementsForApprovedExpense(
       throw new PolicyError(`Insufficient funds in ${account.name}.`, 409);
     }
     return [
-      db.prepare(`UPDATE financialAccounts SET balance = balance - ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-        .bind(amount, now, accountId, businessId),
+      db.prepare(`
+        UPDATE financialAccounts
+        SET balance = CASE
+          WHEN COALESCE(balance, 0) >= ? THEN ROUND(COALESCE(balance, 0) - ?, 2)
+          ELSE -1
+        END, updated_at = ?
+        WHERE id = ? AND businessId = ?
+      `).bind(amount, amount, now, accountId, businessId),
     ];
   }
 
@@ -383,22 +406,27 @@ async function effectStatementsForApprovedExpense(
   if (source === 'SHOP') {
     const productId = trimText(expense.productId, 120);
     const quantity = Math.max(0, asNumber(expense.quantity, 1));
+    const shopId = trimText(expense.shopId || DEFAULT_SHOP_ID, 160) || DEFAULT_SHOP_ID;
     if (!productId || quantity <= 0) throw new PolicyError('Select the stock item and quantity being expensed.', 400);
     const product = await db.prepare(`
-      SELECT id, name, stockQuantity
+      SELECT id, name, stockQuantity, isBundle, components, shopId
       FROM products
-      WHERE id = ? AND businessId = ?
+      WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(productId, businessId).first<any>();
+    `).bind(productId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
     if (!product) throw new PolicyError('Selected shop item was not found.', 404);
+    if (isBundleInventoryRow(product)) throw new PolicyError('Bundle stock is derived from its ingredients and cannot be expensed directly.', 409);
     if (asNumber(product.stockQuantity) < quantity) throw new PolicyError(`Insufficient stock for ${product.name}.`, 409);
 
     return [
-      db.prepare(`UPDATE products SET stockQuantity = stockQuantity - ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-        .bind(quantity, now, productId, businessId),
       db.prepare(`
-        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        UPDATE products
+        SET stockQuantity = COALESCE(stockQuantity, 0) - ?, updated_at = ?
+        WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
+      `).bind(quantity, now, productId, businessId, DEFAULT_SHOP_ID, shopId),
+      db.prepare(`
+        INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         crypto.randomUUID(),
         productId,
@@ -408,6 +436,7 @@ async function effectStatementsForApprovedExpense(
         `Expense: ${trimText(expense.description || 'Shop Use', 120)}`,
         businessId,
         expense.shiftId || null,
+        shopId,
         now,
       ),
     ];
@@ -423,15 +452,17 @@ async function amountForStockExpense(
 ): Promise<number> {
   const productId = trimText(expense.productId, 120);
   const quantity = Math.max(0, asNumber(expense.quantity, 1));
+  const shopId = trimText(expense.shopId || DEFAULT_SHOP_ID, 160) || DEFAULT_SHOP_ID;
   if (!productId || quantity <= 0) throw new PolicyError('Select the stock item and quantity being expensed.', 400);
 
   const product = await db.prepare(`
-    SELECT id, name, stockQuantity, costPrice
+    SELECT id, name, stockQuantity, costPrice, isBundle, components, shopId
     FROM products
-    WHERE id = ? AND businessId = ?
+    WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
     LIMIT 1
-  `).bind(productId, businessId).first<any>();
+  `).bind(productId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
   if (!product) throw new PolicyError('Selected shop item was not found.', 404);
+  if (isBundleInventoryRow(product)) throw new PolicyError('Bundle stock is derived from its ingredients and cannot be expensed directly.', 409);
   if (asNumber(product.stockQuantity) < quantity) throw new PolicyError(`Insufficient stock for ${product.name}.`, 409);
 
   const costPrice = asNumber(product.costPrice);
@@ -450,12 +481,16 @@ export async function prepareExpenseSubmit(
 ) {
   const { businessId, principal, service } = args;
   if (!service && !STAFF_ROLES.has(principal.role)) throw new PolicyError('Staff access required.', 403);
+  if (!await canPerformServerAction(db, businessId, principal, service, 'expense.create')) {
+    throw new PolicyError('Expense creation is locked for this staff role.', 403);
+  }
 
   const now = Date.now();
   const expense = { ...(args.expense || {}) };
   expense.id = trimText(expense.id || crypto.randomUUID(), 120);
   const requestedSource = String(expense.source || 'TILL').toUpperCase();
   expense.source = requestedSource === 'ACCOUNT' ? 'ACCOUNT' : requestedSource === 'SHOP' ? 'SHOP' : 'TILL';
+  expense.shopId = trimText(expense.shopId || DEFAULT_SHOP_ID, 160) || DEFAULT_SHOP_ID;
   expense.accountId = expense.source === 'ACCOUNT' ? pickedCashAccountId(businessId) : null;
   expense.productId = expense.source === 'SHOP' ? trimText(expense.productId, 120) : null;
   expense.quantity = expense.source === 'SHOP' ? Math.max(0, asNumber(expense.quantity, 1)) : null;

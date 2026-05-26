@@ -4,7 +4,7 @@ import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
 import { calculateCashDrawer, getTodayStartMs } from '../../utils/cashDrawer';
-import { paymentAmountForMethod, transactionOriginalNetTotal } from '../../utils/posMoney';
+import { paymentAmountForMethod, transactionNetMetrics } from '../../utils/posMoney';
 import { getBusinessSettings } from '../../utils/settings';
 import { parseSalesTillRows, parseSalesTills, tillNameForShift } from '../../utils/tills';
 
@@ -15,7 +15,7 @@ function inShift(record: any, since: number, shiftId?: string) {
   return Number(record?.timestamp || record?.issueDate || 0) >= since;
 }
 
-function TillCard({ till, shift, rows }: { key?: React.Key; till: any; shift: any; rows: any }) {
+function TillCard({ till, shift, rows, canSeeBreakdown }: { key?: React.Key; till: any; shift: any; rows: any; canSeeBreakdown: boolean }) {
   const isOpen = !!shift;
   return (
     <section className={`rounded-lg border-2 bg-white p-5 shadow-sm ${isOpen ? 'border-blue-200' : 'border-slate-200'}`}>
@@ -49,26 +49,35 @@ function TillCard({ till, shift, rows }: { key?: React.Key; till: any; shift: an
             </div>
           </div>
 
-          <div className="mt-4 rounded-lg border-2 border-slate-200 bg-slate-50 p-4">
-            <p className="text-[11px] font-black uppercase tracking-widest text-slate-500">Expected drawer</p>
-            <p className="mt-1 text-2xl font-black tabular-nums text-slate-950">{money(rows.expectedCash)}</p>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {[
-              ['Opening', rows.openingCash],
-              ['Cash sales', rows.cashSales],
-              ['Payments', rows.customerCashPayments],
-              ['Expenses', rows.tillExpenses],
-              ['Supplier paid', rows.supplierTillPayments],
-              ['Picked', rows.cashPicks],
-            ].map(([label, value]) => (
-              <div key={String(label)} className="rounded-lg border border-slate-200 bg-white p-3">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
-                <p className="mt-1 text-sm font-black tabular-nums text-slate-900">{money(value)}</p>
+          {canSeeBreakdown ? (
+            <>
+              <div className="mt-4 rounded-lg border-2 border-slate-200 bg-slate-50 p-4">
+                <p className="text-[11px] font-black uppercase tracking-widest text-slate-500">Expected drawer</p>
+                <p className="mt-1 text-2xl font-black tabular-nums text-slate-950">{money(rows.expectedCash)}</p>
               </div>
-            ))}
-          </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {[
+                  ['Opening', rows.openingCash],
+                  ['Cash sales', rows.cashSales],
+                  ['Payments', rows.customerCashPayments],
+                  ['Expenses', rows.tillExpenses],
+                  ['Supplier paid', rows.supplierTillPayments],
+                  ['Picked', rows.cashPicks],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="rounded-lg border border-slate-200 bg-white p-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                    <p className="mt-1 text-sm font-black tabular-nums text-slate-900">{money(value)}</p>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="mt-4 rounded-lg border-2 border-slate-200 bg-slate-50 p-4">
+              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500">Drawer totals locked</p>
+              <p className="mt-2 text-sm font-semibold text-slate-600">Money breakdown is kept for admin review.</p>
+            </div>
+          )}
         </>
       ) : (
         <div className="mt-5 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-600">
@@ -97,14 +106,14 @@ export default function TillsTabDesktop() {
     const tableTills = parseSalesTillRows(salesTillRows);
     return tableTills.length ? tableTills : parseSalesTills(settings);
   }, [settings, salesTillRows]);
-  const transactions = useLiveQuery(() => activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const expenses = useLiveQuery(() => activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const cashPicks = useLiveQuery(() => activeBusinessId && activeShopId ? db.cashPicks.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const refunds = useLiveQuery(() => activeBusinessId && activeShopId ? db.refunds.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const supplierPayments = useLiveQuery(() => activeBusinessId && activeShopId ? db.supplierPayments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const customerPayments = useLiveQuery(() => activeBusinessId && activeShopId ? db.customerPayments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const transactions = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
+  const expenses = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
+  const cashPicks = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.cashPicks.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
+  const refunds = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.refunds.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
+  const supplierPayments = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.supplierPayments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
+  const customerPayments = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.customerPayments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
   const shifts = useLiveQuery(() => activeBusinessId && activeShopId ? db.shifts.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const reports = useLiveQuery(() => activeBusinessId && activeShopId ? db.endOfDayReports.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const reports = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.endOfDayReports.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
 
   const openByTill = new Map((shifts || [])
     .filter(shift => String(shift.status || '').toUpperCase() === 'OPEN')
@@ -132,7 +141,7 @@ export default function TillsTabDesktop() {
       rows: {
         ...drawer,
         expectedCash: Math.max(0, drawer.actualCashDrawer),
-        totalSales: txs.reduce((sum, tx) => sum + transactionOriginalNetTotal(tx), 0),
+        totalSales: txs.reduce((sum, tx) => sum + transactionNetMetrics(tx).netTotal, 0),
         mpesaSales: txs.reduce((sum, tx) => sum + paymentAmountForMethod(tx, 'MPESA'), 0),
       },
     };
@@ -170,7 +179,7 @@ export default function TillsTabDesktop() {
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {tillRows.map(row => (
-          <TillCard key={row.till.id} till={row.till} shift={row.shift} rows={row.rows || {}} />
+          <TillCard key={row.till.id} till={row.till} shift={row.shift} rows={row.rows || {}} canSeeBreakdown={canSeeBreakdown} />
         ))}
       </div>
 

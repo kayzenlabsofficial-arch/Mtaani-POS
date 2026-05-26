@@ -1,5 +1,12 @@
 import { authorizeRequest, canAccessBusiness, verifyPassword } from '../authUtils';
 import { loadMpesaRuntimeCredentials, recordMpesaTestResult } from './credentialStore';
+import {
+  clearMpesaSettingsAttempts,
+  ensureMpesaSettingsAttemptTable,
+  getMpesaSettingsLockMinutes,
+  mpesaSettingsAttemptId,
+  recordFailedMpesaSettingsAttempt,
+} from './settingsLockout';
 
 interface Env {
   DB: D1Database;
@@ -43,7 +50,17 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   if (!businessId || !userId) return json({ error: 'Business and admin are required.' }, 400);
   if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
 
-  if (!auth.service && auth.principal.role !== 'ROOT') {
+  const needsPasswordCheck = !auth.service && auth.principal.role !== 'ROOT';
+  const attemptId = mpesaSettingsAttemptId(businessId, userId);
+  if (needsPasswordCheck) {
+    await ensureMpesaSettingsAttemptTable(env.DB);
+    const lockedMinutes = await getMpesaSettingsLockMinutes(env.DB, attemptId);
+    if (lockedMinutes > 0) {
+      return json({ error: `M-Pesa settings are locked. Try again in ${lockedMinutes} minute${lockedMinutes === 1 ? '' : 's'}.` }, 423);
+    }
+  }
+
+  if (needsPasswordCheck) {
     if (auth.principal.userId !== userId) {
       return json({ error: 'Please sign in as the administrator making this change.' }, 403);
     }
@@ -53,9 +70,11 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     if (!user || user.role !== 'ADMIN') return json({ error: 'Only an administrator can test M-Pesa settings.' }, 403);
     const passwordOk = await verifyPassword(adminPassword, String(user.password || ''));
     if (!passwordOk) {
+      await recordFailedMpesaSettingsAttempt(env.DB, attemptId);
       return json({ error: 'Security check failed. Enter the admin password.' }, 401);
     }
   }
+  if (needsPasswordCheck) await clearMpesaSettingsAttempts(env.DB, attemptId);
 
   try {
     const credentials = await loadMpesaRuntimeCredentials(env.DB, businessId, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
