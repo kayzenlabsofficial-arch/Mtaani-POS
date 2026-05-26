@@ -413,6 +413,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
     if (!businessId || !canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
+    const shopId = s(request.headers.get('X-Shop-ID') || body?.shopId || body?.report?.shopId || DEFAULT_SHOP_ID, 160) || DEFAULT_SHOP_ID;
     await ensureCloseShiftSchema(env.DB);
     const now = Date.now();
     const report = body?.report || {};
@@ -420,19 +421,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const existing = await env.DB.prepare(`
       SELECT id, shiftId
       FROM endOfDayReports
-      WHERE businessId = ? AND shiftId = ?
+      WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND shiftId = ?
       LIMIT 1
-    `).bind(businessId, shiftId).first<any>();
+    `).bind(businessId, DEFAULT_SHOP_ID, shopId, shiftId).first<any>();
     if (existing) return json({ success: true, reportId: existing.id, shiftId: existing.shiftId || shiftId, idempotent: true });
 
     const startTime = n(body?.startTime || report.startTime || now);
-    const pending = await pendingShiftApprovals(env.DB, businessId, shiftId, startTime, now);
+    const pending = await pendingShiftApprovals(env.DB, businessId, shopId, shiftId, startTime, now);
     if (pending.length) {
       throw new PolicyError(`Resolve pending ${pending.join(', ')} for this shift before closing it.`, 409);
     }
 
     const reportId = s(body?.reportId, 160) || `eod_${businessId}_${shiftId}`;
-    const serverReport = await buildServerShiftReport(env.DB, businessId, shiftId, startTime, now, report, auth.principal, auth.service);
+    const serverReport = await buildServerShiftReport(env.DB, businessId, shopId, shiftId, startTime, now, report, auth.principal, auth.service);
     const cashierName = serverReport.cashierName;
     const cashierId = serverReport.cashierId;
     const tillId = serverReport.tillId;
@@ -459,12 +460,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const closeBreakdown = serverReport.closeBreakdown ? JSON.stringify(serverReport.closeBreakdown).slice(0, 5000) : null;
     await env.DB.batch([
       env.DB.prepare(`
-        INSERT INTO endOfDayReports (id, shiftId, tillId, tillName, timestamp, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, customerMpesaPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, closingCash, expectedCash, reportedCash, difference, cashierId, cashierName, closeBreakdown, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(reportId, shiftId, tillId, tillName, now, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, customerMpesaPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, closingCash, expectedCash, reportedCash, difference, cashierId, cashierName, closeBreakdown, businessId, now),
+        INSERT INTO endOfDayReports (id, shiftId, tillId, tillName, timestamp, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, customerMpesaPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, closingCash, expectedCash, reportedCash, difference, cashierId, cashierName, closeBreakdown, shopId, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(reportId, shiftId, tillId, tillName, now, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, customerMpesaPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, closingCash, expectedCash, reportedCash, difference, cashierId, cashierName, closeBreakdown, shopId, businessId, now),
       env.DB.prepare(`
-        INSERT INTO shifts (id, startTime, endTime, cashierId, cashierName, tillId, tillName, openingCash, closingCash, expectedCash, cashVariance, closeBreakdown, status, businessId, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO shifts (id, startTime, endTime, cashierId, cashierName, tillId, tillName, openingCash, closingCash, expectedCash, cashVariance, closeBreakdown, status, shopId, businessId, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           endTime = excluded.endTime,
           cashierId = COALESCE(excluded.cashierId, shifts.cashierId),
@@ -477,9 +478,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           cashVariance = excluded.cashVariance,
           closeBreakdown = excluded.closeBreakdown,
           status = excluded.status,
+          shopId = excluded.shopId,
           businessId = excluded.businessId,
           updated_at = excluded.updated_at
-      `).bind(shiftId, startTime, now, cashierId, cashierName, tillId, tillName, openingCash, closingCash, expectedCash, difference, closeBreakdown, 'CLOSED', businessId, now),
+      `).bind(shiftId, startTime, now, cashierId, cashierName, tillId, tillName, openingCash, closingCash, expectedCash, difference, closeBreakdown, 'CLOSED', shopId, businessId, now),
       env.DB.prepare(`
         INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -506,6 +508,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         ...serverReport,
         id: reportId,
         shiftId,
+        shopId,
+        businessId,
         recordType: 'CLOSE_DAY_REPORT',
       },
     });

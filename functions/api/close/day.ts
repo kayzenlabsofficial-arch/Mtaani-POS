@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { DEFAULT_SHOP_ID } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -12,7 +13,7 @@ const BUSINESS_DAY_OFFSET_MS = 3 * 60 * 60 * 1000;
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -69,6 +70,7 @@ async function ensureCloseDaySchema(db: D1Database) {
       totalVariance REAL NOT NULL DEFAULT 0,
       shiftReports TEXT,
       timestamp INTEGER NOT NULL,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -107,26 +109,33 @@ async function ensureCloseDaySchema(db: D1Database) {
     'ALTER TABLE dailySummaries ADD COLUMN reportedCash REAL DEFAULT 0',
     'ALTER TABLE dailySummaries ADD COLUMN totalVariance REAL',
     'ALTER TABLE dailySummaries ADD COLUMN shiftReports TEXT',
+    'ALTER TABLE dailySummaries ADD COLUMN shopId TEXT',
     'ALTER TABLE dailySummaries ADD COLUMN businessId TEXT',
     'ALTER TABLE dailySummaries ADD COLUMN updated_at INTEGER',
-    'CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_date ON dailySummaries(businessId, date)',
+    `UPDATE dailySummaries SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE endOfDayReports SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE shifts SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    'DROP INDEX IF EXISTS idx_dailySummaries_business_date',
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_date ON dailySummaries(businessId, COALESCE(NULLIF(shopId, ''), 'single-shop'), date)",
+    'CREATE INDEX IF NOT EXISTS idx_dailySummaries_business_shop_date ON dailySummaries(businessId, shopId, date)',
+    'CREATE INDEX IF NOT EXISTS idx_endofday_business_shop_timestamp ON endOfDayReports(businessId, shopId, timestamp)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
 }
 
-async function pendingDayApprovals(db: D1Database, businessId: string, since: number, until: number) {
+async function pendingDayApprovals(db: D1Database, businessId: string, shopId: string, since: number, until: number) {
   const checks = await Promise.all([
-    db.prepare(`SELECT COUNT(*) AS count FROM expenses WHERE businessId = ? AND status = 'PENDING' AND timestamp >= ? AND timestamp < ?`)
-      .bind(businessId, since, until).first<any>().catch(() => null),
-    db.prepare(`SELECT COUNT(*) AS count FROM cashPicks WHERE businessId = ? AND status = 'PENDING' AND timestamp >= ? AND timestamp < ?`)
-      .bind(businessId, since, until).first<any>().catch(() => null),
-    db.prepare(`SELECT COUNT(*) AS count FROM transactions WHERE businessId = ? AND status = 'PENDING_REFUND' AND timestamp >= ? AND timestamp < ?`)
-      .bind(businessId, since, until).first<any>().catch(() => null),
-    db.prepare(`SELECT COUNT(*) AS count FROM purchaseOrders WHERE businessId = ? AND approvalStatus = 'PENDING' AND orderDate >= ? AND orderDate < ?`)
-      .bind(businessId, since, until).first<any>().catch(() => null),
-    db.prepare(`SELECT COUNT(*) AS count FROM stockAdjustmentRequests WHERE businessId = ? AND status = 'PENDING' AND timestamp >= ? AND timestamp < ?`)
-      .bind(businessId, since, until).first<any>().catch(() => null),
+    db.prepare(`SELECT COUNT(*) AS count FROM expenses WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND status = 'PENDING' AND timestamp >= ? AND timestamp < ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since, until).first<any>().catch(() => null),
+    db.prepare(`SELECT COUNT(*) AS count FROM cashPicks WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND status = 'PENDING' AND timestamp >= ? AND timestamp < ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since, until).first<any>().catch(() => null),
+    db.prepare(`SELECT COUNT(*) AS count FROM transactions WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND status = 'PENDING_REFUND' AND timestamp >= ? AND timestamp < ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since, until).first<any>().catch(() => null),
+    db.prepare(`SELECT COUNT(*) AS count FROM purchaseOrders WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND approvalStatus = 'PENDING' AND orderDate >= ? AND orderDate < ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since, until).first<any>().catch(() => null),
+    db.prepare(`SELECT COUNT(*) AS count FROM stockAdjustmentRequests WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND status = 'PENDING' AND timestamp >= ? AND timestamp < ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since, until).first<any>().catch(() => null),
   ]);
   const labels = ['expenses', 'cash picks', 'refund approvals', 'purchase orders', 'stock adjustments'];
   return checks
@@ -134,15 +143,15 @@ async function pendingDayApprovals(db: D1Database, businessId: string, since: nu
     .filter(Boolean) as string[];
 }
 
-async function buildServerDaySummary(db: D1Database, businessId: string, summaryDate: number) {
+async function buildServerDaySummary(db: D1Database, businessId: string, shopId: string, summaryDate: number) {
   const dayEnd = summaryDate + DAY_MS;
   const openShifts = await safeRows(
     db,
     `SELECT id, tillName, cashierName
      FROM shifts
-     WHERE businessId = ? AND UPPER(status) = 'OPEN'
+     WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND UPPER(status) = 'OPEN'
      ORDER BY startTime ASC`,
-    [businessId],
+    [businessId, DEFAULT_SHOP_ID, shopId],
   );
   if (openShifts.length) {
     const names = openShifts
@@ -153,7 +162,7 @@ async function buildServerDaySummary(db: D1Database, businessId: string, summary
     throw new PolicyError(`Close all open shifts before closing the day${names ? ` (${names})` : ''}.`, 409);
   }
 
-  const pending = await pendingDayApprovals(db, businessId, summaryDate, dayEnd);
+  const pending = await pendingDayApprovals(db, businessId, shopId, summaryDate, dayEnd);
   if (pending.length) {
     throw new PolicyError(`Resolve pending ${pending.join(', ')} before closing the day.`, 409);
   }
@@ -162,9 +171,9 @@ async function buildServerDaySummary(db: D1Database, businessId: string, summary
     db,
     `SELECT *
      FROM endOfDayReports
-     WHERE businessId = ? AND timestamp >= ? AND timestamp < ?
+     WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp < ?
      ORDER BY timestamp ASC`,
-    [businessId, summaryDate, dayEnd],
+    [businessId, DEFAULT_SHOP_ID, shopId, summaryDate, dayEnd],
   );
   if (!reports.length) {
     throw new PolicyError('Close at least one shift before closing the business day.', 409);
@@ -207,6 +216,7 @@ async function buildServerDaySummary(db: D1Database, businessId: string, summary
 
   return {
     date: summaryDate,
+    shopId,
     shiftIds,
     totalSales: sumRows(reports, 'totalSales'),
     grossSales: sumRows(reports, 'grossSales'),
@@ -240,6 +250,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
     if (!businessId || !canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
+    const shopId = s(request.headers.get('X-Shop-ID') || body?.shopId || body?.summary?.shopId || DEFAULT_SHOP_ID, 160) || DEFAULT_SHOP_ID;
     await ensureCloseDaySchema(env.DB);
     const now = Date.now();
     const summary = body?.summary || {};
@@ -250,10 +261,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       SELECT id
       FROM dailySummaries
       WHERE businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
         AND date >= ?
         AND date < ?
       LIMIT 1
-    `).bind(businessId, summaryDate, dayEnd).first<any>();
+    `).bind(businessId, DEFAULT_SHOP_ID, shopId, summaryDate, dayEnd).first<any>();
     if (existing) {
       return json({
         error: `This business already has a daily close report for ${businessDateLabel(summaryDate)}.`,
@@ -261,8 +273,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }, 409);
     }
 
-    const id = String(body?.summaryId || `day_${businessId}_${businessDateKey(summaryDate)}`).trim();
-    const serverSummary = await buildServerDaySummary(env.DB, businessId, summaryDate);
+    const id = String(body?.summaryId || `day_${businessId}_${shopId}_${businessDateKey(summaryDate)}`).trim();
+    const serverSummary = await buildServerDaySummary(env.DB, businessId, shopId, summaryDate);
     const totalSales = nonNegative(serverSummary.totalSales);
     const grossSales = nonNegative(serverSummary.grossSales);
     const taxTotal = nonNegative(serverSummary.taxTotal);
@@ -284,9 +296,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const shiftIdsJson = JSON.stringify(serverSummary.shiftIds);
     const shiftReportsJson = JSON.stringify(serverSummary.shiftReports).slice(0, 20000);
     await env.DB.prepare(`
-      INSERT INTO dailySummaries (id, date, shiftIds, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, customerMpesaPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, expectedCash, reportedCash, totalVariance, shiftReports, timestamp, businessId, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(id, summaryDate, shiftIdsJson, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, customerMpesaPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, expectedCash, reportedCash, totalVariance, shiftReportsJson, now, businessId, now).run();
+      INSERT INTO dailySummaries (id, date, shiftIds, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, customerMpesaPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, expectedCash, reportedCash, totalVariance, shiftReports, timestamp, shopId, businessId, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(id, summaryDate, shiftIdsJson, totalSales, grossSales, taxTotal, cashSales, customerCashPayments, customerMpesaPayments, mpesaSales, pdqSales, totalExpenses, supplierPaymentsTotal, remittanceTotal, totalPicks, totalRefunds, cashRefunds, openingCash, expectedCash, reportedCash, totalVariance, shiftReportsJson, now, shopId, businessId, now).run();
     await env.DB.prepare(`
       INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -310,6 +322,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         ...serverSummary,
         id,
         timestamp: now,
+        shopId,
         businessId,
         recordType: 'DAILY_SUMMARY',
       },
