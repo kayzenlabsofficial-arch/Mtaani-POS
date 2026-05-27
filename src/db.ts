@@ -645,6 +645,7 @@ export interface LoginAttempt {
 }
 
 class MtaaniCloudDB {
+  private syncInFlight: Promise<void> | null = null;
 
   businesses          = new CloudTable<Business>('businesses');
   billingPayments     = new CloudTable<BillingPayment>('billingPayments');
@@ -744,7 +745,16 @@ class MtaaniCloudDB {
 
   /** Force reload all data from cloud. Use for 'Hard Sync' buttons. */
   async sync(): Promise<void> {
+    if (this.syncInFlight) return this.syncInFlight;
+    this.syncInFlight = this.runSync().finally(() => {
+      this.syncInFlight = null;
+    });
+    return this.syncInFlight;
+  }
+
+  private async runSync(): Promise<void> {
     const state = useStore.getState();
+    if (!state.currentUser) return;
     const role = state.currentUser?.role;
     const canSyncSalesData = role === 'ROOT' || role === 'ADMIN' || role === 'MANAGER';
     const reloads: Array<() => Promise<void>> = [
@@ -823,6 +833,6 @@ if (typeof window !== 'undefined') {
   window.addEventListener('db:sync-request', () => {
     db.sync().catch(console.error);
   });
-  // Start the 30s background sync loop.
-  startBackgroundSync(30000);
+  // Flush the offline outbox often; full table reloads are throttled inside clouddb.
+  startBackgroundSync(10000);
 }

@@ -1,31 +1,64 @@
 import { getApiKey } from '../runtimeConfig';
 import { useStore } from '../store';
+import { normalizedShopId } from '../utils/inventoryIntegrity';
 import {
   getDeviceId,
+  getOutboxStats,
   getPendingOutbox,
-  markOutboxAcked,
   markOutboxAttempt,
+  markOutboxBatchAcked,
+  markOutboxError,
   upsertSyncState,
+  type OutboxItem,
 } from './localdb';
 
-const SINGLE_SHOP_ID = 'single-shop';
+const DEFAULT_FLUSH_BATCH_SIZE = 25;
+const MAX_FLUSH_BATCH_SIZE = 25;
+const DEFAULT_MAX_BATCHES = 2;
 
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
+export type FlushOutboxResult = {
+  flushed: number;
+  attempted: number;
+  failed: number;
+  pending: number;
+  remaining: number;
+  errors: string[];
+};
+
+type BatchSuccess = { ok: true; applied: number; skipped: number };
+type BatchFailure = { ok: false; status?: number; retryable: boolean; error: string };
+type BatchResult = BatchSuccess | BatchFailure;
+
+function getSyncScope() {
+  const state = useStore.getState();
+  return {
+    businessId: state.activeBusinessId,
+    shopId: normalizedShopId(state.activeShopId),
+    cashierName: state.currentUser?.name,
+  };
 }
 
-function backoffMs(attemptCount: number) {
-  const base = Math.min(30_000, 500 * Math.pow(2, Math.min(6, attemptCount)));
-  const jitter = Math.floor(Math.random() * 250);
-  return base + jitter;
+function shortError(value: unknown): string {
+  return String(value || 'Sync failed.').replace(/\s+/g, ' ').trim().slice(0, 180);
+}
+
+function chunkItems<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
+
+function batchFailed(result: BatchResult): result is BatchFailure {
+  return result.ok === false;
 }
 
 export async function sendHeartbeat(args?: { cashierName?: string }): Promise<void> {
   if (typeof window === 'undefined') return;
   if (!navigator.onLine) return;
 
-  const businessId = useStore.getState().activeBusinessId;
+  const { businessId, shopId, cashierName: stateCashierName } = getSyncScope();
   if (!businessId) return;
+  const stats = await getOutboxStats({ businessId, shopId }).catch(() => null);
 
   const apiKey = await getApiKey();
   const res = await fetch('/api/sync/heartbeat', {
@@ -39,8 +72,14 @@ export async function sendHeartbeat(args?: { cashierName?: string }): Promise<vo
     cache: 'no-store',
     body: JSON.stringify({
       deviceId: getDeviceId(),
-      cashierName: args?.cashierName,
+      shopId,
+      cashierName: args?.cashierName ?? stateCashierName,
       lastSyncAt: Date.now(),
+      pendingOutboxCount: stats?.pending ?? 0,
+      failedOutboxCount: stats?.failed ?? 0,
+      oldestPendingAt: stats?.oldestCreatedAt ?? null,
+      lastErrorAt: stats?.lastErrorAt ?? null,
+      lastSyncError: stats?.lastError ?? null,
     }),
   });
   if (!res.ok) {
@@ -49,71 +88,139 @@ export async function sendHeartbeat(args?: { cashierName?: string }): Promise<vo
   }
 }
 
+async function postMutationBatch(args: {
+  apiKey: string;
+  businessId: string;
+  deviceId: string;
+  cashierName?: string;
+  items: OutboxItem[];
+}): Promise<BatchResult> {
+  await Promise.all(args.items.map(item => markOutboxAttempt(item.id)));
+
+  try {
+    const res = await fetch('/api/sync/flush', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': args.apiKey,
+        'X-Business-ID': args.businessId,
+      },
+      credentials: 'same-origin',
+      cache: 'no-store',
+      body: JSON.stringify({
+        deviceId: args.deviceId,
+        cashierName: args.cashierName,
+        mutations: args.items.map(item => ({
+          table: item.table,
+          op: item.op,
+          idempotencyKey: item.idempotencyKey,
+          payload: item.payload,
+        })),
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      return {
+        ok: false,
+        status: res.status,
+        retryable: res.status === 429 || res.status >= 500,
+        error: `HTTP ${res.status}: ${text.slice(0, 150)}`,
+      };
+    }
+
+    const body: any = await res.json().catch(() => ({}));
+    if (!body?.success) {
+      return {
+        ok: false,
+        status: 200,
+        retryable: false,
+        error: body?.error || 'Unknown sync error',
+      };
+    }
+
+    return {
+      ok: true,
+      applied: Number(body.applied || 0),
+      skipped: Number(body.skipped || 0),
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      retryable: true,
+      error: err?.message || String(err),
+    };
+  }
+}
+
 /**
  * Flush offline outbox in-order. Idempotency is enforced server-side using the idempotencyKey.
- * We deliberately only support `transactions` writes offline for now.
+ * Failed rows use a retry cooldown so one bad offline sale does not block newer sales.
  */
-export async function flushOutboxNow(): Promise<{ flushed: number }> {
-  if (typeof window === 'undefined') return { flushed: 0 };
-  if (!navigator.onLine) return { flushed: 0 };
+export async function flushOutboxNow(args: { batchSize?: number; maxBatches?: number } = {}): Promise<FlushOutboxResult> {
+  const empty: FlushOutboxResult = { flushed: 0, attempted: 0, failed: 0, pending: 0, remaining: 0, errors: [] };
+  if (typeof window === 'undefined') return empty;
+  if (!navigator.onLine) return empty;
 
-  const businessId = useStore.getState().activeBusinessId;
-  const cashierName = useStore.getState().currentUser?.name;
-  if (!businessId) return { flushed: 0 };
-  const shopId = SINGLE_SHOP_ID;
+  const { businessId, shopId, cashierName } = getSyncScope();
+  if (!businessId) return empty;
 
-  const pending = await getPendingOutbox({ businessId, shopId, limit: 25 });
-  if (pending.length === 0) return { flushed: 0 };
+  const batchSize = Math.max(1, Math.min(MAX_FLUSH_BATCH_SIZE, Math.floor(args.batchSize || DEFAULT_FLUSH_BATCH_SIZE)));
+  const maxBatches = Math.max(1, Math.floor(args.maxBatches || DEFAULT_MAX_BATCHES));
+  const pending = await getPendingOutbox({ businessId, shopId, limit: batchSize * maxBatches, dueOnly: true });
+  if (pending.length === 0) {
+    const stats = await getOutboxStats({ businessId, shopId }).catch(() => null);
+    return {
+      ...empty,
+      pending: stats?.pending ?? 0,
+      remaining: stats?.pending ?? 0,
+      failed: stats?.failed ?? 0,
+      errors: stats?.lastError ? [stats.lastError] : [],
+    };
+  }
 
   const apiKey = await getApiKey();
+  const deviceId = getDeviceId();
 
   let flushed = 0;
-  for (const item of pending) {
-    // sequential is intentional to preserve causal order for money/stock
-    try {
-      await markOutboxAttempt(item.id);
-      const res = await fetch('/api/sync/flush', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey,
-          'X-Business-ID': businessId,
-        },
-        credentials: 'same-origin',
-        cache: 'no-store',
-        body: JSON.stringify({
-          deviceId: getDeviceId(),
-          cashierName,
-          mutations: [
-            {
-              table: item.table,
-              op: item.op,
-              idempotencyKey: item.idempotencyKey,
-              payload: item.payload,
-            },
-          ],
-        }),
-      });
+  let attempted = 0;
+  let failed = 0;
+  const errors = new Set<string>();
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        await markOutboxAttempt(item.id, { error: `HTTP ${res.status}: ${text.slice(0, 150)}` });
-        await sleep(backoffMs(item.attemptCount));
-        continue;
+  for (const chunk of chunkItems(pending, batchSize)) {
+    const batch = await postMutationBatch({ apiKey, businessId, deviceId, cashierName, items: chunk });
+    attempted += chunk.length;
+
+    if (!batchFailed(batch)) {
+      await markOutboxBatchAcked(chunk.map(item => item.id));
+      flushed += chunk.length;
+      continue;
+    }
+
+    const batchError = shortError(batch.error);
+    errors.add(batchError);
+
+    if (batch.retryable || chunk.length === 1) {
+      await Promise.all(chunk.map(item => markOutboxError(item.id, batchError)));
+      failed += chunk.length;
+      if (batch.retryable) break;
+      continue;
+    }
+
+    // A permanent batch rejection can be caused by one bad row. Retry each item
+    // alone so valid rows still sync and only the bad rows remain pending.
+    for (const item of chunk) {
+      const single = await postMutationBatch({ apiKey, businessId, deviceId, cashierName, items: [item] });
+      attempted += 1;
+      if (!batchFailed(single)) {
+        await markOutboxBatchAcked([item.id]);
+        flushed += 1;
+      } else {
+        const itemError = shortError(single.error);
+        errors.add(itemError);
+        await markOutboxError(item.id, itemError);
+        failed += 1;
       }
-
-      const j: any = await res.json().catch(() => ({}));
-      if (!j?.success) {
-        await markOutboxAttempt(item.id, { error: j?.error || 'Unknown sync error' });
-        await sleep(backoffMs(item.attemptCount));
-        continue;
-      }
-
-      await markOutboxAcked(item.id);
-      flushed += 1;
-    } catch (e: any) {
-      await markOutboxAttempt(item.id, { error: e?.message || String(e) });
-      await sleep(backoffMs(item.attemptCount));
     }
   }
 
@@ -134,5 +241,15 @@ export async function flushOutboxNow(): Promise<{ flushed: number }> {
     }
   }
 
-  return { flushed };
+  const stats = await getOutboxStats({ businessId, shopId }).catch(() => null);
+  if (stats?.lastError) errors.add(stats.lastError);
+
+  return {
+    flushed,
+    attempted,
+    failed,
+    pending: stats?.pending ?? 0,
+    remaining: stats?.pending ?? 0,
+    errors: Array.from(errors).slice(0, 3),
+  };
 }

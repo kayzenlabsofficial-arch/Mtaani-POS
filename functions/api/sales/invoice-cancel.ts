@@ -1,5 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
-import { ensureInventoryIntegritySchema } from '../inventoryIntegrity';
+import { DEFAULT_SHOP_ID, ensureInventoryIntegritySchema } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -24,6 +24,14 @@ function json(data: unknown, status = 200) {
 function asNumber(value: unknown, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function trimText(value: unknown, max = 160) {
+  return String(value ?? '').trim().slice(0, max);
+}
+
+function normalizedShopId(value: unknown) {
+  return trimText(value, 160) || DEFAULT_SHOP_ID;
 }
 
 function parseItems(value: unknown): any[] {
@@ -70,7 +78,9 @@ async function ensureSchema(db: D1Database) {
   for (const sql of [
     'ALTER TABLE salesInvoices ADD COLUMN shiftId TEXT',
     'ALTER TABLE salesInvoices ADD COLUMN shopId TEXT',
+    'ALTER TABLE customers ADD COLUMN shopId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN shopId TEXT',
+    `UPDATE customers SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_salesInvoices_business_number ON salesInvoices(businessId, invoiceNumber)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
@@ -92,6 +102,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
     const invoiceId = String(body?.invoiceId || body?.id || '').trim();
+    const shopId = normalizedShopId(request.headers.get('X-Shop-ID') || body?.shopId);
     if (!businessId || !invoiceId) return json({ error: 'Business and invoice are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
@@ -101,9 +112,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const invoice = await env.DB.prepare(`
       SELECT *
       FROM salesInvoices
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(invoiceId, businessId).first<any>();
+    `).bind(invoiceId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
     if (!invoice) throw new PolicyError('Sales invoice was not found.', 404);
     if (invoice.status === 'CANCELLED') return json({ success: true, invoice: { ...invoice, items: parseItems(invoice.items) }, idempotent: true });
     if (invoice.status === 'PAID' || asNumber(invoice.paidAmount) > 0) {
@@ -113,15 +126,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const now = Date.now();
     const items = parseItems(invoice.items);
     const statements: D1PreparedStatement[] = [
-      env.DB.prepare(`UPDATE salesInvoices SET status = 'CANCELLED', balance = 0, updated_at = ? WHERE id = ? AND businessId = ?`)
-        .bind(now, invoiceId, businessId),
+      env.DB.prepare(`UPDATE salesInvoices SET status = 'CANCELLED', balance = 0, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+        .bind(now, invoiceId, businessId, DEFAULT_SHOP_ID, shopId),
       env.DB.prepare(`
         UPDATE customers
         SET totalSpent = MAX(0, COALESCE(totalSpent, 0) - ?),
             balance = MAX(0, COALESCE(balance, 0) - ?),
             updated_at = ?
-        WHERE id = ? AND businessId = ?
-      `).bind(asNumber(invoice.total), asNumber(invoice.balance), now, invoice.customerId, businessId),
+        WHERE id = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
+      `).bind(asNumber(invoice.total), asNumber(invoice.balance), now, invoice.customerId, businessId, DEFAULT_SHOP_ID, shopId),
     ];
 
     for (const line of items) {
@@ -129,8 +144,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const quantity = asNumber(line.quantity);
       if (quantity <= 0) continue;
       statements.push(
-        env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-          .bind(quantity, now, line.itemId, businessId),
+        env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+          .bind(quantity, now, line.itemId, businessId, DEFAULT_SHOP_ID, shopId),
         env.DB.prepare(`
           INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -143,7 +158,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           `Cancelled invoice ${invoice.invoiceNumber}`,
           businessId,
           body?.shiftId || null,
-          invoice.shopId || body?.shopId || 'single-shop',
+          shopId,
           now,
         )
       );

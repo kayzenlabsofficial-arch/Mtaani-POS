@@ -110,6 +110,7 @@ async function ensureSchema(db: D1Database) {
     try { await db.prepare(`ALTER TABLE purchaseOrders ADD COLUMN ${column}`).run(); } catch {}
   }
   try { await db.prepare('ALTER TABLE products ADD COLUMN supplierIds TEXT').run(); } catch {}
+  try { await db.prepare('ALTER TABLE suppliers ADD COLUMN shopId TEXT').run(); } catch {}
   await ensureInventoryIntegritySchema(db);
 }
 
@@ -153,9 +154,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const supplier = await env.DB.prepare(`
       SELECT id
       FROM suppliers
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(supplierId, businessId).first<any>();
+    `).bind(supplierId, businessId, 'single-shop', shopId).first<any>();
     if (!supplier) throw new PolicyError('Supplier was not found.', 404);
 
     const rawItems = Array.isArray(body?.items) ? body.items : [];
@@ -166,11 +169,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const expectedQuantity = asNumber(raw?.expectedQuantity);
       if (!productId || expectedQuantity <= 0) throw new PolicyError('Purchase order line items are invalid.', 400);
       const product = await env.DB.prepare(`
-        SELECT id, name, costPrice, sellingPrice, supplierIds
+        SELECT id, name, costPrice, sellingPrice, supplierIds, shopId
         FROM products
-        WHERE id = ? AND businessId = ?
+        WHERE id = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
         LIMIT 1
-      `).bind(productId, businessId).first<any>();
+      `).bind(productId, businessId, 'single-shop', shopId).first<any>();
       if (!product) throw new PolicyError('Purchase order includes a product that was not found.', 404);
       const linkedSuppliers = parseSupplierIds(product.supplierIds);
       if (linkedSuppliers.length > 0 && !linkedSuppliers.includes(supplierId)) {
@@ -192,9 +197,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       ? await env.DB.prepare(`
           SELECT *
           FROM purchaseOrders
-          WHERE id = ? AND businessId = ?
+          WHERE id = ?
+            AND businessId = ?
+            AND COALESCE(NULLIF(shopId, ''), ?) = ?
           LIMIT 1
-        `).bind(purchaseOrderId, businessId).first<any>()
+        `).bind(purchaseOrderId, businessId, 'single-shop', shopId).first<any>()
       : null;
     if (purchaseOrderId && !existing) throw new PolicyError('Purchase order was not found.', 404);
     if (existing?.status === 'RECEIVED') throw new PolicyError('Received purchase orders cannot be edited.', 409);

@@ -60,6 +60,25 @@ describe('server expense integrity', () => {
     expect(available).toBe(90);
   });
 
+  it('keeps till availability scoped to the active shop when fixture rows are mixed', () => {
+    const available = calculateTillCashAvailableForExpenseRows({
+      transactions: [
+        { total: 100, status: 'PAID', paymentMethod: 'CASH', timestamp: 1000, shopId: 'shop-a' },
+        { total: 500, status: 'PAID', paymentMethod: 'CASH', timestamp: 1000, shopId: 'shop-b' },
+      ],
+      refunds: [
+        { amount: 10, cashAmount: 10, source: 'TILL', status: 'APPROVED', timestamp: 1000, shopId: 'shop-a' },
+        { amount: 300, cashAmount: 300, source: 'TILL', status: 'APPROVED', timestamp: 1000, shopId: 'shop-b' },
+      ],
+      openingCash: 20,
+      since: 0,
+      until: 2000,
+      shopId: 'shop-a',
+    });
+
+    expect(available).toBe(110);
+  });
+
   it('installs an aborting balance guard for concurrent account debits', () => {
     expect(FINANCIAL_ACCOUNTS_NON_NEGATIVE_BALANCE_TRIGGER).toContain('financialAccounts_non_negative_balance_guard');
     expect(FINANCIAL_ACCOUNTS_NON_NEGATIVE_BALANCE_TRIGGER).toContain('Insufficient account balance.');

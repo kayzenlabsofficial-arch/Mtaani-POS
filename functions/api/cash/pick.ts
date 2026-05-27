@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { DEFAULT_SHOP_ID } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +11,7 @@ const STAFF_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER', 'CASHIER']);
 const APPROVER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -29,6 +30,7 @@ async function ensureSchema(db: D1Database) {
       userName TEXT,
       accountId TEXT,
       shiftId TEXT,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -40,6 +42,7 @@ async function ensureSchema(db: D1Database) {
       endTime INTEGER,
       cashierId TEXT,
       cashierName TEXT NOT NULL,
+      shopId TEXT,
       status TEXT NOT NULL,
       businessId TEXT,
       updated_at INTEGER
@@ -74,6 +77,7 @@ async function ensureSchema(db: D1Database) {
   for (const sql of [
     'ALTER TABLE cashPicks ADD COLUMN accountId TEXT',
     'ALTER TABLE cashPicks ADD COLUMN shiftId TEXT',
+    'ALTER TABLE cashPicks ADD COLUMN shopId TEXT',
     'ALTER TABLE cashPicks ADD COLUMN businessId TEXT',
     'ALTER TABLE shifts ADD COLUMN cashierId TEXT',
     'ALTER TABLE shifts ADD COLUMN tillId TEXT',
@@ -83,8 +87,17 @@ async function ensureSchema(db: D1Database) {
     'ALTER TABLE shifts ADD COLUMN expectedCash REAL',
     'ALTER TABLE shifts ADD COLUMN cashVariance REAL',
     'ALTER TABLE shifts ADD COLUMN closeBreakdown TEXT',
+    'ALTER TABLE shifts ADD COLUMN shopId TEXT',
     'ALTER TABLE shifts ADD COLUMN businessId TEXT',
     'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE transactions ADD COLUMN shopId TEXT',
+    'ALTER TABLE expenses ADD COLUMN shopId TEXT',
+    'ALTER TABLE refunds ADD COLUMN shopId TEXT',
+    'ALTER TABLE supplierPayments ADD COLUMN shopId TEXT',
+    'ALTER TABLE customerPayments ADD COLUMN shopId TEXT',
+    `UPDATE cashPicks SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE shifts SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    'CREATE INDEX IF NOT EXISTS idx_cashPicks_business_shop_timestamp ON cashPicks(businessId, shopId, timestamp)',
     'ALTER TABLE financialAccounts ADD COLUMN accountNumber TEXT',
     'ALTER TABLE financialAccounts ADD COLUMN updated_at INTEGER',
   ]) {
@@ -135,17 +148,20 @@ function cashAmountFromRefund(row: any): number {
 async function requireOwnOpenShift(
   db: D1Database,
   businessId: string,
+  shopId: string,
   shiftId: string | null,
   principal: any,
   service: boolean,
 ) {
   if (!shiftId) throw new PolicyError('Open your own shift before picking cash.', 409);
   const shift = await db.prepare(`
-    SELECT id, startTime, openingCash, cashierId, cashierName, status
+    SELECT id, startTime, openingCash, cashierId, cashierName, status, shopId
     FROM shifts
-    WHERE id = ? AND businessId = ?
+    WHERE id = ?
+      AND businessId = ?
+      AND COALESCE(NULLIF(shopId, ''), ?) = ?
     LIMIT 1
-  `).bind(shiftId, businessId).first<any>();
+  `).bind(shiftId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
   if (!shift) throw new PolicyError('Shift was not found.', 404);
   if (String(shift.status || '').toUpperCase() !== 'OPEN') throw new PolicyError('Only open shifts can pick cash.', 409);
   if (!service) {
@@ -161,35 +177,37 @@ async function requireOwnOpenShift(
   return shift;
 }
 
-async function resolveShiftStart(db: D1Database, businessId: string, shiftId?: string | null, fallback?: unknown): Promise<number> {
+async function resolveShiftStart(db: D1Database, businessId: string, shopId: string, shiftId?: string | null, fallback?: unknown): Promise<number> {
   const inputStart = asNumber(fallback);
   if (inputStart > 0) return inputStart;
   if (shiftId) {
     const shift = await db.prepare(`
       SELECT startTime
       FROM shifts
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(shiftId, businessId).first<any>().catch(() => null);
+    `).bind(shiftId, businessId, DEFAULT_SHOP_ID, shopId).first<any>().catch(() => null);
     if (shift?.startTime) return asNumber(shift.startTime, todayStartMs());
   }
   return todayStartMs();
 }
 
-async function availableCashForPick(db: D1Database, businessId: string, since: number, shiftId?: string | null, openingCash = 0): Promise<number> {
+async function availableCashForPick(db: D1Database, businessId: string, shopId: string, since: number, shiftId?: string | null, openingCash = 0): Promise<number> {
   const [transactions, expenses, picks, refunds, supplierPayments, customerPayments] = await Promise.all([
-    db.prepare(`SELECT total, subtotal, discountAmount, discount, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT total, subtotal, discountAmount, discount, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
   ]);
   const txRows = (transactions.results || []).filter(row => inShiftScope(row, since, shiftId) && !['VOIDED', 'QUOTE'].includes(String(row.status || '').toUpperCase()));
   const expenseRows = (expenses.results || []).filter(row => inShiftScope(row, since, shiftId) && String(row.source || 'TILL').toUpperCase() === 'TILL' && String(row.status || 'APPROVED').toUpperCase() === 'APPROVED');
@@ -239,6 +257,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
     if (!businessId) return json({ error: 'Business is required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
+    const shopId = trimText(request.headers.get('X-Shop-ID') || body?.shopId || DEFAULT_SHOP_ID, 160) || DEFAULT_SHOP_ID;
     await ensureSchema(env.DB);
     const now = Date.now();
 
@@ -249,15 +268,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const status = String(body?.status || 'PENDING').toUpperCase() === 'APPROVED' && (auth.service || APPROVER_ROLES.has(auth.principal.role)) ? 'APPROVED' : 'PENDING';
       const id = trimText(body?.cashPickId, 160) || crypto.randomUUID();
       const shiftId = trimText(body?.shiftId, 160) || null;
-      const shift = await requireOwnOpenShift(env.DB, businessId, shiftId, auth.principal, auth.service);
-      const shiftStart = await resolveShiftStart(env.DB, businessId, shiftId, body?.shiftStart || shift.startTime);
-      const availableCash = await availableCashForPick(env.DB, businessId, shiftStart, shiftId, asNumber(shift.openingCash));
+      const shift = await requireOwnOpenShift(env.DB, businessId, shopId, shiftId, auth.principal, auth.service);
+      const shiftStart = await resolveShiftStart(env.DB, businessId, shopId, shiftId, body?.shiftStart || shift.startTime);
+      const availableCash = await availableCashForPick(env.DB, businessId, shopId, shiftStart, shiftId, asNumber(shift.openingCash));
       const varianceAmount = Math.max(0, Math.round((amount - availableCash) * 100) / 100);
       const pickedAccount = status === 'APPROVED' ? await ensurePickedCashAccount(env.DB, businessId) : null;
-      const cashPick = { id, amount, timestamp: now, status, userName: trimText(body?.userName || auth.principal.userName, 120), businessId, accountId: pickedAccount?.id || null, shiftId, updated_at: now };
+      const cashPick = { id, amount, timestamp: now, status, userName: trimText(body?.userName || auth.principal.userName, 120), businessId, shopId, accountId: pickedAccount?.id || null, shiftId, updated_at: now };
       const statements: D1PreparedStatement[] = [
-        env.DB.prepare(`INSERT INTO cashPicks (id, amount, timestamp, status, userName, accountId, shiftId, businessId, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .bind(cashPick.id, amount, now, status, cashPick.userName, cashPick.accountId, cashPick.shiftId, businessId, now),
+        env.DB.prepare(`INSERT INTO cashPicks (id, amount, timestamp, status, userName, accountId, shiftId, shopId, businessId, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(cashPick.id, amount, now, status, cashPick.userName, cashPick.accountId, cashPick.shiftId, shopId, businessId, now),
         env.DB.prepare(`
           INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -291,19 +310,49 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (!auth.service && !APPROVER_ROLES.has(auth.principal.role)) return json({ error: 'You are not allowed to approve cash picks.' }, 403);
       const cashPickId = trimText(body?.cashPickId || body?.id, 160);
       if (!cashPickId) return json({ error: 'Cash pick is required.' }, 400);
-      const pick = await env.DB.prepare(`SELECT id, amount, status, accountId FROM cashPicks WHERE id = ? AND businessId = ? LIMIT 1`)
-        .bind(cashPickId, businessId)
+      const pick = await env.DB.prepare(`
+        SELECT id, amount, status, accountId
+        FROM cashPicks
+        WHERE id = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
+        LIMIT 1
+      `)
+        .bind(cashPickId, businessId, DEFAULT_SHOP_ID, shopId)
         .first<any>();
       if (!pick) throw new PolicyError('Cash pick was not found.', 404);
       if (String(pick.status || '').toUpperCase() === 'APPROVED' && pick.accountId) {
         return json({ success: true, cashPickId, idempotent: true });
       }
       const pickedAccount = await ensurePickedCashAccount(env.DB, businessId);
+      const approvalMarker = Date.now() * 1000 + Math.floor(Math.random() * 1000);
       await env.DB.batch([
-        env.DB.prepare(`UPDATE cashPicks SET status = 'APPROVED', accountId = ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-          .bind(pickedAccount.id, now, cashPickId, businessId),
-        env.DB.prepare(`UPDATE financialAccounts SET balance = COALESCE(balance, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-          .bind(asNumber(pick.amount), now, pickedAccount.id, businessId),
+        env.DB.prepare(`
+          UPDATE cashPicks
+          SET status = 'APPROVED',
+              accountId = ?,
+              shopId = ?,
+              updated_at = ?
+          WHERE id = ?
+            AND businessId = ?
+            AND COALESCE(NULLIF(shopId, ''), ?) = ?
+            AND (UPPER(COALESCE(status, '')) != 'APPROVED' OR COALESCE(accountId, '') = '')
+        `).bind(pickedAccount.id, shopId, approvalMarker, cashPickId, businessId, DEFAULT_SHOP_ID, shopId),
+        env.DB.prepare(`
+          UPDATE financialAccounts
+          SET balance = COALESCE(balance, 0) + ?,
+              updated_at = ?
+          WHERE id = ?
+            AND businessId = ?
+            AND EXISTS (
+              SELECT 1
+              FROM cashPicks
+              WHERE id = ?
+                AND businessId = ?
+                AND accountId = ?
+                AND updated_at = ?
+            )
+        `).bind(asNumber(pick.amount), now, pickedAccount.id, businessId, cashPickId, businessId, pickedAccount.id, approvalMarker),
         env.DB.prepare(`
           INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

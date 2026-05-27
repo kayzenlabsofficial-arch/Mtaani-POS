@@ -112,13 +112,22 @@ async function ensureCloseDaySchema(db: D1Database) {
     'ALTER TABLE dailySummaries ADD COLUMN shopId TEXT',
     'ALTER TABLE dailySummaries ADD COLUMN businessId TEXT',
     'ALTER TABLE dailySummaries ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE endOfDayReports ADD COLUMN shopId TEXT',
+    'ALTER TABLE shifts ADD COLUMN shopId TEXT',
+    'ALTER TABLE expenses ADD COLUMN shopId TEXT',
+    'ALTER TABLE cashPicks ADD COLUMN shopId TEXT',
+    'ALTER TABLE transactions ADD COLUMN shopId TEXT',
+    'ALTER TABLE purchaseOrders ADD COLUMN shopId TEXT',
+    'ALTER TABLE stockAdjustmentRequests ADD COLUMN shopId TEXT',
     `UPDATE dailySummaries SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
     `UPDATE endOfDayReports SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
     `UPDATE shifts SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE cashPicks SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
     'DROP INDEX IF EXISTS idx_dailySummaries_business_date',
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_date ON dailySummaries(businessId, COALESCE(NULLIF(shopId, ''), 'single-shop'), date)",
     'CREATE INDEX IF NOT EXISTS idx_dailySummaries_business_shop_date ON dailySummaries(businessId, shopId, date)',
     'CREATE INDEX IF NOT EXISTS idx_endofday_business_shop_timestamp ON endOfDayReports(businessId, shopId, timestamp)',
+    'CREATE INDEX IF NOT EXISTS idx_cashPicks_business_shop_timestamp ON cashPicks(businessId, shopId, timestamp)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }

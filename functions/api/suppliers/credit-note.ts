@@ -109,6 +109,7 @@ async function ensureSchema(db: D1Database) {
     'ALTER TABLE creditNotes ADD COLUMN shiftId TEXT',
     'ALTER TABLE creditNotes ADD COLUMN shopId TEXT',
     'ALTER TABLE creditNotes ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE suppliers ADD COLUMN shopId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN shiftId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN shopId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
@@ -154,9 +155,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const existing = await env.DB.prepare(`
         SELECT *
         FROM creditNotes
-        WHERE id = ? AND businessId = ?
+        WHERE id = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
         LIMIT 1
-      `).bind(creditNoteId, businessId).first<any>();
+      `).bind(creditNoteId, businessId, 'single-shop', shopId).first<any>();
       if (!existing) throw new PolicyError('Credit note was not found.', 404);
       if (existing.status === 'ALLOCATED') {
         throw new PolicyError('Allocated credit notes cannot be deleted because they already affected supplier payments.', 409);
@@ -173,15 +176,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const statements: D1PreparedStatement[] = [];
       for (const item of returnItems) {
         const product = await env.DB.prepare(`
-          SELECT id, name
+          SELECT id, name, shopId
           FROM products
-          WHERE id = ? AND businessId = ?
+          WHERE id = ?
+            AND businessId = ?
+            AND COALESCE(NULLIF(shopId, ''), ?) = ?
           LIMIT 1
-        `).bind(item.productId, businessId).first<any>();
+        `).bind(item.productId, businessId, 'single-shop', shopId).first<any>();
         if (!product) continue;
         statements.push(
-          env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-            .bind(item.quantity, now, item.productId, businessId),
+          env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+            .bind(item.quantity, now, item.productId, businessId, 'single-shop', shopId),
           env.DB.prepare(`
             INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -201,8 +206,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
 
       statements.push(
-        env.DB.prepare(`DELETE FROM creditNotes WHERE id = ? AND businessId = ?`)
-          .bind(creditNoteId, businessId),
+        env.DB.prepare(`DELETE FROM creditNotes WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+          .bind(creditNoteId, businessId, 'single-shop', shopId),
         env.DB.prepare(`
           INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -227,9 +232,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const supplier = await env.DB.prepare(`
       SELECT id, name, company
       FROM suppliers
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(supplierId, businessId).first<any>();
+    `).bind(supplierId, businessId, 'single-shop', shopId).first<any>();
     if (!supplier) throw new PolicyError('Supplier was not found.', 404);
 
     let itemInputs = parseItems(body?.items);
@@ -245,9 +252,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const product = await env.DB.prepare(`
         SELECT id, name, stockQuantity, costPrice, sellingPrice, unit, shopId
         FROM products
-        WHERE id = ? AND businessId = ?
+        WHERE id = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
         LIMIT 1
-      `).bind(item.productId, businessId).first<any>();
+      `).bind(item.productId, businessId, 'single-shop', shopId).first<any>();
       if (!product) throw new PolicyError('Selected product was not found.', 404);
       if (product.shopId && String(product.shopId) !== shopId) throw new PolicyError(`Selected product was not found in this shop.`, 404);
       if (item.quantity > asNumber(product.stockQuantity) + 0.0001) {
@@ -317,8 +326,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     for (const item of returnItems) {
       statements.push(
-        env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) - ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-          .bind(item.quantity, now, item.productId, businessId),
+        env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) - ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+          .bind(item.quantity, now, item.productId, businessId, 'single-shop', shopId),
         env.DB.prepare(`
           INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -1,5 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
-import { ensureInventoryIntegritySchema } from '../inventoryIntegrity';
+import { DEFAULT_SHOP_ID, ensureInventoryIntegritySchema } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -32,6 +32,10 @@ function roundMoney(value: number) {
 
 function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
+}
+
+function normalizedShopId(value: unknown) {
+  return trimText(value, 160) || DEFAULT_SHOP_ID;
 }
 
 function lineAmount(line: { quantity: number; unitPrice: number }) {
@@ -105,6 +109,8 @@ async function ensureSchema(db: D1Database) {
     'ALTER TABLE serviceItems ADD COLUMN updated_at INTEGER',
     'ALTER TABLE salesInvoices ADD COLUMN shiftId TEXT',
     'ALTER TABLE salesInvoices ADD COLUMN shopId TEXT',
+    'ALTER TABLE customers ADD COLUMN shopId TEXT',
+    `UPDATE customers SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_salesInvoices_business_number ON salesInvoices(businessId, invoiceNumber)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
@@ -144,7 +150,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
     const customerId = String(body?.customerId || '').trim();
-    const shopId = trimText(body?.shopId, 160) || null;
+    const shopId = normalizedShopId(request.headers.get('X-Shop-ID') || body?.shopId);
     const shiftId = trimText(body?.shiftId, 180) || null;
     if (!businessId || !customerId) return json({ error: 'Business and customer are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
@@ -160,9 +166,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const customer = await env.DB.prepare(`
       SELECT id, name, phone, email, totalSpent, balance
       FROM customers
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(customerId, businessId).first<any>();
+    `).bind(customerId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
     if (!customer) throw new PolicyError('Customer was not found.', 404);
 
     const normalizedItems: any[] = [];
@@ -178,11 +186,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         const itemId = String(raw?.itemId || '').trim();
         if (!itemId) throw new PolicyError('Product line is missing the product ID.', 400);
         const product = await env.DB.prepare(`
-          SELECT id, name, sellingPrice, taxCategory, stockQuantity
+          SELECT id, name, sellingPrice, taxCategory, stockQuantity, shopId
           FROM products
-          WHERE id = ? AND businessId = ?
+          WHERE id = ?
+            AND businessId = ?
+            AND COALESCE(NULLIF(shopId, ''), ?) = ?
           LIMIT 1
-        `).bind(itemId, businessId).first<any>();
+        `).bind(itemId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
         if (!product) throw new PolicyError('Invoice includes a product that was not found.', 404);
         const planned = stockDeductions.get(product.id)?.quantity || 0;
         if (asNumber(product.stockQuantity) < planned + quantity) throw new PolicyError(`Insufficient stock for ${product.name}.`, 409);
@@ -311,14 +321,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         SET totalSpent = COALESCE(totalSpent, 0) + ?,
             balance = COALESCE(balance, 0) + ?,
             updated_at = ?
-        WHERE id = ? AND businessId = ?
-      `).bind(total, total, now, customerId, businessId),
+        WHERE id = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
+      `).bind(total, total, now, customerId, businessId, DEFAULT_SHOP_ID, shopId),
     ];
 
     for (const [productId, deduction] of stockDeductions.entries()) {
       statements.push(
-        env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) - ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-          .bind(deduction.quantity, now, productId, businessId),
+        env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) - ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+          .bind(deduction.quantity, now, productId, businessId, DEFAULT_SHOP_ID, shopId),
         env.DB.prepare(`
           INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

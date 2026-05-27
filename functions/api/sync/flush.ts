@@ -14,6 +14,8 @@ type Mutation = {
   payload: any;
 };
 
+const MAX_SYNC_MUTATIONS = 25;
+
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
@@ -53,6 +55,7 @@ async function ensureSyncSchema(db: D1Database) {
       operation TEXT NOT NULL,
       deviceId TEXT,
       cashierName TEXT,
+      transactionId TEXT,
       createdAt INTEGER NOT NULL
     )`
   ).run();
@@ -64,6 +67,7 @@ async function ensureSyncSchema(db: D1Database) {
 
   const migrations = [
     'ALTER TABLE transactions ADD COLUMN businessId TEXT',
+    'ALTER TABLE transactions ADD COLUMN shopId TEXT',
     'ALTER TABLE transactions ADD COLUMN shiftId TEXT',
     'ALTER TABLE transactions ADD COLUMN approvedBy TEXT',
     'ALTER TABLE transactions ADD COLUMN pendingRefundItems TEXT',
@@ -100,6 +104,8 @@ async function ensureSyncSchema(db: D1Database) {
     'ALTER TABLE stockMovements ADD COLUMN shopId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN expiryDate INTEGER',
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE idempotencyKeys ADD COLUMN transactionId TEXT',
+    'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_transaction ON idempotencyKeys(businessId, transactionId)',
   ];
   for (const sql of migrations) {
     try { await db.prepare(sql).run(); } catch {}
@@ -128,7 +134,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const mutations: Mutation[] = Array.isArray(body?.mutations) ? body.mutations : [];
   
   if (mutations.length === 0) return json({ success: true, applied: 0, skipped: 0 });
-  if (mutations.length > 25) return json({ error: 'Too many offline sales in one sync request.' }, 413);
+  if (mutations.length > MAX_SYNC_MUTATIONS) return json({ error: 'Too many offline sales in one sync request.' }, 413);
   if (mutations.some(m => m.table !== 'transactions' || m.op !== 'UPSERT' || !String(m.idempotencyKey || '').trim())) {
     return json({ error: 'Offline sync only accepts valid sale records.' }, 400);
   }
@@ -181,6 +187,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   for (const payload of payloads) {
     payload.businessId = businessId;
+    payload.isSynced = 1;
 
     const cols = Object.keys(payload).filter((k) => validTxCols.has(k));
     if (cols.length > 0) {
@@ -194,9 +201,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const idemId = `${businessId}|${idempotencyKey}`;
     finalBatch.push(
       env.DB.prepare(
-        `INSERT OR IGNORE INTO idempotencyKeys (id, businessId, idempotencyKey, operation, deviceId, cashierName, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).bind(idemId, businessId, idempotencyKey, 'transactions:UPSERT', deviceId, cashierName, Date.now())
+        `INSERT OR IGNORE INTO idempotencyKeys (id, businessId, idempotencyKey, operation, deviceId, cashierName, transactionId, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(idemId, businessId, idempotencyKey, 'transactions:UPSERT', deviceId, cashierName, String(m.payload?.id || idempotencyKey), Date.now())
     );
   }
 

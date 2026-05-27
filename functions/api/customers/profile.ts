@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { DEFAULT_SHOP_ID } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -11,7 +12,7 @@ const DELETE_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -23,6 +24,10 @@ function json(data: unknown, status = 200) {
 
 function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
+}
+
+function normalizedShopId(value: unknown) {
+  return trimText(value, 160) || DEFAULT_SHOP_ID;
 }
 
 async function ensureSchema(db: D1Database) {
@@ -63,6 +68,7 @@ async function ensureSchema(db: D1Database) {
     'ALTER TABLE customers ADD COLUMN shopId TEXT',
     'ALTER TABLE customers ADD COLUMN businessId TEXT',
     'ALTER TABLE customers ADD COLUMN updated_at INTEGER',
+    `UPDATE customers SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
@@ -84,6 +90,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
     }
+    const requestShopId = normalizedShopId(request.headers.get('X-Shop-ID') || body?.shopId || body?.customer?.shopId);
 
     await ensureSchema(env.DB);
     const now = Date.now();
@@ -96,22 +103,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const customer = await env.DB.prepare(`
         SELECT id, name, balance
         FROM customers
-        WHERE id = ? AND businessId = ?
+        WHERE id = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
         LIMIT 1
-      `).bind(customerId, businessId).first<any>();
+      `).bind(customerId, businessId, DEFAULT_SHOP_ID, requestShopId).first<any>();
       if (!customer) throw new PolicyError('Customer was not found.', 404);
       if (Number(customer.balance || 0) > 0.01) throw new PolicyError('Customers with an outstanding balance cannot be deleted.', 409);
 
       const refs = await env.DB.prepare(`
         SELECT
-          (SELECT COUNT(*) FROM transactions WHERE customerId = ? AND businessId = ?) +
-          (SELECT COUNT(*) FROM salesInvoices WHERE customerId = ? AND businessId = ?) +
-          (SELECT COUNT(*) FROM customerPayments WHERE customerId = ? AND businessId = ?) AS count
-      `).bind(customerId, businessId, customerId, businessId, customerId, businessId).first<any>();
+          (SELECT COUNT(*) FROM transactions WHERE customerId = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?) +
+          (SELECT COUNT(*) FROM salesInvoices WHERE customerId = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?) +
+          (SELECT COUNT(*) FROM customerPayments WHERE customerId = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?) AS count
+      `).bind(customerId, businessId, DEFAULT_SHOP_ID, requestShopId, customerId, businessId, DEFAULT_SHOP_ID, requestShopId, customerId, businessId, DEFAULT_SHOP_ID, requestShopId).first<any>();
       if (Number(refs?.count || 0) > 0) throw new PolicyError('Customers with history should be kept for audit records.', 409);
 
       await env.DB.batch([
-        env.DB.prepare(`DELETE FROM customers WHERE id = ? AND businessId = ?`).bind(customerId, businessId),
+        env.DB.prepare(`DELETE FROM customers WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`).bind(customerId, businessId, DEFAULT_SHOP_ID, requestShopId),
         env.DB.prepare(`
           INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -127,14 +136,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const customer = body?.customer || body || {};
     const name = trimText(customer.name, 120);
     if (!name) return json({ error: 'Customer name is required.' }, 400);
-    const shopId = trimText(customer.shopId || body?.shopId, 160) || null;
+    const shopId = normalizedShopId(customer.shopId || body?.shopId || requestShopId);
     const id = customerId || crypto.randomUUID();
     const existing = await env.DB.prepare(`
       SELECT *
       FROM customers
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(id, businessId).first<any>();
+    `).bind(id, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
 
     const savedCustomer = {
       id,

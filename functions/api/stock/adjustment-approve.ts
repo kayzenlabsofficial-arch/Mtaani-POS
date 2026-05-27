@@ -118,18 +118,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const req = await env.DB.prepare(`
       SELECT *
       FROM stockAdjustmentRequests
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(requestId, businessId).first<any>();
+    `).bind(requestId, businessId, 'single-shop', shopId).first<any>();
     if (!req) throw new PolicyError('Stock adjustment request was not found.', 404);
     if (req.status !== 'PENDING') throw new PolicyError('This stock adjustment has already been processed.', 409);
 
     const product = await env.DB.prepare(`
       SELECT id, name, stockQuantity, isBundle, shopId
       FROM products
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(req.productId, businessId).first<any>();
+    `).bind(req.productId, businessId, 'single-shop', shopId).first<any>();
     if (!product) throw new PolicyError('Product was not found.', 404);
     if (product.shopId && String(product.shopId) !== String(req.shopId || shopId)) throw new PolicyError('Product was not found in this shop.', 404);
     if (isBundleInventoryRow(product)) throw new PolicyError('Bulk item stock is calculated from ingredients and cannot be adjusted directly.', 400);
@@ -151,8 +155,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
               ELSE -1
             END,
             updated_at = ?
-        WHERE id = ? AND businessId = ?
-      `).bind(asNumber(req.oldQty), adjustedQty, now, req.productId, businessId),
+        WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
+      `).bind(asNumber(req.oldQty), adjustedQty, now, req.productId, businessId, 'single-shop', shopId),
       env.DB.prepare(`
         INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -168,8 +172,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         req.shopId || shopId,
         now,
       ),
-      env.DB.prepare(`UPDATE stockAdjustmentRequests SET status = 'APPROVED', approvedBy = ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-        .bind(approvedBy, now, requestId, businessId),
+      env.DB.prepare(`UPDATE stockAdjustmentRequests SET status = 'APPROVED', approvedBy = ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+        .bind(approvedBy, now, requestId, businessId, 'single-shop', shopId),
       env.DB.prepare(`
         INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -460,7 +460,7 @@ export function useMtaaniPOS() {
       ]);
       
       if (isOnline) {
-        flushOfflineOutbox().then(() => db.sync()).catch(() => {});
+        flushOfflineOutbox().catch(() => {});
       }
       return completedTransaction;
     } catch (err: any) {

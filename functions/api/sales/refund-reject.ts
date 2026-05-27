@@ -11,7 +11,7 @@ const APPROVER_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -47,6 +47,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
+    const shopId = String(request.headers.get('X-Shop-ID') || body?.shopId || '').trim() || 'single-shop';
     const transactionId = String(body?.transactionId || body?.id || '').trim();
     if (!businessId || !transactionId) return json({ error: 'Business and sale are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
@@ -55,11 +56,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     await ensureRefundSchema(env.DB);
     const tx = await env.DB.prepare(`
-      SELECT id, status, total, items, pendingRefundItems
+      SELECT id, status, total, items, pendingRefundItems, shopId
       FROM transactions
-      WHERE id = ? AND businessId = ?
+      WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), 'single-shop') = ?
       LIMIT 1
-    `).bind(transactionId, businessId).first<any>();
+    `).bind(transactionId, businessId, shopId).first<any>();
     if (!tx) throw new PolicyError('Sale was not found.', 404);
     if (tx.status !== 'PENDING_REFUND') throw new PolicyError('This receipt is not waiting for refund approval.', 409);
     const clean = deserializeRow(tx);
@@ -69,8 +70,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const now = Date.now();
     await env.DB.batch([
-      env.DB.prepare(`UPDATE transactions SET status = ?, pendingRefundItems = NULL, updated_at = ? WHERE id = ? AND businessId = ?`)
-        .bind(restoredStatus, now, transactionId, businessId),
+      env.DB.prepare(`UPDATE transactions SET status = ?, pendingRefundItems = NULL, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), 'single-shop') = ?`)
+        .bind(restoredStatus, now, transactionId, businessId, shopId),
       env.DB.prepare(`
         INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

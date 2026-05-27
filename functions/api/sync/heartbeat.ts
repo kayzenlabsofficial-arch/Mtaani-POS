@@ -23,12 +23,28 @@ async function ensureDeviceSyncSchema(db: D1Database) {
       id TEXT PRIMARY KEY,
       businessId TEXT NOT NULL,
       deviceId TEXT NOT NULL,
+      shopId TEXT,
       cashierName TEXT,
       lastSyncAt INTEGER,
+      pendingOutboxCount INTEGER DEFAULT 0,
+      failedOutboxCount INTEGER DEFAULT 0,
+      oldestPendingAt INTEGER,
+      lastErrorAt INTEGER,
+      lastSyncError TEXT,
       updated_at INTEGER
     )`
   ).run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_deviceSyncStatus_business ON deviceSyncStatus(businessId, lastSyncAt)').run();
+  for (const sql of [
+    'ALTER TABLE deviceSyncStatus ADD COLUMN shopId TEXT',
+    'ALTER TABLE deviceSyncStatus ADD COLUMN pendingOutboxCount INTEGER DEFAULT 0',
+    'ALTER TABLE deviceSyncStatus ADD COLUMN failedOutboxCount INTEGER DEFAULT 0',
+    'ALTER TABLE deviceSyncStatus ADD COLUMN oldestPendingAt INTEGER',
+    'ALTER TABLE deviceSyncStatus ADD COLUMN lastErrorAt INTEGER',
+    'ALTER TABLE deviceSyncStatus ADD COLUMN lastSyncError TEXT',
+  ]) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {
@@ -48,17 +64,39 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   const body = (await request.json().catch(() => null)) as any;
   const deviceId = String(body?.deviceId || '').trim();
+  const shopId = body?.shopId ? String(body.shopId).slice(0, 120) : null;
   const cashierName = body?.cashierName ? String(body.cashierName).slice(0, 120) : null;
   const lastSyncAt = Number(body?.lastSyncAt || Date.now());
+  const pendingOutboxCount = Math.max(0, Math.floor(Number(body?.pendingOutboxCount || 0)));
+  const failedOutboxCount = Math.max(0, Math.floor(Number(body?.failedOutboxCount || 0)));
+  const oldestPendingAt = body?.oldestPendingAt ? Number(body.oldestPendingAt) : null;
+  const lastErrorAt = body?.lastErrorAt ? Number(body.lastErrorAt) : null;
+  const lastSyncError = body?.lastSyncError ? String(body.lastSyncError).slice(0, 220) : null;
 
   if (!deviceId) return json({ error: 'deviceId required' }, 400);
 
   const id = `${businessId}|${deviceId}`;
   await env.DB.prepare(
-    `INSERT OR REPLACE INTO deviceSyncStatus (id, businessId, deviceId, cashierName, lastSyncAt, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT OR REPLACE INTO deviceSyncStatus (
+       id, businessId, deviceId, shopId, cashierName, lastSyncAt,
+       pendingOutboxCount, failedOutboxCount, oldestPendingAt, lastErrorAt, lastSyncError, updated_at
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, businessId, deviceId, cashierName, lastSyncAt, Date.now())
+    .bind(
+      id,
+      businessId,
+      deviceId,
+      shopId,
+      cashierName,
+      lastSyncAt,
+      pendingOutboxCount,
+      failedOutboxCount,
+      oldestPendingAt,
+      lastErrorAt,
+      lastSyncError,
+      Date.now(),
+    )
     .run();
 
   return json({ success: true });

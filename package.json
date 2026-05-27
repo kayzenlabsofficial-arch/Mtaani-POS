@@ -10,7 +10,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "test:integrity": "vitest run src/utils/posMoney.test.ts src/utils/cashDrawer.test.ts src/utils/salesInvoiceIntegrity.test.ts src/utils/inventoryIntegrity.test.ts src/utils/expenseIntegrity.test.ts src/utils/profitLoss.test.ts src/utils/reportAnalytics.test.ts functions/api/inventoryIntegrity.test.ts functions/api/expenses/expenseOps.test.ts functions/api/data/genericDataGuard.test.ts functions/api/sales/refundOps.test.ts functions/api/close/reportMath.test.ts",
+    "test:integrity": "vitest run src/utils/posMoney.test.ts src/utils/cashDrawer.test.ts src/utils/salesInvoiceIntegrity.test.ts src/utils/inventoryIntegrity.test.ts src/utils/expenseIntegrity.test.ts src/utils/profitLoss.test.ts src/utils/reportAnalytics.test.ts functions/api/inventoryIntegrity.test.ts functions/api/expenses/expenseOps.test.ts functions/api/data/genericDataGuard.test.ts functions/api/sales/refundOps.test.ts functions/api/close/reportMath.test.ts functions/api/dashboard/metrics.test.ts functions/api/salesSecurity.test.ts",
     "audit:money": "node scripts/money-integrity-audit.mjs",
     "wrangler:dev": "wrangler pages dev --port=8788",
     "wrangler:deploy": "wrangler pages deploy dist",

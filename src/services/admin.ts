@@ -7,8 +7,14 @@ export type SafeStaffUser = Omit<User, 'password'> & {
 
 export type DeviceSyncRow = {
   deviceId: string;
+  shopId?: string | null;
   cashierName?: string | null;
   lastSyncAt?: number | null;
+  pendingOutboxCount?: number | null;
+  failedOutboxCount?: number | null;
+  oldestPendingAt?: number | null;
+  lastErrorAt?: number | null;
+  lastSyncError?: string | null;
   updated_at?: number | null;
 };
 

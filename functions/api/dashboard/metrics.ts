@@ -42,7 +42,7 @@ async function safeFirst<T extends Record<string, any>>(db: D1Database, sql: str
   return db.prepare(sql).bind(...binds).first<T>().catch(() => null);
 }
 
-async function salesCount(db: D1Database, businessId: string, start: number, end: number) {
+async function salesCount(db: D1Database, businessId: string, shopId: string, start: number, end: number) {
   const [transactions, invoices] = await Promise.all([
     safeFirst<{ count: number }>(
       db,
@@ -50,11 +50,12 @@ async function salesCount(db: D1Database, businessId: string, start: number, end
         SELECT COUNT(*) AS count
         FROM transactions
         WHERE businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
           AND timestamp >= ?
           AND timestamp < ?
           AND UPPER(COALESCE(status, '')) NOT IN ('VOIDED', 'QUOTE', 'REFUNDED')
       `,
-      [businessId, start, end],
+      [businessId, DEFAULT_SHOP_ID, shopId, start, end],
     ),
     safeFirst<{ count: number }>(
       db,
@@ -62,11 +63,12 @@ async function salesCount(db: D1Database, businessId: string, start: number, end
         SELECT COUNT(*) AS count
         FROM salesInvoices
         WHERE businessId = ?
-          AND issueDate >= ?
-          AND issueDate < ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
+          AND COALESCE(issueDate, timestamp, 0) >= ?
+          AND COALESCE(issueDate, timestamp, 0) < ?
           AND UPPER(COALESCE(status, '')) != 'CANCELLED'
       `,
-      [businessId, start, end],
+      [businessId, DEFAULT_SHOP_ID, shopId, start, end],
     ),
   ]);
 
@@ -96,22 +98,21 @@ function parseMaybeJson(value: unknown): any {
   try { return JSON.parse(value); } catch { return null; }
 }
 
-async function lowStockCount(db: D1Database, businessId: string) {
-  const [productsResult, ingredientsResult] = await Promise.all([
-    db.prepare(`
-      SELECT id, stockQuantity, reorderPoint, isBundle, components
-      FROM products
-      WHERE businessId = ?
-    `).bind(businessId).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`
-      SELECT productId, ingredientProductId, quantity
-      FROM productIngredients
-      WHERE businessId = ?
-    `).bind(businessId).all<any>().catch(() => ({ results: [] })),
-  ]);
+type DashboardProductRow = {
+  id: unknown;
+  stockQuantity?: unknown;
+  reorderPoint?: unknown;
+  isBundle?: unknown;
+  components?: unknown;
+};
 
-  const products = (productsResult.results || []) as any[];
-  const ingredients = (ingredientsResult.results || []) as any[];
+type DashboardIngredientRow = {
+  productId?: unknown;
+  ingredientProductId?: unknown;
+  quantity?: unknown;
+};
+
+export function dashboardLowStockCountFromRows(products: DashboardProductRow[], ingredients: DashboardIngredientRow[]) {
   const productStock = new Map(products.map(product => [String(product.id), Number(product.stockQuantity || 0)]));
 
   return products.filter(product => {
@@ -122,8 +123,9 @@ async function lowStockCount(db: D1Database, businessId: string) {
         .filter(row => String(row.productId || '') === String(product.id || ''))
         .map(row => ({ id: String(row.ingredientProductId || ''), quantity: Number(row.quantity || 0) }))
         .filter(row => row.id && row.quantity > 0);
-      const fallbackRows = Array.isArray(parseMaybeJson(product.components))
-        ? parseMaybeJson(product.components)
+      const components = parseMaybeJson(product.components);
+      const fallbackRows = Array.isArray(components)
+        ? components
             .map((row: any) => ({ id: String(row?.productId || ''), quantity: Number(row?.quantity || 0) }))
             .filter((row: any) => row.id && row.quantity > 0)
         : [];
@@ -134,6 +136,26 @@ async function lowStockCount(db: D1Database, businessId: string) {
     }
     return stock > 0 && stock <= Number(product.reorderPoint || 5);
   }).length;
+}
+
+async function lowStockCount(db: D1Database, businessId: string, shopId: string) {
+  const [productsResult, ingredientsResult] = await Promise.all([
+    db.prepare(`
+      SELECT id, stockQuantity, reorderPoint, isBundle, components
+      FROM products
+      WHERE businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
+    `).bind(businessId, DEFAULT_SHOP_ID, shopId).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`
+      SELECT productId, ingredientProductId, quantity
+      FROM productIngredients
+      WHERE businessId = ?
+    `).bind(businessId).all<any>().catch(() => ({ results: [] })),
+  ]);
+
+  const products = (productsResult.results || []) as any[];
+  const ingredients = (ingredientsResult.results || []) as any[];
+  return dashboardLowStockCountFromRows(products, ingredients);
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -157,9 +179,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const shopId = String(request.headers.get('X-Shop-ID') || url.searchParams.get('shopId') || DEFAULT_SHOP_ID).trim() || DEFAULT_SHOP_ID;
 
   const [lowStock, customersServed, previousCustomersServed, totalExpenses, previousExpenses] = await Promise.all([
-    lowStockCount(env.DB, businessId),
-    salesCount(env.DB, businessId, todayStart, todayEnd),
-    salesCount(env.DB, businessId, yesterdayStart, todayStart),
+    lowStockCount(env.DB, businessId, shopId),
+    salesCount(env.DB, businessId, shopId, todayStart, todayEnd),
+    salesCount(env.DB, businessId, shopId, yesterdayStart, todayStart),
     expenseTotal(env.DB, businessId, shopId, todayStart, todayEnd),
     expenseTotal(env.DB, businessId, shopId, yesterdayStart, todayStart),
   ]);

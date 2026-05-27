@@ -11,7 +11,7 @@ const DELETE_ROLES = new Set(['ROOT', 'ADMIN']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -22,6 +22,12 @@ function json(data: unknown, status = 200) {
 }
 
 async function ensureSchema(db: D1Database) {
+  for (const sql of [
+    'ALTER TABLE expenses ADD COLUMN shopId TEXT',
+    "UPDATE expenses SET shopId = 'single-shop' WHERE COALESCE(shopId, '') = ''",
+  ]) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS auditLogs (
       id TEXT PRIMARY KEY,
@@ -52,6 +58,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
+    const shopId = String(request.headers.get('X-Shop-ID') || body?.shopId || '').trim() || 'single-shop';
     const expenseId = String(body?.expenseId || body?.id || '').trim();
     if (!businessId || !expenseId) return json({ error: 'Business and expense are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
@@ -63,11 +70,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     await ensureSchema(env.DB);
     const expense = await env.DB.prepare(`
-      SELECT id, amount, status
+      SELECT id, amount, status, shopId
       FROM expenses
-      WHERE id = ? AND businessId = ?
+      WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), 'single-shop') = ?
       LIMIT 1
-    `).bind(expenseId, businessId).first<any>();
+    `).bind(expenseId, businessId, shopId).first<any>();
     if (!expense) throw new PolicyError('Expense was not found.', 404);
     if (expense.status === 'APPROVED') {
       throw new PolicyError('Approved expenses cannot be deleted because they already affected cash, account, or stock history.', 409);
@@ -75,8 +82,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const now = Date.now();
     await env.DB.batch([
-      env.DB.prepare(`DELETE FROM expenses WHERE id = ? AND businessId = ?`)
-        .bind(expenseId, businessId),
+      env.DB.prepare(`DELETE FROM expenses WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), 'single-shop') = ?`)
+        .bind(expenseId, businessId, shopId),
       env.DB.prepare(`
         INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

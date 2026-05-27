@@ -373,34 +373,34 @@ export default function HRTabDesktop() {
   const [isSaving, setIsSaving] = useState(false);
 
   const staffRows = useLiveQuery(
-    () => activeBusinessId
-      ? db.hrStaff.where('businessId').equals(activeBusinessId).toArray()
+    () => activeBusinessId && activeShopId
+      ? db.hrStaff.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId],
+    [activeBusinessId, activeShopId],
     [],
   ) || [];
 
   const documentRows = useLiveQuery(
-    () => activeBusinessId
-      ? db.hrStaffDocuments.where('businessId').equals(activeBusinessId).toArray()
+    () => activeBusinessId && activeShopId
+      ? db.hrStaffDocuments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId],
+    [activeBusinessId, activeShopId],
     [],
   ) || [];
 
   const attendanceRows = useLiveQuery(
-    () => activeBusinessId
-      ? db.hrAttendance.where('businessId').equals(activeBusinessId).toArray()
+    () => activeBusinessId && activeShopId
+      ? db.hrAttendance.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId],
+    [activeBusinessId, activeShopId],
     [],
   ) || [];
 
   const payrollRows = useLiveQuery(
-    () => activeBusinessId
-      ? db.hrPayrollAdjustments.where('businessId').equals(activeBusinessId).toArray()
+    () => activeBusinessId && activeShopId
+      ? db.hrPayrollAdjustments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId],
+    [activeBusinessId, activeShopId],
     [],
   ) || [];
 

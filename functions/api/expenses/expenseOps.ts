@@ -25,6 +25,10 @@ function trimText(value: unknown, max = 160): string {
   return String(value ?? '').trim().slice(0, max);
 }
 
+function normalizedShopId(value: unknown): string {
+  return trimText(value, 160) || DEFAULT_SHOP_ID;
+}
+
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -169,6 +173,7 @@ export async function ensureExpenseActionSchema(db: D1Database) {
       closeBreakdown TEXT,
       status TEXT NOT NULL,
       lastSyncAt INTEGER,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -196,8 +201,19 @@ export async function ensureExpenseActionSchema(db: D1Database) {
     'ALTER TABLE stockMovements ADD COLUMN shopId TEXT',
     'ALTER TABLE stockMovements ADD COLUMN updated_at INTEGER',
     'ALTER TABLE shifts ADD COLUMN cashierId TEXT',
+    'ALTER TABLE shifts ADD COLUMN shopId TEXT',
     'ALTER TABLE shifts ADD COLUMN businessId TEXT',
     'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE cashPicks ADD COLUMN shopId TEXT',
+    'ALTER TABLE refunds ADD COLUMN shopId TEXT',
+    'ALTER TABLE supplierPayments ADD COLUMN shopId TEXT',
+    'ALTER TABLE customerPayments ADD COLUMN shopId TEXT',
+    `UPDATE expenses SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE shifts SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE cashPicks SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE refunds SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE supplierPayments SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE customerPayments SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
     'CREATE INDEX IF NOT EXISTS idx_expenses_business_shop_timestamp ON expenses(businessId, shopId, timestamp)',
     'CREATE INDEX IF NOT EXISTS idx_expenses_business_status_timestamp ON expenses(businessId, status, timestamp)',
     FINANCIAL_ACCOUNTS_NON_NEGATIVE_BALANCE_TRIGGER,
@@ -270,6 +286,7 @@ async function ensurePickedCashAccount(db: D1Database, businessId: string) {
 async function requireOpenTillExpenseShift(
   db: D1Database,
   businessId: string,
+  shopId: string,
   shiftId: unknown,
   principal?: Principal,
   service = false,
@@ -277,11 +294,11 @@ async function requireOpenTillExpenseShift(
   const cleanShiftId = trimText(shiftId, 180);
   if (!cleanShiftId) throw new PolicyError('Open a till shift before paying expenses from the till.', 409);
   const shift = await db.prepare(`
-    SELECT id, startTime, openingCash, cashierId, cashierName, status
+    SELECT id, startTime, openingCash, cashierId, cashierName, status, shopId
     FROM shifts
-    WHERE id = ? AND businessId = ?
+    WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
     LIMIT 1
-  `).bind(cleanShiftId, businessId).first<any>();
+  `).bind(cleanShiftId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
   if (!shift) throw new PolicyError('The selected till shift was not found.', 404);
   if (String(shift.status || '').toUpperCase() !== 'OPEN') {
     throw new PolicyError('Till expenses can only use an open shift.', 409);
@@ -296,6 +313,7 @@ async function requireOpenTillExpenseShift(
 async function availableTillCashForExpense(
   db: D1Database,
   businessId: string,
+  shopId: string,
   shift: any,
   excludeExpenseId?: string,
 ): Promise<number> {
@@ -304,18 +322,18 @@ async function availableTillCashForExpense(
   const openingCash = asNumber(shift?.openingCash);
   const until = Date.now();
   const [transactions, expenses, picks, refunds, supplierPayments, customerPayments] = await Promise.all([
-    db.prepare(`SELECT total, subtotal, tax, discountAmount, discount, items, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`)
-      .bind(businessId, since, until).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT id, amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT total, subtotal, tax, discountAmount, discount, items, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since, until).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT id, amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
   ]);
 
   return calculateTillCashAvailableForExpenseRows({
@@ -329,6 +347,7 @@ async function availableTillCashForExpense(
     since,
     until,
     shiftId,
+    shopId,
     excludeExpenseId,
   });
 }
@@ -344,19 +363,22 @@ export function calculateTillCashAvailableForExpenseRows(args: {
   since: number;
   until: number;
   shiftId?: string | null;
+  shopId?: string | null;
   excludeExpenseId?: string;
 }) {
   const since = asNumber(args.since);
   const shiftId = trimText(args.shiftId, 180);
-  const expenses = (args.expenses || []).filter(row => trimText(row?.id, 160) !== args.excludeExpenseId);
+  const shopId = args.shopId ? normalizedShopId(args.shopId) : '';
+  const inShop = (row: any) => !shopId || normalizedShopId(row?.shopId) === shopId;
+  const expenses = (args.expenses || []).filter(row => inShop(row) && trimText(row?.id, 160) !== args.excludeExpenseId);
   const closeTotals = calculateServerCloseReportTotals({
-    transactions: (args.transactions || []).filter(row => inShiftScope(row, since, shiftId)),
+    transactions: (args.transactions || []).filter(row => inShop(row) && inShiftScope(row, since, shiftId)),
     invoices: [],
     expenses,
-    picks: args.picks || [],
-    refunds: args.refunds || [],
-    supplierPayments: args.supplierPayments || [],
-    customerPayments: args.customerPayments || [],
+    picks: (args.picks || []).filter(inShop),
+    refunds: (args.refunds || []).filter(inShop),
+    supplierPayments: (args.supplierPayments || []).filter(inShop),
+    customerPayments: (args.customerPayments || []).filter(inShop),
     openingCash: args.openingCash || 0,
     since,
     until: args.until,
@@ -395,8 +417,9 @@ async function effectStatementsForApprovedExpense(
   }
 
   if (source === 'TILL') {
-    const shift = await requireOpenTillExpenseShift(db, businessId, expense.shiftId, context.principal, context.service);
-    const availableCash = await availableTillCashForExpense(db, businessId, shift, context.excludeExpenseId);
+    const shopId = normalizedShopId(expense.shopId);
+    const shift = await requireOpenTillExpenseShift(db, businessId, shopId, expense.shiftId, context.principal, context.service);
+    const availableCash = await availableTillCashForExpense(db, businessId, shopId, shift, context.excludeExpenseId);
     if (amount > availableCash + 0.01) {
       throw new PolicyError(`Insufficient till cash. Available: Ksh ${availableCash.toLocaleString()}.`, 409);
     }
@@ -474,6 +497,7 @@ export async function prepareExpenseSubmit(
   db: D1Database,
   args: {
     businessId: string;
+    shopId?: string;
     principal: Principal;
     service: boolean;
     expense: Record<string, any>;
@@ -490,7 +514,7 @@ export async function prepareExpenseSubmit(
   expense.id = trimText(expense.id || crypto.randomUUID(), 120);
   const requestedSource = String(expense.source || 'TILL').toUpperCase();
   expense.source = requestedSource === 'ACCOUNT' ? 'ACCOUNT' : requestedSource === 'SHOP' ? 'SHOP' : 'TILL';
-  expense.shopId = trimText(expense.shopId || DEFAULT_SHOP_ID, 160) || DEFAULT_SHOP_ID;
+  expense.shopId = normalizedShopId(expense.shopId);
   expense.accountId = expense.source === 'ACCOUNT' ? pickedCashAccountId(businessId) : null;
   expense.productId = expense.source === 'SHOP' ? trimText(expense.productId, 120) : null;
   expense.quantity = expense.source === 'SHOP' ? Math.max(0, asNumber(expense.quantity, 1)) : null;
@@ -527,7 +551,7 @@ export async function prepareExpenseSubmit(
   }
 
   if (expense.source === 'TILL') {
-    await requireOpenTillExpenseShift(db, businessId, expense.shiftId, principal, service);
+    await requireOpenTillExpenseShift(db, businessId, expense.shopId, expense.shiftId, principal, service);
   }
 
   const statements = [await insertStatement(db, 'expenses', expense)];
@@ -547,6 +571,7 @@ export async function prepareExpenseApproval(
   db: D1Database,
   args: {
     businessId: string;
+    shopId?: string;
     principal: Principal;
     service: boolean;
     expenseId: string;
@@ -555,13 +580,14 @@ export async function prepareExpenseApproval(
 ) {
   const { businessId, principal, service } = args;
   if (!service && !APPROVER_ROLES.has(principal.role)) throw new PolicyError('You are not allowed to approve expenses.', 403);
+  const shopId = normalizedShopId(args.shopId);
 
   const expense = await db.prepare(`
     SELECT *
     FROM expenses
-    WHERE id = ? AND businessId = ?
+    WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
     LIMIT 1
-  `).bind(args.expenseId, businessId).first<any>();
+  `).bind(args.expenseId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
   if (!expense) throw new PolicyError('Expense was not found.', 404);
   const clean = deserializeRow(expense);
   if (clean.status === 'APPROVED') return { expense: clean, statements: [], idempotent: true };
@@ -575,8 +601,8 @@ export async function prepareExpenseApproval(
   clean.updated_at = Date.now();
 
   const statements = [
-    db.prepare(`UPDATE expenses SET status = 'APPROVED', approvedBy = ?, amount = ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-      .bind(clean.approvedBy, clean.amount, clean.updated_at, clean.id, businessId),
+    db.prepare(`UPDATE expenses SET status = 'APPROVED', approvedBy = ?, amount = ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+      .bind(clean.approvedBy, clean.amount, clean.updated_at, clean.id, businessId, DEFAULT_SHOP_ID, shopId),
     ...await effectStatementsForApprovedExpense(db, businessId, clean, { principal, service, excludeExpenseId: clean.id }),
     auditStatement(db, {
       principal,

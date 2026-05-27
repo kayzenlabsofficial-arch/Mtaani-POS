@@ -24,6 +24,10 @@ function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
 }
 
+function normalizedShopId(value: unknown) {
+  return trimText(value, 160) || DEFAULT_SHOP_ID;
+}
+
 function asArray(value: unknown): any[] {
   if (Array.isArray(value)) return value;
   if (typeof value === 'string') {
@@ -144,6 +148,7 @@ export async function ensureRefundSchema(db: D1Database) {
       approvedBy TEXT,
       status TEXT NOT NULL DEFAULT 'APPROVED',
       shiftId TEXT,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -164,6 +169,7 @@ export async function ensureRefundSchema(db: D1Database) {
       closeBreakdown TEXT,
       status TEXT NOT NULL,
       lastSyncAt INTEGER,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -241,8 +247,13 @@ export async function ensureRefundSchema(db: D1Database) {
     'ALTER TABLE refunds ADD COLUMN approvedBy TEXT',
     "ALTER TABLE refunds ADD COLUMN status TEXT DEFAULT 'APPROVED'",
     'ALTER TABLE refunds ADD COLUMN shiftId TEXT',
+    'ALTER TABLE refunds ADD COLUMN shopId TEXT',
     'ALTER TABLE refunds ADD COLUMN businessId TEXT',
     'ALTER TABLE refunds ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE expenses ADD COLUMN shopId TEXT',
+    'ALTER TABLE cashPicks ADD COLUMN shopId TEXT',
+    'ALTER TABLE supplierPayments ADD COLUMN shopId TEXT',
+    'ALTER TABLE customerPayments ADD COLUMN shopId TEXT',
     'ALTER TABLE shifts ADD COLUMN cashierId TEXT',
     'ALTER TABLE shifts ADD COLUMN tillId TEXT',
     'ALTER TABLE shifts ADD COLUMN tillName TEXT',
@@ -252,24 +263,32 @@ export async function ensureRefundSchema(db: D1Database) {
     'ALTER TABLE shifts ADD COLUMN cashVariance REAL',
     'ALTER TABLE shifts ADD COLUMN closeBreakdown TEXT',
     'ALTER TABLE shifts ADD COLUMN lastSyncAt INTEGER',
+    'ALTER TABLE shifts ADD COLUMN shopId TEXT',
     'ALTER TABLE shifts ADD COLUMN businessId TEXT',
     'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
+    `UPDATE refunds SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE shifts SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE expenses SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE cashPicks SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE supplierPayments SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE customerPayments SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
     'ALTER TABLE idempotencyKeys ADD COLUMN transactionId TEXT',
     'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_lookup ON idempotencyKeys(businessId, idempotencyKey)',
     'CREATE INDEX IF NOT EXISTS idx_idempotencyKeys_transaction ON idempotencyKeys(businessId, transactionId)',
+    'CREATE INDEX IF NOT EXISTS idx_refunds_business_shop_timestamp ON refunds(businessId, shopId, timestamp)',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
   await ensureInventoryIntegritySchema(db);
 }
 
-async function loadTransaction(db: D1Database, businessId: string, transactionId: string) {
+async function loadTransaction(db: D1Database, businessId: string, shopId: string, transactionId: string) {
   const row = await db.prepare(`
     SELECT *
     FROM transactions
-    WHERE id = ? AND businessId = ?
+    WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
     LIMIT 1
-  `).bind(transactionId, businessId).first<any>();
+  `).bind(transactionId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
   if (!row) throw new PolicyError('Receipt was not found.', 404);
   return deserializeRow(row);
 }
@@ -406,21 +425,21 @@ async function safeRows(db: D1Database, sql: string, binds: unknown[] = []) {
   return (result.results || []) as any[];
 }
 
-async function requireOpenRefundShift(db: D1Database, businessId: string, shiftId?: string | null) {
+async function requireOpenRefundShift(db: D1Database, businessId: string, shopId: string, shiftId?: string | null) {
   const cleanShiftId = trimText(shiftId, 180);
   if (!cleanShiftId) throw new PolicyError('Open a till shift before approving a cash refund.', 409);
   const shift = await db.prepare(`
-    SELECT id, startTime, openingCash, status
+    SELECT id, startTime, openingCash, status, shopId
     FROM shifts
-    WHERE id = ? AND businessId = ?
+    WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
     LIMIT 1
-  `).bind(cleanShiftId, businessId).first<any>();
+  `).bind(cleanShiftId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
   if (!shift) throw new PolicyError('The selected till shift was not found.', 404);
   if (String(shift.status || '').toUpperCase() !== 'OPEN') throw new PolicyError('Only an open till shift can approve a cash refund.', 409);
   return shift;
 }
 
-async function availableTillCashForShift(db: D1Database, businessId: string, shift: any, until: number): Promise<number> {
+async function availableTillCashForShift(db: D1Database, businessId: string, shopId: string, shift: any, until: number): Promise<number> {
   const shiftId = trimText(shift?.id, 180);
   const since = asNumber(shift?.startTime);
   const openingCash = asNumber(shift?.openingCash);
@@ -434,12 +453,12 @@ async function availableTillCashForShift(db: D1Database, businessId: string, shi
     supplierPayments,
     customerPayments,
   ] = await Promise.all([
-    safeRows(db, `SELECT total, subtotal, discountAmount, discount, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
-    safeRows(db, `SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
-    safeRows(db, `SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
-    safeRows(db, `SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
-    safeRows(db, `SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
-    safeRows(db, `SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, since, until]),
+    safeRows(db, `SELECT total, subtotal, discountAmount, discount, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
+    safeRows(db, `SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
+    safeRows(db, `SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ? AND timestamp <= ?`, [businessId, DEFAULT_SHOP_ID, shopId, since, until]),
   ]);
 
   const txRows = transactions.filter(row => recordInShift(row, since, until, shiftId) && !['VOIDED', 'QUOTE'].includes(String(row.status || '').toUpperCase()));
@@ -522,6 +541,7 @@ function sameRefundLines(left: RefundLine[], right: RefundLine[]) {
 async function loadIdempotentRefundTransaction(
   db: D1Database,
   businessId: string,
+  shopId: string,
   idempotencyKey?: string,
 ) {
   const cleanKey = trimText(idempotencyKey, 240);
@@ -539,7 +559,7 @@ async function loadIdempotentRefundTransaction(
   }
   const transactionId = trimText(row.transactionId, 120);
   if (!transactionId) throw new PolicyError('Refund retry key is already used.', 409);
-  return loadTransaction(db, businessId, transactionId);
+  return loadTransaction(db, businessId, shopId, transactionId);
 }
 
 function idempotencyStatement(db: D1Database, args: {
@@ -570,13 +590,13 @@ function isBundle(product: any) {
   return product?.isBundle === 1 || product?.isBundle === true || product?.isBundle === '1';
 }
 
-async function productById(db: D1Database, businessId: string, productId: string) {
+async function productById(db: D1Database, businessId: string, shopId: string, productId: string) {
   const row = await db.prepare(`
-    SELECT id, name, stockQuantity, isBundle, components
+    SELECT id, name, stockQuantity, isBundle, components, shopId
     FROM products
-    WHERE id = ? AND businessId = ?
+    WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
     LIMIT 1
-  `).bind(productId, businessId).first<any>();
+  `).bind(productId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
   return row ? deserializeRow(row) : null;
 }
 
@@ -633,6 +653,7 @@ function auditStatement(db: D1Database, args: {
 
 export async function prepareRefundRequest(db: D1Database, args: {
   businessId: string;
+  shopId?: string;
   principal: Principal;
   service?: boolean;
   transactionId: string;
@@ -641,7 +662,8 @@ export async function prepareRefundRequest(db: D1Database, args: {
   if (!await canPerformServerAction(db, args.businessId, args.principal, !!args.service, 'sale.refund.request')) {
     throw new PolicyError('Refund requests are locked for this staff role.', 403);
   }
-  const tx = await loadTransaction(db, args.businessId, args.transactionId);
+  const shopId = normalizedShopId(args.shopId);
+  const tx = await loadTransaction(db, args.businessId, shopId, args.transactionId);
   if (tx.status === 'PENDING_REFUND') {
     const pendingLines = normalizeRefundLines(asArray(tx.pendingRefundItems));
     const requestedLines = args.itemsToReturn?.length
@@ -667,8 +689,8 @@ export async function prepareRefundRequest(db: D1Database, args: {
     db.prepare(`
       UPDATE transactions
       SET status = 'PENDING_REFUND', pendingRefundItems = ?, updated_at = ?
-      WHERE id = ? AND businessId = ?
-    `).bind(JSON.stringify(lines), now, tx.id, args.businessId),
+      WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
+    `).bind(JSON.stringify(lines), now, tx.id, args.businessId, DEFAULT_SHOP_ID, shopId),
     auditStatement(db, {
       principal: args.principal,
       businessId: args.businessId,
@@ -683,6 +705,7 @@ export async function prepareRefundRequest(db: D1Database, args: {
 
 export async function prepareRefundApproval(db: D1Database, args: {
   businessId: string;
+  shopId?: string;
   principal: Principal;
   service: boolean;
   transactionId: string;
@@ -699,16 +722,18 @@ export async function prepareRefundApproval(db: D1Database, args: {
     throw new PolicyError('Refund approval retry key is required.', 400);
   }
 
+  const shopId = normalizedShopId(args.shopId);
   const idempotentTransaction = await loadIdempotentRefundTransaction(
     db,
     args.businessId,
+    shopId,
     args.idempotencyKey,
   );
   if (idempotentTransaction) {
     return { transaction: idempotentTransaction, refund: null, statements: [], idempotent: true };
   }
 
-  const tx = await loadTransaction(db, args.businessId, args.transactionId);
+  const tx = await loadTransaction(db, args.businessId, shopId, args.transactionId);
   if (tx.status !== 'PENDING_REFUND' && tx.status !== 'PAID' && tx.status !== 'PARTIAL_REFUND') {
     throw new PolicyError('This receipt is not waiting for refund approval.', 409);
   }
@@ -721,8 +746,8 @@ export async function prepareRefundApproval(db: D1Database, args: {
   const refundAmount = refundAmountFor(tx, lines);
   const statements: D1PreparedStatement[] = [];
   const now = Date.now();
-  const refundShift = await requireOpenRefundShift(db, args.businessId, args.shiftId);
-  const availableCash = await availableTillCashForShift(db, args.businessId, refundShift, now);
+  const refundShift = await requireOpenRefundShift(db, args.businessId, shopId, args.shiftId);
+  const availableCash = await availableTillCashForShift(db, args.businessId, shopId, refundShift, now);
   if (availableCash + 0.01 < refundAmount) {
     throw new PolicyError(`Till has Ksh ${availableCash.toLocaleString()} available. Add cash before refunding Ksh ${refundAmount.toLocaleString()}.`, 409);
   }
@@ -737,7 +762,7 @@ export async function prepareRefundApproval(db: D1Database, args: {
 
   const movementDedupe = new Map<string, number>();
   for (const line of lines) {
-    const product = await productById(db, args.businessId, line.productId);
+    const product = await productById(db, args.businessId, shopId, line.productId);
     if (!product) continue;
 
     if (isBundle(product)) {
@@ -754,8 +779,8 @@ export async function prepareRefundApproval(db: D1Database, args: {
   const txRef = String(tx.id).split('-')[0].toUpperCase();
   for (const [productId, quantity] of movementDedupe.entries()) {
     statements.push(
-      db.prepare(`UPDATE products SET stockQuantity = stockQuantity + ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-        .bind(quantity, now, productId, args.businessId)
+      db.prepare(`UPDATE products SET stockQuantity = stockQuantity + ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+        .bind(quantity, now, productId, args.businessId, DEFAULT_SHOP_ID, shopId)
     );
     statements.push(
       db.prepare(`
@@ -770,7 +795,7 @@ export async function prepareRefundApproval(db: D1Database, args: {
         `Return #${txRef}`,
         args.businessId,
         refundShift.id || null,
-        tx.shopId || DEFAULT_SHOP_ID,
+        shopId,
         now,
       )
     );
@@ -805,6 +830,7 @@ export async function prepareRefundApproval(db: D1Database, args: {
     approvedBy: tx.approvedBy,
     status: 'APPROVED',
     shiftId: refundShift.id || null,
+    shopId,
     businessId: args.businessId,
     updated_at: now,
   };
@@ -813,13 +839,13 @@ export async function prepareRefundApproval(db: D1Database, args: {
     db.prepare(`
       UPDATE transactions
       SET status = ?, items = ?, pendingRefundItems = NULL, approvedBy = ?, updated_at = ?
-      WHERE id = ? AND businessId = ?
-    `).bind(tx.status, JSON.stringify(updatedItems), tx.approvedBy, now, tx.id, args.businessId)
+      WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
+    `).bind(tx.status, JSON.stringify(updatedItems), tx.approvedBy, now, tx.id, args.businessId, DEFAULT_SHOP_ID, shopId)
   );
   statements.push(
     db.prepare(`
-      INSERT INTO refunds (id, refundNumber, originalTransactionId, receiptNumber, amount, cashAmount, paymentMethod, source, items, timestamp, cashierName, approvedBy, status, shiftId, businessId, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO refunds (id, refundNumber, originalTransactionId, receiptNumber, amount, cashAmount, paymentMethod, source, items, timestamp, cashierName, approvedBy, status, shiftId, shopId, businessId, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       refundDocument.id,
       refundDocument.refundNumber,
@@ -835,6 +861,7 @@ export async function prepareRefundApproval(db: D1Database, args: {
       refundDocument.approvedBy,
       refundDocument.status,
       refundDocument.shiftId,
+      refundDocument.shopId,
       refundDocument.businessId,
       refundDocument.updated_at,
     )

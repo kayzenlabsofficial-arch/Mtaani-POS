@@ -9,7 +9,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -29,13 +29,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
+    const shopId = String(request.headers.get('X-Shop-ID') || body?.shopId || '').trim();
     const transactionId = String(body?.transactionId || body?.id || '').trim();
     if (!businessId || !transactionId) return json({ error: 'Business and receipt are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied.' }, 403);
 
     await ensureRefundSchema(env.DB);
     const prepared = await prepareRefundRequest(env.DB, {
-      businessId, principal: auth.principal,
+      businessId, shopId, principal: auth.principal,
       service: auth.service,
       transactionId,
       itemsToReturn: body?.itemsToReturn,

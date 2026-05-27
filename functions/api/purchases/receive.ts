@@ -96,6 +96,7 @@ async function ensureSchema(db: D1Database) {
   `).run();
   try { await db.prepare('ALTER TABLE purchaseOrders ADD COLUMN receivedBy TEXT').run(); } catch {}
   try { await db.prepare('ALTER TABLE purchaseOrders ADD COLUMN shopId TEXT').run(); } catch {}
+  try { await db.prepare('ALTER TABLE suppliers ADD COLUMN shopId TEXT').run(); } catch {}
   try { await db.prepare('ALTER TABLE products ADD COLUMN supplierIds TEXT').run(); } catch {}
   try { await db.prepare('ALTER TABLE products ADD COLUMN expiryTracking INTEGER DEFAULT 0').run(); } catch {}
   try { await db.prepare('ALTER TABLE products ADD COLUMN expiryDate INTEGER').run(); } catch {}
@@ -132,9 +133,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const po = await env.DB.prepare(`
       SELECT *
       FROM purchaseOrders
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(purchaseOrderId, businessId).first<any>();
+    `).bind(purchaseOrderId, businessId, 'single-shop', shopId).first<any>();
     if (!po) throw new PolicyError('Purchase order was not found.', 404);
     if (po.shopId && String(po.shopId) !== shopId) throw new PolicyError('Purchase order was not found in this shop.', 404);
     if (po.approvalStatus !== 'APPROVED') throw new PolicyError('Purchase order must be approved before receiving.', 409);
@@ -143,9 +146,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const supplier = await env.DB.prepare(`
       SELECT id, name, company, balance
       FROM suppliers
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(po.supplierId, businessId).first<any>();
+    `).bind(po.supplierId, businessId, 'single-shop', shopId).first<any>();
     if (!supplier) throw new PolicyError('Supplier was not found.', 404);
 
     const duplicateInvoice = await env.DB.prepare(`
@@ -241,10 +246,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
               supplierIds = ?,
               updated_at = ?
               ${expiryFields}
-          WHERE id = ? AND businessId = ?
+          WHERE id = ?
+            AND businessId = ?
+            AND COALESCE(NULLIF(shopId, ''), ?) = ?
         `).bind(...(nextExpiryDate
-          ? [quantity, roundMoney(asNumber(item.unitCost)), nextSellingPrice, JSON.stringify(nextSupplierIds), now, nextExpiryDate, productId, businessId]
-          : [quantity, roundMoney(asNumber(item.unitCost)), nextSellingPrice, JSON.stringify(nextSupplierIds), now, productId, businessId])),
+          ? [quantity, roundMoney(asNumber(item.unitCost)), nextSellingPrice, JSON.stringify(nextSupplierIds), now, nextExpiryDate, productId, businessId, 'single-shop', shopId]
+          : [quantity, roundMoney(asNumber(item.unitCost)), nextSellingPrice, JSON.stringify(nextSupplierIds), now, productId, businessId, 'single-shop', shopId])),
         env.DB.prepare(`
           INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, expiryDate, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -277,7 +284,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
             receivedBy = ?,
             shopId = COALESCE(NULLIF(shopId, ''), ?),
             updated_at = ?
-        WHERE id = ? AND businessId = ?
+        WHERE id = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
       `).bind(
         JSON.stringify(updatedItems),
         totalReceivedCost,
@@ -288,12 +297,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         now,
         purchaseOrderId,
         businessId,
+        'single-shop',
+        shopId,
       )
     );
 
     statements.push(
-      env.DB.prepare(`UPDATE suppliers SET balance = COALESCE(balance, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-        .bind(totalReceivedCost, now, po.supplierId, businessId),
+      env.DB.prepare(`UPDATE suppliers SET balance = COALESCE(balance, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+        .bind(totalReceivedCost, now, po.supplierId, businessId, 'single-shop', shopId),
       env.DB.prepare(`
         INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -23,12 +23,28 @@ async function ensureDeviceSyncSchema(db: D1Database) {
       id TEXT PRIMARY KEY,
       businessId TEXT NOT NULL,
       deviceId TEXT NOT NULL,
+      shopId TEXT,
       cashierName TEXT,
       lastSyncAt INTEGER,
+      pendingOutboxCount INTEGER DEFAULT 0,
+      failedOutboxCount INTEGER DEFAULT 0,
+      oldestPendingAt INTEGER,
+      lastErrorAt INTEGER,
+      lastSyncError TEXT,
       updated_at INTEGER
     )`
   ).run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_deviceSyncStatus_business ON deviceSyncStatus(businessId, lastSyncAt)').run();
+  for (const sql of [
+    'ALTER TABLE deviceSyncStatus ADD COLUMN shopId TEXT',
+    'ALTER TABLE deviceSyncStatus ADD COLUMN pendingOutboxCount INTEGER DEFAULT 0',
+    'ALTER TABLE deviceSyncStatus ADD COLUMN failedOutboxCount INTEGER DEFAULT 0',
+    'ALTER TABLE deviceSyncStatus ADD COLUMN oldestPendingAt INTEGER',
+    'ALTER TABLE deviceSyncStatus ADD COLUMN lastErrorAt INTEGER',
+    'ALTER TABLE deviceSyncStatus ADD COLUMN lastSyncError TEXT',
+  ]) {
+    try { await db.prepare(sql).run(); } catch {}
+  }
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {
@@ -50,7 +66,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   if (!canAccessBusiness(auth.principal, businessId)) return json({ error: 'Access denied' }, 403);
 
   const { results } = await env.DB.prepare(
-    `SELECT deviceId, cashierName, lastSyncAt, updated_at
+    `SELECT deviceId, shopId, cashierName, lastSyncAt, pendingOutboxCount, failedOutboxCount, oldestPendingAt, lastErrorAt, lastSyncError, updated_at
      FROM deviceSyncStatus
      WHERE businessId = ?
      ORDER BY lastSyncAt DESC

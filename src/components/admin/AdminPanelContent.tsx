@@ -195,6 +195,7 @@ function OverviewPanel({
   onOpenTab,
 }: ReturnType<typeof useBusinessAdminData> & { onOpenTab: (tab: BusinessAdminTab) => void }) {
   const freshTerminals = deviceSyncRows.filter(row => Number(row.lastSyncAt || 0) >= Date.now() - 2 * 60 * 1000).length;
+  const terminalBacklog = deviceSyncRows.reduce((sum, row) => sum + Number(row.pendingOutboxCount || 0), 0);
   const recentCritical = recentActivity.filter(log => log.severity === 'CRITICAL').length;
   const latestActivities = recentActivity.slice(0, 5);
 
@@ -203,7 +204,7 @@ function OverviewPanel({
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Staff accounts" value={String(staff.length)} detail="People with POS logins" Icon={Users} />
         <StatCard label="Pending approvals" value={String(pendingCounts.total)} detail="Requests waiting for admin" Icon={AlertCircle} />
-        <StatCard label="Terminals online" value={`${freshTerminals}/${deviceSyncRows.length}`} detail={deviceSyncError || 'Synced in the last 2 minutes'} Icon={MonitorSmartphone} />
+        <StatCard label="Terminals online" value={`${freshTerminals}/${deviceSyncRows.length}`} detail={deviceSyncError || (terminalBacklog > 0 ? `${terminalBacklog} offline sale${terminalBacklog === 1 ? '' : 's'} waiting` : 'Heartbeat in the last 2 minutes')} Icon={MonitorSmartphone} />
         <StatCard label="Security alerts" value={String(recentCritical)} detail="Critical activity records" Icon={ShieldCheck} />
       </div>
 
@@ -521,14 +522,34 @@ function TerminalsPanel({
           <p className="py-4 text-sm font-semibold text-slate-500">No terminal sync records yet.</p>
         ) : rows.map(row => {
           const fresh = Number(row.lastSyncAt || 0) >= Date.now() - 2 * 60 * 1000;
+          const pending = Number(row.pendingOutboxCount || 0);
+          const failed = Number(row.failedOutboxCount || 0);
+          const statusLabel = failed > 0 ? 'Error' : pending > 0 ? 'Pending' : fresh ? 'Online' : 'Quiet';
+          const statusClass = failed > 0
+            ? 'border-rose-200 bg-rose-50 text-rose-700'
+            : pending > 0
+              ? 'border-amber-200 bg-amber-50 text-amber-700'
+              : fresh
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-slate-200 bg-slate-50 text-slate-500';
           return (
-            <div key={row.deviceId} className="flex items-center justify-between gap-4 py-3">
+            <div key={row.deviceId} className="flex items-start justify-between gap-4 py-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-black text-slate-900">{row.cashierName || row.deviceId}</p>
-                <p className="mt-1 text-xs font-semibold text-slate-500">{formatTimeAgo(row.lastSyncAt)}</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  {formatTimeAgo(row.lastSyncAt)}
+                  {pending > 0 ? ` - ${pending} pending` : ''}
+                  {row.shopId ? ` - ${row.shopId}` : ''}
+                </p>
+                {pending > 0 && row.oldestPendingAt && (
+                  <p className="mt-1 text-[11px] font-bold text-amber-700">Oldest pending sale: {formatTimeAgo(row.oldestPendingAt)}</p>
+                )}
+                {row.lastSyncError && (
+                  <p className="mt-1 line-clamp-2 text-[11px] font-bold text-rose-700">{row.lastSyncError}</p>
+                )}
               </div>
-              <span className={`rounded-lg border px-3 py-1 text-[10px] font-black uppercase ${fresh ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
-                {fresh ? 'Online' : 'Quiet'}
+              <span className={`rounded-lg border px-3 py-1 text-[10px] font-black uppercase ${statusClass}`}>
+                {statusLabel}
               </span>
             </div>
           );

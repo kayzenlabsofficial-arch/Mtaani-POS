@@ -29,6 +29,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
+    const shopId = String(request.headers.get('X-Shop-ID') || body?.shopId || '').trim();
     const expenseId = String(body?.expenseId || body?.id || '').trim();
     if (!businessId || !expenseId) return json({ error: 'Business and expense are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
@@ -37,7 +38,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     await ensureExpenseActionSchema(env.DB);
     const prepared = await prepareExpenseApproval(env.DB, {
-      businessId, principal: auth.principal,
+      businessId, shopId, principal: auth.principal,
       service: auth.service,
       expenseId,
       approvedBy: body?.approvedBy,

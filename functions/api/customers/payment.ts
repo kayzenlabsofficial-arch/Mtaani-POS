@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { DEFAULT_SHOP_ID } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 import { createMainAccountCreditStatements } from '../finance/mainAccountPosting';
 
@@ -19,7 +20,7 @@ const SHIFT_PAYMENT_METHODS = new Set(['CASH', 'MPESA', 'PDQ']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -42,6 +43,10 @@ function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
 }
 
+function normalizedShopId(value: unknown) {
+  return trimText(value, 160) || DEFAULT_SHOP_ID;
+}
+
 function normaliseCode(value: unknown) {
   return String(value || '').replace(/\s+/g, '').trim().toUpperCase();
 }
@@ -59,6 +64,7 @@ function ownsShift(shift: any, principal: any) {
 async function requireOpenPaymentShift(
   db: D1Database,
   businessId: string,
+  shopId: string,
   shiftId: unknown,
   principal: any,
   service: boolean,
@@ -66,11 +72,13 @@ async function requireOpenPaymentShift(
   const cleanShiftId = trimText(shiftId, 180);
   if (!cleanShiftId) throw new PolicyError('Open a till shift before recording this customer payment.', 409);
   const shift = await db.prepare(`
-    SELECT id, cashierId, cashierName, status
+    SELECT id, cashierId, cashierName, status, shopId
     FROM shifts
-    WHERE id = ? AND businessId = ?
+    WHERE id = ?
+      AND businessId = ?
+      AND COALESCE(NULLIF(shopId, ''), ?) = ?
     LIMIT 1
-  `).bind(cleanShiftId, businessId).first<any>();
+  `).bind(cleanShiftId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
   if (!shift) throw new PolicyError('The selected till shift was not found.', 404);
   if (String(shift.status || '').toUpperCase() !== 'OPEN') {
     throw new PolicyError('Customer till payments can only use an open shift.', 409);
@@ -189,6 +197,7 @@ async function ensureSchema(db: D1Database) {
       closeBreakdown TEXT,
       status TEXT NOT NULL,
       lastSyncAt INTEGER,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -203,6 +212,9 @@ async function ensureSchema(db: D1Database) {
     'ALTER TABLE customerPayments ADD COLUMN shopId TEXT',
     'ALTER TABLE customerPayments ADD COLUMN businessId TEXT',
     'ALTER TABLE customerPayments ADD COLUMN updated_at INTEGER',
+    'ALTER TABLE customers ADD COLUMN shopId TEXT',
+    'ALTER TABLE salesInvoices ADD COLUMN shopId TEXT',
+    'ALTER TABLE transactions ADD COLUMN shopId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedTransactionId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT',
     'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT',
@@ -212,8 +224,15 @@ async function ensureSchema(db: D1Database) {
     'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber)',
     'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_utilized ON mpesaCallbacks(businessId, utilizedTransactionId)',
     'ALTER TABLE shifts ADD COLUMN cashierId TEXT',
+    'ALTER TABLE shifts ADD COLUMN shopId TEXT',
     'ALTER TABLE shifts ADD COLUMN businessId TEXT',
     'ALTER TABLE shifts ADD COLUMN updated_at INTEGER',
+    `UPDATE customers SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE shifts SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    'DROP TRIGGER IF EXISTS customerPayments_balance_guard',
+    'DROP TRIGGER IF EXISTS customerPayments_code_guard',
+    'DROP TRIGGER IF EXISTS customerPayments_invoice_allocation_guard',
+    'DROP TRIGGER IF EXISTS customerPayments_immutable_money_guard',
   ]) {
     try { await db.prepare(sql).run(); } catch {}
   }
@@ -228,6 +247,7 @@ async function ensureSchema(db: D1Database) {
         SELECT 1 FROM customers
         WHERE id = NEW.customerId
           AND businessId = NEW.businessId
+          AND COALESCE(NULLIF(shopId, ''), '${DEFAULT_SHOP_ID}') = COALESCE(NULLIF(NEW.shopId, ''), '${DEFAULT_SHOP_ID}')
       );
       SELECT RAISE(ABORT, 'Payment cannot exceed the customer balance.')
       WHERE (
@@ -235,6 +255,7 @@ async function ensureSchema(db: D1Database) {
         FROM customers
         WHERE id = NEW.customerId
           AND businessId = NEW.businessId
+          AND COALESCE(NULLIF(shopId, ''), '${DEFAULT_SHOP_ID}') = COALESCE(NULLIF(NEW.shopId, ''), '${DEFAULT_SHOP_ID}')
       ) + 0.01 < NEW.amount;
       END
   `).run();
@@ -269,6 +290,7 @@ async function ensureSchema(db: D1Database) {
             WHERE invoice.id = json_extract(allocation.value, '$.sourceId')
               AND invoice.customerId = NEW.customerId
               AND invoice.businessId = NEW.businessId
+              AND COALESCE(NULLIF(invoice.shopId, ''), '${DEFAULT_SHOP_ID}') = COALESCE(NULLIF(NEW.shopId, ''), '${DEFAULT_SHOP_ID}')
           )
       );
       SELECT RAISE(ABORT, 'Cannot allocate payment to a cancelled invoice.')
@@ -279,6 +301,7 @@ async function ensureSchema(db: D1Database) {
           ON invoice.id = json_extract(allocation.value, '$.sourceId')
          AND invoice.customerId = NEW.customerId
          AND invoice.businessId = NEW.businessId
+         AND COALESCE(NULLIF(invoice.shopId, ''), '${DEFAULT_SHOP_ID}') = COALESCE(NULLIF(NEW.shopId, ''), '${DEFAULT_SHOP_ID}')
         WHERE UPPER(COALESCE(json_extract(allocation.value, '$.sourceType'), '')) = 'INVOICE'
           AND invoice.status = 'CANCELLED'
       );
@@ -290,6 +313,7 @@ async function ensureSchema(db: D1Database) {
           ON invoice.id = json_extract(allocation.value, '$.sourceId')
          AND invoice.customerId = NEW.customerId
          AND invoice.businessId = NEW.businessId
+         AND COALESCE(NULLIF(invoice.shopId, ''), '${DEFAULT_SHOP_ID}') = COALESCE(NULLIF(NEW.shopId, ''), '${DEFAULT_SHOP_ID}')
         WHERE UPPER(COALESCE(json_extract(allocation.value, '$.sourceType'), '')) = 'INVOICE'
           AND CAST(COALESCE(json_extract(allocation.value, '$.amount'), 0) AS REAL) > COALESCE(invoice.balance, invoice.total, 0) + 0.01
       );
@@ -387,7 +411,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const payment = body?.payment || body || {};
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || payment.businessId || '').trim();
     const customerId = String(payment.customerId || body?.customerId || '').trim();
-    const shopId = trimText(payment.shopId || body?.shopId, 160) || null;
+    const shopId = normalizedShopId(request.headers.get('X-Shop-ID') || payment.shopId || body?.shopId);
     if (!businessId || !customerId) return json({ error: 'Business and customer are required.' }, 400);
     if (!canAccessBusiness(auth.principal, businessId)) {
       return json({ error: 'Access denied.' }, 403);
@@ -398,9 +422,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const customer = await env.DB.prepare(`
       SELECT id, name, balance
       FROM customers
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(customerId, businessId).first<any>();
+    `).bind(customerId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
     if (!customer) throw new PolicyError('Customer was not found.', 404);
 
     const paymentId = trimText(payment.id, 160) || crypto.randomUUID();
@@ -430,7 +456,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const method = String(payment.paymentMethod || payment.method || 'CASH').toUpperCase();
     const paymentMethod = PAYMENT_METHODS.has(method) ? method : 'CASH';
     if (SHIFT_PAYMENT_METHODS.has(paymentMethod)) {
-      await requireOpenPaymentShift(env.DB, businessId, payment.shiftId, auth.principal, auth.service);
+      await requireOpenPaymentShift(env.DB, businessId, shopId, payment.shiftId, auth.principal, auth.service);
     }
     const now = Date.now();
     const mpesaUsage = paymentMethod === 'MPESA'
@@ -457,8 +483,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const { results } = await env.DB.prepare(`
         SELECT allocations
         FROM customerPayments
-        WHERE customerId = ? AND businessId = ?
-      `).bind(customerId, businessId).all();
+        WHERE customerId = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
+      `).bind(customerId, businessId, DEFAULT_SHOP_ID, shopId).all();
       for (const row of (results || []) as any[]) {
         for (const allocation of parseAllocations(row.allocations)) {
           const key = `${allocation.sourceType}:${allocation.sourceId}`;
@@ -475,9 +503,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         FROM salesInvoices
         WHERE customerId = ?
           AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
           AND status != 'CANCELLED'
           AND COALESCE(balance, 0) > 0
-      `).bind(customerId, businessId).all();
+      `).bind(customerId, businessId, DEFAULT_SHOP_ID, shopId).all();
       for (const invoice of (invoiceRows || []) as any[]) {
         const key = `INVOICE:${invoice.id}`;
         const alreadyRequested = requestedBySource.get(key)?.amount || 0;
@@ -492,8 +521,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         FROM transactions
         WHERE customerId = ?
           AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
           AND status NOT IN ('VOIDED', 'QUOTE')
-      `).bind(customerId, businessId).all();
+      `).bind(customerId, businessId, DEFAULT_SHOP_ID, shopId).all();
       for (const sale of (saleRows || []) as any[]) {
         const creditTotal = creditAmountForSale(sale);
         if (creditTotal <= 0) continue;
@@ -529,9 +559,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         const invoice = await env.DB.prepare(`
           SELECT id, customerId, balance, status
           FROM salesInvoices
-          WHERE id = ? AND businessId = ?
+          WHERE id = ?
+            AND businessId = ?
+            AND COALESCE(NULLIF(shopId, ''), ?) = ?
           LIMIT 1
-        `).bind(allocation.sourceId, businessId).first<any>();
+        `).bind(allocation.sourceId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
         if (!invoice || invoice.customerId !== customerId) throw new PolicyError('Payment allocation refers to an invoice that was not found.', 404);
         if (invoice.status === 'CANCELLED') throw new PolicyError('Cannot allocate payment to a cancelled invoice.', 409);
         if (allocation.amount > asNumber(invoice.balance) + 0.01) throw new PolicyError('Payment allocation exceeds an invoice balance.', 409);
@@ -541,9 +573,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const sale = await env.DB.prepare(`
         SELECT id, customerId, total, subtotal, discountAmount, discount, paymentMethod, splitPayments, status
         FROM transactions
-        WHERE id = ? AND businessId = ?
+        WHERE id = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
         LIMIT 1
-      `).bind(allocation.sourceId, businessId).first<any>();
+      `).bind(allocation.sourceId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
       if (!sale || sale.customerId !== customerId) throw new PolicyError('Payment allocation refers to a sale that was not found.', 404);
       if (sale.status === 'VOIDED' || sale.status === 'QUOTE') throw new PolicyError('Cannot allocate payment to a non-credit sale.', 409);
       const creditTotal = creditAmountForSale(sale);
@@ -574,8 +608,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         businessId,
         now,
       ),
-      env.DB.prepare(`UPDATE customers SET balance = MAX(0, COALESCE(balance, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ?`)
-        .bind(amount, now, customerId, businessId),
+      env.DB.prepare(`UPDATE customers SET balance = MAX(0, COALESCE(balance, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+        .bind(amount, now, customerId, businessId, DEFAULT_SHOP_ID, shopId),
     ];
     if (mpesaUsage) {
       statements.push(mpesaUsage.statement);
@@ -603,7 +637,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
                 status = CASE WHEN MAX(0, COALESCE(balance, total, 0) - ?) <= 0 THEN 'PAID' ELSE 'PARTIAL' END,
                 updated_at = ?
             WHERE id = ? AND customerId = ? AND businessId = ?
-          `).bind(allocation.amount, allocation.amount, allocation.amount, now, allocation.sourceId, customerId, businessId)
+              AND COALESCE(NULLIF(shopId, ''), ?) = ?
+          `).bind(allocation.amount, allocation.amount, allocation.amount, now, allocation.sourceId, customerId, businessId, DEFAULT_SHOP_ID, shopId)
         );
         continue;
       }
@@ -619,8 +654,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
             WHERE id = ?
               AND customerId = ?
               AND businessId = ?
+              AND COALESCE(NULLIF(shopId, ''), ?) = ?
               AND status = 'UNPAID'
-          `).bind(now, allocation.sourceId, customerId, businessId)
+          `).bind(now, allocation.sourceId, customerId, businessId, DEFAULT_SHOP_ID, shopId)
         );
       }
     }

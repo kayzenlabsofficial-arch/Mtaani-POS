@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { domainApiWriteMessage } from './[[table]]';
+import { domainApiWriteMessage, isShopScopedDataTable } from './[[table]]';
 
 describe('generic data API domain write guards', () => {
   it('keeps expense writes on the expense domain endpoint', () => {
@@ -8,5 +8,12 @@ describe('generic data API domain write guards', () => {
 
   it('does not block read-only tables without a domain write policy', () => {
     expect(domainApiWriteMessage('products')).toBeNull();
+  });
+
+  it('marks HR and operating records as shop-scoped for generic reads and writes', () => {
+    expect(isShopScopedDataTable('hrStaff')).toBe(true);
+    expect(isShopScopedDataTable('hrAttendance')).toBe(true);
+    expect(isShopScopedDataTable('transactions')).toBe(true);
+    expect(isShopScopedDataTable('settings')).toBe(false);
   });
 });

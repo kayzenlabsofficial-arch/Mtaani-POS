@@ -23,6 +23,7 @@ type ProductRow = {
   isBundle?: number | boolean | string;
   components?: unknown;
   stockQuantity?: number;
+  shopId?: string | null;
 };
 
 type HardenOptions = {
@@ -41,6 +42,7 @@ type ShiftRow = {
   cashierName?: string;
   startTime?: number;
   endTime?: number;
+  shopId?: string | null;
 };
 
 const SALE_STATUSES = new Set(['PAID', 'UNPAID']);
@@ -102,6 +104,10 @@ function trimText(value: unknown, max = 160): string | undefined {
   return text.slice(0, max);
 }
 
+function normalizedShopId(value: unknown): string {
+  return trimInventoryText(value, 160) || DEFAULT_SHOP_ID;
+}
+
 function isBundle(product: ProductRow): boolean {
   return product.isBundle === 1 || product.isBundle === true || product.isBundle === '1';
 }
@@ -116,7 +122,7 @@ async function loadProducts(db: D1Database, businessId: string, ids: string[]): 
     const chunk = uniqueIds.slice(i, i + CHUNK_SIZE);
     const placeholders = chunk.map(() => '?').join(',');
     const { results } = await db.prepare(
-      `SELECT id, name, category, sellingPrice, costPrice, discountType, discountValue, taxCategory, unit, isBundle, components, stockQuantity
+      `SELECT id, name, category, sellingPrice, costPrice, discountType, discountValue, taxCategory, unit, isBundle, components, stockQuantity, shopId
        FROM products
        WHERE businessId = ? AND id IN (${placeholders})`
     ).bind(businessId, ...chunk).all();
@@ -252,11 +258,13 @@ async function requireValidShift(options: HardenOptions, tx: any, timestamp: num
   if (!shiftId) throw new PolicyError('Open a till shift before completing a sale.', 409);
 
   const shift = await options.db.prepare(`
-    SELECT id, status, cashierId, cashierName, startTime, endTime
+    SELECT id, status, cashierId, cashierName, startTime, endTime, shopId
     FROM shifts
-    WHERE id = ? AND businessId = ?
+    WHERE id = ?
+      AND businessId = ?
+      AND COALESCE(NULLIF(shopId, ''), ?) = ?
     LIMIT 1
-  `).bind(shiftId, options.businessId).first<ShiftRow>();
+  `).bind(shiftId, options.businessId, DEFAULT_SHOP_ID, normalizedShopId(tx.shopId)).first<ShiftRow>();
 
   if (!shift) throw new PolicyError('The selected till shift was not found.', 409);
 
@@ -340,7 +348,7 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
     }
 
     tx.businessId = businessId;
-    tx.shopId = trimInventoryText(tx.shopId, 160) || DEFAULT_SHOP_ID;
+    tx.shopId = normalizedShopId(tx.shopId);
     tx.status = desiredStatus;
     tx.timestamp = clamp(asNumber(tx.timestamp, now), 0, now + 5 * 60 * 1000);
     tx.updated_at = now;
@@ -386,6 +394,9 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
       const productId = String(item?.productId || item?.id || '').trim();
       const product = productId ? products.get(productId) : null;
       if (!product) throw new PolicyError('Sale includes an item that does not exist.', 400);
+      if (normalizedShopId(product.shopId) !== tx.shopId) {
+        throw new PolicyError('Sale includes an item from another shop.', 403);
+      }
       const quantity = clamp(asNumber(item?.quantity ?? item?.cartQuantity), 0, 1_000_000);
       if (quantity <= 0) throw new PolicyError('Sale item quantity must be more than zero.');
       return {
@@ -438,9 +449,11 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
       selectedCustomer = await db.prepare(`
         SELECT id, name
         FROM customers
-        WHERE id = ? AND businessId = ?
+        WHERE id = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
         LIMIT 1
-      `).bind(tx.customerId, businessId).first<any>();
+      `).bind(tx.customerId, businessId, DEFAULT_SHOP_ID, tx.shopId).first<any>();
       if (!selectedCustomer) {
         throw new PolicyError('Selected customer was not found.', 404);
       }
@@ -472,8 +485,10 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
              SET totalSpent = COALESCE(totalSpent, 0) + ?,
                  balance = COALESCE(balance, 0) + ?,
                  updated_at = ?
-             WHERE id = ? AND businessId = ?`
-          ).bind(total, creditAmount, now, tx.customerId, businessId)
+             WHERE id = ?
+               AND businessId = ?
+               AND COALESCE(NULLIF(shopId, ''), ?) = ?`
+          ).bind(total, creditAmount, now, tx.customerId, businessId, DEFAULT_SHOP_ID, tx.shopId)
         );
       }
 
@@ -496,6 +511,9 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
       for (const [productId, quantity] of txDeductions.entries()) {
         const product = products.get(productId);
         if (!product) throw new PolicyError('Sale refers to a stock item that does not exist.');
+        if (normalizedShopId(product.shopId) !== tx.shopId) {
+          throw new PolicyError('Sale refers to a stock item from another shop.', 403);
+        }
         const alreadyPlanned = plannedDeductions.get(productId) || 0;
         if (asNumber(product.stockQuantity) < alreadyPlanned + quantity) {
           throw new PolicyError(`Insufficient stock for ${product.name}.`, 409);
@@ -504,8 +522,8 @@ export async function hardenTransactionBatch(options: HardenOptions, transaction
 
         const txRef = txId.split('-')[0].toUpperCase();
         sideEffects.push(
-          db.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) - ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-            .bind(quantity, now, productId, businessId)
+          db.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) - ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+            .bind(quantity, now, productId, businessId, DEFAULT_SHOP_ID, tx.shopId)
         );
         sideEffects.push(
           db.prepare(

@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS cashPicks (
     userName TEXT,
     accountId TEXT,
     shiftId TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -154,12 +155,12 @@ CREATE TABLE IF NOT EXISTS shifts (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_open_till
-ON shifts(businessId, shopId, tillId)
+ON shifts(businessId, COALESCE(NULLIF(shopId, ''), 'single-shop'), tillId)
 WHERE UPPER(COALESCE(status, '')) = 'OPEN'
   AND COALESCE(tillId, '') != '';
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_open_cashier
-ON shifts(businessId, shopId, cashierId)
+ON shifts(businessId, COALESCE(NULLIF(shopId, ''), 'single-shop'), cashierId)
 WHERE UPPER(COALESCE(status, '')) = 'OPEN'
   AND COALESCE(cashierId, '') != '';
 
@@ -247,6 +248,7 @@ CREATE TABLE IF NOT EXISTS hrStaff (
     payCycle TEXT DEFAULT 'MONTHLY',
     emergencyContact TEXT,
     notes TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -262,6 +264,7 @@ CREATE TABLE IF NOT EXISTS hrStaffDocuments (
     fileName TEXT,
     fileUrl TEXT,
     notes TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -275,6 +278,7 @@ CREATE TABLE IF NOT EXISTS hrAttendance (
     status TEXT NOT NULL,
     hoursWorked REAL,
     notes TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -289,9 +293,15 @@ CREATE TABLE IF NOT EXISTS hrPayrollAdjustments (
     recurring INTEGER DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'ACTIVE',
     notes TEXT,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
+
+CREATE INDEX IF NOT EXISTS idx_hrStaff_status ON hrStaff(businessId, shopId, status);
+CREATE INDEX IF NOT EXISTS idx_hrStaffDocuments_staff ON hrStaffDocuments(businessId, shopId, staffId);
+CREATE INDEX IF NOT EXISTS idx_hrAttendance_staff_date ON hrAttendance(businessId, shopId, staffId, date);
+CREATE INDEX IF NOT EXISTS idx_hrPayrollAdjustments_staff_date ON hrPayrollAdjustments(businessId, shopId, staffId, effectiveDate);
 
 CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
@@ -456,6 +466,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
     address TEXT,
     kraPin TEXT,
     balance REAL,
+    shopId TEXT,
     businessId TEXT,
     updated_at INTEGER
 );
@@ -528,6 +539,9 @@ CREATE TABLE IF NOT EXISTS dailySummaries (
     businessId TEXT,
     updated_at INTEGER
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dailySummaries_business_date
+ON dailySummaries(businessId, COALESCE(NULLIF(shopId, ''), 'single-shop'), date);
 
 -- stockAdjustmentRequests: matches Dexie interface exactly
 CREATE TABLE IF NOT EXISTS stockAdjustmentRequests (
@@ -613,8 +627,10 @@ CREATE INDEX IF NOT EXISTS idx_stockmovements_business_shop_product ON stockMove
 CREATE INDEX IF NOT EXISTS idx_stockadjustments_business_shop ON stockAdjustmentRequests(businessId, shopId);
 CREATE INDEX IF NOT EXISTS idx_purchaseorders_business_shop ON purchaseOrders(businessId, shopId);
 CREATE INDEX IF NOT EXISTS idx_creditnotes_business_shop ON creditNotes(businessId, shopId);
+CREATE INDEX IF NOT EXISTS idx_suppliers_business_shop ON suppliers(businessId, shopId);
 CREATE INDEX IF NOT EXISTS idx_expenses_business_shop_timestamp ON expenses(businessId, shopId, timestamp);
 CREATE INDEX IF NOT EXISTS idx_expenses_business_status_timestamp ON expenses(businessId, status, timestamp);
+CREATE INDEX IF NOT EXISTS idx_cashPicks_business_shop_timestamp ON cashPicks(businessId, shopId, timestamp);
 CREATE INDEX IF NOT EXISTS idx_endofday_business_shop_timestamp ON endOfDayReports(businessId, shopId, timestamp);
 CREATE INDEX IF NOT EXISTS idx_shifts_business_shop_status ON shifts(businessId, shopId, status);
 CREATE INDEX IF NOT EXISTS idx_dailySummaries_business_shop_date ON dailySummaries(businessId, shopId, date);
@@ -722,8 +738,14 @@ CREATE TABLE IF NOT EXISTS deviceSyncStatus (
     id TEXT PRIMARY KEY,
     businessId TEXT NOT NULL,
     deviceId TEXT NOT NULL,
+    shopId TEXT,
     cashierName TEXT,
     lastSyncAt INTEGER,
+    pendingOutboxCount INTEGER DEFAULT 0,
+    failedOutboxCount INTEGER DEFAULT 0,
+    oldestPendingAt INTEGER,
+    lastErrorAt INTEGER,
+    lastSyncError TEXT,
     updated_at INTEGER
 );
 

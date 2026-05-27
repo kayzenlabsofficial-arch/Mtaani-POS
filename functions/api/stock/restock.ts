@@ -129,11 +129,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       updateBindings.push(nextExpiryDate);
     }
     updateFields.push('updated_at = ?');
-    updateBindings.push(now, productId, businessId);
+    updateBindings.push(now, productId, businessId, shopId);
     const updateProduct = env.DB.prepare(`
       UPDATE products
       SET ${updateFields.join(', ')}
-      WHERE id = ? AND businessId = ?
+      WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), 'single-shop') = ?
     `).bind(...updateBindings);
     const nextStockQuantity = asNumber(product.stockQuantity) + quantity;
 

@@ -70,9 +70,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const po = await env.DB.prepare(`
       SELECT id, poNumber, approvalStatus, status, shopId
       FROM purchaseOrders
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(purchaseOrderId, businessId).first<any>();
+    `).bind(purchaseOrderId, businessId, 'single-shop', shopId).first<any>();
     if (!po) throw new PolicyError('Purchase order was not found.', 404);
     if (po.shopId && String(po.shopId) !== shopId) throw new PolicyError('Purchase order was not found in this shop.', 404);
     if (po.status === 'RECEIVED') throw new PolicyError('Received purchase orders cannot be changed.', 409);
@@ -90,7 +92,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
             approvedBy = CASE WHEN ? = 'APPROVED' THEN ? ELSE approvedBy END,
             updated_at = ?
         WHERE id = ? AND businessId = ?
-      `).bind(nextStatus, nextStatus, approvedBy, now, purchaseOrderId, businessId),
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
+      `).bind(nextStatus, nextStatus, approvedBy, now, purchaseOrderId, businessId, 'single-shop', shopId),
       env.DB.prepare(`
         INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

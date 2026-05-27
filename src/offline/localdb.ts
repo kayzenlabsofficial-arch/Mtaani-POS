@@ -40,6 +40,14 @@ export interface OutboxItem {
   error?: string;
 }
 
+export interface OutboxStats {
+  pending: number;
+  failed: number;
+  oldestCreatedAt?: number;
+  lastError?: string;
+  lastErrorAt?: number;
+}
+
 export interface SyncStateRow {
   id: string; // `${businessId}|${shopId}|${deviceId}`
   businessId: string;
@@ -142,18 +150,64 @@ export async function markOutboxAttempt(id: string, args: { error?: string } = {
   });
 }
 
+export async function markOutboxError(id: string, error: string): Promise<void> {
+  await offlineDb.outbox.update(id, {
+    lastAttemptAt: Date.now(),
+    error,
+  });
+}
+
 export async function markOutboxAcked(id: string): Promise<void> {
   await offlineDb.outbox.update(id, { ackedAt: Date.now(), error: undefined });
 }
 
-export async function getPendingOutbox(args: { businessId: string; shopId: string; limit?: number }): Promise<OutboxItem[]> {
+export async function markOutboxBatchAcked(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const now = Date.now();
+  await offlineDb.transaction('rw', offlineDb.outbox, async () => {
+    await Promise.all(ids.map(id => offlineDb.outbox.update(id, { ackedAt: now, error: undefined })));
+  });
+}
+
+function retryDelayMs(item: OutboxItem): number {
+  if (!item.lastAttemptAt || item.attemptCount <= 0) return 0;
+  return Math.min(60_000, 1_000 * Math.pow(2, Math.min(6, Math.max(0, item.attemptCount - 1))));
+}
+
+function isDueForRetry(item: OutboxItem, now: number): boolean {
+  if (item.ackedAt) return false;
+  if (!item.lastAttemptAt) return true;
+  return now - item.lastAttemptAt >= retryDelayMs(item);
+}
+
+export async function getPendingOutbox(args: { businessId: string; shopId: string; limit?: number; dueOnly?: boolean }): Promise<OutboxItem[]> {
   const limit = args.limit ?? 50;
+  const now = Date.now();
   return offlineDb.outbox
     .where('businessId')
     .equals(args.businessId)
-    .filter((x) => x.shopId === args.shopId && !x.ackedAt)
+    .filter((x) => x.shopId === args.shopId && !x.ackedAt && (!args.dueOnly || isDueForRetry(x, now)))
     .sortBy('createdAt')
     .then((arr) => arr.slice(0, limit));
+}
+
+export async function getOutboxStats(args: { businessId: string; shopId: string }): Promise<OutboxStats> {
+  const rows = await offlineDb.outbox
+    .where('businessId')
+    .equals(args.businessId)
+    .filter((x) => x.shopId === args.shopId && !x.ackedAt)
+    .sortBy('createdAt');
+  const failedRows = rows.filter(row => !!row.error);
+  const latestFailed = failedRows
+    .slice()
+    .sort((a, b) => Number(b.lastAttemptAt || 0) - Number(a.lastAttemptAt || 0))[0];
+  return {
+    pending: rows.length,
+    failed: failedRows.length,
+    oldestCreatedAt: rows[0]?.createdAt,
+    lastError: latestFailed?.error,
+    lastErrorAt: latestFailed?.lastAttemptAt,
+  };
 }
 
 export async function upsertSyncState(args: Omit<SyncStateRow, 'id' | 'updatedAt'> & { lastSuccessfulSyncAt?: number }): Promise<void> {

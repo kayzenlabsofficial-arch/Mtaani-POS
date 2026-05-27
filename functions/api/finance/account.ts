@@ -12,6 +12,14 @@ interface Env {
 }
 
 const FINANCE_ROLES = new Set(['ROOT', 'ADMIN']);
+const MAIN_ACCOUNT_NON_NEGATIVE_BALANCE_TRIGGER = `
+  CREATE TRIGGER IF NOT EXISTS financialAccounts_non_negative_balance_guard
+  BEFORE UPDATE OF balance ON financialAccounts
+  WHEN NEW.balance < -0.0001
+  BEGIN
+    SELECT RAISE(ABORT, 'Insufficient account balance.');
+  END
+`;
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -27,6 +35,7 @@ function json(data: unknown, status = 200) {
 
 async function ensureSchema(db: D1Database) {
   await ensureMainAccountSchema(db);
+  try { await db.prepare(MAIN_ACCOUNT_NON_NEGATIVE_BALANCE_TRIGGER).run(); } catch {}
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => new Response(null, { headers: corsHeaders });
@@ -83,18 +92,40 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const adjustmentId = crypto.randomUUID();
       const userName = String(body?.userName || auth.principal.userName || 'Admin').trim().slice(0, 120);
       const statements = [
-        env.DB.prepare(`UPDATE financialAccounts SET balance = ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-          .bind(balanceAfter, now, fresh.id, businessId),
+        env.DB.prepare(`
+          UPDATE financialAccounts
+          SET balance = ?, updated_at = ?
+          WHERE id = ? AND businessId = ? AND ABS(COALESCE(balance, 0) - ?) <= 0.0001
+        `).bind(balanceAfter, now, fresh.id, businessId, balanceBefore),
         env.DB.prepare(`
           INSERT INTO financialAccountAdjustments (id, accountId, amount, direction, balanceBefore, balanceAfter, reason, userName, timestamp, businessId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(adjustmentId, fresh.id, delta, mode, balanceBefore, balanceAfter, reason, userName, now, businessId, now),
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          WHERE EXISTS (
+            SELECT 1
+            FROM financialAccounts
+            WHERE id = ? AND businessId = ? AND ABS(COALESCE(balance, 0) - ?) <= 0.0001
+          )
+        `).bind(adjustmentId, fresh.id, delta, mode, balanceBefore, balanceAfter, reason, userName, now, businessId, now, fresh.id, businessId, balanceAfter),
         env.DB.prepare(`
           INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(crypto.randomUUID(), now, auth.principal.userId || null, userName, 'finance.main_account.adjust', 'financialAccount', fresh.id, 'WARN', `${mode === 'IN' ? 'Added' : mode === 'OUT' ? 'Removed' : 'Set'} Main account balance by Ksh ${Math.abs(delta).toLocaleString()}. ${reason}`, businessId, now),
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          WHERE EXISTS (
+            SELECT 1
+            FROM financialAccountAdjustments
+            WHERE id = ? AND businessId = ?
+          )
+        `).bind(crypto.randomUUID(), now, auth.principal.userId || null, userName, 'finance.main_account.adjust', 'financialAccount', fresh.id, 'WARN', `${mode === 'IN' ? 'Added' : mode === 'OUT' ? 'Removed' : 'Set'} Main account balance by Ksh ${Math.abs(delta).toLocaleString()}. ${reason}`, businessId, now, adjustmentId, businessId),
       ];
       await env.DB.batch(statements);
+      const savedAdjustment = await env.DB.prepare(`
+        SELECT id
+        FROM financialAccountAdjustments
+        WHERE id = ? AND businessId = ?
+        LIMIT 1
+      `).bind(adjustmentId, businessId).first<any>();
+      if (!savedAdjustment) {
+        return json({ error: 'Main account balance changed while saving. Refresh and try again.' }, 409);
+      }
       const updated = await ensureMainAccount(env.DB, businessId);
       return json({
         success: true,

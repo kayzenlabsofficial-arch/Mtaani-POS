@@ -29,7 +29,8 @@ function emitChange() {
 // circular dependency: clouddb → store → db → clouddb.
 
 const API = '/api/data';
-const DATA_FETCH_TIMEOUT_MS = 45000;
+const DATA_READ_FETCH_TIMEOUT_MS = 20000;
+const DATA_WRITE_FETCH_TIMEOUT_MS = 45000;
 
 const OFFLINE_CACHE_TABLES = new Set<OfflineCacheTable>([
   'products',
@@ -60,6 +61,30 @@ const CLIENT_GLOBAL_TABLES = new Set([
   'categories',
   'businesses',
   'loginAttempts',
+]);
+
+const SHOP_SCOPED_TABLES = new Set([
+  'products',
+  'transactions',
+  'refunds',
+  'cashPicks',
+  'shifts',
+  'endOfDayReports',
+  'stockMovements',
+  'expenses',
+  'customers',
+  'customerPayments',
+  'salesInvoices',
+  'suppliers',
+  'supplierPayments',
+  'creditNotes',
+  'dailySummaries',
+  'stockAdjustmentRequests',
+  'purchaseOrders',
+  'hrStaff',
+  'hrStaffDocuments',
+  'hrAttendance',
+  'hrPayrollAdjustments',
 ]);
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -95,6 +120,8 @@ function sanitizeRowsForClient(table: string, rows: any[]): any[] {
 
 async function d1Fetch(table: string, method: string, body?: any): Promise<any> {
   const businessId = useStore.getState().activeBusinessId;
+  const activeShopId = useStore.getState().activeShopId;
+  const shopId = activeShopId ? normalizedShopId(activeShopId) : '';
   const apiKey = await getApiKey();
   const headers: Record<string, string> = { 
     'Content-Type': 'application/json',
@@ -106,6 +133,7 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
   } else if (table !== 'businesses' && table !== 'loginAttempts' && !table.startsWith('system')) {
     throw new Error('Business ID missing for ' + method + ' ' + table);
   }
+  if (shopId) headers['X-Shop-ID'] = shopId;
   
   const url = `${API}/${table}`;
 
@@ -114,7 +142,8 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
     let networkError: any = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const controller = new AbortController();
-      const timeout = globalThis.setTimeout(() => controller.abort(), DATA_FETCH_TIMEOUT_MS);
+      const timeoutMs = method === 'GET' ? DATA_READ_FETCH_TIMEOUT_MS : DATA_WRITE_FETCH_TIMEOUT_MS;
+      const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
       try {
         res = await fetch(url, {
           method,
@@ -165,9 +194,11 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
     if (method === 'GET' && businessId && OFFLINE_CACHE_TABLES.has(table as OfflineCacheTable)) {
       try {
         const cacheTable = table as OfflineCacheTable;
+        const cacheShopId = SHOP_SCOPED_TABLES.has(table) ? shopId || undefined : undefined;
         await cacheTableRows({
           table: cacheTable,
           businessId,
+          shopId: cacheShopId,
           rows: Array.isArray(json) ? json : [],
           updatedAt: Date.now(),
         });
@@ -184,10 +215,12 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
     if (method === 'GET' && businessId && OFFLINE_CACHE_TABLES.has(table as OfflineCacheTable) && isLikelyOfflineError(e)) {
       try {
         const cacheTable = table as OfflineCacheTable;
-        const rows = sanitizeRowsForClient(table, await readCachedTableRows({ table: cacheTable, businessId }));
+        const cacheShopId = SHOP_SCOPED_TABLES.has(table) ? shopId || undefined : undefined;
+        const rows = sanitizeRowsForClient(table, await readCachedTableRows({ table: cacheTable, businessId, shopId: cacheShopId }));
         await cacheTableRows({
           table: cacheTable,
           businessId,
+          shopId: cacheShopId,
           rows,
           updatedAt: Date.now(),
         }).catch(() => {});
@@ -204,6 +237,8 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
 
 async function d1Delete(table: string, id: string): Promise<void> {
   const businessId = useStore.getState().activeBusinessId;
+  const activeShopId = useStore.getState().activeShopId;
+  const shopId = activeShopId ? normalizedShopId(activeShopId) : '';
   const apiKey = await getApiKey();
   const headers: Record<string, string> = { 
     'X-API-Key': apiKey
@@ -214,6 +249,7 @@ async function d1Delete(table: string, id: string): Promise<void> {
   }
 
   if (businessId) headers['X-Business-ID'] = businessId;
+  if (shopId) headers['X-Shop-ID'] = shopId;
 
   const res = await fetch(`${API}/${table}/${id}`, { 
     method: 'DELETE',
@@ -256,6 +292,12 @@ export class CloudTable<T extends { id: string }> {
 
     if (!businessId) {
       return { key: `${this.name}:no-business`, canHydrate: false };
+    }
+
+    const activeShopId = useStore.getState().activeShopId;
+    const shopId = activeShopId ? normalizedShopId(activeShopId) : '';
+    if (SHOP_SCOPED_TABLES.has(this.name)) {
+      return { key: `${this.name}:business:${businessId}:shop:${shopId || 'none'}`, canHydrate: !!shopId };
     }
 
     return { key: `${this.name}:business:${businessId}`, canHydrate: true };
@@ -491,21 +533,22 @@ export class CloudTable<T extends { id: string }> {
       const offline = isLikelyOfflineError(e);
 
       // ── Offline-safe writes (minimal scope) ───────────────────────────────
-      // Only allow offline upserts for CASH/QUOTE transactions.
+      // Only allow offline upserts for paid cash register sales.
       // Everything else must hard-fail to protect money/data integrity.
       if (
         offline &&
         this.name === 'transactions' &&
-        (stamped.status === 'PAID' || stamped.status === 'QUOTE') &&
-        (stamped.paymentMethod === 'CASH' || stamped.status === 'QUOTE')
+        stamped.status === 'PAID' &&
+        stamped.paymentMethod === 'CASH'
       ) {
         try {
           // Queue for sync (idempotencyKey = transaction.id)
           const businessId = useStore.getState().activeBusinessId;
           if (businessId) {
+            const activeShopId = normalizedShopId(stamped.shopId || useStore.getState().activeShopId);
             await enqueueOutbox({
               businessId,
-              shopId: 'single-shop',
+              shopId: activeShopId,
               table: 'transactions',
               op: 'UPSERT',
               idempotencyKey: stamped.id,
@@ -685,32 +728,52 @@ export function useLiveQuery<T>(
 // Periodically refreshes all tables from the server to catch remote updates.
 
 let syncTimer: any = null;
+let backgroundSyncRunning = false;
+let lastRemoteReloadAt = 0;
+let lastHeartbeatAt = 0;
 
-export function startBackgroundSync(intervalMs = 30000) {
+export function startBackgroundSync(intervalMs = 10000) {
   if (syncTimer) return;
-  
-  syncTimer = setInterval(async () => {
-    const businessId = useStore.getState().activeBusinessId;
-    if (!businessId) return;
 
-    console.log('[CloudDB] Background sync starting...');
+  const run = async () => {
+    if (backgroundSyncRunning) return;
+    const state = useStore.getState();
+    const businessId = state.activeBusinessId;
+    if (!businessId || !state.currentUser) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
+    backgroundSyncRunning = true;
     try {
-       if (typeof navigator === 'undefined' || navigator.onLine) {
-         const { flushOutboxNow } = await import('./offline/offlineSync');
-         await flushOutboxNow();
-       }
-       // Dispatch on window so db.ts wire-up can receive and reload tables
-       if (typeof window !== 'undefined') {
-         window.dispatchEvent(new Event('db:sync-request'));
-       }
+      const { flushOutboxNow, sendHeartbeat } = await import('./offline/offlineSync');
+      const result = await flushOutboxNow();
+      const now = Date.now();
+
+      if (result.flushed > 0) lastHeartbeatAt = now;
+      if (now - lastHeartbeatAt >= 30_000) {
+        await sendHeartbeat({ cashierName: useStore.getState().currentUser?.name }).catch(() => {});
+        lastHeartbeatAt = Date.now();
+      }
+
+      // Dispatch on window so db.ts wire-up can receive and reload tables.
+      // Keep remote reloads bounded; outbox flushing runs more often than full table hydration.
+      if (typeof window !== 'undefined' && (result.flushed > 0 || now - lastRemoteReloadAt >= 30_000)) {
+        lastRemoteReloadAt = now;
+        window.dispatchEvent(new Event('db:sync-request'));
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.warn(`[CloudDB] Background sync failed: ${message}`);
+    } finally {
+      backgroundSyncRunning = false;
     }
-  }, intervalMs);
+  };
+
+  void run();
+  syncTimer = setInterval(() => void run(), intervalMs);
 }
 
 export function stopBackgroundSync() {
   if (syncTimer) clearInterval(syncTimer);
   syncTimer = null;
+  backgroundSyncRunning = false;
 }

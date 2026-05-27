@@ -1,4 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
+import { DEFAULT_SHOP_ID } from '../inventoryIntegrity';
 import { PolicyError } from '../salesSecurity';
 
 interface Env {
@@ -10,7 +11,7 @@ const ALLOWED_ROLES = new Set(['ROOT', 'ADMIN', 'MANAGER']);
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Business-ID, X-Shop-ID',
 };
 
 function json(data: unknown, status = 200) {
@@ -51,6 +52,10 @@ function trimText(value: unknown, max = 160) {
   return String(value ?? '').trim().slice(0, max);
 }
 
+function normalizedShopId(value: unknown) {
+  return trimText(value, 160) || DEFAULT_SHOP_ID;
+}
+
 function parseMaybeJson(value: unknown): any {
   if (!value) return null;
   if (typeof value !== 'string') return value;
@@ -74,6 +79,14 @@ async function ensurePickedCashAccount(db: D1Database, businessId: string) {
       accountNumber TEXT,
       updated_at INTEGER
     )
+  `).run();
+  await db.prepare(`
+    CREATE TRIGGER IF NOT EXISTS financialAccounts_non_negative_balance_guard
+    BEFORE UPDATE OF balance ON financialAccounts
+    WHEN NEW.balance < -0.0001
+    BEGIN
+      SELECT RAISE(ABORT, 'Insufficient account balance.');
+    END
   `).run();
   await db.prepare(`
     INSERT OR IGNORE INTO financialAccounts (id, name, type, balance, businessId, accountNumber, updated_at)
@@ -146,6 +159,7 @@ async function ensureSchema(db: D1Database) {
       cashVariance REAL,
       closeBreakdown TEXT,
       status TEXT NOT NULL,
+      shopId TEXT,
       businessId TEXT,
       updated_at INTEGER
     )
@@ -176,8 +190,25 @@ async function ensureSchema(db: D1Database) {
     'expectedCash REAL',
     'cashVariance REAL',
     'closeBreakdown TEXT',
+    'shopId TEXT',
   ]) {
     try { await db.prepare(`ALTER TABLE shifts ADD COLUMN ${column}`).run(); } catch {}
+  }
+  for (const sql of [
+    'ALTER TABLE suppliers ADD COLUMN shopId TEXT',
+    'ALTER TABLE purchaseOrders ADD COLUMN shopId TEXT',
+    'ALTER TABLE creditNotes ADD COLUMN shopId TEXT',
+    'ALTER TABLE cashPicks ADD COLUMN shopId TEXT',
+    'ALTER TABLE transactions ADD COLUMN shopId TEXT',
+    'ALTER TABLE expenses ADD COLUMN shopId TEXT',
+    'ALTER TABLE refunds ADD COLUMN shopId TEXT',
+    'ALTER TABLE customerPayments ADD COLUMN shopId TEXT',
+    `UPDATE suppliers SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE shifts SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    `UPDATE cashPicks SET shopId = '${DEFAULT_SHOP_ID}' WHERE COALESCE(shopId, '') = ''`,
+    'CREATE INDEX IF NOT EXISTS idx_suppliers_business_shop ON suppliers(businessId, shopId)',
+  ]) {
+    try { await db.prepare(sql).run(); } catch {}
   }
 }
 
@@ -208,14 +239,16 @@ function inShiftScope(row: any, since: number, shiftId?: string | null): boolean
   return asNumber(row?.timestamp || row?.issueDate) >= since;
 }
 
-async function requireOpenShift(db: D1Database, businessId: string, shiftId?: string | null) {
+async function requireOpenShift(db: D1Database, businessId: string, shopId: string, shiftId?: string | null) {
   if (!shiftId) throw new PolicyError('Open a till shift before paying suppliers from the till.', 409);
   const shift = await db.prepare(`
-    SELECT id, startTime, openingCash, status
+    SELECT id, startTime, openingCash, status, shopId
     FROM shifts
-    WHERE id = ? AND businessId = ?
+    WHERE id = ?
+      AND businessId = ?
+      AND COALESCE(NULLIF(shopId, ''), ?) = ?
     LIMIT 1
-  `).bind(shiftId, businessId).first<any>();
+  `).bind(shiftId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
   if (!shift) throw new PolicyError('Shift was not found.', 404);
   if (String(shift.status || '').toUpperCase() !== 'OPEN') {
     throw new PolicyError('Supplier till payments can only use an open shift.', 409);
@@ -223,22 +256,22 @@ async function requireOpenShift(db: D1Database, businessId: string, shiftId?: st
   return shift;
 }
 
-async function availableTillCash(db: D1Database, businessId: string, shift: any): Promise<number> {
+async function availableTillCash(db: D1Database, businessId: string, shopId: string, shift: any): Promise<number> {
   const since = asNumber(shift?.startTime, 0);
   const shiftId = String(shift?.id || '').trim();
   const [transactions, expenses, picks, refunds, supplierPayments, customerPayments] = await Promise.all([
-    db.prepare(`SELECT total, subtotal, discountAmount, discount, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
-    db.prepare(`SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND timestamp >= ?`)
-      .bind(businessId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT total, subtotal, discountAmount, discount, timestamp, status, paymentMethod, splitPayments, splitData, shiftId FROM transactions WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, status, source, shiftId FROM expenses WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, status, shiftId FROM cashPicks WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, cashAmount, timestamp, status, source, shiftId FROM refunds WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, source, shiftId FROM supplierPayments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
+    db.prepare(`SELECT amount, timestamp, paymentMethod, shiftId FROM customerPayments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND timestamp >= ?`)
+      .bind(businessId, DEFAULT_SHOP_ID, shopId, since).all<any>().catch(() => ({ results: [] })),
   ]);
 
   const cashSales = ((transactions.results || []) as any[])
@@ -284,7 +317,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const body = await request.json().catch(() => null) as any;
     const businessId = String(request.headers.get('X-Business-ID') || body?.businessId || '').trim();
-    const shopId = trimText(body?.shopId || 'single-shop', 160);
+    const shopId = normalizedShopId(request.headers.get('X-Shop-ID') || body?.shopId);
     const supplierId = String(body?.supplierId || body?.supplier?.id || '').trim();
     const payment = body?.payment || {};
     if (!businessId || !supplierId) return json({ error: 'Business and supplier are required.' }, 400);
@@ -296,9 +329,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const supplier = await env.DB.prepare(`
       SELECT id, name, company, balance
       FROM suppliers
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(supplierId, businessId).first<any>();
+    `).bind(supplierId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
     if (!supplier) throw new PolicyError('Supplier was not found.', 404);
 
     const cashAmount = roundMoney(Math.max(0, asNumber(payment.amount)));
@@ -315,8 +350,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (asNumber(account.balance) < cashAmount) throw new PolicyError(`Insufficient funds in "${account.name}".`, 409);
     }
     if (source === 'TILL' && cashAmount > 0) {
-      const shift = await requireOpenShift(env.DB, businessId, body?.shiftId || null);
-      const availableCash = await availableTillCash(env.DB, businessId, shift);
+      const shift = await requireOpenShift(env.DB, businessId, shopId, body?.shiftId || null);
+      const availableCash = await availableTillCash(env.DB, businessId, shopId, shift);
       if (cashAmount > availableCash + 0.01) {
         throw new PolicyError(`Insufficient till cash. Available: Ksh ${availableCash.toLocaleString()}.`, 409);
       }
@@ -327,9 +362,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const cn = await env.DB.prepare(`
         SELECT id, amount, supplierId, status
         FROM creditNotes
-        WHERE id = ? AND businessId = ?
+        WHERE id = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
         LIMIT 1
-      `).bind(creditNoteId, businessId).first<any>();
+      `).bind(creditNoteId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
       if (cn && cn.supplierId === supplierId && (!cn.status || cn.status === 'PENDING')) creditNotes.push(cn);
     }
 
@@ -338,9 +375,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const fetchInvoice = async (poId: string) => env.DB.prepare(`
       SELECT id, supplierId, status, paymentStatus, totalAmount, paidAmount, orderDate, receivedDate, invoiceNumber, poNumber
       FROM purchaseOrders
-      WHERE id = ? AND businessId = ?
+      WHERE id = ?
+        AND businessId = ?
+        AND COALESCE(NULLIF(shopId, ''), ?) = ?
       LIMIT 1
-    `).bind(poId, businessId).first<any>();
+    `).bind(poId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
 
     let invoicesToAllocate: Array<any & { allocationAmount?: number }> = [];
     let storedInvoiceAllocations: { purchaseOrderId: string; amount: number; invoiceNumber?: string; poNumber?: string }[] = [];
@@ -389,8 +428,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const { results } = await env.DB.prepare(`
         SELECT id, supplierId, status, paymentStatus, totalAmount, paidAmount, orderDate, receivedDate, invoiceNumber, poNumber
         FROM purchaseOrders
-        WHERE supplierId = ? AND businessId = ? AND status = 'RECEIVED' AND COALESCE(paymentStatus, 'UNPAID') != 'PAID'
-      `).bind(supplierId, businessId).all();
+        WHERE supplierId = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
+          AND status = 'RECEIVED'
+          AND COALESCE(paymentStatus, 'UNPAID') != 'PAID'
+      `).bind(supplierId, businessId, DEFAULT_SHOP_ID, shopId).all();
       invoicesToAllocate = ((results || []) as any[])
         .sort((a, b) => asNumber(a.receivedDate || a.orderDate) - asNumber(b.receivedDate || b.orderDate));
     }
@@ -406,8 +449,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     for (const cn of creditNotes) {
       statements.push(
-        env.DB.prepare(`UPDATE creditNotes SET status = 'ALLOCATED', allocatedTo = ?, updated_at = ? WHERE id = ? AND businessId = ?`)
-          .bind(paymentId, now, cn.id, businessId)
+        env.DB.prepare(`UPDATE creditNotes SET status = 'ALLOCATED', allocatedTo = ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+          .bind(paymentId, now, cn.id, businessId, DEFAULT_SHOP_ID, shopId)
       );
     }
 
@@ -428,13 +471,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         });
       }
       statements.push(
-        env.DB.prepare(`UPDATE purchaseOrders SET paidAmount = ?, paymentStatus = ?, updated_at = ? WHERE id = ? AND businessId = ?`)
+        env.DB.prepare(`UPDATE purchaseOrders SET paidAmount = ?, paymentStatus = ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
           .bind(
             newPaidAmount,
             newPaidAmount >= asNumber(inv.totalAmount) - 0.01 ? 'PAID' : 'PARTIAL',
             now,
             inv.id,
-            businessId, )
+            businessId,
+            DEFAULT_SHOP_ID,
+            shopId, )
       );
       remainingPool = roundMoney(remainingPool - paymentForThisInv);
       allocatedInvoiceCount += 1;
@@ -468,8 +513,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     );
 
     statements.push(
-      env.DB.prepare(`UPDATE suppliers SET balance = MAX(0, COALESCE(balance, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ?`)
-        .bind(totalDeduction, now, supplierId, businessId)
+      env.DB.prepare(`UPDATE suppliers SET balance = MAX(0, COALESCE(balance, 0) - ?), updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+        .bind(totalDeduction, now, supplierId, businessId, DEFAULT_SHOP_ID, shopId)
     );
 
     if (source === 'ACCOUNT' && account && cashAmount > 0) {
@@ -509,7 +554,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       invoiceAllocations: storedInvoiceAllocations,
     });
   } catch (err: any) {
-    const status = err instanceof PolicyError ? err.status : 500;
-    return json({ error: err?.message || 'Could not settle supplier payment.' }, status);
+    const insufficientAccount = String(err?.message || '').includes('Insufficient account balance');
+    const status = err instanceof PolicyError ? err.status : insufficientAccount ? 409 : 500;
+    return json({ error: insufficientAccount ? 'Insufficient funds in the selected account.' : err?.message || 'Could not settle supplier payment.' }, status);
   }
 };
