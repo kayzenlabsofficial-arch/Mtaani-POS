@@ -49,6 +49,8 @@ export interface BillingPayment {
   receiptNumber?: string;
   resultCode?: number;
   resultDesc?: string;
+  provider?: 'MPESA' | 'PESAPAL' | 'MANUAL' | string;
+  redirectUrl?: string;
   status: 'PENDING' | 'PAID' | 'FAILED' | string;
   createdAt?: number;
   updated_at?: number;
@@ -776,7 +778,8 @@ class MtaaniCloudDB {
         () => this.categories.reload(),
         () => this.expenseAccounts.reload(),
         () => this.financialAccounts.reload(),
-        () => this.financialAccountAdjustments.reload()
+        () => this.financialAccountAdjustments.reload(),
+        () => this.shifts.reload()
 
       );
 
@@ -792,7 +795,6 @@ class MtaaniCloudDB {
           () => this.expenses.reload(),
           () => this.purchaseOrders.reload(),
           () => this.stockAdjustmentRequests.reload(),
-          () => this.shifts.reload(),
           () => this.dailySummaries.reload(),
         );
       }

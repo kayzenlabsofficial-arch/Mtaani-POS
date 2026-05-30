@@ -103,9 +103,6 @@ export function clearSessionCookie(request: Request): string {
 }
 
 export function isTrustedBrowserOrigin(request: Request): boolean {
-  const secFetchSite = request.headers.get('Sec-Fetch-Site');
-  if (secFetchSite === 'cross-site') return false;
-
   const origin = request.headers.get('Origin');
   if (!origin) return true;
 
@@ -113,10 +110,22 @@ export function isTrustedBrowserOrigin(request: Request): boolean {
     const requestOrigin = new URL(request.url).origin;
     const originUrl = new URL(origin);
     if (origin === requestOrigin) return true;
-    return originUrl.hostname === 'localhost' || originUrl.hostname === '127.0.0.1' || originUrl.hostname === '::1' || originUrl.hostname === '[::1]';
+    const localNativeHost = originUrl.hostname === 'localhost'
+      || originUrl.hostname === '127.0.0.1'
+      || originUrl.hostname === '::1'
+      || originUrl.hostname === '[::1]';
+    const localNativeProtocol = originUrl.protocol === 'http:'
+      || originUrl.protocol === 'https:'
+      || originUrl.protocol === 'capacitor:'
+      || originUrl.protocol === 'ionic:';
+    if (localNativeHost && localNativeProtocol) return true;
   } catch {
     return false;
   }
+
+  const secFetchSite = request.headers.get('Sec-Fetch-Site');
+  if (secFetchSite === 'cross-site') return false;
+  return false;
 }
 
 export function rejectUntrustedBrowserOrigin(request: Request): Response | null {

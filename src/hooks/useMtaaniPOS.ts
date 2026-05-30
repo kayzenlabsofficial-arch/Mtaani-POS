@@ -5,6 +5,8 @@ import { db, type Transaction } from '../db';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { getProductIngredients, isBundleProduct } from '../utils/bundleInventory';
 import { SalesService } from '../services/sales';
+import { isDesktopRuntime, resolveApiUrl } from '../desktop/runtime';
+import { isNativeMobileRuntime } from '../mobile/runtime';
 import { cacheTableRows, readCachedTableRows } from '../offline/localdb';
 import { getCurrentShiftId } from '../utils/shiftSession';
 import { calculateCartTotals, productUnitDiscount } from '../utils/productPricing';
@@ -60,6 +62,25 @@ export function useMtaaniPOS() {
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const ensuredShiftKeyRef = useRef<string | null>(null);
+  const tabSyncInFlightRef = useRef<Promise<void> | null>(null);
+  const lastTabSyncAtRef = useRef(0);
+
+  const refreshDataForNavigation = () => {
+    if (!currentUser || !activeBusinessId) return;
+    if (!isOnline || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
+
+    const now = Date.now();
+    if (tabSyncInFlightRef.current || now - lastTabSyncAtRef.current < 10_000) return;
+
+    lastTabSyncAtRef.current = now;
+    tabSyncInFlightRef.current = flushOfflineOutbox()
+      .catch(() => undefined)
+      .then(() => db.sync())
+      .catch((err) => console.warn('[POS Tab Sync]', err))
+      .finally(() => {
+        tabSyncInFlightRef.current = null;
+      });
+  };
 
   const findOpenShiftForUser = async (user: any, businessId?: string | null) => {
     if (!user || !businessId) return null;
@@ -92,6 +113,12 @@ export function useMtaaniPOS() {
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'REGISTER') return;
+    refreshDataForNavigation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, currentUser?.id, activeBusinessId, activeShopId, isOnline]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -139,9 +166,13 @@ export function useMtaaniPOS() {
 
     setIsLoggingIn(true);
     try {
-      const authRes = await fetch('/api/auth', {
+      const authRes = await fetch(resolveApiUrl('/api/auth'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(isDesktopRuntime() ? { 'X-Mtaani-Desktop': '1' } : {}),
+          ...(isNativeMobileRuntime() ? { 'X-Mtaani-Native': '1' } : {}),
+        },
         credentials: 'same-origin',
         cache: 'no-store',
         body: JSON.stringify({ businessCode: businessCode.trim().toUpperCase(), username: username.trim(), password }),
@@ -170,6 +201,12 @@ export function useMtaaniPOS() {
       }
       await new Promise(r => setTimeout(r, 0));
       login(authData.user, authData.token || null);
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        void flushOfflineOutbox()
+          .catch(() => undefined)
+          .then(() => db.sync())
+          .catch((err) => console.warn('[POS Login Sync]', err));
+      }
       const loginShift = authData.user?.role === 'CASHIER'
         ? null
         : await findOpenShiftForUser(authData.user, authData.businessId).catch((err) => {
@@ -197,7 +234,7 @@ export function useMtaaniPOS() {
 
   const handleLogout = () => {
     if (confirm("Are you sure you want to logout?")) {
-      fetch('/api/auth', { method: 'DELETE', cache: 'no-store', credentials: 'same-origin' }).catch(() => {});
+      fetch(resolveApiUrl('/api/auth'), { method: 'DELETE', cache: 'no-store', credentials: 'same-origin' }).catch(() => {});
       db.resetTenantCaches();
       logout();
       setActiveBusinessId(null);
@@ -224,6 +261,7 @@ export function useMtaaniPOS() {
 
   const navigateToTab = (tab: any) => {
     const nextTab = tab as typeof activeTab;
+    const changedTab = activeTabRef.current !== nextTab;
     if (!isOnline && nextTab !== 'REGISTER') {
       error("Offline mode only opens the register. Other pages will work after internet returns.");
       return;
@@ -233,13 +271,14 @@ export function useMtaaniPOS() {
       error("Only administrators can open admin controls.");
       return;
     }
-    if (typeof window !== 'undefined' && activeTabRef.current !== nextTab) {
+    if (typeof window !== 'undefined' && changedTab) {
       window.history.pushState({ ...(window.history.state || {}), mtaaniTab: true, tab: nextTab }, '');
     }
     activeTabRef.current = nextTab;
     setActiveTab(nextTab);
     setSidebarOpen(false);
     setIsMoreMenuOpen(false);
+    if (changedTab) refreshDataForNavigation();
     if (nextTab === 'ADMIN_PANEL' || nextTab === 'SETTINGS') scrollAdminPanelToTopOnDesktop();
   };
 
@@ -274,6 +313,8 @@ export function useMtaaniPOS() {
     const shopId = activeShopId || SINGLE_SHOP_ID;
 
     const isOfflineSale = typeof navigator !== 'undefined' && !navigator.onLine;
+    const isNativeCashSale = (isDesktopRuntime() || isNativeMobileRuntime()) && status === 'PAID' && method === 'CASH';
+    const useLocalFirstSale = isOfflineSale || isNativeCashSale;
     if (isOfflineSale && !(status === 'PAID' && method === 'CASH')) {
       error("Offline mode only allows cash sales in the register.");
       return null;
@@ -379,8 +420,8 @@ export function useMtaaniPOS() {
         splitData: Object.keys(checkoutData).length ? checkoutData : undefined
       };
 
-      if (isOfflineSale) {
-        // Intentional Dexie write: CloudTable queues offline cash sales into the sync outbox.
+      if (useLocalFirstSale) {
+        // Native desktop/mobile stores cash sales locally and queues them for server sync.
         await db.transactions.add(newTransaction);
         try {
           const deductions = new Map<string, number>();
@@ -417,7 +458,7 @@ export function useMtaaniPOS() {
 
           if (activeBusinessId && updatedProducts.length > 0) {
             const updatesById = new Map(updatedProducts.map(product => [product.id, product]));
-            const cachedRows = await readCachedTableRows({ table: 'products', businessId: activeBusinessId });
+            const cachedRows = await readCachedTableRows({ table: 'products', businessId: activeBusinessId, shopId });
             const baseRows = cachedRows.length > 0 ? cachedRows : await db.products.toArray().catch(() => []);
             const seen = new Set<string>();
             const nextRows = baseRows.map((row: any) => {
@@ -431,7 +472,7 @@ export function useMtaaniPOS() {
             updatedProducts.forEach(product => {
               if (!seen.has(product.id)) nextRows.push(product);
             });
-            await cacheTableRows({ table: 'products', businessId: activeBusinessId, rows: nextRows });
+            await cacheTableRows({ table: 'products', businessId: activeBusinessId, shopId, rows: nextRows });
           }
         } catch (reserveErr) {
           console.warn('[POS Offline] Sale saved, but local stock reservation failed:', reserveErr);
@@ -439,7 +480,8 @@ export function useMtaaniPOS() {
         clearCart();
         setSelectedCustomerId(null);
         setDiscountValue(0);
-        success("Sale saved offline. It will sync when internet returns.");
+        if (isOnline) flushOfflineOutbox().catch(() => {});
+        success(isNativeCashSale && isOnline ? "Sale saved locally and queued for sync." : "Sale saved offline. It will sync when internet returns.");
         return newTransaction;
       }
 

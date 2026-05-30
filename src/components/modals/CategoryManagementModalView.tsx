@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, GlassWater, Lightbulb, Package, Pencil, Plus, Save, ShoppingBag, Tag as TagIcon, Trash2, Utensils, X } from 'lucide-react';
+import { Check, GlassWater, Lightbulb, Loader2, Package, Pencil, Plus, Save, ShoppingBag, Tag as TagIcon, Trash2, Utensils, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Category } from '../../db';
 import { useToast } from '../../context/ToastContext';
@@ -38,13 +38,13 @@ export default function CategoryManagementModalView({ isOpen, onClose, isMobile 
   const { success, error, warning } = useToast();
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const activeShopId = useStore(state => state.activeShopId);
-  const categories = useLiveQuery(
+  const queriedCategories = useLiveQuery(
     () => activeBusinessId
       ? db.categories.where('businessId').equals(activeBusinessId).filter(category => belongsToActiveShop(category, activeShopId)).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
+  const categories = queriedCategories || [];
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(blankForm);
@@ -53,6 +53,18 @@ export default function CategoryManagementModalView({ isOpen, onClose, isMobile 
   const sortedCategories = [...(categories || [])].sort((a, b) => a.name.localeCompare(b.name));
 
   if (!isOpen) return null;
+
+  if (!queriedCategories) {
+    return (
+      <div className={`${isMobile ? 'mobile-vv-overlay ' : ''}fixed inset-0 z-[120] flex items-center justify-center p-4`}>
+        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
+        <div className={`${isMobile ? 'mobile-vv-panel ' : ''}relative z-10 flex min-h-64 w-full max-w-lg animate-in flex-col items-center justify-center gap-4 rounded-2xl bg-white p-8 shadow-elevated duration-200 zoom-in-95`}>
+          <Loader2 size={28} className="animate-spin text-blue-700" />
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading categories...</p>
+        </div>
+      </div>
+    );
+  }
 
   const closeForm = () => {
     setIsFormOpen(false);

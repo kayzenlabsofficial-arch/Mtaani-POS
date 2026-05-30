@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ShieldAlert, KeyRound, X } from 'lucide-react';
 import { useStore } from '../../store';
 import { getApiKey } from '../../runtimeConfig';
+import { resolveApiUrl } from '../../desktop/runtime';
 
 interface AdminVerificationModalProps {
   actionDescription: string;
@@ -24,7 +25,7 @@ export default function AdminVerificationModalDesktop({ actionDescription, onSuc
     setIsChecking(true);
     try {
       const apiKey = await getApiKey();
-      const res = await fetch('/api/admin/verify', {
+      const res = await fetch(resolveApiUrl('/api/admin/verify'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

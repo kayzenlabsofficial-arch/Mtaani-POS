@@ -1,5 +1,6 @@
 import { getApiKey } from '../runtimeConfig';
 import { useStore } from '../store';
+import { resolveApiUrl } from '../desktop/runtime';
 
 export class ApiError extends Error {
   status: number;
@@ -84,7 +85,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const timeout = globalThis.setTimeout(() => controller.abort(), requestTimeoutMs);
   let res: Response;
   try {
-    res = await fetch(path, {
+    res = await fetch(resolveApiUrl(path), {
       ...requestOptions,
       body,
       headers,

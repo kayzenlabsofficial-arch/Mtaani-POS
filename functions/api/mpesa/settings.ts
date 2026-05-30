@@ -56,11 +56,11 @@ async function auditMpesaSettingsSave(db: D1Database, principal: any, businessId
     now,
     principal.userId || null,
     principal.userName || null,
-    'settings.mpesa.save',
+    'settings.paymentApi.save',
     'mpesaCredentials',
     businessId,
     'WARN',
-    'Updated encrypted M-Pesa settings.',
+    'Updated encrypted payment API settings.',
     businessId,
     now,
   ).run();
@@ -85,7 +85,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: 'Access denied.' }, 403);
   }
   if (!auth.service && auth.principal.role !== 'ADMIN' && auth.principal.role !== 'ROOT') {
-    return json({ error: 'Only an administrator can open M-Pesa settings.' }, 403);
+    return json({ error: 'Only an administrator can open payment API settings.' }, 403);
   }
 
   if (request.method === 'GET') {
@@ -108,7 +108,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     await ensureMpesaSettingsAttemptTable(env.DB);
     const lockedMinutes = await getMpesaSettingsLockMinutes(env.DB, attemptId);
     if (lockedMinutes > 0) {
-      return json({ error: `M-Pesa settings are locked. Try again in ${lockedMinutes} minute${lockedMinutes === 1 ? '' : 's'}.` }, 423);
+      return json({ error: `Payment API settings are locked. Try again in ${lockedMinutes} minute${lockedMinutes === 1 ? '' : 's'}.` }, 423);
     }
   }
 
@@ -119,7 +119,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
       .first<any>();
 
   if (needsPasswordCheck && (!user || user.role !== 'ADMIN')) {
-    return json({ error: 'Only an administrator can change M-Pesa settings.' }, 403);
+    return json({ error: 'Only an administrator can change payment API settings.' }, 403);
   }
   const passwordOk = !needsPasswordCheck ? true : await verifyPassword(adminPassword, String(user?.password || ''));
   if (!passwordOk) {
@@ -140,7 +140,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   } catch (err: any) {
     const safeMessage = String(err?.message || '').includes('safe storage key')
       ? err.message
-      : err?.message || 'Could not save M-Pesa settings.';
+      : err?.message || 'Could not save payment API settings.';
     return json({ error: safeMessage }, 400);
   }
 };

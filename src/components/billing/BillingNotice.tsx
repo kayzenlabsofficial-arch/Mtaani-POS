@@ -1,7 +1,9 @@
-import { AlertTriangle, LockKeyhole, LogOut, RefreshCw, Smartphone } from 'lucide-react';
-import type { BillingInfo } from '../../services/billing';
+import { AlertTriangle, CreditCard, LockKeyhole, LogOut, RefreshCw, Smartphone } from 'lucide-react';
+import type { BillingInfo, BillingPaymentMethod } from '../../services/billing';
 
 type BillingPayProps = {
+  method: BillingPaymentMethod;
+  setMethod: (value: BillingPaymentMethod) => void;
   phone: string;
   setPhone: (value: string) => void;
   onPay: () => void;
@@ -25,23 +27,50 @@ function dueText(value?: number | null) {
 }
 
 function PaymentControls({ payment }: { payment: BillingPayProps }) {
+  const methods: Array<{ id: BillingPaymentMethod; label: string; Icon: typeof Smartphone }> = [
+    { id: 'PESAPAL', label: 'PesaPal', Icon: CreditCard },
+    { id: 'MPESA', label: 'Direct STK', Icon: Smartphone },
+  ];
+  const isPesaPal = payment.method === 'PESAPAL';
+
   return (
-    <div className="grid w-full gap-2 sm:grid-cols-[minmax(12rem,18rem)_auto]">
-      <input
-        value={payment.phone}
-        onChange={event => payment.setPhone(event.target.value)}
-        placeholder="Safaricom phone"
-        className="h-11 rounded-lg border border-amber-300 bg-white px-4 text-sm font-bold text-slate-950 outline-none placeholder:text-slate-400 focus:border-amber-600"
-      />
-      <button
-        type="button"
-        onClick={payment.onPay}
-        disabled={payment.isPaying}
-        className="flex h-11 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-xs font-black uppercase tracking-widest text-white transition hover:bg-slate-800 disabled:opacity-50"
-      >
-        {payment.isPaying ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Smartphone className="h-4 w-4" />}
-        Push to pay
-      </button>
+    <div className="grid w-full gap-2">
+      <div className="grid grid-cols-2 rounded-lg border border-slate-200 bg-white p-1">
+        {methods.map(({ id, label, Icon }) => {
+          const active = payment.method === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={active}
+              onClick={() => payment.setMethod(id)}
+              className={`flex h-9 items-center justify-center gap-2 rounded-md px-2 text-[11px] font-black uppercase tracking-widest transition ${
+                active ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950'
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              <span className="truncate">{label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[minmax(12rem,18rem)_auto]">
+        <input
+          value={payment.phone}
+          onChange={event => payment.setPhone(event.target.value)}
+          placeholder={isPesaPal ? 'M-Pesa phone' : 'Safaricom phone'}
+          className="h-11 rounded-lg border border-amber-300 bg-white px-4 text-sm font-bold text-slate-950 outline-none placeholder:text-slate-400 focus:border-amber-600"
+        />
+        <button
+          type="button"
+          onClick={payment.onPay}
+          disabled={payment.isPaying}
+          className="flex h-11 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-xs font-black uppercase tracking-widest text-white transition hover:bg-slate-800 disabled:opacity-50"
+        >
+          {payment.isPaying ? <RefreshCw className="h-4 w-4 animate-spin" /> : isPesaPal ? <CreditCard className="h-4 w-4" /> : <Smartphone className="h-4 w-4" />}
+          {isPesaPal ? 'Open PesaPal' : 'Send STK'}
+        </button>
+      </div>
     </div>
   );
 }

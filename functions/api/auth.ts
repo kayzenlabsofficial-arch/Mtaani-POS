@@ -9,7 +9,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Mtaani-Desktop, X-Mtaani-Native',
 };
 
 async function ensureAttemptTable(db: D1Database) {
@@ -90,6 +90,8 @@ async function handleAuthPost(request: Request, env: Env) {
   const username = String(body?.username || '').trim();
   const password = String(body?.password || '');
   const businessCode = String(body?.businessCode || '').trim().toUpperCase();
+  const includeTokenInBody = request.headers.get('X-Mtaani-Desktop') === '1'
+    || request.headers.get('X-Mtaani-Native') === '1';
 
   if (!username || !password) return json({ error: 'Enter username and password.' }, 400, corsHeaders);
 
@@ -105,7 +107,7 @@ async function handleAuthPost(request: Request, env: Env) {
         userName: 'System Root',
         role: 'ROOT',
       });
-      return json({ user: { id: 'root', name: 'System Root', role: 'ROOT' }, businessId: null }, 200, {
+      return json({ user: { id: 'root', name: 'System Root', role: 'ROOT' }, businessId: null, ...(includeTokenInBody ? { token } : {}) }, 200, {
         ...corsHeaders,
         'Set-Cookie': createSessionCookie(request, token),
       });
@@ -157,7 +159,7 @@ async function handleAuthPost(request: Request, env: Env) {
     businessId: business.id,
   });
 
-  return json({ user: cleanUser, businessId: business.id }, 200, {
+  return json({ user: cleanUser, businessId: business.id, ...(includeTokenInBody ? { token } : {}) }, 200, {
     ...corsHeaders,
     'Set-Cookie': createSessionCookie(request, token),
   });

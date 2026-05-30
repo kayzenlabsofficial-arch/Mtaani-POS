@@ -227,11 +227,11 @@ CREATE TABLE IF NOT EXISTS expenseAccounts (id TEXT PRIMARY KEY, name TEXT NOT N
 CREATE TABLE IF NOT EXISTS financialAccounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, balance REAL NOT NULL DEFAULT 0, businessId TEXT, accountNumber TEXT, updated_at INTEGER);
 CREATE TRIGGER IF NOT EXISTS financialAccounts_non_negative_balance_guard BEFORE UPDATE OF balance ON financialAccounts WHEN NEW.balance < -0.0001 BEGIN SELECT RAISE(ABORT, 'Insufficient account balance.'); END;
 CREATE TABLE IF NOT EXISTS financialAccountAdjustments (id TEXT PRIMARY KEY, accountId TEXT NOT NULL, amount REAL NOT NULL, direction TEXT NOT NULL, balanceBefore REAL NOT NULL, balanceAfter REAL NOT NULL, reason TEXT, userName TEXT, timestamp INTEGER NOT NULL, businessId TEXT, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS mpesaCallbacks (checkoutRequestId TEXT PRIMARY KEY, merchantRequestId TEXT, resultCode INTEGER, resultDesc TEXT, amount REAL, receiptNumber TEXT, phoneNumber TEXT, businessId TEXT, timestamp INTEGER, utilizedTransactionId TEXT, utilizedCustomerId TEXT, utilizedCustomerName TEXT, utilizedAt INTEGER);
+CREATE TABLE IF NOT EXISTS mpesaCallbacks (checkoutRequestId TEXT PRIMARY KEY, merchantRequestId TEXT, resultCode INTEGER, resultDesc TEXT, amount REAL, receiptNumber TEXT, phoneNumber TEXT, provider TEXT DEFAULT 'MPESA', redirectUrl TEXT, businessId TEXT, timestamp INTEGER, utilizedTransactionId TEXT, utilizedCustomerId TEXT, utilizedCustomerName TEXT, utilizedAt INTEGER);
 CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber);
 CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_utilized ON mpesaCallbacks(businessId, utilizedTransactionId);
-CREATE TABLE IF NOT EXISTS mpesaCredentials (businessId TEXT PRIMARY KEY, settingsId TEXT, environment TEXT NOT NULL DEFAULT 'sandbox', accountType TEXT NOT NULL DEFAULT 'paybill', product TEXT NOT NULL DEFAULT 'M-PESA EXPRESS', shortcode TEXT, storeNumber TEXT, consumerKeyCipher TEXT, consumerSecretCipher TEXT, passkeyCipher TEXT, credentialsVersion TEXT DEFAULT 'enc:v2', lastTestAt INTEGER, lastTestStatus TEXT, lastTestMessage TEXT, created_at INTEGER, updated_at INTEGER);
-CREATE TABLE IF NOT EXISTS billingPayments (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, phone TEXT, amount REAL NOT NULL, reference TEXT, checkoutRequestId TEXT UNIQUE, merchantRequestId TEXT, receiptNumber TEXT, resultCode INTEGER, resultDesc TEXT, status TEXT NOT NULL DEFAULT 'PENDING', createdAt INTEGER, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS mpesaCredentials (businessId TEXT PRIMARY KEY, settingsId TEXT, paymentProvider TEXT NOT NULL DEFAULT 'MPESA', environment TEXT NOT NULL DEFAULT 'sandbox', accountType TEXT NOT NULL DEFAULT 'paybill', product TEXT NOT NULL DEFAULT 'M-PESA EXPRESS', shortcode TEXT, storeNumber TEXT, consumerKeyCipher TEXT, consumerSecretCipher TEXT, passkeyCipher TEXT, pesapalEnvironment TEXT NOT NULL DEFAULT 'sandbox', pesapalCurrency TEXT NOT NULL DEFAULT 'KES', pesapalIpnId TEXT, pesapalConsumerKeyCipher TEXT, pesapalConsumerSecretCipher TEXT, credentialsVersion TEXT DEFAULT 'enc:v2', lastTestAt INTEGER, lastTestStatus TEXT, lastTestMessage TEXT, created_at INTEGER, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS billingPayments (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, phone TEXT, amount REAL NOT NULL, reference TEXT, checkoutRequestId TEXT UNIQUE, merchantRequestId TEXT, receiptNumber TEXT, resultCode INTEGER, resultDesc TEXT, status TEXT NOT NULL DEFAULT 'PENDING', provider TEXT DEFAULT 'MPESA', redirectUrl TEXT, createdAt INTEGER, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS deviceSyncStatus (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, deviceId TEXT NOT NULL, shopId TEXT, cashierName TEXT, lastSyncAt INTEGER, pendingOutboxCount INTEGER DEFAULT 0, failedOutboxCount INTEGER DEFAULT 0, oldestPendingAt INTEGER, lastErrorAt INTEGER, lastSyncError TEXT, updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS idempotencyKeys (id TEXT PRIMARY KEY, businessId TEXT NOT NULL, idempotencyKey TEXT NOT NULL, operation TEXT NOT NULL, deviceId TEXT, cashierName TEXT, transactionId TEXT, createdAt INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS loginAttempts (id TEXT PRIMARY KEY, count INTEGER DEFAULT 0, lockedUntil INTEGER, updated_at INTEGER);
@@ -372,10 +372,20 @@ async function ensureBusinessBillingColumns(db: D1Database): Promise<void> {
       resultCode INTEGER,
       resultDesc TEXT,
       status TEXT NOT NULL DEFAULT 'PENDING',
+      provider TEXT DEFAULT 'MPESA',
+      redirectUrl TEXT,
       createdAt INTEGER,
       updated_at INTEGER
     )
   `).run();
+  for (const statement of [
+    "ALTER TABLE billingPayments ADD COLUMN provider TEXT DEFAULT 'MPESA'",
+    'ALTER TABLE billingPayments ADD COLUMN redirectUrl TEXT',
+    'CREATE INDEX IF NOT EXISTS idx_billingPayments_business_created ON billingPayments(businessId, createdAt)',
+    'CREATE INDEX IF NOT EXISTS idx_billingPayments_checkout ON billingPayments(checkoutRequestId)',
+  ]) {
+    try { await db.prepare(statement).run(); } catch {}
+  }
 }
 
 async function ensureCustomerDebtScopeColumns(db: D1Database): Promise<void> {
@@ -385,6 +395,8 @@ async function ensureCustomerDebtScopeColumns(db: D1Database): Promise<void> {
     'ALTER TABLE salesInvoices ADD COLUMN shiftId TEXT',
     'ALTER TABLE salesInvoices ADD COLUMN shopId TEXT',
     'ALTER TABLE transactions ADD COLUMN shopId TEXT',
+    "ALTER TABLE mpesaCallbacks ADD COLUMN provider TEXT DEFAULT 'MPESA'",
+    'ALTER TABLE mpesaCallbacks ADD COLUMN redirectUrl TEXT',
     'CREATE INDEX IF NOT EXISTS idx_customerPayments_code ON customerPayments(businessId, transactionCode)',
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_customerPayments_unique_code ON customerPayments(businessId, transactionCode) WHERE transactionCode IS NOT NULL AND transactionCode != ''",
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_salesInvoices_business_number ON salesInvoices(businessId, invoiceNumber)',

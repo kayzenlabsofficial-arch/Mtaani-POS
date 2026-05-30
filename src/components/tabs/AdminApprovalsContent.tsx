@@ -71,15 +71,14 @@ export default function AdminApprovalsContent({ DocumentDetailsModal, mode }: Ad
   const activeBusinessId = useStore(state => state.activeBusinessId);
   const activeShift = useStore(state => state.activeShift);
 
-  const pendingAdjustments = useLiveQuery(() => activeBusinessId && activeShopId ? db.stockAdjustmentRequests.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const pendingPicks = useLiveQuery(() => activeBusinessId && activeShopId ? db.cashPicks.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const pendingExpenses = useLiveQuery(() => activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const pendingRefunds = useLiveQuery(() => activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING_REFUND').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const pendingPOs = useLiveQuery(() => activeBusinessId && activeShopId ? db.purchaseOrders.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.approvalStatus === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
+  const pendingAdjustments = useLiveQuery(() => activeBusinessId && activeShopId ? db.stockAdjustmentRequests.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId]);
+  const pendingPicks = useLiveQuery(() => activeBusinessId && activeShopId ? db.cashPicks.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId]);
+  const pendingExpenses = useLiveQuery(() => activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId]);
+  const pendingRefunds = useLiveQuery(() => activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.status === 'PENDING_REFUND').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId]);
+  const pendingPOs = useLiveQuery(() => activeBusinessId && activeShopId ? db.purchaseOrders.where('shopId').equals(activeShopId).and(x => x.businessId === activeBusinessId && x.approvalStatus === 'PENDING').toArray() : Promise.resolve([]), [activeBusinessId, activeShopId]);
   const allSuppliers = useLiveQuery(
     () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
 
   const [selectedRecordForDetails, setSelectedRecordForDetails] = React.useState<any | null>(null);
@@ -89,12 +88,12 @@ export default function AdminApprovalsContent({ DocumentDetailsModal, mode }: Ad
   const { success, error } = useToast();
 
   const tabs = React.useMemo<ApprovalTab[]>(() => [
-    { id: 'EXPENSES', label: 'Expenses', count: pendingExpenses.length, icon: FileMinus },
-    { id: 'REFUNDS', label: 'Refunds', count: pendingRefunds.length, icon: RotateCcw },
-    { id: 'PURCHASES', label: 'Purchases', count: pendingPOs.length, icon: PackagePlus },
-    { id: 'STOCK', label: 'Stock', count: pendingAdjustments.length, icon: Package },
-    { id: 'CASH_PICKS', label: 'Cash picks', count: pendingPicks.length, icon: Banknote },
-  ], [pendingAdjustments.length, pendingExpenses.length, pendingPicks.length, pendingPOs.length, pendingRefunds.length]);
+    { id: 'EXPENSES', label: 'Expenses', count: (pendingExpenses || []).length, icon: FileMinus },
+    { id: 'REFUNDS', label: 'Refunds', count: (pendingRefunds || []).length, icon: RotateCcw },
+    { id: 'PURCHASES', label: 'Purchases', count: (pendingPOs || []).length, icon: PackagePlus },
+    { id: 'STOCK', label: 'Stock', count: (pendingAdjustments || []).length, icon: Package },
+    { id: 'CASH_PICKS', label: 'Cash picks', count: (pendingPicks || []).length, icon: Banknote },
+  ], [pendingAdjustments, pendingExpenses, pendingPicks, pendingPOs, pendingRefunds]);
 
   React.useEffect(() => {
     if (userSelectedTabRef.current) return;
@@ -106,6 +105,19 @@ export default function AdminApprovalsContent({ DocumentDetailsModal, mode }: Ad
     (allSuppliers || []).forEach(supplier => map.set(supplier.id, supplier));
     return map;
   }, [allSuppliers]);
+
+  const approvalsLoading = !pendingAdjustments || !pendingPicks || !pendingExpenses || !pendingRefunds || !pendingPOs || !allSuppliers;
+
+  if (approvalsLoading) {
+    return (
+      <div className="flex min-h-[45vh] flex-col items-center justify-center gap-4">
+        <div className="flex h-16 w-16 animate-spin-slow items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
+          <Clock size={34} className="text-slate-300" />
+        </div>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading approvals...</p>
+      </div>
+    );
+  }
 
   const activeTabConfig = tabs.find(tab => tab.id === activeTab) || tabs[0];
   const ActiveIcon = activeTabConfig.icon;

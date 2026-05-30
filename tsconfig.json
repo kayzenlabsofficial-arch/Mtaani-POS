@@ -24,7 +24,9 @@
     "noEmit": true
   },
   "exclude": [
+    "android",
     "dist",
+    "mini-pos",
     "node_modules"
   ]
 }

@@ -372,37 +372,38 @@ export default function HRTabMobile() {
   const [payMonth, setPayMonth] = useState(currentMonthInput());
   const [isSaving, setIsSaving] = useState(false);
 
-  const staffRows = useLiveQuery(
+  const queriedStaffRows = useLiveQuery(
     () => activeBusinessId && activeShopId
       ? db.hrStaff.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
     [activeBusinessId, activeShopId],
-    [],
-  ) || [];
+  );
 
-  const documentRows = useLiveQuery(
+  const queriedDocumentRows = useLiveQuery(
     () => activeBusinessId && activeShopId
       ? db.hrStaffDocuments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
     [activeBusinessId, activeShopId],
-    [],
-  ) || [];
+  );
 
-  const attendanceRows = useLiveQuery(
+  const queriedAttendanceRows = useLiveQuery(
     () => activeBusinessId && activeShopId
       ? db.hrAttendance.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
     [activeBusinessId, activeShopId],
-    [],
-  ) || [];
+  );
 
-  const payrollRows = useLiveQuery(
+  const queriedPayrollRows = useLiveQuery(
     () => activeBusinessId && activeShopId
       ? db.hrPayrollAdjustments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
     [activeBusinessId, activeShopId],
-    [],
-  ) || [];
+  );
+
+  const staffRows = queriedStaffRows || [];
+  const documentRows = queriedDocumentRows || [];
+  const attendanceRows = queriedAttendanceRows || [];
+  const payrollRows = queriedPayrollRows || [];
 
   const filteredStaff = useMemo(() => {
     const query = staffSearch.trim().toLowerCase();
@@ -472,6 +473,18 @@ export default function HRTabMobile() {
     () => buildPayrollSummary(selectedStaff, selectedAttendance, selectedPayroll, payMonth),
     [selectedStaff, selectedAttendance, selectedPayroll, payMonth],
   );
+  const hrLoading = !queriedStaffRows || !queriedDocumentRows || !queriedAttendanceRows || !queriedPayrollRows;
+
+  if (hrLoading) {
+    return (
+      <div className="flex min-h-[45vh] flex-col items-center justify-center gap-4">
+        <div className="flex h-16 w-16 animate-spin-slow items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
+          <UserRound size={34} className="text-slate-300" />
+        </div>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading staff records...</p>
+      </div>
+    );
+  }
 
   const staffDutyLabel = (staff: HRStaff) => {
     if (staff.status !== 'ACTIVE') return staffStatusOptions.find(option => option.value === staff.status)?.label || staff.status.replace('_', ' ');

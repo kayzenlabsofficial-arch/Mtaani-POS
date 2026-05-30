@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Banknote, CreditCard, Search, Smartphone, X } from 'lucide-react';
+import { Banknote, CreditCard, Loader2, Search, Smartphone, X } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
@@ -46,22 +46,23 @@ export default function RegisterPaymentPanelDesktop({
   const checkoutLockRef = useRef(false);
   const mpesaIntervalRef = useRef<ReturnType<typeof window.setInterval> | null>(null);
 
-  const customers = useLiveQuery(
+  const queriedCustomers = useLiveQuery(
     () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).filter(customer => belongsToActiveShop(customer, activeShopId)).sortBy('name') : Promise.resolve([]),
     [activeBusinessId, activeShopId],
-    []
   );
+  const customers = queriedCustomers || [];
 
   const { subtotal, discountAmount, total } = calculateCartTotals(cart);
   const itemCount = cart.reduce((sum, item) => sum + (Number(item.cartQuantity) || 0), 0);
   const tendered = Number(cashTendered) || 0;
   const changeDue = Math.max(0, tendered - total);
-  const selectedCustomer = customers?.find((customer: any) => customer.id === selectedCustomerId);
+  const selectedCustomer = customers.find((customer: any) => customer.id === selectedCustomerId);
   const customerTerm = customerSearch.trim().toLowerCase();
   const filteredCreditCustomers = (customers || []).filter((customer: any) => {
     if (!customerTerm) return true;
     return `${customer.name || ''} ${customer.phone || ''} ${customer.email || ''}`.toLowerCase().includes(customerTerm);
   });
+  const isCustomerListLoading = !queriedCustomers;
   const mpesaCashInputAmount = Math.min(Math.max(Number(mpesaCashDeduct) || 0, 0), total);
   const mpesaAppliedCashAmount = Math.min(Math.max(mpesaAppliedCash || 0, 0), total);
   const mpesaBalanceDue = Math.max(0, total - mpesaAppliedCashAmount);
@@ -252,7 +253,12 @@ export default function RegisterPaymentPanelDesktop({
     const res = await MpesaService.triggerStkPush(mpesaPhone.trim(), amountToPay, `SALE-${Date.now()}`, activeBusinessId, activeShopId);
     if (res.success && res.checkoutRequestId) {
       setMpesaState('POLLING');
-      success('M-Pesa request sent. Waiting up to 4 minutes for payment.');
+      if (res.redirectUrl) {
+        const opened = window.open(res.redirectUrl, '_blank');
+        if (opened) opened.opener = null;
+        if (!opened) window.location.assign(res.redirectUrl);
+      }
+      success(res.provider === 'PESAPAL' ? 'PesaPal checkout opened. Waiting up to 4 minutes for payment.' : 'M-Pesa request sent. Waiting up to 4 minutes for payment.');
       pollMpesaAndComplete(res.checkoutRequestId, amountToPay, completeWith);
     } else {
       setMpesaState('FAILED');
@@ -547,7 +553,7 @@ export default function RegisterPaymentPanelDesktop({
               <div className="space-y-4 overflow-y-auto p-6">
                 <label className="relative block"><Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-600" /><input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Search customer..." className="h-12 w-full rounded-md border border-slate-500 bg-white pl-11 pr-4 text-base font-medium outline-none placeholder:text-slate-500 focus:border-slate-950" /></label>
                 <div className="space-y-2">
-                  {filteredCreditCustomers.length === 0 ? <div className="rounded-md border border-slate-300 bg-white px-4 py-6 text-center text-sm font-semibold text-slate-500">No registered customer found</div> : filteredCreditCustomers.slice(0, 6).map((customer: any) => {
+                  {isCustomerListLoading ? <div className="flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-6 text-center text-sm font-semibold text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading customers...</div> : filteredCreditCustomers.length === 0 ? <div className="rounded-md border border-slate-300 bg-white px-4 py-6 text-center text-sm font-semibold text-slate-500">No registered customer found</div> : filteredCreditCustomers.slice(0, 6).map((customer: any) => {
                     const active = selectedCustomerId === customer.id;
                     return <button key={customer.id} type="button" onClick={() => setSelectedCustomerId(customer.id)} className={`w-full rounded-md border px-4 py-4 text-left transition-colors ${active ? 'border-slate-950 bg-white shadow-sm' : 'border-slate-300 bg-white hover:border-slate-500'}`}><span className="block text-base font-medium text-slate-950">{customer.name}</span><span className="mt-1 block text-sm text-slate-600">Balance: Ksh {Number(customer.balance || 0).toLocaleString()}.00</span></button>;
                   })}

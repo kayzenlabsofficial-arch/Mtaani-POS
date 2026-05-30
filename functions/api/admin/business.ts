@@ -306,9 +306,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await env.DB.prepare(`
         INSERT INTO billingPayments (
           id, businessId, phone, amount, reference, checkoutRequestId, merchantRequestId,
-          receiptNumber, resultCode, resultDesc, status, createdAt, updated_at
+          receiptNumber, resultCode, resultDesc, status, provider, createdAt, updated_at
         )
-        VALUES (?, ?, '', ?, 'MANUAL', NULL, NULL, ?, 0, 'Marked paid by super admin', 'PAID', ?, ?)
+        VALUES (?, ?, '', ?, 'MANUAL', NULL, NULL, ?, 0, 'Marked paid by super admin', 'PAID', 'MANUAL', ?, ?)
       `).bind(paymentId, businessId, amount, text(body?.receiptNumber, 'MANUAL', 80), now, now).run();
       await markBillingPaid(env.DB, businessId, paymentId);
       const details = await getBusinessDetails(env.DB, businessId);

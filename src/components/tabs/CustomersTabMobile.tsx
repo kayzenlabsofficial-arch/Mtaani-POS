@@ -109,11 +109,11 @@ export default function CustomersTabMobile() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [statementCustomerId]);
 
-  const allCustomers = useLiveQuery(
+  const queriedCustomers = useLiveQuery(
     () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveShop(c, activeShopId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
+  const allCustomers = queriedCustomers || [];
   const statementSales = useLiveQuery(
     () => statementCustomerId && activeBusinessId && activeShopId
       ? db.transactions.where('shopId').equals(activeShopId).and(t => t.businessId === activeBusinessId && t.customerId === statementCustomerId).toArray()
@@ -135,17 +135,6 @@ export default function CustomersTabMobile() {
     [statementCustomerId, activeBusinessId, activeShopId],
     []
   );
-
-  if (!allCustomers) {
-      return (
-          <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
-              <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
-                  <Users size={32} className="text-slate-300" />
-              </div>
-              <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Loading CRM...</p>
-          </div>
-      );
-  }
 
   const filteredCustomers = allCustomers.filter(c => 
       String(c.name || '').toLowerCase().includes(customerSearch.toLowerCase()) || 
@@ -359,6 +348,17 @@ export default function CustomersTabMobile() {
     setStatementPage(1);
   }, [statementCustomerId, statementDateMode, statementStart, statementEnd]);
 
+  if (!queriedCustomers) {
+      return (
+          <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
+              <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center animate-spin-slow">
+                  <Users size={32} className="text-slate-300" />
+              </div>
+              <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Loading CRM...</p>
+          </div>
+      );
+  }
+
   const openAddCustomer = () => {
       setEditingCustomer(null);
       setCustomerForm({ name: '', phone: '', email: '' });
@@ -435,6 +435,11 @@ export default function CustomersTabMobile() {
     try {
       const res = await MpesaService.triggerStkPush(editingCustomer.phone, amount, `REPAY-${editingCustomer.name.substring(0,5)}`, activeBusinessId!, activeShopId!);
       if (res.success && res.checkoutRequestId) {
+        if (res.redirectUrl) {
+          const opened = window.open(res.redirectUrl, '_blank');
+          if (opened) opened.opener = null;
+          if (!opened) window.location.assign(res.redirectUrl);
+        }
         setMpesaRequestId(res.checkoutRequestId);
         setMpesaState('POLLING');
         startPolling(res.checkoutRequestId, amount);

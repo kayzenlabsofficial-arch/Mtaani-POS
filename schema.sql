@@ -648,6 +648,8 @@ CREATE TABLE IF NOT EXISTS mpesaCallbacks (
     amount REAL,
     receiptNumber TEXT,
     phoneNumber TEXT,
+    provider TEXT DEFAULT 'MPESA',
+    redirectUrl TEXT,
     businessId TEXT,
     timestamp INTEGER,
     utilizedTransactionId TEXT,
@@ -662,6 +664,7 @@ CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_utilized ON mpesaCallbacks(busines
 CREATE TABLE IF NOT EXISTS mpesaCredentials (
     businessId TEXT PRIMARY KEY,
     settingsId TEXT,
+    paymentProvider TEXT NOT NULL DEFAULT 'MPESA',
     environment TEXT NOT NULL DEFAULT 'sandbox',
     accountType TEXT NOT NULL DEFAULT 'paybill',
     product TEXT NOT NULL DEFAULT 'M-PESA EXPRESS',
@@ -670,6 +673,11 @@ CREATE TABLE IF NOT EXISTS mpesaCredentials (
     consumerKeyCipher TEXT,
     consumerSecretCipher TEXT,
     passkeyCipher TEXT,
+    pesapalEnvironment TEXT NOT NULL DEFAULT 'sandbox',
+    pesapalCurrency TEXT NOT NULL DEFAULT 'KES',
+    pesapalIpnId TEXT,
+    pesapalConsumerKeyCipher TEXT,
+    pesapalConsumerSecretCipher TEXT,
     credentialsVersion TEXT DEFAULT 'enc:v2',
     lastTestAt INTEGER,
     lastTestStatus TEXT,
@@ -690,6 +698,8 @@ CREATE TABLE IF NOT EXISTS billingPayments (
     resultCode INTEGER,
     resultDesc TEXT,
     status TEXT NOT NULL DEFAULT 'PENDING',
+    provider TEXT DEFAULT 'MPESA',
+    redirectUrl TEXT,
     createdAt INTEGER,
     updated_at INTEGER
 );

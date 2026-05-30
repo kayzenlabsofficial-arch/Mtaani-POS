@@ -29,8 +29,7 @@ export default function SuppliersTabDesktop({ setActiveTab }: { setActiveTab?: (
 
   const allSuppliers = useLiveQuery(
     () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
   
   const allProducts = useLiveQuery(

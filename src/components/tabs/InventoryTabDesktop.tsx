@@ -17,6 +17,7 @@ import { normaliseDiscountType, productDiscountLabel, productSalePrice } from '.
 import { normaliseSupplierIds } from '../../utils/supplierProducts';
 import { lineNetAmount, netItemQuantity } from '../../utils/posMoney';
 import { isLowStockProduct, stockMovementTotals } from '../../utils/inventoryIntegrity';
+import LoadingState from '../shared/LoadingState';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -101,16 +102,16 @@ export default function InventoryTabDesktop() {
         (p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode && p.barcode.includes(search)))
       ).toArray();
     },
-    [search, selectedCategory, activeBusinessId, activeShopId], []
+    [search, selectedCategory, activeBusinessId, activeShopId]
   );
   const productIngredients = useLiveQuery(
     () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId], []
+    [activeBusinessId]
   );
 
   const categories = useLiveQuery(
     () => activeBusinessId ? db.categories.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveShop(c, activeShopId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeShopId], []
+    [activeBusinessId, activeShopId]
   );
 
   useEffect(() => {
@@ -121,8 +122,7 @@ export default function InventoryTabDesktop() {
 
   const suppliers = useLiveQuery(
     () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
 
   const selectedMovements = useLiveQuery(
@@ -139,7 +139,24 @@ export default function InventoryTabDesktop() {
     []
   );
 
-  const displayProducts = enrichProductsWithBundleStock(products || [], productIngredients || []);
+  const inventoryLoadingParts = [products, productIngredients, categories, suppliers];
+  const inventoryLoadedCount = inventoryLoadingParts.filter(Boolean).length;
+  const inventoryLoadingProgress = Math.max(8, Math.round((inventoryLoadedCount / inventoryLoadingParts.length) * 100));
+  const isInventoryLoading = inventoryLoadedCount < inventoryLoadingParts.length;
+
+  if (isInventoryLoading) {
+    return (
+      <LoadingState
+        title="Loading inventory items..."
+        detail="Reading products, stock, categories, and suppliers."
+        progress={inventoryLoadingProgress}
+        icon={<MaterialIcon name="inventory" className="text-blue-700" style={{ fontSize: '34px' }} />}
+        className="rounded-lg border-2 border-slate-200 bg-white shadow-sm"
+      />
+    );
+  }
+
+  const displayProducts = enrichProductsWithBundleStock(products, productIngredients);
 
   const filteredProducts = displayProducts.filter(product => {
     const stock = product.stockQuantity || 0;

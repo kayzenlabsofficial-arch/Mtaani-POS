@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, ShieldCheck, RefreshCcw, Download, ScanLine, Printer, Usb, Building2, Check, X, Store, Pencil, Smartphone, KeyRound, type LucideIcon } from 'lucide-react';
+import { Save, ShieldCheck, RefreshCcw, Download, ScanLine, Printer, Usb, Building2, Check, X, Store, Pencil, Smartphone, KeyRound, Loader2, CreditCard, type LucideIcon } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
@@ -35,7 +35,7 @@ type SettingsSectionId = 'business' | 'tills' | 'mpesa' | 'hardware' | 'owner' |
 const settingsSections: Array<{ id: SettingsSectionId; label: string; Icon: LucideIcon }> = [
   { id: 'business', label: 'Business', Icon: Building2 },
   { id: 'tills', label: 'Tills', Icon: Store },
-  { id: 'mpesa', label: 'M-Pesa', Icon: Smartphone },
+  { id: 'mpesa', label: 'Payments', Icon: CreditCard },
   { id: 'hardware', label: 'Hardware', Icon: Usb },
   { id: 'owner', label: 'Owner mode', Icon: ShieldCheck },
   { id: 'system', label: 'System', Icon: Download },
@@ -203,13 +203,15 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
   const activeBusinessId = useStore((state) => state.activeBusinessId);
   const { success, warning, error } = useToast();
   
-  const savedSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId], null);
+  const savedSettings = useLiveQuery(
+    async () => activeBusinessId ? (await getBusinessSettings(activeBusinessId)) || null : null,
+    [activeBusinessId]
+  );
   const savedTillRows = useLiveQuery(
     () => activeBusinessId
       ? db.salesTills.where('businessId').equals(activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId],
-    []
+    [activeBusinessId]
   );
   const savedDrafts = React.useMemo(() => {
     const tableTills = parseSalesTillRows(savedTillRows);
@@ -253,6 +255,7 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
   const [mpesaStatus, setMpesaStatus] = useState<MpesaSettingsStatus | null>(null);
   const [isMpesaBusy, setIsMpesaBusy] = useState(false);
   const [mpesaDraft, setMpesaDraft] = useState({
+    provider: 'MPESA' as 'MPESA' | 'PESAPAL',
     env: 'sandbox' as 'sandbox' | 'production',
     type: 'paybill' as 'paybill' | 'buygoods',
     product: 'M-PESA EXPRESS',
@@ -261,6 +264,11 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
     consumerKey: '',
     consumerSecret: '',
     passkey: '',
+    pesapalEnv: 'sandbox' as 'sandbox' | 'production',
+    pesapalCurrency: 'KES',
+    pesapalIpnId: '',
+    pesapalConsumerKey: '',
+    pesapalConsumerSecret: '',
     adminPassword: '',
   });
 
@@ -276,6 +284,7 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
 
   const resetMpesaDraft = React.useCallback(() => {
     setMpesaDraft({
+      provider: mpesaStatus?.paymentProvider || 'MPESA',
       env: mpesaStatus?.mpesaEnv || 'sandbox',
       type: mpesaStatus?.mpesaType || 'paybill',
       product: mpesaStatus?.mpesaProduct || 'M-PESA EXPRESS',
@@ -284,6 +293,11 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
       consumerKey: '',
       consumerSecret: '',
       passkey: '',
+      pesapalEnv: mpesaStatus?.pesapalEnv || 'sandbox',
+      pesapalCurrency: mpesaStatus?.pesapalCurrency || 'KES',
+      pesapalIpnId: '',
+      pesapalConsumerKey: '',
+      pesapalConsumerSecret: '',
       adminPassword: '',
     });
   }, [mpesaStatus, storeSettings.tillNumber]);
@@ -318,6 +332,17 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
   useEffect(() => {
     void refreshHardwareDevices(true);
   }, []);
+
+  const settingsLoading = savedSettings === undefined || !savedTillRows;
+
+  if (settingsLoading) {
+    return (
+      <div className="flex min-h-[55vh] flex-col items-center justify-center gap-4">
+        <Loader2 size={30} className="animate-spin text-blue-700" />
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading settings...</p>
+      </div>
+    );
+  }
 
   const connectHardware = async (
     transport: 'BROWSER_PRINT' | 'USB' | 'SERIAL' | 'HID' | 'BLUETOOTH' | 'CAMERA' | 'KEYBOARD',
@@ -453,6 +478,7 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
         userId: currentUser.id,
         adminPassword: mpesaDraft.adminPassword,
         credentials: {
+          provider: mpesaDraft.provider,
           env: mpesaDraft.env,
           type: mpesaDraft.type,
           product: mpesaDraft.product,
@@ -461,6 +487,11 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
           consumerKey: mpesaDraft.consumerKey,
           consumerSecret: mpesaDraft.consumerSecret,
           passkey: mpesaDraft.passkey,
+          pesapalEnv: mpesaDraft.pesapalEnv,
+          pesapalCurrency: mpesaDraft.pesapalCurrency,
+          pesapalIpnId: mpesaDraft.pesapalIpnId,
+          pesapalConsumerKey: mpesaDraft.pesapalConsumerKey,
+          pesapalConsumerSecret: mpesaDraft.pesapalConsumerSecret,
         },
       });
       if (result.error) return error(result.error);
@@ -470,10 +501,12 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
         consumerKey: '',
         consumerSecret: '',
         passkey: '',
+        pesapalConsumerKey: '',
+        pesapalConsumerSecret: '',
         adminPassword: '',
       }));
       setEditingSection(null);
-      success('M-Pesa settings saved securely.');
+      success('Payment API settings saved securely.');
     } finally {
       setIsMpesaBusy(false);
     }
@@ -489,7 +522,7 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
         adminPassword: mpesaDraft.adminPassword,
       });
       if (result.error) return error(result.error);
-      success(result.message || 'M-Pesa credentials connected successfully.');
+      success(result.message || 'Payment API credentials connected successfully.');
       await loadMpesaStatus();
     } finally {
       setIsMpesaBusy(false);
@@ -617,6 +650,91 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
         </p>
       </div>
 
+      <div>
+        <FieldLabel>Payment API</FieldLabel>
+        <div className="grid grid-cols-2 gap-2 rounded-lg border-2 border-slate-200 bg-slate-50 p-1">
+          {([
+            ['PESAPAL', 'PesaPal', CreditCard],
+            ['MPESA', 'M-Pesa API', Smartphone],
+          ] as const).map(([id, label, Icon]) => {
+            const active = mpesaDraft.provider === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setMpesaDraft(prev => ({ ...prev, provider: id }))}
+                className={`flex h-11 items-center justify-center gap-2 rounded-md px-3 text-[10px] font-black uppercase tracking-widest transition ${
+                  active ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:bg-white hover:text-slate-950'
+                }`}
+              >
+                <Icon size={15} />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {mpesaDraft.provider === 'PESAPAL' ? (
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <FieldLabel>PesaPal environment</FieldLabel>
+              <select
+                value={mpesaDraft.pesapalEnv}
+                onChange={event => setMpesaDraft(prev => ({ ...prev, pesapalEnv: event.target.value as 'sandbox' | 'production' }))}
+                className="w-full rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none transition-colors focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="sandbox">Sandbox</option>
+                <option value="production">Production</option>
+              </select>
+            </div>
+            <div>
+              <FieldLabel>Currency</FieldLabel>
+              <TextInput
+                type="text"
+                value={mpesaDraft.pesapalCurrency}
+                maxLength={3}
+                onChange={event => setMpesaDraft(prev => ({ ...prev, pesapalCurrency: event.target.value.toUpperCase() }))}
+              />
+            </div>
+          </div>
+
+          <div>
+            <FieldLabel>IPN notification ID</FieldLabel>
+            <TextInput
+              type="text"
+              value={mpesaDraft.pesapalIpnId}
+              placeholder={mpesaStatus?.pesapalIpnIdSet ? 'Saved - leave blank to keep' : 'Optional; auto-registered if blank'}
+              onChange={event => setMpesaDraft(prev => ({ ...prev, pesapalIpnId: event.target.value }))}
+            />
+          </div>
+
+          <div className="grid gap-4">
+            <div>
+              <FieldLabel>PesaPal consumer key</FieldLabel>
+              <TextInput
+                type="password"
+                autoComplete="new-password"
+                value={mpesaDraft.pesapalConsumerKey}
+                placeholder={mpesaStatus?.pesapalConsumerKeySet ? 'Saved securely - leave blank to keep' : 'Enter PesaPal consumer key'}
+                onChange={event => setMpesaDraft(prev => ({ ...prev, pesapalConsumerKey: event.target.value }))}
+              />
+            </div>
+            <div>
+              <FieldLabel>PesaPal consumer secret</FieldLabel>
+              <TextInput
+                type="password"
+                autoComplete="new-password"
+                value={mpesaDraft.pesapalConsumerSecret}
+                placeholder={mpesaStatus?.pesapalConsumerSecretSet ? 'Saved securely - leave blank to keep' : 'Enter PesaPal consumer secret'}
+                onChange={event => setMpesaDraft(prev => ({ ...prev, pesapalConsumerSecret: event.target.value }))}
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <FieldLabel>Environment</FieldLabel>
@@ -706,6 +824,8 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
           />
         </div>
       </div>
+        </>
+      )}
 
       <div>
         <div>
@@ -1035,36 +1155,42 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
 
         {activeSettingsSection === 'mpesa' && (
           <SummaryPanel
-            title="M-Pesa"
-            description="Secure Daraja credentials for phone prompts and payment verification."
-            Icon={Smartphone}
-            actionLabel={mpesaStatus?.mpesaConfigured ? 'Manage' : 'Set up'}
+            title="Payments"
+            description="Choose direct Safaricom M-Pesa API or PesaPal checkout for phone payments."
+            Icon={CreditCard}
+            actionLabel={mpesaStatus?.activeProviderConfigured ? 'Manage' : 'Set up'}
             onEdit={() => openEdit('mpesa')}
           >
             <div className="space-y-5">
               <div className="grid border-b border-slate-200 pb-3 sm:grid-cols-3 sm:divide-x sm:divide-slate-200">
                 <ProfileDetail
-                  label="Connection"
-                  value={mpesaStatus?.mpesaConfigured ? 'Configured' : 'Not configured'}
+                  label="Active API"
+                  value={mpesaStatus?.paymentProvider === 'PESAPAL' ? 'PesaPal' : 'M-Pesa API'}
                   className="sm:pr-4"
                 />
                 <ProfileDetail
                   label="Environment"
-                  value={mpesaStatus?.mpesaEnv === 'production' ? 'Production' : 'Sandbox'}
+                  value={(mpesaStatus?.paymentProvider === 'PESAPAL' ? mpesaStatus?.pesapalEnv : mpesaStatus?.mpesaEnv) === 'production' ? 'Production' : 'Sandbox'}
                   className="border-t border-slate-200 sm:border-t-0 sm:px-4"
                 />
                 <ProfileDetail
-                  label="Account type"
-                  value={mpesaStatus?.mpesaType === 'buygoods' ? 'Buy goods / Till' : 'Paybill'}
+                  label="Connection"
+                  value={mpesaStatus?.activeProviderConfigured ? 'Configured' : 'Not configured'}
                   className="border-t border-slate-200 sm:border-t-0 sm:pl-4"
                 />
               </div>
 
               <div className="divide-y divide-slate-200 border-y border-slate-200">
                 <ProfileRow
-                  label="Daraja product"
-                  value={`${mpesaStatus?.mpesaProduct || 'M-PESA EXPRESS'} ${mpesaStatus?.mpesaEnv === 'production' ? 'Production' : 'Sandbox'}`}
-                  status={<StatusPill active={!!mpesaStatus?.mpesaProduct} label="Selected" />}
+                  label="PesaPal"
+                  value={mpesaStatus?.pesapalConfigured ? `${mpesaStatus.pesapalCurrency || 'KES'} ${mpesaStatus.pesapalEnv}` : 'Not configured'}
+                  status={<StatusPill active={!!mpesaStatus?.pesapalConfigured} label={mpesaStatus?.paymentProvider === 'PESAPAL' ? 'Active' : 'Saved'} />}
+                  Icon={CreditCard}
+                />
+                <ProfileRow
+                  label="M-Pesa API"
+                  value={mpesaStatus?.mpesaConfigured ? `${mpesaStatus.mpesaProduct || 'M-PESA EXPRESS'} ${mpesaStatus.mpesaType === 'buygoods' ? 'Buy goods' : 'Paybill'}` : 'Not configured'}
+                  status={<StatusPill active={!!mpesaStatus?.mpesaConfigured} label={mpesaStatus?.paymentProvider === 'MPESA' ? 'Active' : 'Saved'} />}
                   Icon={Smartphone}
                 />
                 <ProfileRow
@@ -1074,8 +1200,8 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
                   Icon={ShieldCheck}
                 />
                 <ProfileRow
-                  label="Credential secrets"
-                  value={mpesaStatus?.mpesaConfigured ? 'Consumer key, consumer secret, and passkey are saved' : 'Credentials still need setup'}
+                  label="Active credential secrets"
+                  value={mpesaStatus?.activeProviderConfigured ? 'Required secrets are saved' : 'Credentials still need setup'}
                   status={<StatusPill active={!!mpesaStatus?.credentialsEncrypted} label={mpesaStatus?.credentialsEncrypted ? 'Encrypted' : 'Not saved'} />}
                   Icon={KeyRound}
                 />

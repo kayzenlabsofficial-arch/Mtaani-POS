@@ -1,18 +1,39 @@
-import Dexie, { type Table } from 'dexie';
+import type Dexie from 'dexie';
+import type { Table } from 'dexie';
+import { getDesktopBridge } from '../desktop/runtime';
+import { getMobileNativeLocalDb } from '../mobile/native-sqlite';
 
 export type OfflineCacheTable =
   | 'products'
+  | 'transactions'
+  | 'refunds'
+  | 'cashPicks'
+  | 'shifts'
+  | 'endOfDayReports'
+  | 'stockMovements'
+  | 'expenses'
   | 'categories'
   | 'customers'
   | 'customerPayments'
+  | 'salesInvoices'
   | 'serviceItems'
   | 'suppliers'
+  | 'supplierPayments'
+  | 'creditNotes'
+  | 'dailySummaries'
+  | 'stockAdjustmentRequests'
+  | 'purchaseOrders'
+  | 'hrStaff'
+  | 'hrStaffDocuments'
+  | 'hrAttendance'
+  | 'hrPayrollAdjustments'
   | 'settings'
   | 'salesTills'
   | 'users'
   | 'financialAccounts'
   | 'expenseAccounts'
-  | 'productIngredients';
+  | 'productIngredients'
+  | 'businesses';
 
 export type OfflineOutboxOp = 'UPSERT';
 
@@ -58,22 +79,41 @@ export interface SyncStateRow {
   updatedAt: number;
 }
 
-class OfflineDexie extends Dexie {
-  cachedRows!: Table<CachedRows, string>;
-  outbox!: Table<OutboxItem, string>;
-  syncState!: Table<SyncStateRow, string>;
+type OfflineDexieInstance = Dexie & {
+  cachedRows: Table<CachedRows, string>;
+  outbox: Table<OutboxItem, string>;
+  syncState: Table<SyncStateRow, string>;
+};
 
-  constructor() {
-    super('mtaani_pos_offline_v2');
-    this.version(1).stores({
-      cachedRows: 'id, table, businessId, shopId, updatedAt',
-      outbox: 'id, businessId, shopId, table, createdAt, ackedAt, idempotencyKey',
-      syncState: 'id, businessId, shopId, deviceId, updatedAt',
+let browserDbPromise: Promise<OfflineDexieInstance> | null = null;
+
+function browserOfflineDb(): Promise<OfflineDexieInstance> {
+  if (!browserDbPromise) {
+    browserDbPromise = import('dexie').then(({ default: DexieCtor }) => {
+      class OfflineDexie extends DexieCtor {
+        cachedRows!: Table<CachedRows, string>;
+        outbox!: Table<OutboxItem, string>;
+        syncState!: Table<SyncStateRow, string>;
+
+        constructor() {
+          super('mtaani_pos_offline_v2');
+          this.version(1).stores({
+            cachedRows: 'id, table, businessId, shopId, updatedAt',
+            outbox: 'id, businessId, shopId, table, createdAt, ackedAt, idempotencyKey',
+            syncState: 'id, businessId, shopId, deviceId, updatedAt',
+          });
+        }
+      }
+
+      return new OfflineDexie() as OfflineDexieInstance;
     });
   }
+  return browserDbPromise;
 }
 
-export const offlineDb = new OfflineDexie();
+function nativeLocalDb() {
+  return getDesktopBridge()?.localDb || getMobileNativeLocalDb();
+}
 
 export function getDeviceId(): string {
   if (typeof window === 'undefined') return 'server';
@@ -106,6 +146,13 @@ export async function cacheTableRows(args: {
   rows: any[];
   updatedAt?: number;
 }): Promise<void> {
+  const nativeDb = nativeLocalDb();
+  if (nativeDb) {
+    await nativeDb.cacheTableRows(args);
+    return;
+  }
+
+  const offlineDb = await browserOfflineDb();
   const updatedAt = args.updatedAt ?? Date.now();
   await offlineDb.cachedRows.put({
     id: cacheKey(args.table, args.businessId, args.shopId),
@@ -122,12 +169,32 @@ export async function readCachedTableRows(args: {
   businessId: string;
   shopId?: string;
 }): Promise<any[]> {
+  const nativeDb = nativeLocalDb();
+  if (nativeDb) return nativeDb.readCachedTableRows(args);
+
+  const offlineDb = await browserOfflineDb();
   const row = await offlineDb.cachedRows.get(cacheKey(args.table, args.businessId, args.shopId));
   return row?.rows ?? [];
 }
 
 export async function enqueueOutbox(item: Omit<OutboxItem, 'id' | 'createdAt' | 'attemptCount'> & { id?: string; createdAt?: number }): Promise<string> {
   const id = item.id ?? crypto.randomUUID();
+  const createdAt = item.createdAt ?? Date.now();
+  const nativeDb = nativeLocalDb();
+  if (nativeDb) {
+    return nativeDb.enqueueOutbox({
+      id,
+      businessId: item.businessId,
+      shopId: item.shopId,
+      table: item.table,
+      op: item.op,
+      idempotencyKey: item.idempotencyKey,
+      payload: item.payload,
+      createdAt,
+    });
+  }
+
+  const offlineDb = await browserOfflineDb();
   await offlineDb.outbox.put({
     id,
     businessId: item.businessId,
@@ -136,21 +203,36 @@ export async function enqueueOutbox(item: Omit<OutboxItem, 'id' | 'createdAt' | 
     op: item.op,
     idempotencyKey: item.idempotencyKey,
     payload: item.payload,
-    createdAt: item.createdAt ?? Date.now(),
+    createdAt,
     attemptCount: 0,
   });
   return id;
 }
 
 export async function markOutboxAttempt(id: string, args: { error?: string } = {}): Promise<void> {
+  const nativeDb = nativeLocalDb();
+  if (nativeDb) {
+    await nativeDb.markOutboxAttempt({ id, error: args.error });
+    return;
+  }
+
+  const offlineDb = await browserOfflineDb();
+  const existing = await offlineDb.outbox.get(id);
   await offlineDb.outbox.update(id, {
-    attemptCount: (Dexie as any).increment(1),
+    attemptCount: Number(existing?.attemptCount || 0) + 1,
     lastAttemptAt: Date.now(),
     error: args.error,
   });
 }
 
 export async function markOutboxError(id: string, error: string): Promise<void> {
+  const nativeDb = nativeLocalDb();
+  if (nativeDb) {
+    await nativeDb.markOutboxError({ id, error });
+    return;
+  }
+
+  const offlineDb = await browserOfflineDb();
   await offlineDb.outbox.update(id, {
     lastAttemptAt: Date.now(),
     error,
@@ -158,11 +240,25 @@ export async function markOutboxError(id: string, error: string): Promise<void> 
 }
 
 export async function markOutboxAcked(id: string): Promise<void> {
+  const nativeDb = nativeLocalDb();
+  if (nativeDb) {
+    await nativeDb.markOutboxAcked({ id });
+    return;
+  }
+
+  const offlineDb = await browserOfflineDb();
   await offlineDb.outbox.update(id, { ackedAt: Date.now(), error: undefined });
 }
 
 export async function markOutboxBatchAcked(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
+  const nativeDb = nativeLocalDb();
+  if (nativeDb) {
+    await nativeDb.markOutboxBatchAcked({ ids });
+    return;
+  }
+
+  const offlineDb = await browserOfflineDb();
   const now = Date.now();
   await offlineDb.transaction('rw', offlineDb.outbox, async () => {
     await Promise.all(ids.map(id => offlineDb.outbox.update(id, { ackedAt: now, error: undefined })));
@@ -181,6 +277,10 @@ function isDueForRetry(item: OutboxItem, now: number): boolean {
 }
 
 export async function getPendingOutbox(args: { businessId: string; shopId: string; limit?: number; dueOnly?: boolean }): Promise<OutboxItem[]> {
+  const nativeDb = nativeLocalDb();
+  if (nativeDb) return nativeDb.getPendingOutbox(args);
+
+  const offlineDb = await browserOfflineDb();
   const limit = args.limit ?? 50;
   const now = Date.now();
   return offlineDb.outbox
@@ -192,6 +292,10 @@ export async function getPendingOutbox(args: { businessId: string; shopId: strin
 }
 
 export async function getOutboxStats(args: { businessId: string; shopId: string }): Promise<OutboxStats> {
+  const nativeDb = nativeLocalDb();
+  if (nativeDb) return nativeDb.getOutboxStats(args);
+
+  const offlineDb = await browserOfflineDb();
   const rows = await offlineDb.outbox
     .where('businessId')
     .equals(args.businessId)
@@ -211,6 +315,13 @@ export async function getOutboxStats(args: { businessId: string; shopId: string 
 }
 
 export async function upsertSyncState(args: Omit<SyncStateRow, 'id' | 'updatedAt'> & { lastSuccessfulSyncAt?: number }): Promise<void> {
+  const nativeDb = nativeLocalDb();
+  if (nativeDb) {
+    await nativeDb.upsertSyncState(args);
+    return;
+  }
+
+  const offlineDb = await browserOfflineDb();
   const id = `${args.businessId}|${args.shopId}|${args.deviceId}`;
   await offlineDb.syncState.put({
     id,
@@ -224,5 +335,9 @@ export async function upsertSyncState(args: Omit<SyncStateRow, 'id' | 'updatedAt
 }
 
 export async function readSyncState(args: { businessId: string; shopId: string; deviceId: string }): Promise<SyncStateRow | undefined> {
+  const nativeDb = nativeLocalDb();
+  if (nativeDb) return nativeDb.readSyncState(args);
+
+  const offlineDb = await browserOfflineDb();
   return offlineDb.syncState.get(`${args.businessId}|${args.shopId}|${args.deviceId}`);
 }

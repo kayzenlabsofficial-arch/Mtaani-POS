@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { User, KeyRound, Save, X, ShieldCheck } from 'lucide-react';
 import { getApiKey } from '../../runtimeConfig';
 import { useToast } from '../../context/ToastContext';
+import { resolveApiUrl } from '../../desktop/runtime';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -39,7 +40,7 @@ export default function ProfileModalMobile({ isOpen, onClose, currentUser }: Pro
     setIsSaving(true);
     try {
       const apiKey = await getApiKey();
-      const res = await fetch('/api/user/password', {
+      const res = await fetch(resolveApiUrl('/api/user/password'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

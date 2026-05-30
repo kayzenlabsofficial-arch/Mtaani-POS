@@ -30,8 +30,7 @@ export default function SuppliersTabMobile({ setActiveTab }: { setActiveTab?: (t
 
   const allSuppliers = useLiveQuery(
     () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
   
   const allProducts = useLiveQuery(

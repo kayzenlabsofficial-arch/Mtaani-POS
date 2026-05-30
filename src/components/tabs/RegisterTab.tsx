@@ -71,26 +71,25 @@ export default function RegisterTab({
         (String(product.name || '').toLowerCase().includes(term) || String(product.barcode || '').toLowerCase().includes(term))
       ).toArray();
     },
-    [searchQuery, activeBusinessId, activeShopId],
-    []
+    [searchQuery, activeBusinessId, activeShopId]
   );
   const productIngredients = useLiveQuery(
     () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId],
-    []
+    [activeBusinessId]
   );
   const scannerProductsRaw = useLiveQuery(
     () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(product => belongsToActiveShop(product, activeShopId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
-  const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId], null);
+  const businessSettings = useLiveQuery(
+    async () => activeBusinessId ? (await getBusinessSettings(activeBusinessId)) || null : null,
+    [activeBusinessId]
+  );
   const shopShifts = useLiveQuery(
     () => canSeeShiftList && activeBusinessId && activeShopId
       ? db.shifts.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canSeeShiftList],
-    []
+    [activeBusinessId, activeShopId, canSeeShiftList]
   );
   const activeShop = {
     id: activeShopId,
@@ -321,6 +320,7 @@ export default function RegisterTab({
   const selectedProductCount = cart.length;
   const isProductSearchOpen = searchQuery.trim().length > 0;
   const canCheckout = canPerform(currentUser, 'sale.checkout', businessSettings);
+  const isRegisterDataLoading = !products || !productIngredients || !scannerProductsRaw || businessSettings === undefined || !shopShifts;
 
   React.useEffect(() => {
     if (cart.length === 0) setIsMobileCheckoutOpen(false);
@@ -351,6 +351,17 @@ export default function RegisterTab({
   const handleReceiptRefund = async () => {
     warning('Open Documents to refund a completed receipt.');
   };
+
+  if (isRegisterDataLoading) {
+    return (
+      <div className="flex h-full min-h-[55vh] flex-col items-center justify-center gap-4 bg-slate-50 p-4 text-center">
+        <div className="flex h-16 w-16 animate-spin-slow items-center justify-center rounded-lg border-2 border-slate-200 bg-white">
+          <span className="h-7 w-7 rounded-full border-2 border-slate-200 border-t-blue-700" />
+        </div>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading register...</p>
+      </div>
+    );
+  }
 
   if (!canOperateOwnShift) {
     return (

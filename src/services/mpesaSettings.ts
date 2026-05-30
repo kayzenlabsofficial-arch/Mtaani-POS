@@ -6,6 +6,7 @@ export interface SaveMpesaSettingsInput {
   userId: string;
   adminPassword: string;
   credentials: {
+    provider?: 'MPESA' | 'PESAPAL';
     consumerKey?: string;
     consumerSecret?: string;
     passkey?: string;
@@ -14,10 +15,17 @@ export interface SaveMpesaSettingsInput {
     product?: string;
     shortcode?: string;
     storeNumber?: string;
+    pesapalConsumerKey?: string;
+    pesapalConsumerSecret?: string;
+    pesapalEnv?: 'sandbox' | 'production';
+    pesapalCurrency?: string;
+    pesapalIpnId?: string;
   };
 }
 
 export interface MpesaSettingsStatus {
+  paymentProvider: 'MPESA' | 'PESAPAL';
+  activeProviderConfigured: boolean;
   mpesaConfigured: boolean;
   mpesaConsumerKeySet: boolean;
   mpesaConsumerSecretSet: boolean;
@@ -29,6 +37,14 @@ export interface MpesaSettingsStatus {
   mpesaStoreNumberSet: boolean;
   mpesaShortcodeMasked: string;
   mpesaStoreNumberMasked: string;
+  mpesaCredentialsEncrypted: boolean;
+  pesapalConfigured: boolean;
+  pesapalConsumerKeySet: boolean;
+  pesapalConsumerSecretSet: boolean;
+  pesapalEnv: 'sandbox' | 'production';
+  pesapalCurrency: string;
+  pesapalIpnIdSet: boolean;
+  pesapalCredentialsEncrypted: boolean;
   credentialsEncrypted: boolean;
   safeStorageReady: boolean;
   lastTestAt?: number | null;
@@ -42,7 +58,7 @@ export async function getShopMpesaSettings(businessId: string): Promise<{ succes
       businessId,
     });
   } catch (err: any) {
-    return { error: err?.message || 'Could not load M-Pesa settings.' };
+    return { error: err?.message || 'Could not load payment API settings.' };
   }
 }
 
@@ -55,7 +71,7 @@ export async function saveShopMpesaSettings(input: SaveMpesaSettingsInput): Prom
       businessId: input.businessId,
     });
   } catch (err: any) {
-    return { error: err?.message || 'Could not save M-Pesa settings.' };
+    return { error: err?.message || 'Could not save payment API settings.' };
   }
 }
 
@@ -71,6 +87,6 @@ export async function testShopMpesaSettings(input: {
       businessId: input.businessId,
     });
   } catch (err: any) {
-    return { error: err?.message || 'Could not test M-Pesa settings.' };
+    return { error: err?.message || 'Could not test payment API settings.' };
   }
 }

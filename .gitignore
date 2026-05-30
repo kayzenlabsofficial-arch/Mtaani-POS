@@ -9,6 +9,41 @@ coverage/
 # Production Build
 dist/
 build/
+out/
+release/
+dist-electron/
+
+# Desktop / mobile package artifacts
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.blockmap
+*.apk
+*.aab
+*.apks
+*.ipa
+*.asar
+*.nsis.7z
+builder-debug.yml
+builder-effective-config.yaml
+
+# Archives and exported bundles
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+
+# Android generated output
+android/.gradle/
+android/build/
+android/app/build/
+android/app/debug/
+android/app/release/
 
 # Wrangler / Cloudflare
 .wrangler/
@@ -22,6 +57,12 @@ build/
 .env.development.local
 .env.test.local
 .env.production.local
+desktop-config.json
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
 
 # IDE
 .vscode/

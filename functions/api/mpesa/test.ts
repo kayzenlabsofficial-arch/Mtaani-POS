@@ -1,5 +1,6 @@
 import { authorizeRequest, canAccessBusiness, verifyPassword } from '../authUtils';
-import { loadMpesaRuntimeCredentials, recordMpesaTestResult } from './credentialStore';
+import { loadActivePaymentRuntimeCredentials, recordMpesaTestResult } from './credentialStore';
+import { getPesaPalToken } from './pesapalUtils';
 import {
   clearMpesaSettingsAttempts,
   ensureMpesaSettingsAttemptTable,
@@ -39,7 +40,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   const auth = await authorizeRequest(request, env);
   if (!auth.ok) return auth.response;
   if (!auth.service && auth.principal.role !== 'ADMIN' && auth.principal.role !== 'ROOT') {
-    return json({ error: 'Only an administrator can test M-Pesa settings.' }, 403);
+    return json({ error: 'Only an administrator can test payment API settings.' }, 403);
   }
 
   const body = await request.json().catch(() => null) as any;
@@ -56,7 +57,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     await ensureMpesaSettingsAttemptTable(env.DB);
     const lockedMinutes = await getMpesaSettingsLockMinutes(env.DB, attemptId);
     if (lockedMinutes > 0) {
-      return json({ error: `M-Pesa settings are locked. Try again in ${lockedMinutes} minute${lockedMinutes === 1 ? '' : 's'}.` }, 423);
+      return json({ error: `Payment API settings are locked. Try again in ${lockedMinutes} minute${lockedMinutes === 1 ? '' : 's'}.` }, 423);
     }
   }
 
@@ -67,7 +68,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     const user = await env.DB.prepare('SELECT id, role, password FROM users WHERE id = ? AND businessId = ? LIMIT 1')
       .bind(userId, businessId)
       .first<any>();
-    if (!user || user.role !== 'ADMIN') return json({ error: 'Only an administrator can test M-Pesa settings.' }, 403);
+    if (!user || user.role !== 'ADMIN') return json({ error: 'Only an administrator can test payment API settings.' }, 403);
     const passwordOk = await verifyPassword(adminPassword, String(user.password || ''));
     if (!passwordOk) {
       await recordFailedMpesaSettingsAttempt(env.DB, attemptId);
@@ -77,7 +78,14 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   if (needsPasswordCheck) await clearMpesaSettingsAttempts(env.DB, attemptId);
 
   try {
-    const credentials = await loadMpesaRuntimeCredentials(env.DB, businessId, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
+    const activePayment = await loadActivePaymentRuntimeCredentials(env.DB, businessId, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
+    if (activePayment.provider === 'PESAPAL') {
+      await getPesaPalToken(activePayment.pesapal);
+      await recordMpesaTestResult(env.DB, businessId, 'PASSED', 'PesaPal credentials connected successfully.');
+      return json({ success: true, message: 'PesaPal credentials connected successfully.' });
+    }
+
+    const credentials = activePayment.mpesa;
     const baseUrl = credentials.env === 'production'
       ? 'https://api.safaricom.co.ke'
       : 'https://sandbox.safaricom.co.ke';
@@ -97,7 +105,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   } catch (err: any) {
     const message = String(err?.message || '').includes('safe storage key')
       ? err.message
-      : 'M-Pesa settings could not be tested.';
+      : 'Payment API settings could not be tested.';
     await recordMpesaTestResult(env.DB, businessId, 'FAILED', message).catch(() => {});
     console.error('[M-Pesa Test Error]', message);
     return json({ error: message }, 400);

@@ -42,17 +42,25 @@ export default function PurchasesTabDesktop() {
   const activeShopId = useStore(state => state.activeShopId);
   const activeBusinessId = useStore(state => state.activeBusinessId);
   
-  const allPurchaseOrders = useLiveQuery(() => activeShopId ? db.purchaseOrders.where('shopId').equals(activeShopId).toArray() : Promise.resolve([]), [activeShopId], []) ;
+  const allPurchaseOrders = useLiveQuery(() => activeShopId ? db.purchaseOrders.where('shopId').equals(activeShopId).toArray() : Promise.resolve([]), [activeShopId]) ;
   const allSuppliers = useLiveQuery(
     () => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
   const allProducts = useLiveQuery(
     () => activeBusinessId && activeShopId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveShop(p, activeShopId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
+  if (!allPurchaseOrders || !allSuppliers || !allProducts) {
+    return (
+      <div className="flex min-h-[45vh] flex-col items-center justify-center gap-4">
+        <div className="flex h-16 w-16 animate-spin-slow items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
+          <ClipboardList size={34} className="text-slate-300" />
+        </div>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading purchases...</p>
+      </div>
+    );
+  }
   const supplierProducts = productsForSupplier(allProducts || [], allPurchaseOrders || [], poForm.supplierId);
   const filteredPurchases = allPurchaseOrders.filter(po => 
       (po.invoiceNumber || '').toLowerCase().includes(purchaseSearch.toLowerCase()) || 

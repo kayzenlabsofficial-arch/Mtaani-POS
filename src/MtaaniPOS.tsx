@@ -14,7 +14,7 @@ import { getBusinessSettings } from './utils/settings';
 import { pickedCashAccountId, singleFinanceAccount } from './utils/financeAccount';
 import { useStore } from './store';
 import { getCurrentShiftId, getCurrentShiftStart } from './utils/shiftSession';
-import { BillingService, type BillingInfo } from './services/billing';
+import { BillingService, type BillingInfo, type BillingPaymentMethod } from './services/billing';
 
 // Modular Components
 import RegisterTab from './components/tabs/RegisterTab';
@@ -86,10 +86,12 @@ export default function MtaaniPOS() {
   const isRegisterTab = activeTab === 'REGISTER';
   const requiresAccountSetup = !!currentUser && Number(currentUser.mustChangePassword || 0) === 1;
   const [billingInfo, setBillingInfo] = React.useState<BillingInfo | null>(null);
+  const [billingPaymentMethod, setBillingPaymentMethod] = React.useState<BillingPaymentMethod>('PESAPAL');
   const [billingPhone, setBillingPhone] = React.useState('');
   const [billingCheckoutId, setBillingCheckoutId] = React.useState('');
   const [billingPaymentMessage, setBillingPaymentMessage] = React.useState('');
   const [isBillingPaying, setIsBillingPaying] = React.useState(false);
+  const handledBillingCallback = React.useRef(false);
   const canSeeSalesData = currentUser?.role === 'ADMIN' || currentUser?.role === 'ROOT'
     || (canOpenTab(currentUser, businessSettings, 'DASHBOARD') && !shouldBlurFeature(currentUser, businessSettings, 'dashboard.moneyBreakdown'));
 
@@ -121,16 +123,19 @@ export default function MtaaniPOS() {
     const res = await BillingService.status({ businessId: activeBusinessId, checkoutRequestId });
     setBillingInfo(res.billing);
     if (checkoutRequestId && res.payment?.status) {
+      const provider = String(res.payment.provider || billingPaymentMethod).toUpperCase();
       setBillingPaymentMessage(
         res.payment.status === 'PAID'
           ? 'Payment received. Unlocking account...'
           : res.payment.status === 'FAILED'
             ? (res.payment.resultDesc || 'Payment request failed.')
-            : 'Waiting for M-Pesa confirmation.',
+            : provider === 'PESAPAL'
+              ? 'Waiting for PesaPal confirmation.'
+              : 'Waiting for M-Pesa confirmation.',
       );
     }
     return res;
-  }, [activeBusinessId, currentUser, isSystemAdmin]);
+  }, [activeBusinessId, billingPaymentMethod, currentUser, isSystemAdmin]);
 
   React.useEffect(() => {
     if (!currentUser || !activeBusinessId || isSystemAdmin) {
@@ -161,24 +166,61 @@ export default function MtaaniPOS() {
     return () => window.clearInterval(timer);
   }, [activeBusinessId, billingCheckoutId, refreshBillingStatus, success]);
 
+  React.useEffect(() => {
+    if (handledBillingCallback.current || !currentUser || !activeBusinessId || isSystemAdmin) return;
+    const url = new URL(window.location.href);
+    const provider = String(url.searchParams.get('billingProvider') || '').toUpperCase();
+    const trackingId = String(url.searchParams.get('billingTrackingId') || '').trim();
+    if (provider !== 'PESAPAL' || !trackingId) return;
+
+    handledBillingCallback.current = true;
+    setBillingPaymentMethod('PESAPAL');
+    setBillingCheckoutId(trackingId);
+    setBillingPaymentMessage('Checking PesaPal payment status...');
+    refreshBillingStatus(trackingId)
+      .then(res => {
+        if (String(res?.payment?.status || '').toUpperCase() === 'PAID') {
+          setBillingCheckoutId('');
+          setBillingPaymentMessage('Payment received. The account is active again.');
+          void db.businesses.reload().catch(() => {});
+          success('Payment received. Business unlocked.');
+        }
+      })
+      .catch(() => {});
+
+    for (const key of ['billingProvider', 'billingTrackingId', 'billingReference', 'billingNotification']) {
+      url.searchParams.delete(key);
+    }
+    const nextPath = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState({}, document.title, nextPath || '/');
+  }, [activeBusinessId, currentUser, isSystemAdmin, refreshBillingStatus, success]);
+
   const handleBillingPay = React.useCallback(async () => {
     if (!currentUser || currentUser.role !== 'ADMIN') return error('Only the business administrator can pay from the POS.');
     if (!activeBusinessId) return error('Business is still loading.');
-    if (!billingPhone.trim()) return error('Enter the Safaricom phone number.');
+    if (!billingPhone.trim()) return error(billingPaymentMethod === 'PESAPAL' ? 'Enter the M-Pesa phone number.' : 'Enter the Safaricom phone number.');
     setIsBillingPaying(true);
-    setBillingPaymentMessage('');
+    setBillingPaymentMessage(billingPaymentMethod === 'PESAPAL' ? 'Creating PesaPal checkout...' : '');
     try {
-      const res = await BillingService.pay({ businessId: activeBusinessId, phone: billingPhone.trim() });
+      const res = await BillingService.pay({ businessId: activeBusinessId, phone: billingPhone.trim(), method: billingPaymentMethod });
       setBillingInfo(res.billing);
       setBillingCheckoutId(res.payment.checkoutRequestId || '');
-      setBillingPaymentMessage(res.message || 'Payment prompt sent. Waiting for M-Pesa confirmation.');
-      success('Payment prompt sent.');
+      if (billingPaymentMethod === 'PESAPAL' && res.redirectUrl) {
+        setBillingPaymentMessage(res.message || 'Open PesaPal checkout and choose M-Pesa.');
+        const opened = window.open(res.redirectUrl, '_blank');
+        if (opened) opened.opener = null;
+        if (!opened) window.location.assign(res.redirectUrl);
+        success('PesaPal checkout opened.');
+      } else {
+        setBillingPaymentMessage(res.message || 'Payment prompt sent. Waiting for M-Pesa confirmation.');
+        success('Payment prompt sent.');
+      }
     } catch (err: any) {
       error(err?.message || 'Could not start payment.');
     } finally {
       setIsBillingPaying(false);
     }
-  }, [activeBusinessId, billingPhone, currentUser, error, success]);
+  }, [activeBusinessId, billingPaymentMethod, billingPhone, currentUser, error, success]);
 
   React.useEffect(() => {
     const root = document.documentElement;
@@ -349,6 +391,8 @@ export default function MtaaniPOS() {
   const isBusinessLocked = billingInfo?.billingStatus === 'LOCKED';
   const showBillingBanner = !!billingInfo && billingInfo.billingStatus !== 'OK';
   const billingPaymentProps = {
+    method: billingPaymentMethod,
+    setMethod: setBillingPaymentMethod,
     phone: billingPhone,
     setPhone: setBillingPhone,
     onPay: handleBillingPay,

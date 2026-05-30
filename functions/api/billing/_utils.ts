@@ -13,6 +13,12 @@ export interface BillingEnv {
   BILLING_MPESA_ACCOUNT_TYPE?: string;
   BILLING_MPESA_STORE_NUMBER?: string;
   BILLING_MPESA_CALLBACK_SECRET?: string;
+  BILLING_PESAPAL_ENV?: string;
+  BILLING_PESAPAL_CONSUMER_KEY?: string;
+  BILLING_PESAPAL_CONSUMER_SECRET?: string;
+  BILLING_PESAPAL_IPN_ID?: string;
+  BILLING_PESAPAL_IPN_SECRET?: string;
+  BILLING_PESAPAL_CURRENCY?: string;
 }
 
 export const billingCorsHeaders = {
@@ -71,6 +77,8 @@ export async function ensureBillingSchema(db: D1Database) {
       resultCode INTEGER,
       resultDesc TEXT,
       status TEXT NOT NULL DEFAULT 'PENDING',
+      provider TEXT DEFAULT 'MPESA',
+      redirectUrl TEXT,
       createdAt INTEGER,
       updated_at INTEGER
     )
@@ -85,6 +93,8 @@ export async function ensureBillingSchema(db: D1Database) {
     'ALTER TABLE billingPayments ADD COLUMN resultCode INTEGER',
     'ALTER TABLE billingPayments ADD COLUMN resultDesc TEXT',
     "ALTER TABLE billingPayments ADD COLUMN status TEXT NOT NULL DEFAULT 'PENDING'",
+    "ALTER TABLE billingPayments ADD COLUMN provider TEXT DEFAULT 'MPESA'",
+    'ALTER TABLE billingPayments ADD COLUMN redirectUrl TEXT',
     'ALTER TABLE billingPayments ADD COLUMN createdAt INTEGER',
     'ALTER TABLE billingPayments ADD COLUMN updated_at INTEGER',
     'CREATE INDEX IF NOT EXISTS idx_billingPayments_business_created ON billingPayments(businessId, createdAt)',
@@ -210,6 +220,86 @@ function requireSecret(value: string | undefined, name: string) {
   return clean;
 }
 
+function pesapalBaseUrl(env: BillingEnv) {
+  return String(env.BILLING_PESAPAL_ENV || 'sandbox').toLowerCase() === 'production'
+    ? 'https://pay.pesapal.com/v3'
+    : 'https://cybqa.pesapal.com/pesapalv3';
+}
+
+function originFromRequest(request: Request) {
+  const urlObj = new URL(request.url);
+  return `${urlObj.protocol}//${urlObj.host}`;
+}
+
+async function pesapalJson<T>(url: string, init: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => ({})) as any;
+  if (!res.ok || data?.error?.message || data?.error?.code) {
+    throw new Error(data?.error?.message || data?.message || `PesaPal request failed (${res.status}).`);
+  }
+  return data as T;
+}
+
+async function getPesaPalToken(env: BillingEnv): Promise<string> {
+  const consumerKey = requireSecret(env.BILLING_PESAPAL_CONSUMER_KEY, 'BILLING_PESAPAL_CONSUMER_KEY');
+  const consumerSecret = requireSecret(env.BILLING_PESAPAL_CONSUMER_SECRET, 'BILLING_PESAPAL_CONSUMER_SECRET');
+  const data = await pesapalJson<any>(`${pesapalBaseUrl(env)}/api/Auth/RequestToken`, {
+    method: 'POST',
+    body: JSON.stringify({
+      consumer_key: consumerKey,
+      consumer_secret: consumerSecret,
+    }),
+  });
+  const token = text(data?.token, '', 4000);
+  if (!token) throw new Error('PesaPal did not return an access token.');
+  return token;
+}
+
+async function getPesaPalNotificationId(request: Request, env: BillingEnv, token: string): Promise<string> {
+  const configured = text(env.BILLING_PESAPAL_IPN_ID, '', 120);
+  if (configured) return configured;
+
+  const ipnSecret = requireSecret(env.BILLING_PESAPAL_IPN_SECRET || env.BILLING_MPESA_CALLBACK_SECRET, 'BILLING_PESAPAL_IPN_SECRET');
+  const ipnUrl = `${originFromRequest(request)}/api/billing/pesapal/ipn/${encodeURIComponent(ipnSecret)}`;
+  const baseUrl = pesapalBaseUrl(env);
+  const authHeaders = { Authorization: `Bearer ${token}` };
+
+  const existingData = await pesapalJson<any>(`${baseUrl}/api/URLSetup/GetIpnList`, {
+    method: 'GET',
+    headers: authHeaders,
+  }).catch(() => []);
+  const existing = Array.isArray(existingData)
+    ? existingData
+    : Array.isArray(existingData?.ipn_list)
+      ? existingData.ipn_list
+      : Array.isArray(existingData?.data)
+        ? existingData.data
+        : [];
+  const match = Array.isArray(existing)
+    ? existing.find(item => String(item?.url || '').trim() === ipnUrl && String(item?.ipn_id || '').trim())
+    : null;
+  if (match?.ipn_id) return String(match.ipn_id);
+
+  const registered = await pesapalJson<any>(`${baseUrl}/api/URLSetup/RegisterIPN`, {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({
+      url: ipnUrl,
+      ipn_notification_type: 'GET',
+    }),
+  });
+  const ipnId = text(registered?.ipn_id, '', 120);
+  if (!ipnId) throw new Error('PesaPal did not return an IPN notification id.');
+  return ipnId;
+}
+
 export async function sendBillingStkPush(request: Request, env: BillingEnv, input: {
   businessId: string;
   businessCode: string;
@@ -281,11 +371,13 @@ export async function sendBillingStkPush(request: Request, env: BillingEnv, inpu
 
 export async function recordPendingBillingPayment(db: D1Database, input: {
   businessId: string;
-  phone: string;
+  phone?: string;
   amount: number;
   reference: string;
   checkoutRequestId: string;
-  merchantRequestId: string;
+  merchantRequestId?: string;
+  provider?: string;
+  redirectUrl?: string;
 }) {
   await ensureBillingSchema(db);
   const now = Date.now();
@@ -293,23 +385,144 @@ export async function recordPendingBillingPayment(db: D1Database, input: {
   await db.prepare(`
     INSERT INTO billingPayments (
       id, businessId, phone, amount, reference, checkoutRequestId,
-      merchantRequestId, resultCode, resultDesc, status, createdAt, updated_at
+      merchantRequestId, resultCode, resultDesc, status, provider, redirectUrl, createdAt, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)
   `).bind(
     id,
     input.businessId,
-    input.phone,
+    input.phone || '',
     input.amount,
     input.reference,
     input.checkoutRequestId,
-    input.merchantRequestId,
+    input.merchantRequestId || '',
     999,
     'PENDING',
+    text(input.provider, 'MPESA', 24).toUpperCase(),
+    input.redirectUrl || '',
     now,
     now,
   ).run();
   return id;
+}
+
+export async function sendBillingPesaPalOrder(request: Request, env: BillingEnv, input: {
+  businessId: string;
+  businessCode: string;
+  businessName: string;
+  phone?: string;
+  amount: number;
+}) {
+  const amount = Math.ceil(Number(input.amount) || 0);
+  if (amount <= 0) throw new Error('Payment amount is invalid.');
+  const token = await getPesaPalToken(env);
+  const notificationId = await getPesaPalNotificationId(request, env, token);
+  const origin = originFromRequest(request);
+  const merchantReference = `BILL${Date.now()}${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`.slice(0, 50);
+  const phone = formatPhone(input.phone || '');
+  if (!/^254[17]\d{8}$/.test(phone)) throw new Error('Enter a valid Safaricom phone number for PesaPal M-Pesa.');
+  const currency = text(env.BILLING_PESAPAL_CURRENCY, 'KES', 3).toUpperCase() || 'KES';
+  const firstName = text(input.businessName || input.businessCode, 'Mtaani', 40);
+
+  const data = await pesapalJson<any>(`${pesapalBaseUrl(env)}/api/Transactions/SubmitOrderRequest`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      id: merchantReference,
+      currency,
+      amount,
+      description: text(`Mtaani POS subscription ${input.businessCode}`, 'Mtaani POS subscription', 100),
+      callback_url: `${origin}/api/billing/pesapal/callback`,
+      cancellation_url: `${origin}/`,
+      redirect_mode: 'TOP_WINDOW',
+      notification_id: notificationId,
+      branch: text(input.businessCode, 'Mtaani POS', 100),
+      billing_address: {
+        email_address: '',
+        phone_number: phone,
+        country_code: 'KE',
+        first_name: firstName,
+        middle_name: '',
+        last_name: 'Business',
+        line_1: text(input.businessName, 'Mtaani POS', 100),
+        line_2: '',
+        city: 'Nairobi',
+        state: '',
+        postal_code: '',
+        zip_code: '',
+      },
+    }),
+  });
+
+  const orderTrackingId = text(data?.order_tracking_id, '', 120);
+  const redirectUrl = text(data?.redirect_url, '', 2000);
+  if (!orderTrackingId || !redirectUrl) throw new Error(data?.message || 'PesaPal did not return a checkout link.');
+
+  return {
+    phone,
+    amount,
+    reference: merchantReference,
+    checkoutRequestId: orderTrackingId,
+    merchantRequestId: text(data?.merchant_reference, merchantReference, 120),
+    redirectUrl,
+    message: 'PesaPal checkout created. Open the checkout link and choose M-Pesa.',
+  };
+}
+
+export async function refreshPesaPalBillingPayment(db: D1Database, env: BillingEnv, orderTrackingId: string) {
+  await ensureBillingSchema(db);
+  const trackingId = text(orderTrackingId, '', 160);
+  if (!trackingId) return null;
+
+  const existing = await db.prepare(`
+    SELECT id, businessId, status
+    FROM billingPayments
+    WHERE checkoutRequestId = ? AND provider = 'PESAPAL'
+    LIMIT 1
+  `).bind(trackingId).first<any>();
+  if (!existing) return null;
+  if (existing.status === 'PAID' || existing.status === 'FAILED') {
+    return getBillingPaymentByCheckout(db, existing.businessId, trackingId);
+  }
+
+  const token = await getPesaPalToken(env);
+  const status = await pesapalJson<any>(`${pesapalBaseUrl(env)}/api/Transactions/GetTransactionStatus?orderTrackingId=${encodeURIComponent(trackingId)}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const statusDescription = String(status?.payment_status_description || '').toUpperCase();
+  const statusCode = Number(status?.status_code);
+  const paid = statusCode === 1 || statusDescription === 'COMPLETED';
+  const failed = statusCode === 0 || statusCode === 2 || statusCode === 3
+    || statusDescription === 'FAILED' || statusDescription === 'REVERSED' || statusDescription === 'INVALID';
+  const now = Date.now();
+
+  await db.prepare(`
+    UPDATE billingPayments
+    SET resultCode = ?,
+        resultDesc = ?,
+        amount = COALESCE(NULLIF(?, 0), amount),
+        receiptNumber = COALESCE(NULLIF(?, ''), receiptNumber),
+        phone = COALESCE(NULLIF(?, ''), phone),
+        reference = COALESCE(NULLIF(?, ''), reference),
+        status = ?,
+        updated_at = ?
+    WHERE id = ?
+  `).bind(
+    Number.isFinite(statusCode) ? statusCode : 999,
+    text(status?.description || status?.payment_status_description || status?.message, paid ? 'Paid via PesaPal' : failed ? 'PesaPal payment failed' : 'PesaPal payment pending', 500),
+    Number(status?.amount || 0),
+    text(status?.confirmation_code, '', 160),
+    text(status?.payment_account, '', 160),
+    text(status?.merchant_reference, '', 160),
+    paid ? 'PAID' : failed ? 'FAILED' : 'PENDING',
+    now,
+    existing.id,
+  ).run();
+
+  if (paid) await markBillingPaid(db, existing.businessId, existing.id);
+  return getBillingPaymentByCheckout(db, existing.businessId, trackingId);
 }
 
 export async function applyBillingCallback(db: D1Database, input: {

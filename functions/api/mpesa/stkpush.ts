@@ -1,5 +1,6 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
-import { loadMpesaRuntimeCredentials } from './credentialStore';
+import { loadActivePaymentRuntimeCredentials } from './credentialStore';
+import { getPesaPalNotificationId, getPesaPalToken, submitPesaPalOrder } from './pesapalUtils';
 
 interface Env {
   DB: D1Database;
@@ -61,8 +62,85 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const reference = body.reference || 'POS_PAYMENT';
     const description = 'Payment for items';
 
-    // 1. Fetch credentials from the server-only encrypted M-Pesa store.
-    const credentials = await loadMpesaRuntimeCredentials(env.DB, body.businessId, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
+    // 1. Fetch credentials from the server-only encrypted payment store.
+    const activePayment = await loadActivePaymentRuntimeCredentials(env.DB, body.businessId, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
+
+    if (activePayment.provider === 'PESAPAL') {
+      const callbackSecret = env.MPESA_CALLBACK_SECRET;
+      if (!callbackSecret) {
+        throw new Error('MPESA_CALLBACK_SECRET is not set. Refusing to initiate PesaPal checkout without a protected IPN path.');
+      }
+      const urlObj = new URL(request.url);
+      const origin = `${urlObj.protocol}//${urlObj.host}`;
+      const credentials = activePayment.pesapal;
+      const token = await getPesaPalToken(credentials);
+      const notificationId = await getPesaPalNotificationId(credentials, token, `${origin}/api/mpesa/pesapal/ipn/${encodeURIComponent(callbackSecret)}`);
+      const order = await submitPesaPalOrder(credentials, token, {
+        amount,
+        phone,
+        reference,
+        businessId: body.businessId,
+        callbackUrl: `${origin}/api/mpesa/pesapal/callback`,
+        cancellationUrl: origin,
+        notificationId,
+      });
+
+      await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS mpesaCallbacks (
+          checkoutRequestId TEXT PRIMARY KEY,
+          merchantRequestId TEXT,
+          resultCode INTEGER,
+          resultDesc TEXT,
+          amount REAL,
+          receiptNumber TEXT,
+          phoneNumber TEXT,
+          provider TEXT DEFAULT 'MPESA',
+          redirectUrl TEXT,
+          businessId TEXT,
+          timestamp INTEGER,
+          utilizedTransactionId TEXT,
+          utilizedCustomerId TEXT,
+          utilizedCustomerName TEXT,
+          utilizedAt INTEGER
+        )
+      `).run();
+
+      for (const sql of [
+        "ALTER TABLE mpesaCallbacks ADD COLUMN provider TEXT DEFAULT 'MPESA'",
+        'ALTER TABLE mpesaCallbacks ADD COLUMN redirectUrl TEXT',
+        'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedTransactionId TEXT',
+        'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT',
+        'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT',
+        'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedAt INTEGER',
+        'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber)',
+      ]) {
+        try { await env.DB.prepare(sql).run(); } catch {}
+      }
+
+      await env.DB.prepare(`
+        INSERT INTO mpesaCallbacks
+        (checkoutRequestId, merchantRequestId, resultCode, resultDesc, amount, phoneNumber, provider, redirectUrl, businessId, timestamp)
+        VALUES (?, ?, 999, 'PENDING', ?, ?, 'PESAPAL', ?, ?, ?)
+      `).bind(
+        order.checkoutRequestId,
+        order.merchantRequestId,
+        order.amount,
+        order.phone,
+        order.redirectUrl,
+        body.businessId,
+        Date.now(),
+      ).run();
+
+      return new Response(JSON.stringify({
+        success: true,
+        provider: 'PESAPAL',
+        message: 'PesaPal checkout created. Open the checkout and choose M-Pesa.',
+        checkoutRequestId: order.checkoutRequestId,
+        redirectUrl: order.redirectUrl,
+      }), { headers: jsonHeaders() });
+    }
+
+    const credentials = activePayment.mpesa;
     const consumerKey = credentials.consumerKey;
     const consumerSecret = credentials.consumerSecret;
     const passkey = credentials.passkey;
@@ -159,6 +237,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         amount REAL,
         receiptNumber TEXT,
         phoneNumber TEXT,
+        provider TEXT DEFAULT 'MPESA',
+        redirectUrl TEXT,
         businessId TEXT,
         timestamp INTEGER,
         utilizedTransactionId TEXT,
@@ -173,6 +253,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerId TEXT',
       'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedCustomerName TEXT',
       'ALTER TABLE mpesaCallbacks ADD COLUMN utilizedAt INTEGER',
+      "ALTER TABLE mpesaCallbacks ADD COLUMN provider TEXT DEFAULT 'MPESA'",
+      'ALTER TABLE mpesaCallbacks ADD COLUMN redirectUrl TEXT',
       'CREATE INDEX IF NOT EXISTS idx_mpesaCallbacks_receipt ON mpesaCallbacks(businessId, receiptNumber)',
     ]) {
       try { await env.DB.prepare(sql).run(); } catch (e) {}
@@ -180,8 +262,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     await env.DB.prepare(`
       INSERT INTO mpesaCallbacks 
-      (checkoutRequestId, merchantRequestId, resultCode, resultDesc, amount, phoneNumber, businessId, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (checkoutRequestId, merchantRequestId, resultCode, resultDesc, amount, phoneNumber, provider, businessId, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, 'MPESA', ?, ?)
     `).bind(
       stkData.CheckoutRequestID, stkData.MerchantRequestID, 999, 'PENDING', amount, phone, body.businessId, Date.now()
     ).run();

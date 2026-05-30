@@ -22,6 +22,7 @@ import DashboardDesktop from '../dashboard/DashboardDesktop';
 import DashboardMobile from '../dashboard/DashboardMobile';
 import DashboardModals from '../dashboard/DashboardModals';
 import { money } from '../dashboard/DashboardShared';
+import LoadingState from '../shared/LoadingState';
 
 interface DashboardTabProps {
   setActiveTab: (tab: any) => void;
@@ -147,13 +148,13 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     () => activeBusinessId && canLoadDashboardTotals
       ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveShop(p, activeShopId)).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canLoadDashboardTotals, currentUser?.id, currentUser?.name], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals, currentUser?.id, currentUser?.name]
   );
   const productIngredients = useLiveQuery(
     () => activeBusinessId && canLoadDashboardTotals
       ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, canLoadDashboardTotals], []
+    [activeBusinessId, canLoadDashboardTotals]
   );
   const cashierDashboardMetrics = useLiveQuery<CashierDashboardMetrics | null>(
     () => isCashier && activeBusinessId
@@ -175,68 +176,67 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     () => activeBusinessId
       ? db.salesTills.where('businessId').equals(activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId],
-    []
+    [activeBusinessId]
   );
   const shopTransactions = useLiveQuery(
     () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.transactions.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals]
   );
   const shopRefunds = useLiveQuery(
     () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.refunds.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals]
   );
   const shopSalesInvoices = useLiveQuery(
     () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.salesInvoices.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals]
   );
   const shopExpenses = useLiveQuery(
     () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.expenses.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals]
   );
   const shopCashPicks = useLiveQuery(
     () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.cashPicks.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals]
   );
   const shopPurchaseOrders = useLiveQuery(
     () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.purchaseOrders.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals]
   );
   const shopStockAdjustmentRequests = useLiveQuery(
     () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.stockAdjustmentRequests.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals]
   );
   const shopSupplierPayments = useLiveQuery(
     () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.supplierPayments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals]
   );
   const shopCustomerPayments = useLiveQuery(
     () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.customerPayments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals]
   );
   const shopReports = useLiveQuery(
     () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.endOfDayReports.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals]
   );
   const shopShifts = useLiveQuery(
     () => {
@@ -245,13 +245,13 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
       const base = db.shifts.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId);
       return base.toArray();
     },
-    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals]
   );
   const shopDailySummaries = useLiveQuery(
     () => canLoadDashboardTotals && activeBusinessId && activeShopId
       ? db.dailySummaries.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId, canLoadDashboardTotals], []
+    [activeBusinessId, activeShopId, canLoadDashboardTotals]
   );
   const pendingApprovalCount = useLiveQuery(async () => {
     if (!canLoadDashboardTotals || !activeBusinessId || !activeShopId) return 0;
@@ -342,6 +342,38 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     const tableTills = parseSalesTillRows(salesTillRows);
     return tableTills.length ? tableTills : parseSalesTills(businessSettings);
   }, [businessSettings, salesTillRows]);
+  const dashboardLoadingParts = [
+    salesTillRows,
+    ...(canLoadDashboardTotals ? [
+      products,
+      productIngredients,
+      shopTransactions,
+      shopRefunds,
+      shopSalesInvoices,
+      shopExpenses,
+      shopCashPicks,
+      shopPurchaseOrders,
+      shopStockAdjustmentRequests,
+      shopSupplierPayments,
+      shopCustomerPayments,
+      shopReports,
+      shopShifts,
+      shopDailySummaries,
+    ] : []),
+  ];
+  const dashboardLoadedCount = dashboardLoadingParts.filter(Boolean).length;
+  const dashboardLoadingProgress = Math.max(8, Math.round((dashboardLoadedCount / dashboardLoadingParts.length) * 100));
+  const dashboardLoading = dashboardLoadedCount < dashboardLoadingParts.length;
+
+  if (dashboardLoading) {
+    return (
+      <LoadingState
+        title="Loading dashboard..."
+        detail="Reading sales, stock, shifts, and cash totals from the local database."
+        progress={dashboardLoadingProgress}
+      />
+    );
+  }
   const activeOpenShifts = (shopShifts || []).filter(shift => String(shift.status || '').toUpperCase() === 'OPEN');
   const openTillIds = new Set(activeOpenShifts.map(shift => String(shift.tillId || '')).filter(Boolean));
   const availableTills = configuredTills.filter(till => !openTillIds.has(till.id));
@@ -658,8 +690,10 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
     setIsOpeningShift(true);
     try {
       const result = await ShiftService.openShift(nextShift as any);
-      if (canLoadDashboardTotals) await db.shifts.reload().catch(() => {});
-      setActiveShift(result.shift || nextShift);
+      const savedShift = result.shift || nextShift;
+      await db.shifts.cacheLocal(savedShift).catch(() => {});
+      void db.shifts.reload().catch(() => {});
+      setActiveShift(savedShift);
       setIsOpenShiftModalOpen(false);
       success(result.idempotent ? 'Your shift is already open.' : `${till.name} shift opened.`);
     } catch (err: any) {
@@ -754,17 +788,27 @@ export default function DashboardTab({ setActiveTab, openExpenseModal }: Dashboa
         shopId: activeShopId,
         businessId: activeBusinessId,
       });
-      await Promise.allSettled(canLoadDashboardTotals ? [
-        db.endOfDayReports.reload(),
+      if (ownOpenShift) {
+        await db.shifts.cacheLocal({
+          ...ownOpenShift,
+          status: 'CLOSED',
+          endTime: now,
+          updated_at: now,
+        }).catch(() => {});
+      }
+      await Promise.allSettled([
         db.shifts.reload(),
-        db.transactions.reload(),
-        db.salesInvoices.reload(),
-        db.cashPicks.reload(),
-        db.refunds.reload(),
-        db.expenses.reload(),
-        db.supplierPayments.reload(),
-        db.dailySummaries.reload(),
-      ] : []);
+        ...(canLoadDashboardTotals ? [
+          db.endOfDayReports.reload(),
+          db.transactions.reload(),
+          db.salesInvoices.reload(),
+          db.cashPicks.reload(),
+          db.refunds.reload(),
+          db.expenses.reload(),
+          db.supplierPayments.reload(),
+          db.dailySummaries.reload(),
+        ] : []),
+      ]);
       setActiveShift(null);
       setShiftClosePreview(null);
       setShiftClosingCash('');

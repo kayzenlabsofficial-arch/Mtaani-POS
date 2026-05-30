@@ -1,4 +1,5 @@
 import { getApiKey } from '../runtimeConfig';
+import { resolveApiUrl } from '../desktop/runtime';
 import { useStore } from '../store';
 import { normalizedShopId } from '../utils/inventoryIntegrity';
 import {
@@ -61,7 +62,7 @@ export async function sendHeartbeat(args?: { cashierName?: string }): Promise<vo
   const stats = await getOutboxStats({ businessId, shopId }).catch(() => null);
 
   const apiKey = await getApiKey();
-  const res = await fetch('/api/sync/heartbeat', {
+  const res = await fetch(resolveApiUrl('/api/sync/heartbeat'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -98,7 +99,7 @@ async function postMutationBatch(args: {
   await Promise.all(args.items.map(item => markOutboxAttempt(item.id)));
 
   try {
-    const res = await fetch('/api/sync/flush', {
+    const res = await fetch(resolveApiUrl('/api/sync/flush'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

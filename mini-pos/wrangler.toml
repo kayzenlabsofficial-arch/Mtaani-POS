@@ -1,8 +1,0 @@
-name = "smart-pos-mini"
-compatibility_date = "2024-04-01"
-pages_build_output_dir = "dist"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "smart_pos_mini_db"
-database_id = "caad95e6-925c-4d98-b781-30037adf8399"

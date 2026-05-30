@@ -35,6 +35,7 @@ import {
   buildSalesTrendBuckets,
   type ReportProductPerformanceRow as ProductPerformanceRow,
 } from '../../utils/reportAnalytics';
+import LoadingState from '../shared/LoadingState';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -77,11 +78,13 @@ function previousPeriodBounds(current: PeriodBounds, range: ReportDateRange): Pe
 }
 
 function useChartSize() {
-  const ref = React.useRef<HTMLDivElement | null>(null);
+  const [node, setNode] = React.useState<HTMLDivElement | null>(null);
   const [size, setSize] = React.useState({ width: 0, height: 0 });
+  const ref = React.useCallback((element: HTMLDivElement | null) => {
+    setNode(element);
+  }, []);
 
   React.useLayoutEffect(() => {
-    const node = ref.current;
     if (!node) return;
 
     const update = () => {
@@ -98,8 +101,9 @@ function useChartSize() {
     update();
     const observer = new ResizeObserver(update);
     observer.observe(node);
+    window.requestAnimationFrame(update);
     return () => observer.disconnect();
-  }, []);
+  }, [node]);
 
   return [ref, size] as const;
 }
@@ -164,30 +168,32 @@ export default function ReportsTabContent() {
   }
 
   // Core Data Queries
-  const allTransactions = useLiveQuery(() => activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []) ;
+  const allTransactions = useLiveQuery(() => activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(t => t.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId]) ;
   const allProducts = useLiveQuery(
     () => activeBusinessId && activeShopId ? db.products.where('businessId').equals(activeBusinessId).filter(p => belongsToActiveShop(p, activeShopId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
   const productIngredients = useLiveQuery(
     () => activeBusinessId ? db.productIngredients.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId],
-    []
+    [activeBusinessId]
   );
-  const allExpenses = useLiveQuery(() => activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const allSuppliers = useLiveQuery(() => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const allPurchases = useLiveQuery(() => activeBusinessId && activeShopId ? db.purchaseOrders.where('shopId').equals(activeShopId).and(po => po.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const allSalesInvoices = useLiveQuery(() => activeBusinessId && activeShopId ? db.salesInvoices.where('shopId').equals(activeShopId).and(invoice => invoice.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const allCustomerPayments = useLiveQuery(() => activeBusinessId && activeShopId ? db.customerPayments.where('shopId').equals(activeShopId).and(payment => payment.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  if (!allTransactions || !allProducts || !allExpenses || !allSuppliers || !allSalesInvoices || !allCustomerPayments) {
+  const allExpenses = useLiveQuery(() => activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(e => e.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId]);
+  const allSuppliers = useLiveQuery(() => activeBusinessId ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId]);
+  const allPurchases = useLiveQuery(() => activeBusinessId && activeShopId ? db.purchaseOrders.where('shopId').equals(activeShopId).and(po => po.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId]);
+  const allSalesInvoices = useLiveQuery(() => activeBusinessId && activeShopId ? db.salesInvoices.where('shopId').equals(activeShopId).and(invoice => invoice.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId]);
+  const allCustomerPayments = useLiveQuery(() => activeBusinessId && activeShopId ? db.customerPayments.where('shopId').equals(activeShopId).and(payment => payment.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId]);
+  const reportsLoadingParts = [allTransactions, allProducts, productIngredients, allExpenses, allSuppliers, allPurchases, allSalesInvoices, allCustomerPayments];
+  const reportsLoadedCount = reportsLoadingParts.filter(Boolean).length;
+  const reportsLoadingProgress = Math.max(8, Math.round((reportsLoadedCount / reportsLoadingParts.length) * 100));
+  if (reportsLoadedCount < reportsLoadingParts.length) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <div className="flex h-16 w-16 animate-spin-slow items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
-          <BarChart3 size={40} className="text-slate-200" />
-        </div>
-        <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest">Loading Reports...</p>
-      </div>
+      <LoadingState
+        title="Loading reports..."
+        detail="Preparing sales, expenses, products, and payments."
+        progress={reportsLoadingProgress}
+        icon={<BarChart3 size={34} className="text-blue-700" />}
+        className="min-h-[60vh]"
+      />
     );
   }
 
@@ -349,7 +355,7 @@ export default function ReportsTabContent() {
     const useMonthlyBuckets = dateRange === 'ALL' || dateRange === 'QUARTER' || dateRange === 'MONTHLY' || spanDays > 45;
 
     if (useMonthlyBuckets) {
-      const rows: Array<{ name: string; revenue: number; profit: number; expenses: number }> = [];
+      const rows: Array<{ name: string; income: number; profit: number; expenses: number }> = [];
       const cursor = new Date(chartStart);
       cursor.setDate(1);
       cursor.setHours(0, 0, 0, 0);
@@ -364,7 +370,7 @@ export default function ReportsTabContent() {
         });
         rows.push({
           name: period.label,
-          revenue: roundMoney(period.totalRevenue),
+          income: roundMoney(period.totalRevenue),
           profit: roundMoney(period.netProfit),
           expenses: roundMoney(period.expenses),
         });
@@ -374,7 +380,7 @@ export default function ReportsTabContent() {
       return rows;
     }
 
-    const rows: Array<{ name: string; revenue: number; profit: number; expenses: number }> = [];
+    const rows: Array<{ name: string; income: number; profit: number; expenses: number }> = [];
     const cursor = new Date(chartStart);
     cursor.setHours(0, 0, 0, 0);
 
@@ -389,7 +395,7 @@ export default function ReportsTabContent() {
       });
       rows.push({
         name: period.label,
-        revenue: roundMoney(period.totalRevenue),
+        income: roundMoney(period.totalRevenue),
         profit: roundMoney(period.netProfit),
         expenses: roundMoney(period.expenses),
       });
@@ -717,25 +723,37 @@ export default function ReportsTabContent() {
           <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="font-bold text-slate-900 text-lg flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50 text-emerald-700"> <Scale size={20} /> </div>
-              Profit vs expenses
+              Income, expenses and profit
             </h3>
             <div className="flex flex-wrap items-center gap-2 text-[10px] font-black">
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">Net profit Ksh {netProfit.toLocaleString()}</span>
-              <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">Expenses Ksh {totalExpenseAmount.toLocaleString()}</span>
+              <span className="rounded-full bg-cyan-50 px-3 py-1 text-cyan-700">Income Ksh {totalRevenue.toLocaleString()}</span>
+              <span className="rounded-full bg-sky-50 px-3 py-1 text-sky-700">Expenses Ksh {totalExpenseAmount.toLocaleString()}</span>
+              <span className="rounded-full bg-rose-50 px-3 py-1 text-rose-700">Profit Ksh {netProfit.toLocaleString()}</span>
               <span className="text-slate-400">{periodLabel}</span>
             </div>
           </div>
           <div ref={profitExpenseChartRef} className="h-[340px] w-full min-w-0">
             {profitExpenseChartSize.width > 0 && profitExpenseChartSize.height > 0 && (
-              <BarChart width={profitExpenseChartSize.width} height={profitExpenseChartSize.height} data={profitExpenseTrendData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f7" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 900}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 900}} tickFormatter={(v) => `Ksh ${Math.abs(Number(v)) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : v}`} />
-                <Tooltip formatter={(value: any) => `Ksh ${Number(value || 0).toLocaleString()}`} contentStyle={{ borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 12px 20px -12px rgba(15,23,42,0.35)', fontWeight: 900 }} />
-                <Legend wrapperStyle={{ fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }} />
-                <Bar dataKey="profit" name="Net profit" fill="#10b981" radius={[8, 8, 0, 0]} maxBarSize={34} />
-                <Bar dataKey="expenses" name="Expenses" fill="#f59e0b" radius={[8, 8, 0, 0]} maxBarSize={34} />
-              </BarChart>
+              <ComposedChart width={profitExpenseChartSize.width} height={profitExpenseChartSize.height} data={profitExpenseTrendData} margin={{ top: 16, right: 20, left: 4, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b', fontWeight: 800}} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b', fontWeight: 800}} tickFormatter={(v) => `Ksh ${Math.abs(Number(v)) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : v}`} />
+                <Tooltip formatter={(value: any) => `Ksh ${Number(value || 0).toLocaleString()}`} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 12px 20px -12px rgba(15,23,42,0.35)', fontWeight: 900 }} />
+                <Legend
+                  align="center"
+                  verticalAlign="top"
+                  content={() => (
+                    <div className="flex justify-center gap-4 pb-2 text-xs font-bold text-slate-900">
+                      <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-7 bg-[#0ea5b7]" />Income</span>
+                      <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-7 bg-[#0f83bd]" />Expenses</span>
+                      <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-8 bg-[#d9534f]" />Profit</span>
+                    </div>
+                  )}
+                />
+                <Bar dataKey="income" name="Income" fill="#0ea5b7" radius={[2, 2, 0, 0]} maxBarSize={28} />
+                <Bar dataKey="expenses" name="Expenses" fill="#0f83bd" radius={[2, 2, 0, 0]} maxBarSize={28} />
+                <Line type="monotone" dataKey="profit" name="Profit" stroke="#d9534f" strokeWidth={3} dot={false} activeDot={{ r: 5, strokeWidth: 0 }} />
+              </ComposedChart>
             )}
           </div>
         </section>

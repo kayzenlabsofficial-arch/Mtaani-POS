@@ -97,25 +97,21 @@ export default function SalesInvoicesTabDesktop() {
 
   const customers = useLiveQuery(
     () => activeBusinessId ? db.customers.where('businessId').equals(activeBusinessId).filter(c => belongsToActiveShop(c, activeShopId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
   const products = useLiveQuery(
     () => activeBusinessId ? db.products.where('businessId').equals(activeBusinessId).filter(product => belongsToActiveShop(product, activeShopId)).toArray() : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
   const services = useLiveQuery(
     () => activeBusinessId ? db.serviceItems.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
-    [activeBusinessId],
-    []
+    [activeBusinessId]
   );
   const invoices = useLiveQuery(
     () => activeBusinessId && activeShopId
       ? db.salesInvoices.where('shopId').equals(activeShopId).and(i => i.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
   const visibleProducts = products || [];
   const activeServices = (services || []).filter(service => Number(service.isActive) !== 0);

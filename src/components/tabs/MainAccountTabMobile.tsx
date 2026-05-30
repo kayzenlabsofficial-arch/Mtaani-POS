@@ -98,27 +98,22 @@ export default function MainAccountTabMobile() {
   const rawAccounts = useLiveQuery(
     () => activeBusinessId ? db.financialAccounts.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],
-    [],
   );
   const cashPicks = useLiveQuery(
     () => activeBusinessId ? db.cashPicks.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],
-    [],
   );
   const expenses = useLiveQuery(
     () => activeBusinessId ? db.expenses.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],
-    [],
   );
   const supplierPayments = useLiveQuery(
     () => activeBusinessId ? db.supplierPayments.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],
-    [],
   );
   const adjustments = useLiveQuery(
     () => activeBusinessId ? db.financialAccountAdjustments.where('businessId').equals(activeBusinessId).toArray() : Promise.resolve([]),
     [activeBusinessId],
-    [],
   );
 
   const account = useMemo(
@@ -239,6 +234,18 @@ export default function MainAccountTabMobile() {
   const currentBalance = Number(account?.balance || 0);
   const adjustmentValue = Number(adjustAmount || 0);
   const previewBalance = adjustMode === 'SET' ? adjustmentValue : adjustMode === 'OUT' ? currentBalance - adjustmentValue : currentBalance + adjustmentValue;
+  const isMainAccountLoading = !rawAccounts || !cashPicks || !expenses || !supplierPayments || !adjustments;
+
+  if (isMainAccountLoading) {
+    return (
+      <div className="flex min-h-[45vh] flex-col items-center justify-center gap-4">
+        <div className="flex h-16 w-16 animate-spin-slow items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
+          <Landmark size={34} className="text-slate-300" />
+        </div>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading main account...</p>
+      </div>
+    );
+  }
 
   const resetAdjustment = () => {
     setAdjustMode('IN');

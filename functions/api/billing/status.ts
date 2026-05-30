@@ -6,6 +6,7 @@ import {
   getRecentBillingPayments,
   json,
   publicBillingStatus,
+  refreshPesaPalBillingPayment,
   type BillingEnv,
 } from './_utils';
 
@@ -26,16 +27,27 @@ export const onRequestGet: PagesFunction<BillingEnv> = async ({ request, env }) 
     const business = await getBillingBusiness(env.DB, businessId);
     if (!business) return json({ error: 'Business was not found.' }, 404);
 
-    const payment = checkoutRequestId
+    let payment = checkoutRequestId
       ? await getBillingPaymentByCheckout(env.DB, businessId, checkoutRequestId)
       : null;
+    if (payment && String(payment.provider || '').toUpperCase() === 'PESAPAL' && String(payment.status || '').toUpperCase() === 'PENDING') {
+      try {
+        payment = await refreshPesaPalBillingPayment(env.DB, env, checkoutRequestId) || payment;
+      } catch (err) {
+        console.error('[Billing Status PesaPal Refresh]', err);
+      }
+    }
     const recentPayments = auth.principal.role === 'ADMIN' || auth.principal.role === 'ROOT'
       ? await getRecentBillingPayments(env.DB, businessId, 6)
       : [];
 
+    const freshBusiness = payment && String(payment.status || '').toUpperCase() === 'PAID'
+      ? await getBillingBusiness(env.DB, businessId)
+      : business;
+
     return json({
       success: true,
-      billing: publicBillingStatus(business),
+      billing: publicBillingStatus(freshBusiness || business),
       payment,
       recentPayments,
     });

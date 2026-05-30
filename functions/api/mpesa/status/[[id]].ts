@@ -1,8 +1,10 @@
 import { authorizeRequest, canAccessBusiness } from '../../authUtils';
+import { refreshPesaPalMpesaPayment } from '../pesapalUtils';
 
 interface Env {
   DB: D1Database;
   API_SECRET?: string;
+  MPESA_CREDENTIAL_ENCRYPTION_KEY?: string;
 }
 
 const corsHeaders = {
@@ -43,11 +45,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // Attempt to query the mpesaCallbacks table
     try {
-        const result = await env.DB.prepare(`SELECT * FROM mpesaCallbacks WHERE checkoutRequestId = ?`).bind(checkoutRequestId).first() as any;
+        let result = await env.DB.prepare(`SELECT * FROM mpesaCallbacks WHERE checkoutRequestId = ?`).bind(checkoutRequestId).first() as any;
         
         if (result) {
             if (!canAccessBusiness(auth.principal, result.businessId)) {
                 return new Response(JSON.stringify({ error: 'Access denied' }), { status: 403, headers: jsonHeaders() });
+            }
+            if (String(result.provider || '').toUpperCase() === 'PESAPAL' && Number(result.resultCode) === 999) {
+                try {
+                    result = await refreshPesaPalMpesaPayment(env.DB, result.businessId, checkoutRequestId, env.MPESA_CREDENTIAL_ENCRYPTION_KEY) || result;
+                } catch (err) {
+                    console.error('[PesaPal Status Refresh Error]', err);
+                }
             }
             return new Response(JSON.stringify({
                 found: true,
@@ -55,7 +64,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 resultDesc: result.resultDesc,
                 amount: result.amount,
                 receiptNumber: result.receiptNumber,
-                phoneNumber: result.phoneNumber
+                phoneNumber: result.phoneNumber,
+                provider: result.provider || 'MPESA',
+                redirectUrl: result.redirectUrl || undefined,
             }), { headers: jsonHeaders() });
         } else {
             return new Response(JSON.stringify({ found: false, status: 'PENDING' }), { headers: jsonHeaders() });

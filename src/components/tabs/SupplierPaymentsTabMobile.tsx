@@ -63,28 +63,28 @@ export default function SupplierPaymentsTabMobile({ financialAccounts }: { finan
   const currentUser = useStore(state => state.currentUser);
   const pickedAccount = financialAccounts?.[0] || null;
 
-  const allSuppliers = useLiveQuery(
+  const queriedSuppliers = useLiveQuery(
     () => activeBusinessId
       ? db.suppliers.where('businessId').equals(activeBusinessId).filter(s => belongsToActiveShop(s, activeShopId)).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
-  const allPayments = useLiveQuery(
+  const allSuppliers = queriedSuppliers || [];
+  const queriedPayments = useLiveQuery(
     () => activeBusinessId && activeShopId
       ? db.supplierPayments.where('shopId').equals(activeShopId).and(p => p.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
-  const allCreditNotes = useLiveQuery(
+  const allPayments = queriedPayments || [];
+  const queriedCreditNotes = useLiveQuery(
     () => activeBusinessId && activeShopId
       ? db.creditNotes.where('shopId').equals(activeShopId).and(cn => cn.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId, activeShopId],
-    []
+    [activeBusinessId, activeShopId]
   );
-  const outstandingInvoices = useLiveQuery(
+  const allCreditNotes = queriedCreditNotes || [];
+  const queriedOutstandingInvoices = useLiveQuery(
     () => selectedSupplier && activeBusinessId
       ? db.purchaseOrders
         .where('supplierId')
@@ -92,10 +92,10 @@ export default function SupplierPaymentsTabMobile({ financialAccounts }: { finan
         .filter(po => po.businessId === activeBusinessId && po.status === 'RECEIVED' && po.paymentStatus !== 'PAID')
         .toArray()
       : Promise.resolve([]),
-    [selectedSupplier?.id, activeBusinessId],
-    []
+    [selectedSupplier?.id, activeBusinessId]
   );
-  const pendingCreditNotes = useLiveQuery(
+  const outstandingInvoices = queriedOutstandingInvoices || [];
+  const queriedPendingCreditNotes = useLiveQuery(
     () => selectedSupplier && activeBusinessId
       ? db.creditNotes
         .where('supplierId')
@@ -103,9 +103,9 @@ export default function SupplierPaymentsTabMobile({ financialAccounts }: { finan
         .filter(cn => cn.businessId === activeBusinessId && (!cn.status || cn.status === 'PENDING'))
         .toArray()
       : Promise.resolve([]),
-    [selectedSupplier?.id, activeBusinessId],
-    []
+    [selectedSupplier?.id, activeBusinessId]
   );
+  const pendingCreditNotes = queriedPendingCreditNotes || [];
 
   useEffect(() => {
     if (!paymentSupplierId || allSuppliers.length === 0) return;
@@ -172,6 +172,10 @@ export default function SupplierPaymentsTabMobile({ financialAccounts }: { finan
     && !hasInvalidInvoiceAmount
     && !creditExceedsInvoices
     && !balanceExceeded;
+  const isSupplierPaymentsLoading = !queriedSuppliers
+    || !queriedPayments
+    || !queriedCreditNotes
+    || (!!selectedSupplier && (!queriedOutstandingInvoices || !queriedPendingCreditNotes));
 
   const toggleInvoice = (invoice: any) => {
     const isSelected = selectedInvoiceIds.includes(invoice.id);
@@ -240,6 +244,15 @@ export default function SupplierPaymentsTabMobile({ financialAccounts }: { finan
   const methodIcon = (method: string, source?: string) => (
     source === 'ACCOUNT' || method === 'BANK' ? <Landmark size={18} /> : <Banknote size={18} />
   );
+
+  if (isSupplierPaymentsLoading) {
+    return (
+      <div className="flex min-h-[55vh] flex-col items-center justify-center gap-4">
+        <Loader2 size={30} className="animate-spin text-blue-700" />
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading supplier payments...</p>
+      </div>
+    );
+  }
 
   if (selectedSupplier) {
     return (

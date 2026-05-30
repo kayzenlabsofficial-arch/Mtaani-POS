@@ -12,6 +12,8 @@ import { useState, useEffect } from 'react';
 import { getApiKey } from './runtimeConfig';
 import { cacheTableRows, readCachedTableRows, type OfflineCacheTable } from './offline/localdb';
 import { enqueueOutbox } from './offline/localdb';
+import { isDesktopRuntime, resolveApiUrl } from './desktop/runtime';
+import { isNativeMobileRuntime } from './mobile/runtime';
 import { normalizedShopId } from './utils/inventoryIntegrity';
 import { useStore } from './store';
 
@@ -34,17 +36,35 @@ const DATA_WRITE_FETCH_TIMEOUT_MS = 45000;
 
 const OFFLINE_CACHE_TABLES = new Set<OfflineCacheTable>([
   'products',
+  'transactions',
+  'refunds',
+  'cashPicks',
+  'shifts',
+  'endOfDayReports',
+  'stockMovements',
+  'expenses',
   'categories',
   'customers',
   'customerPayments',
+  'salesInvoices',
   'serviceItems',
   'suppliers',
+  'supplierPayments',
+  'creditNotes',
+  'dailySummaries',
+  'stockAdjustmentRequests',
+  'purchaseOrders',
+  'hrStaff',
+  'hrStaffDocuments',
+  'hrAttendance',
+  'hrPayrollAdjustments',
   'settings',
   'salesTills',
   'users',
   'financialAccounts',
   'expenseAccounts',
   'productIngredients',
+  'businesses',
 ]);
 
 const CLIENT_GLOBAL_TABLES = new Set([
@@ -135,7 +155,7 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
   }
   if (shopId) headers['X-Shop-ID'] = shopId;
   
-  const url = `${API}/${table}`;
+  const url = resolveApiUrl(`${API}/${table}`);
 
   try {
     let res: Response | null = null;
@@ -180,7 +200,7 @@ async function d1Fetch(table: string, method: string, body?: any): Promise<any> 
       }
       // Only force-logout on genuine session expiry — not on missing-header 401s
       // (which can occur during startup before businessId is available)
-      if (res.status === 401 && (text.includes('Sign in') || text.includes('Session expired') || text.includes('expired'))) {
+      if (res.status === 401 && !isDesktopRuntime() && !isNativeMobileRuntime() && (text.includes('Sign in') || text.includes('Session expired') || text.includes('expired'))) {
         console.warn('[CloudDB] Session expired — logging out.');
         useStore.getState().logout();
       }
@@ -251,13 +271,45 @@ async function d1Delete(table: string, id: string): Promise<void> {
   if (businessId) headers['X-Business-ID'] = businessId;
   if (shopId) headers['X-Shop-ID'] = shopId;
 
-  const res = await fetch(`${API}/${table}/${id}`, { 
+  const res = await fetch(resolveApiUrl(`${API}/${table}/${id}`), { 
     method: 'DELETE',
     headers,
     credentials: 'same-origin',
     cache: 'no-store'
   });
   if (!res.ok) throw new Error(`DELETE /api/data/${table}/${id} → ${res.status}`);
+}
+
+function isCashPaidTransaction(table: string, row: any): boolean {
+  return table === 'transactions' && row?.status === 'PAID' && row?.paymentMethod === 'CASH';
+}
+
+async function persistOfflineCacheRow(table: string, row: any): Promise<void> {
+  if (!OFFLINE_CACHE_TABLES.has(table as OfflineCacheTable)) return;
+  const state = useStore.getState();
+  const businessId = row.businessId || state.activeBusinessId;
+  if (!businessId) return;
+  const shopId = SHOP_SCOPED_TABLES.has(table) ? normalizedShopId(row.shopId || state.activeShopId) : undefined;
+  const cachedRows = await readCachedTableRows({ table: table as OfflineCacheTable, businessId, shopId });
+  const nextRows = cachedRows.slice();
+  const existingIndex = nextRows.findIndex((existing: any) => existing?.id === row.id);
+  if (existingIndex >= 0) {
+    nextRows[existingIndex] = row;
+  } else {
+    nextRows.push(row);
+  }
+  await cacheTableRows({ table: table as OfflineCacheTable, businessId, shopId, rows: nextRows });
+}
+
+async function removeOfflineCacheRow(table: string, rowId: string, row?: any): Promise<void> {
+  if (!OFFLINE_CACHE_TABLES.has(table as OfflineCacheTable)) return;
+  const state = useStore.getState();
+  const businessId = row?.businessId || state.activeBusinessId;
+  if (!businessId) return;
+  const shopId = SHOP_SCOPED_TABLES.has(table) ? normalizedShopId(row?.shopId || state.activeShopId) : undefined;
+  const cachedRows = await readCachedTableRows({ table: table as OfflineCacheTable, businessId, shopId });
+  const nextRows = cachedRows.filter((existing: any) => existing?.id !== rowId);
+  await cacheTableRows({ table: table as OfflineCacheTable, businessId, shopId, rows: nextRows });
 }
 
 /** Global DB setup trigger */
@@ -322,6 +374,38 @@ export class CloudTable<T extends { id: string }> {
     emitChange();
   }
 
+  private replaceCache(rows: T[], scopeKey: string): void {
+    this.cache.clear();
+    rows.forEach(r => this.cache.set(r.id, r));
+    this.loaded = true;
+    this.loadedScopeKey = scopeKey;
+    emitChange();
+  }
+
+  private async readOfflineRowsForScope(scope: { canHydrate: boolean }): Promise<T[] | null> {
+    if (!scope.canHydrate || !OFFLINE_CACHE_TABLES.has(this.name as OfflineCacheTable)) return null;
+
+    const state = useStore.getState();
+    const businessId = state.activeBusinessId;
+    if (!businessId) return null;
+
+    const isShopScoped = SHOP_SCOPED_TABLES.has(this.name);
+    const shopId = isShopScoped ? normalizedShopId(state.activeShopId || '') : undefined;
+    if (isShopScoped && !shopId) return null;
+
+    try {
+      const rows = await readCachedTableRows({
+        table: this.name as OfflineCacheTable,
+        businessId,
+        shopId,
+      });
+      return rows.length ? (rows as T[]) : null;
+    } catch (e) {
+      console.warn(`[CloudDB] Failed to read offline cache for "${this.name}":`, e);
+      return null;
+    }
+  }
+
   // ── Hydration ─────────────────────────────────────────────────────────────
 
   async hydrate(): Promise<void> {
@@ -343,6 +427,11 @@ export class CloudTable<T extends { id: string }> {
       }
 
       try {
+        const offlineRows = await this.readOfflineRowsForScope(scope);
+        if (offlineRows) {
+          this.replaceCache(offlineRows, scope.key);
+        }
+
         const rows: T[] = await d1Fetch(this.name, 'GET');
         const latestScope = await this.currentScope();
         if (latestScope.key !== scope.key) {
@@ -354,15 +443,13 @@ export class CloudTable<T extends { id: string }> {
         }
 
         // Only clear and update if we successfully got data
-        this.cache.clear();
-        rows.forEach(r => this.cache.set(r.id, r));
-        this.loaded = true;
-        this.loadedScopeKey = scope.key;
-        emitChange(); // Trigger UI update
+        this.replaceCache(rows, scope.key); // Trigger UI update
       } catch (e) {
         console.error(`[CloudDB] Failed to hydrate "${this.name}":`, e);
-        // Keep old cache data on failure
-        this.loaded = false;
+        // Keep offline cache data on failure.
+        if (this.cache.size === 0 || this.loadedScopeKey !== scope.key) {
+          this.loaded = false;
+        }
       }
     };
 
@@ -526,9 +613,39 @@ export class CloudTable<T extends { id: string }> {
     // Optimistically update cache first so UI is immediate
     this.cache.set(stamped.id, stamped);
     emitChange();
+
+    if ((isDesktopRuntime() || isNativeMobileRuntime()) && isCashPaidTransaction(this.name, stamped)) {
+      try {
+        const businessId = stamped.businessId || useStore.getState().activeBusinessId;
+        const shopId = normalizedShopId(stamped.shopId || useStore.getState().activeShopId);
+        if (!businessId || !shopId) throw new Error('Business and shop are required for desktop offline sale sync.');
+        await enqueueOutbox({
+          businessId,
+          shopId,
+          table: 'transactions',
+          op: 'UPSERT',
+          idempotencyKey: stamped.id,
+          payload: stamped,
+        });
+        await persistOfflineCacheRow(this.name, stamped);
+        if (typeof navigator !== 'undefined' && navigator.onLine) {
+          void import('./offline/offlineSync')
+            .then(({ flushOutboxNow }) => flushOutboxNow({ maxBatches: 1 }))
+            .catch(() => {});
+        }
+        return stamped.id;
+      } catch (e) {
+        this.cache.delete(stamped.id);
+        emitChange();
+        throw e;
+      }
+    }
     // Then persist to D1 — if it fails, remove from cache and rethrow
     try {
       await d1Fetch(this.name, 'POST', [stamped]);
+      await persistOfflineCacheRow(this.name, stamped).catch(e => {
+        console.warn('[CloudDB] Offline cache write failed after add:', e);
+      });
     } catch (e) {
       const offline = isLikelyOfflineError(e);
 
@@ -554,6 +671,7 @@ export class CloudTable<T extends { id: string }> {
               idempotencyKey: stamped.id,
               payload: stamped,
             });
+            await persistOfflineCacheRow(this.name, stamped);
           }
         } catch (qe) {
           console.warn('[CloudDB] Failed to enqueue offline transaction:', qe);
@@ -605,6 +723,9 @@ export class CloudTable<T extends { id: string }> {
     // Persist to D1
     try {
       await d1Fetch(this.name, 'POST', [updated]);
+      await persistOfflineCacheRow(this.name, updated).catch(e => {
+        console.warn('[CloudDB] Offline cache write failed after update:', e);
+      });
     } catch (e) {
       // Rollback cache on failure
       this.cache.set(id, existing);
@@ -615,8 +736,12 @@ export class CloudTable<T extends { id: string }> {
   }
 
   async delete(id: string): Promise<void> {
+    const existing = this.cache.get(id);
     await d1Delete(this.name, id);
     this.cache.delete(id);
+    await removeOfflineCacheRow(this.name, id, existing).catch(e => {
+      console.warn('[CloudDB] Offline cache delete failed:', e);
+    });
     emitChange();
   }
 
@@ -627,6 +752,9 @@ export class CloudTable<T extends { id: string }> {
     emitChange();
     try {
       await d1Fetch(this.name, 'POST', stamped);
+      await Promise.all(stamped.map((row: any) => persistOfflineCacheRow(this.name, row).catch(e => {
+        console.warn('[CloudDB] Offline cache write failed after bulkAdd:', e);
+      })));
     } catch (e) {
       const offline = isLikelyOfflineError(e);
       stamped.forEach((i: any) => this.cache.delete(i.id));
@@ -674,16 +802,49 @@ export class CloudTable<T extends { id: string }> {
 // Drop-in replacement for dexie-react-hooks useLiveQuery.
 // Re-runs when deps change OR when any CloudTable mutates.
 
+const LIVE_QUERY_CACHE_LIMIT = 500;
+const liveQueryResultCache = new Map<string, unknown>();
+
+function liveQueryDepsKey(deps: any[]) {
+  try {
+    return JSON.stringify(deps);
+  } catch {
+    return deps.map(dep => String(dep)).join('|');
+  }
+}
+
+function liveQueryCacheKey(querier: () => unknown, deps: any[]) {
+  return `${querier.toString()}::${liveQueryDepsKey(deps)}`;
+}
+
+function rememberLiveQueryResult<T>(key: string, value: T | undefined) {
+  liveQueryResultCache.set(key, value);
+  if (liveQueryResultCache.size > LIVE_QUERY_CACHE_LIMIT) {
+    const oldestKey = liveQueryResultCache.keys().next().value;
+    if (oldestKey) liveQueryResultCache.delete(oldestKey);
+  }
+}
+
 export function useLiveQuery<T>(
   querier: () => T | Promise<T> | undefined,
   deps: any[] = [],
   defaultResult?: T,
   pollInterval: number = 15000 // Poll every 15s by default for a "live" feel
 ): T | undefined {
-  const [result, setResult] = useState<T | undefined>(defaultResult);
+  const cacheKey = liveQueryCacheKey(querier, deps);
+  const [result, setResult] = useState<T | undefined>(() => (
+    liveQueryResultCache.has(cacheKey)
+      ? liveQueryResultCache.get(cacheKey) as T | undefined
+      : defaultResult
+  ));
 
   useEffect(() => {
     let alive = true;
+    setResult(
+      liveQueryResultCache.has(cacheKey)
+        ? liveQueryResultCache.get(cacheKey) as T | undefined
+        : defaultResult
+    );
 
     const run = async (forceHydrate = false) => {
       try {
@@ -693,6 +854,7 @@ export function useLiveQuery<T>(
         // To truly sync from server, we'd need to know which tables were used.
         // Instead, we'll let the global sync or manual reload handle it.
         const val = await querier();
+        rememberLiveQueryResult(cacheKey, val as T);
         if (alive) setResult(val as T);
       } catch (e) {
         console.warn('[useLiveQuery]', e);
@@ -719,7 +881,7 @@ export function useLiveQuery<T>(
       clearInterval(poller);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [cacheKey, pollInterval]);
 
   return result;
 }
@@ -731,9 +893,13 @@ let syncTimer: any = null;
 let backgroundSyncRunning = false;
 let lastRemoteReloadAt = 0;
 let lastHeartbeatAt = 0;
+let onlineSyncHandler: (() => void) | null = null;
 
 export function startBackgroundSync(intervalMs = 10000) {
   if (syncTimer) return;
+  const nativeOfflineMode = isDesktopRuntime() || isNativeMobileRuntime();
+  const heartbeatIntervalMs = nativeOfflineMode ? 60_000 : 30_000;
+  const remoteReloadIntervalMs = nativeOfflineMode ? 60 * 60_000 : 30_000;
 
   const run = async () => {
     if (backgroundSyncRunning) return;
@@ -749,14 +915,14 @@ export function startBackgroundSync(intervalMs = 10000) {
       const now = Date.now();
 
       if (result.flushed > 0) lastHeartbeatAt = now;
-      if (now - lastHeartbeatAt >= 30_000) {
+      if (now - lastHeartbeatAt >= heartbeatIntervalMs) {
         await sendHeartbeat({ cashierName: useStore.getState().currentUser?.name }).catch(() => {});
         lastHeartbeatAt = Date.now();
       }
 
       // Dispatch on window so db.ts wire-up can receive and reload tables.
       // Keep remote reloads bounded; outbox flushing runs more often than full table hydration.
-      if (typeof window !== 'undefined' && (result.flushed > 0 || now - lastRemoteReloadAt >= 30_000)) {
+      if (typeof window !== 'undefined' && (result.flushed > 0 || now - lastRemoteReloadAt >= remoteReloadIntervalMs)) {
         lastRemoteReloadAt = now;
         window.dispatchEvent(new Event('db:sync-request'));
       }
@@ -769,11 +935,19 @@ export function startBackgroundSync(intervalMs = 10000) {
   };
 
   void run();
+  if (typeof window !== 'undefined') {
+    onlineSyncHandler = () => void run();
+    window.addEventListener('online', onlineSyncHandler);
+  }
   syncTimer = setInterval(() => void run(), intervalMs);
 }
 
 export function stopBackgroundSync() {
   if (syncTimer) clearInterval(syncTimer);
   syncTimer = null;
+  if (typeof window !== 'undefined' && onlineSyncHandler) {
+    window.removeEventListener('online', onlineSyncHandler);
+  }
+  onlineSyncHandler = null;
   backgroundSyncRunning = false;
 }

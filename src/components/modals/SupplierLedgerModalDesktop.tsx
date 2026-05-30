@@ -83,8 +83,7 @@ export default function SupplierLedgerModalDesktop({ supplier, onClose, onEdit, 
 
   const supplierPurchaseOrders = useLiveQuery(
     () => supplier ? db.purchaseOrders.where('supplierId').equals(supplier.id).toArray() : [],
-    [supplier],
-    []
+    [supplier]
   );
 
   React.useEffect(() => {
@@ -92,6 +91,18 @@ export default function SupplierLedgerModalDesktop({ supplier, onClose, onEdit, 
   }, [activeTab, dateMode, dateStart, dateEnd]);
 
   if (!supplier) return null;
+
+  if (!invoices || !payments || !creditNotes || !supplierPurchaseOrders) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 pb-safe">
+        <div className="absolute inset-0 bg-slate-900/45 no-print" onClick={onClose} />
+        <div className="relative z-10 flex h-full w-full max-w-2xl flex-col items-center justify-center gap-4 overflow-hidden border-2 border-slate-200 bg-white shadow-xl animate-in zoom-in-95 duration-300 sm:h-[85vh] sm:rounded-lg">
+          <Loader2 size={30} className="animate-spin text-blue-700" />
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading supplier ledger...</p>
+        </div>
+      </div>
+    );
+  }
 
   const inDateRange = (timestamp?: number) => {
     if (dateMode === 'ALL') return true;

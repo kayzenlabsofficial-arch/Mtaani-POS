@@ -63,11 +63,14 @@ function manualChunks(id: string): string | undefined {
 }
 
 export default defineConfig(() => {
+  const isCapacitorBuild = process.env.MTAANI_CAPACITOR_BUILD === 'true';
+
   return {
     plugins: [
       react(), 
       tailwindcss(),
       VitePWA({
+        selfDestroying: isCapacitorBuild,
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
         workbox: {
@@ -116,8 +119,6 @@ export default defineConfig(() => {
       chunkSizeWarningLimit: 1500,
     },
     server: {
-      // HMR can be disabled with DISABLE_HMR during automated edits.
-      // Do not modifyâ€”file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
         '/api': {

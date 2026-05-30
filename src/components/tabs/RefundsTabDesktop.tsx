@@ -38,14 +38,12 @@ export default function RefundsTabDesktop({ setActiveTab }: RefundsTabProps) {
       ? db.transactions.where('shopId').equals(activeShopId).and(t => t.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
     [activeBusinessId, activeShopId],
-    [],
   );
   const allRefunds = useLiveQuery(
     () => activeBusinessId && activeShopId
       ? db.refunds.where('shopId').equals(activeShopId).and(r => r.businessId === activeBusinessId).toArray()
       : Promise.resolve([]),
     [activeBusinessId, activeShopId],
-    [],
   );
   const businessSettings = useLiveQuery(() => getBusinessSettings(activeBusinessId), [activeBusinessId]);
   const canRequestRefund = canPerform(currentUser, 'sale.refund.request', businessSettings);

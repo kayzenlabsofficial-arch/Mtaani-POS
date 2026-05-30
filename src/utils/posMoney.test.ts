@@ -15,7 +15,7 @@ import {
 } from './posMoney';
 
 const discountedCashSale = {
-  id: 'TEST-CODEX-DISCOUNT',
+  id: 'TEST-DISCOUNT',
   subtotal: 100,
   discountAmount: 10,
   total: 100, // Simulates the old broken persisted value.

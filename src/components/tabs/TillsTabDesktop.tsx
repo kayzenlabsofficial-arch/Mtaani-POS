@@ -99,21 +99,33 @@ export default function TillsTabDesktop() {
     () => activeBusinessId
       ? db.salesTills.where('businessId').equals(activeBusinessId).toArray()
       : Promise.resolve([]),
-    [activeBusinessId],
-    []
+    [activeBusinessId]
   );
   const tills = React.useMemo(() => {
     const tableTills = parseSalesTillRows(salesTillRows);
     return tableTills.length ? tableTills : parseSalesTills(settings);
   }, [settings, salesTillRows]);
-  const transactions = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
-  const expenses = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
-  const cashPicks = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.cashPicks.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
-  const refunds = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.refunds.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
-  const supplierPayments = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.supplierPayments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
-  const customerPayments = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.customerPayments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
-  const shifts = useLiveQuery(() => activeBusinessId && activeShopId ? db.shifts.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId], []);
-  const reports = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.endOfDayReports.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown], []);
+  const transactions = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.transactions.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown]);
+  const expenses = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.expenses.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown]);
+  const cashPicks = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.cashPicks.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown]);
+  const refunds = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.refunds.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown]);
+  const supplierPayments = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.supplierPayments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown]);
+  const customerPayments = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.customerPayments.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown]);
+  const shifts = useLiveQuery(() => activeBusinessId && activeShopId ? db.shifts.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId]);
+  const reports = useLiveQuery(() => canSeeBreakdown && activeBusinessId && activeShopId ? db.endOfDayReports.where('shopId').equals(activeShopId).and(row => row.businessId === activeBusinessId).toArray() : Promise.resolve([]), [activeBusinessId, activeShopId, canSeeBreakdown]);
+  const breakdownLoading = canSeeBreakdown && (!transactions || !expenses || !cashPicks || !refunds || !supplierPayments || !customerPayments || !reports);
+  const isTillsLoading = !salesTillRows || !shifts || breakdownLoading;
+
+  if (isTillsLoading) {
+    return (
+      <div className="flex min-h-[45vh] flex-col items-center justify-center gap-4">
+        <div className="flex h-16 w-16 animate-spin-slow items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
+          <Store size={34} className="text-slate-300" />
+        </div>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading tills...</p>
+      </div>
+    );
+  }
 
   const openByTill = new Map((shifts || [])
     .filter(shift => String(shift.status || '').toUpperCase() === 'OPEN')
