@@ -1,6 +1,5 @@
 import { authorizeRequest, canAccessBusiness, verifyPassword } from '../authUtils';
-import { loadActivePaymentRuntimeCredentials, recordMpesaTestResult } from './credentialStore';
-import { getPesaPalToken } from './pesapalUtils';
+import { loadMpesaRuntimeCredentials, recordMpesaTestResult } from './credentialStore';
 import {
   clearMpesaSettingsAttempts,
   ensureMpesaSettingsAttemptTable,
@@ -78,14 +77,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   if (needsPasswordCheck) await clearMpesaSettingsAttempts(env.DB, attemptId);
 
   try {
-    const activePayment = await loadActivePaymentRuntimeCredentials(env.DB, businessId, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
-    if (activePayment.provider === 'PESAPAL') {
-      await getPesaPalToken(activePayment.pesapal);
-      await recordMpesaTestResult(env.DB, businessId, 'PASSED', 'PesaPal credentials connected successfully.');
-      return json({ success: true, message: 'PesaPal credentials connected successfully.' });
-    }
-
-    const credentials = activePayment.mpesa;
+    const credentials = await loadMpesaRuntimeCredentials(env.DB, businessId, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
     const baseUrl = credentials.env === 'production'
       ? 'https://api.safaricom.co.ke'
       : 'https://sandbox.safaricom.co.ke';

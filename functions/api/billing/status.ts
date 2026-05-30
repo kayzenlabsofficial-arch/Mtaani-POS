@@ -6,7 +6,6 @@ import {
   getRecentBillingPayments,
   json,
   publicBillingStatus,
-  refreshPesaPalBillingPayment,
   type BillingEnv,
 } from './_utils';
 
@@ -30,13 +29,6 @@ export const onRequestGet: PagesFunction<BillingEnv> = async ({ request, env }) 
     let payment = checkoutRequestId
       ? await getBillingPaymentByCheckout(env.DB, businessId, checkoutRequestId)
       : null;
-    if (payment && String(payment.provider || '').toUpperCase() === 'PESAPAL' && String(payment.status || '').toUpperCase() === 'PENDING') {
-      try {
-        payment = await refreshPesaPalBillingPayment(env.DB, env, checkoutRequestId) || payment;
-      } catch (err) {
-        console.error('[Billing Status PesaPal Refresh]', err);
-      }
-    }
     const recentPayments = auth.principal.role === 'ADMIN' || auth.principal.role === 'ROOT'
       ? await getRecentBillingPayments(env.DB, businessId, 6)
       : [];

@@ -4,7 +4,7 @@ const API_BASE = '/api/mpesa';
 
 export interface StkPushResponse {
   success?: boolean;
-  provider?: 'MPESA' | 'PESAPAL' | string;
+  provider?: 'MPESA' | string;
   message?: string;
   checkoutRequestId?: string;
   redirectUrl?: string;
@@ -19,7 +19,7 @@ export interface MpesaStatusResponse {
   amount?: number;
   receiptNumber?: string;
   phoneNumber?: string;
-  provider?: 'MPESA' | 'PESAPAL' | string;
+  provider?: 'MPESA' | string;
   redirectUrl?: string;
   error?: string;
 }

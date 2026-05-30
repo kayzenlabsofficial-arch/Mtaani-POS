@@ -49,7 +49,7 @@ export interface BillingPayment {
   receiptNumber?: string;
   resultCode?: number;
   resultDesc?: string;
-  provider?: 'MPESA' | 'PESAPAL' | 'MANUAL' | string;
+  provider?: 'MPESA' | 'MANUAL' | string;
   redirectUrl?: string;
   status: 'PENDING' | 'PAID' | 'FAILED' | string;
   createdAt?: number;

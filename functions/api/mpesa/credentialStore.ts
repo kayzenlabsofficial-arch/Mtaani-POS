@@ -2,11 +2,8 @@ import { assertSafeCredentialKey, decryptSecret, encryptSecret, isEncryptedSecre
 
 export type MpesaEnvironment = 'sandbox' | 'production';
 export type MpesaAccountType = 'paybill' | 'buygoods';
-export type PaymentProvider = 'MPESA' | 'PESAPAL';
-export type PesaPalEnvironment = 'sandbox' | 'production';
 
 export type MpesaCredentialInput = {
-  provider?: string;
   consumerKey?: string;
   consumerSecret?: string;
   passkey?: string;
@@ -15,15 +12,10 @@ export type MpesaCredentialInput = {
   product?: string;
   shortcode?: string;
   storeNumber?: string;
-  pesapalConsumerKey?: string;
-  pesapalConsumerSecret?: string;
-  pesapalEnv?: string;
-  pesapalCurrency?: string;
-  pesapalIpnId?: string;
 };
 
 export type MpesaPublicStatus = {
-  paymentProvider: PaymentProvider;
+  paymentProvider: 'MPESA';
   activeProviderConfigured: boolean;
   mpesaConfigured: boolean;
   mpesaConsumerKeySet: boolean;
@@ -37,13 +29,6 @@ export type MpesaPublicStatus = {
   mpesaShortcodeMasked: string;
   mpesaStoreNumberMasked: string;
   mpesaCredentialsEncrypted: boolean;
-  pesapalConfigured: boolean;
-  pesapalConsumerKeySet: boolean;
-  pesapalConsumerSecretSet: boolean;
-  pesapalEnv: PesaPalEnvironment;
-  pesapalCurrency: string;
-  pesapalIpnIdSet: boolean;
-  pesapalCredentialsEncrypted: boolean;
   credentialsEncrypted: boolean;
   safeStorageReady: boolean;
   lastTestAt?: number | null;
@@ -62,19 +47,6 @@ export type MpesaRuntimeCredentials = {
   storeNumber?: string;
 };
 
-export type PesaPalRuntimeCredentials = {
-  provider: 'PESAPAL';
-  consumerKey: string;
-  consumerSecret: string;
-  env: PesaPalEnvironment;
-  currency: string;
-  ipnId?: string;
-};
-
-export type ActivePaymentRuntimeCredentials =
-  | { provider: 'MPESA'; mpesa: MpesaRuntimeCredentials }
-  | { provider: 'PESAPAL'; pesapal: PesaPalRuntimeCredentials };
-
 type CredentialRow = {
   businessId: string;
   settingsId?: string | null;
@@ -87,11 +59,6 @@ type CredentialRow = {
   consumerKeyCipher?: string | null;
   consumerSecretCipher?: string | null;
   passkeyCipher?: string | null;
-  pesapalEnvironment?: string | null;
-  pesapalCurrency?: string | null;
-  pesapalIpnId?: string | null;
-  pesapalConsumerKeyCipher?: string | null;
-  pesapalConsumerSecretCipher?: string | null;
   credentialsVersion?: string | null;
   lastTestAt?: number | null;
   lastTestStatus?: string | null;
@@ -117,22 +84,9 @@ const MPESA_SECRET_FIELDS = [
   ['passkeyCipher', 'mpesaPasskey', 'passkey'] as const,
 ];
 
-const PESAPAL_SECRET_FIELDS = [
-  ['pesapalConsumerKeyCipher', 'pesapalConsumerKey'] as const,
-  ['pesapalConsumerSecretCipher', 'pesapalConsumerSecret'] as const,
-];
-
 const DEFAULT_MPESA_PRODUCT = 'M-PESA EXPRESS';
 
-export function normalizePaymentProvider(value: unknown): PaymentProvider {
-  return String(value || '').trim().toUpperCase() === 'PESAPAL' ? 'PESAPAL' : 'MPESA';
-}
-
 export function normalizeMpesaEnv(value: unknown): MpesaEnvironment {
-  return String(value || '').toLowerCase() === 'production' ? 'production' : 'sandbox';
-}
-
-export function normalizePesaPalEnv(value: unknown): PesaPalEnvironment {
   return String(value || '').toLowerCase() === 'production' ? 'production' : 'sandbox';
 }
 
@@ -148,16 +102,8 @@ function normalizeProduct(value: unknown) {
   return cleanText(value || DEFAULT_MPESA_PRODUCT, 80) || DEFAULT_MPESA_PRODUCT;
 }
 
-function normalizeCurrency(value: unknown) {
-  return cleanText(value || 'KES', 3).toUpperCase() || 'KES';
-}
-
 function secretAad(businessId: string, field: string) {
   return `mtaani-pos:mpesa:enc:v2:${businessId}:${field}`;
-}
-
-function pesapalSecretAad(businessId: string, field: string) {
-  return `mtaani-pos:pesapal:enc:v2:${businessId}:${field}`;
 }
 
 function maskNumber(value?: string | null) {
@@ -169,10 +115,6 @@ function maskNumber(value?: string | null) {
 
 function hasAllSecretCiphers(row?: CredentialRow | null) {
   return !!(row?.consumerKeyCipher && row.consumerSecretCipher && row.passkeyCipher);
-}
-
-function hasAllPesaPalSecretCiphers(row?: CredentialRow | null) {
-  return !!(row?.pesapalConsumerKeyCipher && row.pesapalConsumerSecretCipher);
 }
 
 function hasPublicNumber(row?: CredentialRow | null) {
@@ -193,11 +135,6 @@ export async function ensureMpesaCredentialSchema(db: D1Database) {
       consumerKeyCipher TEXT,
       consumerSecretCipher TEXT,
       passkeyCipher TEXT,
-      pesapalEnvironment TEXT NOT NULL DEFAULT 'sandbox',
-      pesapalCurrency TEXT NOT NULL DEFAULT 'KES',
-      pesapalIpnId TEXT,
-      pesapalConsumerKeyCipher TEXT,
-      pesapalConsumerSecretCipher TEXT,
       credentialsVersion TEXT DEFAULT 'enc:v2',
       lastTestAt INTEGER,
       lastTestStatus TEXT,
@@ -218,11 +155,6 @@ export async function ensureMpesaCredentialSchema(db: D1Database) {
     'ALTER TABLE mpesaCredentials ADD COLUMN consumerKeyCipher TEXT',
     'ALTER TABLE mpesaCredentials ADD COLUMN consumerSecretCipher TEXT',
     'ALTER TABLE mpesaCredentials ADD COLUMN passkeyCipher TEXT',
-    "ALTER TABLE mpesaCredentials ADD COLUMN pesapalEnvironment TEXT NOT NULL DEFAULT 'sandbox'",
-    "ALTER TABLE mpesaCredentials ADD COLUMN pesapalCurrency TEXT NOT NULL DEFAULT 'KES'",
-    'ALTER TABLE mpesaCredentials ADD COLUMN pesapalIpnId TEXT',
-    'ALTER TABLE mpesaCredentials ADD COLUMN pesapalConsumerKeyCipher TEXT',
-    'ALTER TABLE mpesaCredentials ADD COLUMN pesapalConsumerSecretCipher TEXT',
     "ALTER TABLE mpesaCredentials ADD COLUMN credentialsVersion TEXT DEFAULT 'enc:v2'",
     'ALTER TABLE mpesaCredentials ADD COLUMN lastTestAt INTEGER',
     'ALTER TABLE mpesaCredentials ADD COLUMN lastTestStatus TEXT',
@@ -287,14 +219,13 @@ async function upsertCredentialRow(db: D1Database, row: CredentialRow) {
     INSERT INTO mpesaCredentials (
       businessId, settingsId, paymentProvider, environment, accountType, product, shortcode, storeNumber,
       consumerKeyCipher, consumerSecretCipher, passkeyCipher,
-      pesapalEnvironment, pesapalCurrency, pesapalIpnId, pesapalConsumerKeyCipher, pesapalConsumerSecretCipher,
       credentialsVersion,
       lastTestAt, lastTestStatus, lastTestMessage, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'enc:v2', ?, ?, ?, ?, ?)
+    VALUES (?, ?, 'MPESA', ?, ?, ?, ?, ?, ?, ?, ?, 'enc:v2', ?, ?, ?, ?, ?)
     ON CONFLICT(businessId) DO UPDATE SET
       settingsId = excluded.settingsId,
-      paymentProvider = excluded.paymentProvider,
+      paymentProvider = 'MPESA',
       environment = excluded.environment,
       accountType = excluded.accountType,
       product = excluded.product,
@@ -303,11 +234,6 @@ async function upsertCredentialRow(db: D1Database, row: CredentialRow) {
       consumerKeyCipher = excluded.consumerKeyCipher,
       consumerSecretCipher = excluded.consumerSecretCipher,
       passkeyCipher = excluded.passkeyCipher,
-      pesapalEnvironment = excluded.pesapalEnvironment,
-      pesapalCurrency = excluded.pesapalCurrency,
-      pesapalIpnId = excluded.pesapalIpnId,
-      pesapalConsumerKeyCipher = excluded.pesapalConsumerKeyCipher,
-      pesapalConsumerSecretCipher = excluded.pesapalConsumerSecretCipher,
       credentialsVersion = 'enc:v2',
       lastTestAt = excluded.lastTestAt,
       lastTestStatus = excluded.lastTestStatus,
@@ -316,7 +242,6 @@ async function upsertCredentialRow(db: D1Database, row: CredentialRow) {
   `).bind(
     row.businessId,
     row.settingsId || null,
-    normalizePaymentProvider(row.paymentProvider),
     normalizeMpesaEnv(row.environment),
     normalizeMpesaType(row.accountType),
     normalizeProduct(row.product),
@@ -325,11 +250,6 @@ async function upsertCredentialRow(db: D1Database, row: CredentialRow) {
     row.consumerKeyCipher || null,
     row.consumerSecretCipher || null,
     row.passkeyCipher || null,
-    normalizePesaPalEnv(row.pesapalEnvironment),
-    normalizeCurrency(row.pesapalCurrency),
-    cleanText(row.pesapalIpnId) || null,
-    row.pesapalConsumerKeyCipher || null,
-    row.pesapalConsumerSecretCipher || null,
     row.lastTestAt || null,
     row.lastTestStatus || null,
     row.lastTestMessage || null,
@@ -350,7 +270,7 @@ async function migrateLegacySettings(db: D1Database, businessId: string, keyMate
   const next: CredentialRow = {
     businessId,
     settingsId: `core_${businessId}`,
-    paymentProvider: row?.paymentProvider || 'MPESA',
+    paymentProvider: 'MPESA',
     environment: row?.environment || normalizeMpesaEnv(settings.mpesaEnv),
     accountType: row?.accountType || normalizeMpesaType(settings.mpesaType),
     product: row?.product || DEFAULT_MPESA_PRODUCT,
@@ -359,11 +279,6 @@ async function migrateLegacySettings(db: D1Database, businessId: string, keyMate
     consumerKeyCipher: row?.consumerKeyCipher || null,
     consumerSecretCipher: row?.consumerSecretCipher || null,
     passkeyCipher: row?.passkeyCipher || null,
-    pesapalEnvironment: row?.pesapalEnvironment || 'sandbox',
-    pesapalCurrency: row?.pesapalCurrency || 'KES',
-    pesapalIpnId: row?.pesapalIpnId || null,
-    pesapalConsumerKeyCipher: row?.pesapalConsumerKeyCipher || null,
-    pesapalConsumerSecretCipher: row?.pesapalConsumerSecretCipher || null,
     lastTestAt: row?.lastTestAt || null,
     lastTestStatus: row?.lastTestStatus || null,
     lastTestMessage: row?.lastTestMessage || null,
@@ -388,15 +303,11 @@ async function migrateLegacySettings(db: D1Database, businessId: string, keyMate
 
 export function publicMpesaStatus(row?: CredentialRow | null, safeStorageReady = true): MpesaPublicStatus {
   const encryptedValues = [row?.consumerKeyCipher, row?.consumerSecretCipher, row?.passkeyCipher].filter(Boolean);
-  const pesapalEncryptedValues = [row?.pesapalConsumerKeyCipher, row?.pesapalConsumerSecretCipher].filter(Boolean);
-  const paymentProvider = normalizePaymentProvider(row?.paymentProvider);
   const mpesaCredentialsEncrypted = encryptedValues.length > 0 && encryptedValues.every(value => isEncryptedSecret(String(value)));
-  const pesapalCredentialsEncrypted = pesapalEncryptedValues.length > 0 && pesapalEncryptedValues.every(value => isEncryptedSecret(String(value)));
   const mpesaConfigured = hasAllSecretCiphers(row) && hasPublicNumber(row);
-  const pesapalConfigured = hasAllPesaPalSecretCiphers(row);
   return {
-    paymentProvider,
-    activeProviderConfigured: paymentProvider === 'PESAPAL' ? pesapalConfigured : mpesaConfigured,
+    paymentProvider: 'MPESA',
+    activeProviderConfigured: mpesaConfigured,
     mpesaConfigured,
     mpesaConsumerKeySet: !!row?.consumerKeyCipher,
     mpesaConsumerSecretSet: !!row?.consumerSecretCipher,
@@ -409,14 +320,7 @@ export function publicMpesaStatus(row?: CredentialRow | null, safeStorageReady =
     mpesaShortcodeMasked: maskNumber(row?.shortcode),
     mpesaStoreNumberMasked: maskNumber(row?.storeNumber),
     mpesaCredentialsEncrypted,
-    pesapalConfigured,
-    pesapalConsumerKeySet: !!row?.pesapalConsumerKeyCipher,
-    pesapalConsumerSecretSet: !!row?.pesapalConsumerSecretCipher,
-    pesapalEnv: normalizePesaPalEnv(row?.pesapalEnvironment),
-    pesapalCurrency: normalizeCurrency(row?.pesapalCurrency),
-    pesapalIpnIdSet: !!cleanText(row?.pesapalIpnId),
-    pesapalCredentialsEncrypted,
-    credentialsEncrypted: paymentProvider === 'PESAPAL' ? pesapalCredentialsEncrypted : mpesaCredentialsEncrypted,
+    credentialsEncrypted: mpesaCredentialsEncrypted,
     safeStorageReady,
     lastTestAt: row?.lastTestAt || null,
     lastTestStatus: row?.lastTestStatus || null,
@@ -446,12 +350,11 @@ export async function saveMpesaCredentials(
   const safeKey = assertSafeCredentialKey(keyMaterial);
   const existing = await migrateLegacySettings(db, businessId, safeKey);
   const settings = await getLegacySettings(db, businessId);
-  const paymentProvider = normalizePaymentProvider(input.provider ?? existing?.paymentProvider);
   const shortcode = cleanText(input.shortcode) || cleanText(settings?.tillNumber) || cleanText(existing?.shortcode);
   const next: CredentialRow = {
     businessId,
     settingsId: `core_${businessId}`,
-    paymentProvider,
+    paymentProvider: 'MPESA',
     environment: normalizeMpesaEnv(input.env ?? existing?.environment),
     accountType: normalizeMpesaType(input.type ?? existing?.accountType),
     product: normalizeProduct(input.product ?? existing?.product),
@@ -460,11 +363,6 @@ export async function saveMpesaCredentials(
     consumerKeyCipher: existing?.consumerKeyCipher || null,
     consumerSecretCipher: existing?.consumerSecretCipher || null,
     passkeyCipher: existing?.passkeyCipher || null,
-    pesapalEnvironment: normalizePesaPalEnv(input.pesapalEnv ?? existing?.pesapalEnvironment),
-    pesapalCurrency: normalizeCurrency(input.pesapalCurrency ?? existing?.pesapalCurrency),
-    pesapalIpnId: cleanText(input.pesapalIpnId) || cleanText(existing?.pesapalIpnId) || null,
-    pesapalConsumerKeyCipher: existing?.pesapalConsumerKeyCipher || null,
-    pesapalConsumerSecretCipher: existing?.pesapalConsumerSecretCipher || null,
     lastTestAt: existing?.lastTestAt || null,
     lastTestStatus: existing?.lastTestStatus || null,
     lastTestMessage: existing?.lastTestMessage || null,
@@ -476,19 +374,11 @@ export async function saveMpesaCredentials(
     if (plain) next[cipherField] = await encryptSecret(plain, safeKey, secretAad(businessId, logicalField));
   }
 
-  for (const [cipherField, logicalField] of PESAPAL_SECRET_FIELDS) {
-    const plain = cleanText(input[logicalField], 4000);
-    if (plain) next[cipherField] = await encryptSecret(plain, safeKey, pesapalSecretAad(businessId, logicalField));
-  }
-
-  if (paymentProvider === 'MPESA' && (!next.consumerKeyCipher || !next.consumerSecretCipher || !next.passkeyCipher)) {
+  if (!next.consumerKeyCipher || !next.consumerSecretCipher || !next.passkeyCipher) {
     throw new Error('Enter the consumer key, consumer secret, and passkey before saving M-Pesa.');
   }
-  if (paymentProvider === 'MPESA' && !cleanText(next.shortcode)) {
+  if (!cleanText(next.shortcode)) {
     throw new Error('Enter the M-Pesa shortcode or till number before saving M-Pesa.');
-  }
-  if (paymentProvider === 'PESAPAL' && (!next.pesapalConsumerKeyCipher || !next.pesapalConsumerSecretCipher)) {
-    throw new Error('Enter the PesaPal consumer key and consumer secret before saving PesaPal.');
   }
 
   await upsertCredentialRow(db, next);
@@ -545,45 +435,6 @@ export async function loadMpesaRuntimeCredentials(
     shortcode: cleanText(row?.shortcode),
     storeNumber: cleanText(row?.storeNumber) || undefined,
   };
-}
-
-export async function loadPesaPalRuntimeCredentials(
-  db: D1Database,
-  businessId: string,
-  keyMaterial?: string,
-): Promise<PesaPalRuntimeCredentials> {
-  const safeKey = assertSafeCredentialKey(keyMaterial);
-  const row = await migrateLegacySettings(db, businessId, safeKey);
-  if (!row || !hasAllPesaPalSecretCiphers(row)) {
-    throw new Error('PesaPal is not configured.');
-  }
-
-  const consumerKey = await decryptSecret(row.pesapalConsumerKeyCipher, safeKey, pesapalSecretAad(businessId, 'pesapalConsumerKey'));
-  const consumerSecret = await decryptSecret(row.pesapalConsumerSecretCipher, safeKey, pesapalSecretAad(businessId, 'pesapalConsumerSecret'));
-  if (!consumerKey || !consumerSecret) throw new Error('PesaPal is not configured.');
-
-  return {
-    provider: 'PESAPAL',
-    consumerKey,
-    consumerSecret,
-    env: normalizePesaPalEnv(row.pesapalEnvironment),
-    currency: normalizeCurrency(row.pesapalCurrency),
-    ipnId: cleanText(row.pesapalIpnId) || undefined,
-  };
-}
-
-export async function loadActivePaymentRuntimeCredentials(
-  db: D1Database,
-  businessId: string,
-  keyMaterial?: string,
-): Promise<ActivePaymentRuntimeCredentials> {
-  const safeKey = assertSafeCredentialKey(keyMaterial);
-  const row = await migrateLegacySettings(db, businessId, safeKey);
-  const provider = normalizePaymentProvider(row?.paymentProvider);
-  if (provider === 'PESAPAL') {
-    return { provider: 'PESAPAL', pesapal: await loadPesaPalRuntimeCredentials(db, businessId, safeKey) };
-  }
-  return { provider: 'MPESA', mpesa: await loadMpesaRuntimeCredentials(db, businessId, safeKey) };
 }
 
 export async function recordMpesaTestResult(

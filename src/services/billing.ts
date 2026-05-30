@@ -2,7 +2,6 @@ import type { BillingPayment } from '../db';
 import { apiRequest } from './apiClient';
 
 export type BillingStatus = 'OK' | 'REMINDER' | 'LOCKED';
-export type BillingPaymentMethod = 'MPESA' | 'PESAPAL';
 
 export type BillingInfo = {
   businessId: string;
@@ -39,7 +38,7 @@ export const BillingService = {
     });
   },
 
-  pay(input: { businessId: string; phone: string; method?: BillingPaymentMethod }) {
+  pay(input: { businessId: string; phone: string }) {
     return apiRequest<BillingPayResponse>('/api/billing/pay', {
       method: 'POST',
       businessId: input.businessId,

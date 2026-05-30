@@ -36,6 +36,4 @@ Set `BUSINESS_BOOTSTRAP_PASSWORD` as a Cloudflare secret before creating or rese
 
 Platform billing STK pushes use the `BILLING_MPESA_*` Cloudflare secrets. These are separate from each business's sales M-Pesa settings.
 
-Platform billing can also use PesaPal checkout via the `BILLING_PESAPAL_*` Cloudflare secrets. Use this when customers should pay by M-Pesa through PesaPal and the funds should settle into the PesaPal merchant account.
-
-Business owners can choose either direct Safaricom M-Pesa API credentials or PesaPal credentials from Settings > Payments. Those shop payment credentials are encrypted with `MPESA_CREDENTIAL_ENCRYPTION_KEY`; PesaPal payment callbacks use the protected `MPESA_CALLBACK_SECRET` path.
+Business owners can save direct Safaricom M-Pesa API credentials from Settings > M-Pesa. Those shop payment credentials are encrypted with `MPESA_CREDENTIAL_ENCRYPTION_KEY`.

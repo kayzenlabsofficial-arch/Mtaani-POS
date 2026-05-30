@@ -1,5 +1,5 @@
 import { authorizeRequest, canAccessBusiness } from '../authUtils';
-import { getMpesaPublicStatus, loadMpesaRuntimeCredentials } from './credentialStore';
+import { loadMpesaRuntimeCredentials } from './credentialStore';
 
 interface Env {
   DB: D1Database;
@@ -60,13 +60,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const amount = Math.ceil(body.amount);
     const reference = body.reference || 'POS_PAYMENT';
     const description = 'Payment for items';
-
-    const paymentStatus = await getMpesaPublicStatus(env.DB, body.businessId, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);
-    if (paymentStatus.paymentProvider === 'PESAPAL') {
-      return new Response(JSON.stringify({
-        error: 'PesaPal is selected for this business. PesaPal uses only its consumer key and secret, so this POS M-Pesa Push button will not call the Safaricom M-Pesa API. Switch Settings > Payments to M-Pesa API for direct in-app STK push.',
-      }), { status: 409, headers: jsonHeaders() });
-    }
 
     // 1. In-app POS push must always use direct Daraja STK for the fastest customer prompt.
     const credentials = await loadMpesaRuntimeCredentials(env.DB, body.businessId, env.MPESA_CREDENTIAL_ENCRYPTION_KEY);

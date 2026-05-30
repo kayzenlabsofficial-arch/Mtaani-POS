@@ -1,5 +1,4 @@
 import { authorizeRequest, canAccessBusiness } from '../../authUtils';
-import { refreshPesaPalMpesaPayment } from '../pesapalUtils';
 
 interface Env {
   DB: D1Database;
@@ -50,13 +49,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         if (result) {
             if (!canAccessBusiness(auth.principal, result.businessId)) {
                 return new Response(JSON.stringify({ error: 'Access denied' }), { status: 403, headers: jsonHeaders() });
-            }
-            if (String(result.provider || '').toUpperCase() === 'PESAPAL' && Number(result.resultCode) === 999) {
-                try {
-                    result = await refreshPesaPalMpesaPayment(env.DB, result.businessId, checkoutRequestId, env.MPESA_CREDENTIAL_ENCRYPTION_KEY) || result;
-                } catch (err) {
-                    console.error('[PesaPal Status Refresh Error]', err);
-                }
             }
             return new Response(JSON.stringify({
                 found: true,

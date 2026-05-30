@@ -6,7 +6,6 @@ export interface SaveMpesaSettingsInput {
   userId: string;
   adminPassword: string;
   credentials: {
-    provider?: 'MPESA' | 'PESAPAL';
     consumerKey?: string;
     consumerSecret?: string;
     passkey?: string;
@@ -15,16 +14,11 @@ export interface SaveMpesaSettingsInput {
     product?: string;
     shortcode?: string;
     storeNumber?: string;
-    pesapalConsumerKey?: string;
-    pesapalConsumerSecret?: string;
-    pesapalEnv?: 'sandbox' | 'production';
-    pesapalCurrency?: string;
-    pesapalIpnId?: string;
   };
 }
 
 export interface MpesaSettingsStatus {
-  paymentProvider: 'MPESA' | 'PESAPAL';
+  paymentProvider: 'MPESA';
   activeProviderConfigured: boolean;
   mpesaConfigured: boolean;
   mpesaConsumerKeySet: boolean;
@@ -38,13 +32,6 @@ export interface MpesaSettingsStatus {
   mpesaShortcodeMasked: string;
   mpesaStoreNumberMasked: string;
   mpesaCredentialsEncrypted: boolean;
-  pesapalConfigured: boolean;
-  pesapalConsumerKeySet: boolean;
-  pesapalConsumerSecretSet: boolean;
-  pesapalEnv: 'sandbox' | 'production';
-  pesapalCurrency: string;
-  pesapalIpnIdSet: boolean;
-  pesapalCredentialsEncrypted: boolean;
   credentialsEncrypted: boolean;
   safeStorageReady: boolean;
   lastTestAt?: number | null;
