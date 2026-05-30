@@ -56,7 +56,7 @@ const sections: Array<{ id: SectionId; label: string; detail: string; Icon: Luci
   { id: 'business', label: 'Business', detail: 'Receipt identity', Icon: Building2 },
   { id: 'tills', label: 'Tills', detail: 'Counters and float', Icon: Store },
   { id: 'owner', label: 'Owner mode', detail: 'Approvals and limits', Icon: ShieldCheck },
-  { id: 'mpesa', label: 'Payments', detail: 'Push API and PesaPal', Icon: CreditCard },
+  { id: 'mpesa', label: 'Payments', detail: 'Push API or checkout', Icon: CreditCard },
   { id: 'hardware', label: 'Hardware', detail: 'Printer and scanner', Icon: Usb },
   { id: 'system', label: 'System', detail: 'Updates and access', Icon: Download },
 ];

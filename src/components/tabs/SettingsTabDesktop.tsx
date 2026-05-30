@@ -1156,7 +1156,7 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
         {activeSettingsSection === 'mpesa' && (
           <SummaryPanel
             title="Payments"
-            description="Direct Safaricom M-Pesa API powers POS push. PesaPal is saved for online checkout links."
+            description="Direct Safaricom M-Pesa API powers POS push. PesaPal uses only consumer key and secret for checkout links."
             Icon={CreditCard}
             actionLabel={mpesaStatus?.activeProviderConfigured ? 'Manage' : 'Set up'}
             onEdit={() => openEdit('mpesa')}
