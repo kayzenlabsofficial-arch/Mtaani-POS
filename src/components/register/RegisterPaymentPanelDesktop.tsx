@@ -253,12 +253,7 @@ export default function RegisterPaymentPanelDesktop({
     const res = await MpesaService.triggerStkPush(mpesaPhone.trim(), amountToPay, `SALE-${Date.now()}`, activeBusinessId, activeShopId);
     if (res.success && res.checkoutRequestId) {
       setMpesaState('POLLING');
-      if (res.redirectUrl) {
-        const opened = window.open(res.redirectUrl, '_blank');
-        if (opened) opened.opener = null;
-        if (!opened) window.location.assign(res.redirectUrl);
-      }
-      success(res.provider === 'PESAPAL' ? 'PesaPal checkout opened. Waiting up to 4 minutes for payment.' : 'M-Pesa request sent. Waiting up to 4 minutes for payment.');
+      success('M-Pesa request sent. Waiting up to 4 minutes for payment.');
       pollMpesaAndComplete(res.checkoutRequestId, amountToPay, completeWith);
     } else {
       setMpesaState('FAILED');

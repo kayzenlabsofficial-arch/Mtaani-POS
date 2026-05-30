@@ -56,7 +56,7 @@ const sections: Array<{ id: SectionId; label: string; detail: string; Icon: Luci
   { id: 'business', label: 'Business', detail: 'Receipt identity', Icon: Building2 },
   { id: 'tills', label: 'Tills', detail: 'Counters and float', Icon: Store },
   { id: 'owner', label: 'Owner mode', detail: 'Approvals and limits', Icon: ShieldCheck },
-  { id: 'mpesa', label: 'Payments', detail: 'M-Pesa API or PesaPal', Icon: CreditCard },
+  { id: 'mpesa', label: 'Payments', detail: 'Push API and PesaPal', Icon: CreditCard },
   { id: 'hardware', label: 'Hardware', detail: 'Printer and scanner', Icon: Usb },
   { id: 'system', label: 'System', detail: 'Updates and access', Icon: Download },
 ];
@@ -643,9 +643,9 @@ export default function SettingsTabMobile({ updateServiceWorker, needRefresh }: 
       </div>
 
       <div>
-        <FieldLabel>Payment API</FieldLabel>
+        <FieldLabel>Online payment option</FieldLabel>
         <SelectInput value={mpesaDraft.provider} onChange={event => setMpesaDraft(prev => ({ ...prev, provider: event.target.value as 'MPESA' | 'PESAPAL' }))}>
-          <option value="PESAPAL">PesaPal</option>
+          <option value="PESAPAL">PesaPal checkout</option>
           <option value="MPESA">M-Pesa API</option>
         </SelectInput>
       </div>

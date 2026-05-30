@@ -434,11 +434,6 @@ export default function CustomersTabDesktop() {
     try {
       const res = await MpesaService.triggerStkPush(editingCustomer.phone, amount, `REPAY-${editingCustomer.name.substring(0,5)}`, activeBusinessId!, activeShopId!);
       if (res.success && res.checkoutRequestId) {
-        if (res.redirectUrl) {
-          const opened = window.open(res.redirectUrl, '_blank');
-          if (opened) opened.opener = null;
-          if (!opened) window.location.assign(res.redirectUrl);
-        }
         setMpesaRequestId(res.checkoutRequestId);
         setMpesaState('POLLING');
         startPolling(res.checkoutRequestId, amount);

@@ -651,10 +651,10 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
       </div>
 
       <div>
-        <FieldLabel>Payment API</FieldLabel>
+        <FieldLabel>Online payment option</FieldLabel>
         <div className="grid grid-cols-2 gap-2 rounded-lg border-2 border-slate-200 bg-slate-50 p-1">
           {([
-            ['PESAPAL', 'PesaPal', CreditCard],
+            ['PESAPAL', 'PesaPal checkout', CreditCard],
             ['MPESA', 'M-Pesa API', Smartphone],
           ] as const).map(([id, label, Icon]) => {
             const active = mpesaDraft.provider === id;
@@ -1156,7 +1156,7 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
         {activeSettingsSection === 'mpesa' && (
           <SummaryPanel
             title="Payments"
-            description="Choose direct Safaricom M-Pesa API or PesaPal checkout for phone payments."
+            description="Direct Safaricom M-Pesa API powers POS push. PesaPal is saved for online checkout links."
             Icon={CreditCard}
             actionLabel={mpesaStatus?.activeProviderConfigured ? 'Manage' : 'Set up'}
             onEdit={() => openEdit('mpesa')}
@@ -1164,7 +1164,7 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
             <div className="space-y-5">
               <div className="grid border-b border-slate-200 pb-3 sm:grid-cols-3 sm:divide-x sm:divide-slate-200">
                 <ProfileDetail
-                  label="Active API"
+                  label="Online route"
                   value={mpesaStatus?.paymentProvider === 'PESAPAL' ? 'PesaPal' : 'M-Pesa API'}
                   className="sm:pr-4"
                 />
