@@ -9,7 +9,7 @@ import {
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
   PieChart, Pie, Cell, BarChart, Bar, Legend,
-  ComposedChart, Line
+  ComposedChart
 } from 'recharts';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
@@ -371,7 +371,7 @@ export default function ReportsTabContent() {
         rows.push({
           name: period.label,
           income: roundMoney(period.totalRevenue),
-          profit: roundMoney(period.netProfit),
+          profit: roundMoney(Math.max(0, period.netProfit)),
           expenses: roundMoney(period.expenses),
         });
         cursor.setMonth(cursor.getMonth() + 1);
@@ -396,7 +396,7 @@ export default function ReportsTabContent() {
       rows.push({
         name: period.label,
         income: roundMoney(period.totalRevenue),
-        profit: roundMoney(period.netProfit),
+        profit: roundMoney(Math.max(0, period.netProfit)),
         expenses: roundMoney(period.expenses),
       });
       cursor.setDate(cursor.getDate() + 1);
@@ -728,16 +728,16 @@ export default function ReportsTabContent() {
             <div className="flex flex-wrap items-center gap-2 text-[10px] font-black">
               <span className="rounded-full bg-cyan-50 px-3 py-1 text-cyan-700">Income Ksh {totalRevenue.toLocaleString()}</span>
               <span className="rounded-full bg-sky-50 px-3 py-1 text-sky-700">Expenses Ksh {totalExpenseAmount.toLocaleString()}</span>
-              <span className="rounded-full bg-rose-50 px-3 py-1 text-rose-700">Profit Ksh {netProfit.toLocaleString()}</span>
+              <span className="rounded-full bg-rose-50 px-3 py-1 text-rose-700">Profit Ksh {Math.max(0, netProfit).toLocaleString()}</span>
               <span className="text-slate-400">{periodLabel}</span>
             </div>
           </div>
           <div ref={profitExpenseChartRef} className="h-[340px] w-full min-w-0">
             {profitExpenseChartSize.width > 0 && profitExpenseChartSize.height > 0 && (
-              <ComposedChart width={profitExpenseChartSize.width} height={profitExpenseChartSize.height} data={profitExpenseTrendData} margin={{ top: 16, right: 20, left: 4, bottom: 8 }}>
+              <BarChart width={profitExpenseChartSize.width} height={profitExpenseChartSize.height} data={profitExpenseTrendData} margin={{ top: 16, right: 20, left: 4, bottom: 8 }} barGap={8}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b', fontWeight: 800}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b', fontWeight: 800}} tickFormatter={(v) => `Ksh ${Math.abs(Number(v)) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : v}`} />
+                <YAxis domain={[0, 'dataMax']} axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b', fontWeight: 800}} tickFormatter={(v) => `Ksh ${Number(v) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : v}`} />
                 <Tooltip formatter={(value: any) => `Ksh ${Number(value || 0).toLocaleString()}`} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 12px 20px -12px rgba(15,23,42,0.35)', fontWeight: 900 }} />
                 <Legend
                   align="center"
@@ -746,14 +746,14 @@ export default function ReportsTabContent() {
                     <div className="flex justify-center gap-4 pb-2 text-xs font-bold text-slate-900">
                       <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-7 bg-[#0ea5b7]" />Income</span>
                       <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-7 bg-[#0f83bd]" />Expenses</span>
-                      <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-8 bg-[#d9534f]" />Profit</span>
+                      <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-7 bg-[#d9534f]" />Profit</span>
                     </div>
                   )}
                 />
                 <Bar dataKey="income" name="Income" fill="#0ea5b7" radius={[2, 2, 0, 0]} maxBarSize={28} />
                 <Bar dataKey="expenses" name="Expenses" fill="#0f83bd" radius={[2, 2, 0, 0]} maxBarSize={28} />
-                <Line type="monotone" dataKey="profit" name="Profit" stroke="#d9534f" strokeWidth={3} dot={false} activeDot={{ r: 5, strokeWidth: 0 }} />
-              </ComposedChart>
+                <Bar dataKey="profit" name="Profit" fill="#d9534f" radius={[2, 2, 0, 0]} maxBarSize={28} />
+              </BarChart>
             )}
           </div>
         </section>

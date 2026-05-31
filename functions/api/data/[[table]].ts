@@ -1235,61 +1235,207 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         if (!businessId || !canAccessBusiness(principal, businessId)) {
           return new Response(JSON.stringify({ error: 'X-Business-ID required for DELETE' }), { status: 400, headers: jsonHeaders() });
         }
-        if (!canDeleteTable(principal.role, table, service)) {
-          if (table !== 'transactions' || principal.role !== 'CASHIER') {
+        let sideEffects: D1PreparedStatement[] = [];
+        if (table === 'transactions') {
+          const transaction = await env.DB.prepare('SELECT * FROM transactions WHERE id = ? AND businessId = ? LIMIT 1')
+            .bind(id, businessId)
+            .first<any>();
+          if (!transaction) return new Response(JSON.stringify({ error: 'Transaction not found.' }), { status: 404, headers: jsonHeaders() });
+          const tx = deserializeRow(transaction);
+          if (!canDeleteTable(principal.role, table, service)) {
+            if (principal.role !== 'CASHIER') {
+              return new Response(JSON.stringify({ error: 'You are not allowed to delete this data.' }), { status: 403, headers: jsonHeaders() });
+            }
+            const isOwnRecentSale = String(tx.cashierId || '') === principal.userId
+              && Date.now() - Number(tx.timestamp || 0) <= 2 * 60 * 1000;
+            if (!isOwnRecentSale) {
+              return new Response(JSON.stringify({ error: 'Cashier accounts can only undo their own just-created sale.' }), { status: 403, headers: jsonHeaders() });
+            }
+          }
+
+          // If transaction has been counted for stock, reverse it
+          const status = String(tx.status || '').toUpperCase();
+          if (['PAID', 'UNPAID'].includes(status)) {
+            const now = Date.now();
+            const shopId = normalizedShopId(tx.shopId);
+            const items = asArray(tx.items);
+            const productIds = items.map((item: any) => String(item.productId || item.id || '').trim()).filter(Boolean);
+            
+            // Load products to check which are bundles and resolve components
+            const products = new Map<string, any>();
+            if (productIds.length > 0) {
+              const placeholders = productIds.map(() => '?').join(',');
+              const { results: productRows } = await env.DB.prepare(
+                `SELECT id, name, isBundle, components, shopId FROM products WHERE businessId = ? AND id IN (${placeholders})`
+              ).bind(businessId, ...productIds).all();
+              productRows.forEach((row: any) => {
+                const deserialized = deserializeRow(row);
+                products.set(deserialized.id, deserialized);
+              });
+            }
+            
+            // Bundle ingredients
+            const bundleIds = Array.from(products.values()).filter(p => p.isBundle === 1 || p.isBundle === true || p.isBundle === '1').map(p => p.id);
+            const ingredientsMap = new Map<string, { productId: string; quantity: number }[]>();
+            if (bundleIds.length > 0) {
+              const placeholders = bundleIds.map(() => '?').join(',');
+              const { results: ingredientRows } = await env.DB.prepare(
+                `SELECT productId, ingredientProductId, quantity FROM productIngredients WHERE businessId = ? AND productId IN (${placeholders})`
+              ).bind(businessId, ...bundleIds).all();
+              ingredientRows.forEach((row: any) => {
+                const rows = ingredientsMap.get(row.productId) || [];
+                rows.push({ productId: row.ingredientProductId, quantity: asNumber(row.quantity) });
+                ingredientsMap.set(row.productId, rows);
+              });
+            }
+
+            const restoreStock = new Map<string, number>();
+            for (const item of items) {
+              const productId = String(item.productId || item.id || '').trim();
+              const quantity = asNumber(item.quantity);
+              if (!productId || quantity <= 0) continue;
+              const product = products.get(productId);
+              if (!product) continue;
+
+              const isBundle = product.isBundle === 1 || product.isBundle === true || product.isBundle === '1';
+              if (isBundle) {
+                const components = ingredientsMap.get(product.id) || asArray(product.components)
+                  .map((comp: any) => ({
+                    productId: String(comp?.productId || comp?.ingredientProductId || '').trim(),
+                    quantity: asNumber(comp?.quantity),
+                  }))
+                  .filter((comp: any) => comp.productId && comp.quantity > 0);
+
+                for (const component of components) {
+                  restoreStock.set(component.productId, (restoreStock.get(component.productId) || 0) + component.quantity * quantity);
+                }
+              } else {
+                restoreStock.set(productId, (restoreStock.get(productId) || 0) + quantity);
+              }
+            }
+
+            const txRef = String(tx.id).split('-')[0].toUpperCase();
+            for (const [productId, quantity] of restoreStock.entries()) {
+              sideEffects.push(
+                env.DB.prepare(`UPDATE products SET stockQuantity = stockQuantity + ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+                  .bind(quantity, now, productId, businessId, DEFAULT_SHOP_ID, shopId)
+              );
+              sideEffects.push(
+                env.DB.prepare(
+                  `INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                ).bind(
+                  crypto.randomUUID(),
+                  productId,
+                  'RETURN',
+                  quantity,
+                  now,
+                  `Undo Sale #${txRef}`,
+                  businessId,
+                  tx.shiftId || null,
+                  shopId,
+                  now,
+                )
+              );
+            }
+
+            // Reverse customer totalSpent and balance if customer is attached
+            if (tx.customerId) {
+              const total = roundMoney(asNumber(tx.total));
+              const method = String(tx.paymentMethod || '').toUpperCase();
+              let creditAmount = 0;
+              if (method === 'CREDIT') {
+                creditAmount = total;
+              } else if (method === 'SPLIT') {
+                const splitPayments = typeof tx.splitPayments === 'string'
+                  ? (() => { try { return JSON.parse(tx.splitPayments); } catch { return null; } })()
+                  : tx.splitPayments;
+                if (String(splitPayments?.secondaryMethod || '').toUpperCase() === 'CREDIT') {
+                  creditAmount = roundMoney(Math.min(Math.max(0, asNumber(splitPayments?.secondaryAmount)), total));
+                }
+              }
+
+              sideEffects.push(
+                env.DB.prepare(`
+                  UPDATE customers
+                  SET totalSpent = MAX(0, COALESCE(totalSpent, 0) - ?),
+                      balance = MAX(0, COALESCE(balance, 0) - ?),
+                      updated_at = ?
+                  WHERE id = ?
+                    AND businessId = ?
+                    AND COALESCE(NULLIF(shopId, ''), ?) = ?
+                `).bind(total, creditAmount, now, tx.customerId, businessId, DEFAULT_SHOP_ID, shopId)
+              );
+            }
+          }
+
+          // Push Audit Log
+          const now = Date.now();
+          sideEffects.push(
+            env.DB.prepare(`
+              INSERT INTO auditLogs (id, ts, userId, userName, action, entity, entityId, severity, details, businessId, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).bind(
+              crypto.randomUUID(),
+              now,
+              principal.userId || null,
+              principal.userName || null,
+              'sale.undo',
+              'transaction',
+              tx.id,
+              'WARN',
+              `Undid sale #${String(tx.id).split('-')[0].toUpperCase()} of Ksh ${asNumber(tx.total).toLocaleString()}.`,
+              businessId,
+              now,
+            )
+          );
+        } else {
+          // Normal validation for non-transaction deletions
+          if (!canDeleteTable(principal.role, table, service)) {
             return new Response(JSON.stringify({ error: 'You are not allowed to delete this data.' }), { status: 403, headers: jsonHeaders() });
           }
-          const transaction = await env.DB.prepare('SELECT cashierId, timestamp FROM transactions WHERE id = ? AND businessId = ? LIMIT 1')
-            .bind(id, businessId)
-            .first<any>();
-          const isOwnRecentSale = transaction
-            && String(transaction.cashierId || '') === principal.userId
-            && Date.now() - Number(transaction.timestamp || 0) <= 2 * 60 * 1000;
-          if (!isOwnRecentSale) {
-            return new Response(JSON.stringify({ error: 'Cashier accounts can only undo their own just-created sale.' }), { status: 403, headers: jsonHeaders() });
+          if (table === 'financialAccounts') {
+            return new Response(JSON.stringify({ error: 'The Main account is built in and cannot be deleted.' }), { status: 409, headers: jsonHeaders() });
           }
-        }
-        if (table === 'financialAccounts') {
-          return new Response(JSON.stringify({ error: 'The Main account is built in and cannot be deleted.' }), { status: 409, headers: jsonHeaders() });
-        }
-        if (table === 'hrStaff') {
-          const row = await env.DB.prepare(`
-            SELECT
-              (SELECT COUNT(*) FROM hrStaffDocuments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND staffId = ?) +
-              (SELECT COUNT(*) FROM hrAttendance WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND staffId = ?) +
-              (SELECT COUNT(*) FROM hrPayrollAdjustments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND staffId = ?) AS count
-          `).bind(
-            businessId, DEFAULT_SHOP_ID, requestedShopId, id,
-            businessId, DEFAULT_SHOP_ID, requestedShopId, id,
-            businessId, DEFAULT_SHOP_ID, requestedShopId, id,
-          ).first<any>();
-          if (Number(row?.count || 0) > 0) {
-            return new Response(JSON.stringify({ error: 'Staff has HR history. Delete related HR records first or change status to Exited.' }), { status: 409, headers: jsonHeaders() });
+          if (table === 'hrStaff') {
+            const row = await env.DB.prepare(`
+              SELECT
+                (SELECT COUNT(*) FROM hrStaffDocuments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND staffId = ?) +
+                (SELECT COUNT(*) FROM hrAttendance WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND staffId = ?) +
+                (SELECT COUNT(*) FROM hrPayrollAdjustments WHERE businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ? AND staffId = ?) AS count
+            `).bind(
+              businessId, DEFAULT_SHOP_ID, requestedShopId, id,
+              businessId, DEFAULT_SHOP_ID, requestedShopId, id,
+              businessId, DEFAULT_SHOP_ID, requestedShopId, id,
+            ).first<any>();
+            if (Number(row?.count || 0) > 0) {
+              return new Response(JSON.stringify({ error: 'Staff has HR history. Delete related HR records first or change status to Exited.' }), { status: 409, headers: jsonHeaders() });
+            }
           }
-        }
-        if (table === 'users' && !service && principal.role !== 'ROOT') {
-          if (id === principal.userId) {
-            return new Response(JSON.stringify({ error: 'You cannot delete your own signed-in account.' }), { status: 403, headers: jsonHeaders() });
-          }
-          const user = await env.DB.prepare('SELECT role FROM users WHERE id = ? AND businessId = ? LIMIT 1')
-            .bind(id, businessId)
-            .first<any>();
-          if (user?.role === 'ADMIN') {
-            const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE businessId = ? AND role = 'ADMIN'")
-              .bind(businessId)
+          if (table === 'users' && !service && principal.role !== 'ROOT') {
+            if (id === principal.userId) {
+              return new Response(JSON.stringify({ error: 'You cannot delete your own signed-in account.' }), { status: 403, headers: jsonHeaders() });
+            }
+            const user = await env.DB.prepare('SELECT role FROM users WHERE id = ? AND businessId = ? LIMIT 1')
+              .bind(id, businessId)
               .first<any>();
-            if (Number(row?.count || 0) <= 1) {
-              return new Response(JSON.stringify({ error: 'The last administrator cannot be deleted.' }), { status: 403, headers: jsonHeaders() });
+            if (user?.role === 'ADMIN') {
+              const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE businessId = ? AND role = 'ADMIN'")
+                .bind(businessId)
+                .first<any>();
+              if (Number(row?.count || 0) <= 1) {
+                return new Response(JSON.stringify({ error: 'The last administrator cannot be deleted.' }), { status: 403, headers: jsonHeaders() });
+              }
             }
           }
         }
-        if (SHOP_SCOPED_TABLES.has(table)) {
-          await env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
-            .bind(id, businessId, DEFAULT_SHOP_ID, requestedShopId)
-            .run();
-        } else {
-          await env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ?`).bind(id, businessId).run();
-        }
+
+        const deleteStatement = SHOP_SCOPED_TABLES.has(table)
+          ? env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
+              .bind(id, businessId, DEFAULT_SHOP_ID, requestedShopId)
+          : env.DB.prepare(`DELETE FROM ${table} WHERE id = ? AND businessId = ?`).bind(id, businessId);
+
+        await env.DB.batch([deleteStatement, ...sideEffects]);
       }
       return new Response(JSON.stringify({ success: true }), { headers: jsonHeaders() });
     }

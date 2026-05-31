@@ -579,8 +579,10 @@ export default function InventoryTabMobile() {
                   {productDiscountLabel(product) && (
                     <p className="hidden sm:block text-[9px] font-black text-rose-500 whitespace-nowrap">{productDiscountLabel(product)}</p>
                   )}
-                  {product.costPrice && (
+                  {product.costPrice ? (
                     <p className="hidden sm:block text-[9px] font-medium text-slate-400 whitespace-nowrap">Cost: Ksh {product.costPrice.toLocaleString()}</p>
+                  ) : (
+                    <p className="hidden sm:block text-[9px] font-bold text-amber-600 whitespace-nowrap">⚠️ No cost set</p>
                   )}
                 </div>
               </button>
@@ -640,7 +642,7 @@ export default function InventoryTabMobile() {
                 { label: 'Selling price', value: `Ksh ${selectedProduct.sellingPrice?.toLocaleString()}` },
                 { label: 'Register price', value: `Ksh ${productSalePrice(selectedProduct).toLocaleString()}` },
                 { label: 'Discount', value: productDiscountLabel(selectedProduct) || 'None' },
-                { label: 'Cost price', value: selectedProduct.costPrice ? `Ksh ${selectedProduct.costPrice.toLocaleString()}` : '—' },
+                { label: 'Cost price', value: selectedProduct.costPrice ? `Ksh ${selectedProduct.costPrice.toLocaleString()}` : '⚠️ No cost set (estimates P&L)' },
                 { label: isBundleProduct(selectedProduct) ? 'Available from ingredients' : 'Stock qty', value: `${selectedProduct.stockQuantity || 0} ${selectedProduct.unit || 'pcs'}` },
                 { label: 'Reorder point', value: selectedProduct.reorderPoint || 5 },
                 { label: 'Expiry', value: getExpiryInfo(selectedProduct).tracking ? getExpiryInfo(selectedProduct).dateLabel : 'Not tracked' },

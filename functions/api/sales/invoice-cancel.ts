@@ -139,21 +139,90 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       `).bind(asNumber(invoice.total), asNumber(invoice.balance), now, invoice.customerId, businessId, DEFAULT_SHOP_ID, shopId),
     ];
 
+    const asArray = (val: unknown): any[] => Array.isArray(val) ? val : [];
+
+    // Gather all product IDs to query
+    const productIds: string[] = [];
+    for (const line of items) {
+      if (line?.itemType === 'PRODUCT' && line?.itemId) {
+        productIds.push(String(line.itemId).trim());
+      }
+    }
+
+    // Load products in bulk
+    const products = new Map<string, any>();
+    if (productIds.length > 0) {
+      const placeholders = productIds.map(() => '?').join(',');
+      const { results: productRows } = await env.DB.prepare(`
+        SELECT id, name, isBundle, components, shopId
+        FROM products
+        WHERE businessId = ? AND id IN (${placeholders})
+      `).bind(businessId, ...productIds).all();
+      productRows.forEach((row: any) => {
+        const parsed = { ...row };
+        if (typeof row.components === 'string') {
+          try { parsed.components = JSON.parse(row.components); } catch {}
+        }
+        products.set(parsed.id, parsed);
+      });
+    }
+
+    // Find bundles and load ingredients
+    const bundleIds = Array.from(products.values())
+      .filter(p => p.isBundle === 1 || p.isBundle === true || p.isBundle === '1')
+      .map(p => p.id);
+    const ingredientsMap = new Map<string, { productId: string; quantity: number }[]>();
+    if (bundleIds.length > 0) {
+      const placeholders = bundleIds.map(() => '?').join(',');
+      const { results: ingredientRows } = await env.DB.prepare(`
+        SELECT productId, ingredientProductId, quantity
+        FROM productIngredients
+        WHERE businessId = ? AND productId IN (${placeholders})
+      `).bind(businessId, ...bundleIds).all();
+      ingredientRows.forEach((row: any) => {
+        const rows = ingredientsMap.get(row.productId) || [];
+        rows.push({ productId: row.ingredientProductId, quantity: asNumber(row.quantity) });
+        ingredientsMap.set(row.productId, rows);
+      });
+    }
+
+    const restoreStock = new Map<string, number>();
     for (const line of items) {
       if (line?.itemType !== 'PRODUCT' || !line?.itemId) continue;
       const quantity = asNumber(line.quantity);
       if (quantity <= 0) continue;
+      const product = products.get(line.itemId);
+      if (!product) continue;
+
+      const isBundle = product.isBundle === 1 || product.isBundle === true || product.isBundle === '1';
+      if (isBundle) {
+        const components = ingredientsMap.get(product.id) || asArray(product.components)
+          .map((comp: any) => ({
+            productId: String(comp?.productId || comp?.ingredientProductId || '').trim(),
+            quantity: asNumber(comp?.quantity),
+          }))
+          .filter((comp: any) => comp.productId && comp.quantity > 0);
+
+        for (const component of components) {
+          restoreStock.set(component.productId, (restoreStock.get(component.productId) || 0) + component.quantity * quantity);
+        }
+      } else {
+        restoreStock.set(product.id, (restoreStock.get(product.id) || 0) + quantity);
+      }
+    }
+
+    for (const [productId, qty] of restoreStock.entries()) {
       statements.push(
         env.DB.prepare(`UPDATE products SET stockQuantity = COALESCE(stockQuantity, 0) + ?, updated_at = ? WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?`)
-          .bind(quantity, now, line.itemId, businessId, DEFAULT_SHOP_ID, shopId),
+          .bind(qty, now, productId, businessId, DEFAULT_SHOP_ID, shopId),
         env.DB.prepare(`
           INSERT INTO stockMovements (id, productId, type, quantity, timestamp, reference, businessId, shiftId, shopId, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           crypto.randomUUID(),
-          line.itemId,
+          productId,
           'RETURN',
-          quantity,
+          qty,
           now,
           `Cancelled invoice ${invoice.invoiceNumber}`,
           businessId,

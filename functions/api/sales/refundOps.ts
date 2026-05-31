@@ -744,14 +744,61 @@ export async function prepareRefundApproval(db: D1Database, args: {
   const lines = refundLinesFor(tx, args.itemsToReturn);
   if (lines.length === 0) throw new PolicyError('No refundable items selected.', 400);
   const refundAmount = refundAmountFor(tx, lines);
+
+  // Calculate cash vs credit refund split
+  const originalCash = paymentAmount(tx, 'CASH');
+  const originalCredit = paymentAmount(tx, 'CREDIT');
+
+  // Calculate prior refund amount
+  const priorLines = asArray(tx.items).map(item => ({
+    productId: item.productId,
+    quantity: asNumber(item.returnedQuantity),
+  }));
+  const priorRefundAmount = refundAmountFor(tx, priorLines);
+  const totalRefundAmount = roundMoney(priorRefundAmount + refundAmount);
+
+  // Compute credit/cash allocations based on the original payment split
+  const priorCreditRefund = roundMoney(Math.min(originalCredit, priorRefundAmount));
+  const priorCashRefund = roundMoney(Math.max(0, priorRefundAmount - priorCreditRefund));
+
+  const cumulativeCreditRefundRaw = roundMoney(Math.min(originalCredit, totalRefundAmount));
+  const cumulativeCashRefundRaw = roundMoney(Math.max(0, totalRefundAmount - cumulativeCreditRefundRaw));
+
+  let currentCreditRefund = roundMoney(cumulativeCreditRefundRaw - priorCreditRefund);
+  let currentCashRefund = roundMoney(cumulativeCashRefundRaw - priorCashRefund);
+
+  // ── Critical fix: cap credit refund at the customer's ACTUAL current balance ──
+  // If the customer has already paid off (part of) the credit sale, their balance
+  // may be lower than originalCredit. Naively reducing balance below 0 would cause
+  // the customerPayments_balance_guard DB trigger to permanently block all future
+  // payments for that customer (balance + 0.01 < amount always fails for negatives).
+  if (tx.customerId && currentCreditRefund > 0) {
+    const customerRow = await db.prepare(`
+      SELECT COALESCE(balance, 0) AS balance
+      FROM customers
+      WHERE id = ? AND businessId = ?
+      LIMIT 1
+    `).bind(tx.customerId, args.businessId).first<{ balance: number }>();
+    const customerBalance = roundMoney(Math.max(0, asNumber(customerRow?.balance)));
+    if (currentCreditRefund > customerBalance) {
+      // The customer already cleared part (or all) of this debt in cash.
+      // Redirect the portion they can't have credited back to a cash payout.
+      const overflow = roundMoney(currentCreditRefund - customerBalance);
+      currentCreditRefund = customerBalance;
+      currentCashRefund = roundMoney(currentCashRefund + overflow);
+    }
+  }
+
   const statements: D1PreparedStatement[] = [];
   const now = Date.now();
   const refundShift = await requireOpenRefundShift(db, args.businessId, shopId, args.shiftId);
-  const availableCash = await availableTillCashForShift(db, args.businessId, shopId, refundShift, now);
-  if (availableCash + 0.01 < refundAmount) {
-    throw new PolicyError(`Till has Ksh ${availableCash.toLocaleString()} available. Add cash before refunding Ksh ${refundAmount.toLocaleString()}.`, 409);
+
+  if (currentCashRefund > 0) {
+    const availableCash = await availableTillCashForShift(db, args.businessId, shopId, refundShift, now);
+    if (availableCash + 0.01 < currentCashRefund) {
+      throw new PolicyError(`Till has Ksh ${availableCash.toLocaleString()} available. Add cash before refunding Ksh ${currentCashRefund.toLocaleString()}.`, 409);
+    }
   }
-  const cashRefundAmount = refundAmount;
   const idemStatement = idempotencyStatement(db, {
     businessId: args.businessId,
     transactionId: tx.id,
@@ -815,15 +862,27 @@ export async function prepareRefundApproval(db: D1Database, args: {
   const refundId = `refund_${tx.id}_${now}_${crypto.randomUUID().slice(0, 8)}`;
   const refundNumber = makeRefundNumber(now);
   const receiptNumber = trimText(tx.receiptNumber || tx.invoiceNumber || tx.id, 160);
+
+  const paymentMethod = currentCashRefund > 0 && currentCreditRefund > 0
+    ? 'SPLIT'
+    : currentCashRefund > 0
+      ? 'CASH'
+      : 'CREDIT';
+  const source = currentCashRefund > 0 && currentCreditRefund > 0
+    ? 'MIXED'
+    : currentCashRefund > 0
+      ? 'TILL'
+      : 'CREDIT';
+
   const refundDocument = {
     id: refundId,
     refundNumber,
     originalTransactionId: tx.id,
     receiptNumber,
     amount: refundAmount,
-    cashAmount: cashRefundAmount,
-    paymentMethod: 'CASH',
-    source: 'TILL',
+    cashAmount: currentCashRefund,
+    paymentMethod,
+    source,
     items: refundDocumentItems(tx, lines, refundAmount),
     timestamp: now,
     cashierName: args.principal.userName || null,
@@ -842,6 +901,24 @@ export async function prepareRefundApproval(db: D1Database, args: {
       WHERE id = ? AND businessId = ? AND COALESCE(NULLIF(shopId, ''), ?) = ?
     `).bind(tx.status, JSON.stringify(updatedItems), tx.approvedBy, now, tx.id, args.businessId, DEFAULT_SHOP_ID, shopId)
   );
+
+  if (tx.customerId) {
+    statements.push(
+      // Use MAX(0, ...) guards so:
+      //  • balance never goes negative (avoids customerPayments_balance_guard lockout)
+      //  • totalSpent never goes negative (cosmetic, but guards against data drift)
+      // currentCreditRefund has already been capped to the customer's live balance above.
+      db.prepare(`
+        UPDATE customers
+        SET totalSpent = MAX(0, COALESCE(totalSpent, 0) - ?),
+            balance    = MAX(0, COALESCE(balance, 0)    - ?),
+            updated_at = ?
+        WHERE id = ?
+          AND businessId = ?
+          AND COALESCE(NULLIF(shopId, ''), ?) = ?
+      `).bind(refundAmount, currentCreditRefund, now, tx.customerId, args.businessId, DEFAULT_SHOP_ID, shopId)
+    );
+  }
   statements.push(
     db.prepare(`
       INSERT INTO refunds (id, refundNumber, originalTransactionId, receiptNumber, amount, cashAmount, paymentMethod, source, items, timestamp, cashierName, approvedBy, status, shiftId, shopId, businessId, updated_at)

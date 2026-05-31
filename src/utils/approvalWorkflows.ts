@@ -32,21 +32,6 @@ export async function ensureExpenseCanBeApproved(expense: Expense): Promise<void
   }
 }
 
-export async function applyApprovedExpenseEffects(expense: Expense, context: ApprovalContext): Promise<void> {
-  await ExpenseService.approve({
-    expenseId: expense.id,
-    businessId: context.activeBusinessId,
-    shopId: context.activeShopId,
-    approvedBy: context.approvedBy,
-  });
-  await reloadBestEffort([
-    () => db.expenses.reload(),
-    () => db.financialAccounts.reload(),
-    () => db.products.reload(),
-    () => db.stockMovements.reload(),
-  ]);
-}
-
 export async function submitExpenseRecord(expense: Expense | any): Promise<void> {
   await ExpenseService.submit(expense);
   await reloadBestEffort([

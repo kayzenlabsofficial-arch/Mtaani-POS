@@ -19,6 +19,7 @@ export type AccessFeatureId =
   | 'tab.invoices'
   | 'tab.inventory'
   | 'tab.suppliers'
+  | 'tab.supplierPayments'
   | 'tab.purchases'
   | 'tab.expenses'
   | 'tab.mainAccount'
@@ -55,6 +56,7 @@ export const ACCESS_CONTROL_GROUPS: Array<{
       { id: 'tab.invoices', label: 'Invoices', description: 'Customer sales invoices.' },
       { id: 'tab.inventory', label: 'Inventory', description: 'Products, stock and categories.' },
       { id: 'tab.suppliers', label: 'Suppliers', description: 'Supplier list and supplier ledger.' },
+      { id: 'tab.supplierPayments', label: 'Supplier payments', description: 'Payments made to suppliers.' },
       { id: 'tab.purchases', label: 'Purchases', description: 'LPOs and stock receiving.' },
       { id: 'tab.expenses', label: 'Expenses', description: 'Expense workspace.' },
       { id: 'tab.mainAccount', label: 'Main account', description: 'Account balance and money movement log.' },
@@ -96,7 +98,7 @@ export const TAB_FEATURES: Record<string, AccessFeatureId> = {
   INVOICES: 'tab.invoices',
   INVENTORY: 'tab.inventory',
   SUPPLIERS: 'tab.suppliers',
-  SUPPLIER_PAYMENTS: 'tab.suppliers',
+  SUPPLIER_PAYMENTS: 'tab.supplierPayments',
   PURCHASES: 'tab.purchases',
   EXPENSES: 'tab.expenses',
   MAIN_ACCOUNT: 'tab.mainAccount',
@@ -123,6 +125,7 @@ const CASHIER_DEFAULTS: Record<AccessFeatureId, AccessMode> = {
   'tab.invoices': 'OPEN',
   'tab.inventory': 'OPEN',
   'tab.suppliers': 'LOCKED',
+  'tab.supplierPayments': 'LOCKED',
   'tab.purchases': 'OPEN',
   'tab.expenses': 'OPEN',
   'tab.mainAccount': 'LOCKED',
@@ -148,6 +151,7 @@ const MANAGER_DEFAULTS: Record<AccessFeatureId, AccessMode> = {
   'tab.invoices': 'OPEN',
   'tab.inventory': 'OPEN',
   'tab.suppliers': 'OPEN',
+  'tab.supplierPayments': 'OPEN',
   'tab.purchases': 'OPEN',
   'tab.expenses': 'OPEN',
   'tab.mainAccount': 'OPEN',

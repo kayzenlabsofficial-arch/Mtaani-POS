@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Product, User } from './db';
+import type { Product, User, Shift } from './db';
 
 export interface CartItem extends Product {
   cartQuantity: number;
@@ -43,7 +43,7 @@ interface POSState {
   isAdmin: boolean;
   isManager: boolean;
   currentUser: SafeUser | null;
-  activeShift: any | null;
+  activeShift: Shift | null;
   activeShopId: string | null;
   activeBusinessId: string | null;
   authToken: string | null;
@@ -60,7 +60,7 @@ interface POSState {
   resumeHeldOrder: (orderId: string) => HeldOrder | null;
   deleteHeldOrder: (orderId: string) => void;
   setCurrentUser: (user: SafeUser | null) => void;
-  setActiveShift: (shift: any | null) => void;
+  setActiveShift: (shift: Shift | null) => void;
   setActiveShopId: (id: string | null) => void;
   setActiveBusinessId: (id: string | null) => void;
   paymentSupplierId: string | null;
@@ -76,7 +76,7 @@ const initialState = {
   isAdmin: false,
   isManager: false,
   currentUser: null as SafeUser | null,
-  activeShift: null as any | null,
+  activeShift: null as Shift | null,
   activeShopId: null as string | null,
   activeBusinessId: null as string | null,
   authToken: null as string | null,

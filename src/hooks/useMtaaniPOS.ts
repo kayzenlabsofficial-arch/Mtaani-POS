@@ -44,9 +44,6 @@ export function useMtaaniPOS() {
 
   const { success, error } = useToast();
   const currentSaleTotal = calculateCartTotals(cart).total;
-  const discountValue = 0;
-  const discountType = 'FIXED';
-  const setDiscountValue = (_value: number) => {};
   
   const {
     offlineReady: [offlineReady, setOfflineReady],
@@ -414,7 +411,7 @@ export function useMtaaniPOS() {
         customerId: effectiveCustomerId,
         customerName: effectiveCustomerName,
         discount: discountAmount,
-        discountType: discountAmount > 0 ? 'PRODUCT' : discountType,
+        discountType: discountAmount > 0 ? 'PRODUCT' : 'NONE',
         isSynced: 0,
         updated_at: Date.now(),
         splitData: Object.keys(checkoutData).length ? checkoutData : undefined
@@ -479,7 +476,6 @@ export function useMtaaniPOS() {
         }
         clearCart();
         setSelectedCustomerId(null);
-        setDiscountValue(0);
         if (isOnline) flushOfflineOutbox().catch(() => {});
         success(isNativeCashSale && isOnline ? "Sale saved locally and queued for sync." : "Sale saved offline. It will sync when internet returns.");
         return newTransaction;
@@ -490,7 +486,6 @@ export function useMtaaniPOS() {
 
       clearCart();
       setSelectedCustomerId(null);
-      setDiscountValue(0);
       success("Transaction completed successfully.");
 
       const canSyncSalesData = currentUser?.role === 'ROOT' || currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';

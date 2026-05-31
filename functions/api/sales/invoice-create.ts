@@ -173,6 +173,87 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     `).bind(customerId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
     if (!customer) throw new PolicyError('Customer was not found.', 404);
 
+    const asArray = (val: unknown): any[] => Array.isArray(val) ? val : [];
+
+    // 1. Gather all product IDs to query
+    const productIds: string[] = [];
+    for (const raw of rawItems) {
+      if (String(raw?.itemType || 'CUSTOM').toUpperCase() === 'PRODUCT') {
+        const itemId = String(raw?.itemId || '').trim();
+        if (itemId) productIds.push(itemId);
+      }
+    }
+
+    // Load products in bulk
+    const products = new Map<string, any>();
+    if (productIds.length > 0) {
+      const placeholders = productIds.map(() => '?').join(',');
+      const { results: productRows } = await env.DB.prepare(`
+        SELECT id, name, sellingPrice, taxCategory, stockQuantity, shopId, isBundle, components
+        FROM products
+        WHERE businessId = ? AND id IN (${placeholders})
+      `).bind(businessId, ...productIds).all();
+      productRows.forEach((row: any) => {
+        const parsed = { ...row };
+        if (typeof row.components === 'string') {
+          try { parsed.components = JSON.parse(row.components); } catch {}
+        }
+        products.set(parsed.id, parsed);
+      });
+    }
+
+    // Find bundles and load ingredients
+    const bundleIds = Array.from(products.values())
+      .filter(p => p.isBundle === 1 || p.isBundle === true || p.isBundle === '1')
+      .map(p => p.id);
+    const ingredientsMap = new Map<string, { productId: string; quantity: number }[]>();
+    if (bundleIds.length > 0) {
+      const placeholders = bundleIds.map(() => '?').join(',');
+      const { results: ingredientRows } = await env.DB.prepare(`
+        SELECT productId, ingredientProductId, quantity
+        FROM productIngredients
+        WHERE businessId = ? AND productId IN (${placeholders})
+      `).bind(businessId, ...bundleIds).all();
+      ingredientRows.forEach((row: any) => {
+        const rows = ingredientsMap.get(row.productId) || [];
+        rows.push({ productId: row.ingredientProductId, quantity: asNumber(row.quantity) });
+        ingredientsMap.set(row.productId, rows);
+      });
+    }
+
+    // Gather ingredient product IDs to load their details
+    const ingredientProductIds: string[] = [];
+    for (const bundleId of bundleIds) {
+      const product = products.get(bundleId);
+      if (!product) continue;
+      const components = ingredientsMap.get(bundleId) || asArray(product.components)
+        .map((comp: any) => ({
+          productId: String(comp?.productId || comp?.ingredientProductId || '').trim(),
+          quantity: asNumber(comp?.quantity),
+        }))
+        .filter((comp: any) => comp.productId && comp.quantity > 0);
+      components.forEach((c: any) => ingredientProductIds.push(c.productId));
+    }
+
+    // Query ingredient products
+    if (ingredientProductIds.length > 0) {
+      const placeholders = ingredientProductIds.map(() => '?').join(',');
+      const { results: ingredientProductRows } = await env.DB.prepare(`
+        SELECT id, name, sellingPrice, taxCategory, stockQuantity, shopId, isBundle, components
+        FROM products
+        WHERE businessId = ? AND id IN (${placeholders})
+      `).bind(businessId, ...ingredientProductIds).all();
+      ingredientProductRows.forEach((row: any) => {
+        const parsed = { ...row };
+        if (typeof row.components === 'string') {
+          try { parsed.components = JSON.parse(row.components); } catch {}
+        }
+        if (!products.has(parsed.id)) {
+          products.set(parsed.id, parsed);
+        }
+      });
+    }
+
     const normalizedItems: any[] = [];
     const stockDeductions = new Map<string, { name: string; quantity: number }>();
     for (const raw of rawItems) {
@@ -185,18 +266,45 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (itemType === 'PRODUCT') {
         const itemId = String(raw?.itemId || '').trim();
         if (!itemId) throw new PolicyError('Product line is missing the product ID.', 400);
-        const product = await env.DB.prepare(`
-          SELECT id, name, sellingPrice, taxCategory, stockQuantity, shopId
-          FROM products
-          WHERE id = ?
-            AND businessId = ?
-            AND COALESCE(NULLIF(shopId, ''), ?) = ?
-          LIMIT 1
-        `).bind(itemId, businessId, DEFAULT_SHOP_ID, shopId).first<any>();
+        const product = products.get(itemId);
         if (!product) throw new PolicyError('Invoice includes a product that was not found.', 404);
-        const planned = stockDeductions.get(product.id)?.quantity || 0;
-        if (asNumber(product.stockQuantity) < planned + quantity) throw new PolicyError(`Insufficient stock for ${product.name}.`, 409);
-        stockDeductions.set(product.id, { name: product.name, quantity: planned + quantity });
+        if (normalizedShopId(product.shopId) !== shopId) {
+          throw new PolicyError('Invoice includes a product from another shop.', 403);
+        }
+
+        const isBundle = product.isBundle === 1 || product.isBundle === true || product.isBundle === '1';
+        if (isBundle) {
+          const components = ingredientsMap.get(product.id) || asArray(product.components)
+            .map((comp: any) => ({
+              productId: String(comp?.productId || comp?.ingredientProductId || '').trim(),
+              quantity: asNumber(comp?.quantity),
+            }))
+            .filter((comp: any) => comp.productId && comp.quantity > 0);
+
+          if (components.length === 0) {
+            throw new PolicyError(`${product.name} has no ingredients configured.`, 400);
+          }
+          for (const component of components) {
+            const compProduct = products.get(component.productId);
+            if (!compProduct) throw new PolicyError(`Ingredient product for ${product.name} was not found.`, 404);
+            if (normalizedShopId(compProduct.shopId) !== shopId) {
+              throw new PolicyError(`Ingredient for ${product.name} belongs to another shop.`, 403);
+            }
+            const needed = component.quantity * quantity;
+            const planned = stockDeductions.get(component.productId)?.quantity || 0;
+            if (asNumber(compProduct.stockQuantity) < planned + needed) {
+              throw new PolicyError(`Insufficient stock for ingredient ${compProduct.name} of bundle ${product.name}.`, 409);
+            }
+            stockDeductions.set(component.productId, { name: compProduct.name, quantity: planned + needed });
+          }
+        } else {
+          const planned = stockDeductions.get(product.id)?.quantity || 0;
+          if (asNumber(product.stockQuantity) < planned + quantity) {
+            throw new PolicyError(`Insufficient stock for ${product.name}.`, 409);
+          }
+          stockDeductions.set(product.id, { name: product.name, quantity: planned + quantity });
+        }
+
         normalizedItems.push({
           itemType: 'PRODUCT',
           itemId: product.id,
