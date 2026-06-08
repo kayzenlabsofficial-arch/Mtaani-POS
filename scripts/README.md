@@ -36,7 +36,7 @@ npm run db:setup:remote
 
 ```bash
 # Custom API URL and secret
-node scripts/db-setup.js --api-url=https://your-app.pages.dev --api-secret=your-custom-secret
+node scripts/db-setup.js --api-url=https://smartpos.pages.dev --api-secret=your-custom-secret
 
 # Local development with custom port
 node scripts/db-setup.js --api-url=http://localhost:3000
@@ -49,7 +49,7 @@ node scripts/db-setup.js --help
 
 The script uses the following environment variables:
 
-- `API_SECRET` or `SMART_API_SECRET`: service API secret for authentication. Legacy `MTAANI_API_SECRET` is still accepted.
+- `API_SECRET` or `SMART_API_SECRET`: service API secret for authentication.
 - `API_BASE_URL`: Base URL for API calls (defaults to `http://localhost:8788`)
 
 ## Configuration
@@ -57,7 +57,7 @@ The script uses the following environment variables:
 ### API Base URLs
 
 - **Local Development**: `http://localhost:8788` (default)
-- **Remote/Production**: `https://your-app.pages.dev` (replace with your actual domain)
+- **Remote/Production**: `https://smartpos.pages.dev` (replace with your actual domain)
 
 ### Default Admin Account
 

@@ -2,7 +2,7 @@ import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@cap
 import { isNativeMobileRuntime, getMobilePlatform } from './runtime';
 import type { OfflineCacheTable, OutboxItem, OutboxStats, SyncStateRow } from '../offline/localdb';
 
-const DATABASE_NAME = 'mtaani_pos_mobile';
+const DATABASE_NAME = 'smart_pos_mobile';
 
 let sqlite: SQLiteConnection | null = null;
 let connection: SQLiteDBConnection | null = null;

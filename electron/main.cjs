@@ -25,8 +25,8 @@ const allowedLocalDbMethods = new Set([
 ]);
 
 function getApiBaseUrl() {
-  const configured = process.env.MTAANI_API_BASE_URL || process.env.VITE_API_BASE_URL || readDesktopConfigApiBaseUrl();
-  const fallback = packageJson.desktop?.defaultApiBaseUrl || 'https://mtaanipos.pages.dev';
+  const configured = process.env.SMART_API_BASE_URL || process.env.VITE_API_BASE_URL || readDesktopConfigApiBaseUrl();
+  const fallback = packageJson.desktop?.defaultApiBaseUrl || 'https://smartpos.pages.dev';
   return normalizeApiBaseUrl(configured || fallback);
 }
 
@@ -52,7 +52,7 @@ function readDesktopConfigApiBaseUrl() {
     try {
       if (!fs.existsSync(filePath)) continue;
       const config = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-      const value = config?.apiBaseUrl || config?.MTAANI_API_BASE_URL;
+      const value = config?.apiBaseUrl || config?.SMART_API_BASE_URL;
       if (value) return String(value);
     } catch (err) {
       console.warn(`[Desktop] Could not read ${filePath}:`, err?.message || err);
@@ -106,13 +106,13 @@ async function createWindow() {
 app.whenReady().then(async () => {
   localStore = createLocalSqliteStore(app);
 
-  ipcMain.handle('mtaani:desktop-info', () => ({
+  ipcMain.handle('smart:desktop-info', () => ({
     apiBaseUrl: getApiBaseUrl(),
     sqlitePath: localStore.getStatus().path,
     platform: process.platform,
   }));
 
-  ipcMain.handle('mtaani:local-db', (_event, method, payload = {}) => {
+  ipcMain.handle('smart:local-db', (_event, method, payload = {}) => {
     if (!allowedLocalDbMethods.has(method)) {
       throw new Error(`Unsupported local database method: ${method}`);
     }

@@ -12,6 +12,7 @@ import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { getBusinessSettings } from '../../utils/settings';
 import { getCurrentShiftId } from '../../utils/shiftSession';
 import { refundNetAmountForLines, refundNetAmountForRemainingItems, refundedAmountFromReturnedLines, transactionOriginalNetTotal } from '../../utils/posMoney';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 
 interface RefundsTabProps {
@@ -21,6 +22,53 @@ interface RefundsTabProps {
 function refundedAmountFor(transaction: Transaction): number {
   if (transaction.status === 'REFUNDED') return transactionOriginalNetTotal(transaction as any);
   return refundedAmountFromReturnedLines(transaction as any);
+}
+
+function RefundsDesktopSubnav({
+  refundSearch,
+  setRefundSearch,
+  refundCount,
+  pendingRequests,
+  totalRefundedValue,
+  canRequestRefund,
+  onInitiateReturn,
+}: {
+  refundSearch: string;
+  setRefundSearch: (value: string) => void;
+  refundCount: number;
+  pendingRequests: number;
+  totalRefundedValue: number;
+  canRequestRefund: boolean;
+  onInitiateReturn: () => void;
+}) {
+  const subnavConfig = React.useMemo(() => ({
+    id: 'refunds',
+    label: 'Refunds',
+    search: {
+      value: refundSearch,
+      placeholder: 'Search receipt or cashier',
+      onChange: setRefundSearch,
+      onClear: () => setRefundSearch(''),
+    },
+    summary: [
+      { label: 'Returns', value: refundCount.toLocaleString() },
+      { label: 'Pending', value: pendingRequests.toLocaleString() },
+      { label: 'Volume', value: `Ksh ${totalRefundedValue.toLocaleString()}` },
+    ],
+    actions: [
+      {
+        id: 'initiate-return',
+        label: 'Initiate return',
+        icon: RotateCcw,
+        tone: 'primary' as const,
+        hidden: !canRequestRefund,
+        onClick: onInitiateReturn,
+      },
+    ],
+  }), [canRequestRefund, onInitiateReturn, pendingRequests, refundCount, refundSearch, setRefundSearch, totalRefundedValue]);
+
+  useDesktopSubnav(subnavConfig);
+  return null;
 }
 
 export default function RefundsTabDesktop({ setActiveTab }: RefundsTabProps) {
@@ -127,47 +175,15 @@ export default function RefundsTabDesktop({ setActiveTab }: RefundsTabProps) {
   return (
     <div className="pb-24 animate-in fade-in w-full">
       
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div>
-          <h2 className="text-xl font-black text-slate-900">Returns & Refunds</h2>
-          <div className="flex items-center gap-3 mt-1">
-            <span className="text-[10px] font-bold text-orange-600">{refundedTransactions.length} Returns</span>
-            <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-slate-500">{pendingRequests} Pending</span>
-            <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-rose-600">Vol: Ksh {totalRefundedValue.toLocaleString()}</span>
-          </div>
-        </div>
-        {canRequestRefund && (
-          <button
-            onClick={() => setActiveTab('DOCUMENTS')}
-            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all self-start"
-          >
-            <Plus size={18} /> Initiate Return
-          </button>
-        )}
-      </div>
-
-      {/* Search Bar */}
-      <div className="mb-6">
-        <div className="relative group">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={16} />
-          <input
-            type="text"
-            placeholder="Search by receipt # or cashier..."
-            value={refundSearch}
-            onChange={(e) => setRefundSearch(e.target.value)}
-            className="w-full pl-10 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/15 focus:border-primary outline-none shadow-sm transition-all"
-          />
-          {refundSearch && (
-            <button onClick={() => setRefundSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X size={14} />
-            </button>
-          )}
-        </div>
-      </div>
-
+      <RefundsDesktopSubnav
+        refundSearch={refundSearch}
+        setRefundSearch={setRefundSearch}
+        refundCount={refundedTransactions.length}
+        pendingRequests={pendingRequests}
+        totalRefundedValue={totalRefundedValue}
+        canRequestRefund={canRequestRefund}
+        onInitiateReturn={() => setActiveTab('DOCUMENTS')}
+      />
       {/* Refunds List */}
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
          {refundedTransactions.length > 0 ? (

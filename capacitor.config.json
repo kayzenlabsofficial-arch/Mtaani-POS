@@ -1,6 +1,6 @@
 {
-  "appId": "com.mtaani.pos",
-  "appName": "Mtaani POS",
+  "appId": "com.smart.pos",
+  "appName": "Smart POS",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"

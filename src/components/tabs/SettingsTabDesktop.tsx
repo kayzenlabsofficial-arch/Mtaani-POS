@@ -29,6 +29,7 @@ import {
 import { BusinessSettingsService } from '../../services/businessSettings';
 import { getShopMpesaSettings, saveShopMpesaSettings, testShopMpesaSettings, type MpesaSettingsStatus } from '../../services/mpesaSettings';
 import { normalizeTillCount, parseSalesTillRows, parseSalesTills, scopeSalesTillIds, serializeSalesTills, type SalesTill } from '../../utils/tills';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 type SettingsSectionId = 'business' | 'tills' | 'mpesa' | 'hardware' | 'owner' | 'system';
 
@@ -104,8 +105,6 @@ function SummaryPanel({
   title,
   description,
   Icon,
-  actionLabel = 'Edit',
-  onEdit,
   children,
 }: {
   title: string;
@@ -127,14 +126,6 @@ function SummaryPanel({
             <p className="mt-1 text-xs font-bold leading-relaxed text-slate-500">{description}</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onEdit}
-          className="flex h-10 items-center justify-center gap-2 rounded-lg border-2 border-slate-200 bg-white px-4 text-[10px] font-black uppercase tracking-widest text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-        >
-          <Pencil size={14} />
-          {actionLabel}
-        </button>
       </div>
       {children}
     </section>
@@ -322,15 +313,6 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
   }, []);
 
   const settingsLoading = savedSettings === undefined || !savedTillRows;
-
-  if (settingsLoading) {
-    return (
-      <div className="flex min-h-[55vh] flex-col items-center justify-center gap-4">
-        <Loader2 size={30} className="animate-spin text-blue-700" />
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading settings...</p>
-      </div>
-    );
-  }
 
   const connectHardware = async (
     transport: 'BROWSER_PRINT' | 'USB' | 'SERIAL' | 'HID' | 'BLUETOOTH' | 'CAMERA' | 'KEYBOARD',
@@ -947,38 +929,50 @@ export default function SettingsTabDesktop({ updateServiceWorker, needRefresh }:
   );
 
   const selectedSection = settingsSections.find(section => section.id === activeSettingsSection) || settingsSections[0];
+  const subnavConfig = React.useMemo(() => ({
+    id: 'settings',
+    label: 'Settings',
+    tabs: settingsSections.map(({ id, label, Icon }) => ({
+      id,
+      label,
+      icon: Icon,
+      active: activeSettingsSection === id,
+      onClick: () => setActiveSettingsSection(id),
+    })),
+    summary: [
+      { label: 'Status', value: activeBusinessId ? 'Connected' : 'Login needed' },
+    ],
+    actions: [
+      {
+        id: 'edit-section',
+        label: activeSettingsSection === 'mpesa'
+          ? (mpesaStatus?.activeProviderConfigured ? 'Manage' : 'Set up')
+          : activeSettingsSection === 'hardware'
+            ? 'Manage'
+            : activeSettingsSection === 'system'
+              ? (needRefresh ? 'Update' : 'Check')
+              : 'Edit',
+        icon: activeSettingsSection === 'system' ? Download : Pencil,
+        tone: activeSettingsSection === 'system' && needRefresh ? 'primary' as const : 'neutral' as const,
+        onClick: activeSettingsSection === 'system' ? handleUpdate : () => openEdit(activeSettingsSection),
+        busy: activeSettingsSection === 'system' ? isUpdating : false,
+      },
+    ],
+  }), [activeBusinessId, activeSettingsSection, handleUpdate, isUpdating, mpesaStatus?.activeProviderConfigured, needRefresh, openEdit]);
+
+  useDesktopSubnav(subnavConfig);
+
+  if (settingsLoading) {
+    return (
+      <div className="flex min-h-[55vh] flex-col items-center justify-center gap-4">
+        <Loader2 size={30} className="animate-spin text-blue-700" />
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading settings...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full animate-in fade-in pb-24">
-      <div className="mb-4 flex flex-col justify-between gap-3 rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:p-5">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Business controls</p>
-          <h2 className="mt-1 text-2xl font-black text-slate-950">Settings</h2>
-        </div>
-        <StatusPill active={!!activeBusinessId} label={activeBusinessId ? 'Connected' : 'Login needed'} />
-      </div>
-
-      <div className="mb-4 overflow-x-auto rounded-lg border-2 border-slate-200 bg-white p-2 shadow-sm">
-        <div role="tablist" aria-label="Settings sections" className="flex min-w-max gap-2">
-          {settingsSections.map(({ id, label, Icon }) => {
-            const isActive = activeSettingsSection === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => setActiveSettingsSection(id)}
-                className={`flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg border-2 px-4 text-[10px] font-black uppercase tracking-widest transition-colors ${isActive ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50'}`}
-              >
-                <Icon size={16} />
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       <div role="tabpanel">
         {activeSettingsSection === 'business' && (
           <SummaryPanel

@@ -366,7 +366,7 @@ export default function CustomersTabMobile() {
   }
 
   const openStatement = (customer: Customer) => {
-      window.history.pushState({ ...(window.history.state || {}), mtaaniTab: true, tab: 'CUSTOMERS', customerStatementId: customer.id }, '');
+      window.history.pushState({ ...(window.history.state || {}), smartTab: true, tab: 'CUSTOMERS', customerStatementId: customer.id }, '');
       setStatementCustomerId(customer.id);
       setStatementViewTab('STATEMENT');
       setStatementDateMode('ALL');

@@ -13,8 +13,8 @@ export type AuthResult =
   | { ok: false; response: Response; principal?: never; service?: never };
 
 const TOKEN_VERSION = 'v3';
-const LEGACY_SALT = 'mtaani-pos-v2-secure-2026';
-const SESSION_COOKIE = 'mtaani_session';
+const LEGACY_SALT = 'smart-pos-v2-secure-2026';
+const SESSION_COOKIE = 'smart_session';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const PASSWORD_VERSION = 'pbkdf2';
 const PASSWORD_ITERATIONS = 100_000;

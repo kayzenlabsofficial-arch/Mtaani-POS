@@ -20,6 +20,7 @@ import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../store';
 import { MainAccountService, type MainAccountAdjustMode } from '../../services/finance';
 import { MAIN_ACCOUNT_NAME, MAIN_ACCOUNT_NUMBER, mainAccountId, singleFinanceAccount } from '../../utils/financeAccount';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 type MainAccountDateRange = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL';
 type MainAccountLogSource = 'Cash pick' | 'Expense' | 'Supplier payment' | 'Adjustment' | 'M-Pesa sale' | 'M-Pesa customer payment';
@@ -268,17 +269,6 @@ export default function MainAccountTabDesktop() {
       : currentBalance + adjustmentValue;
   const isMainAccountLoading = !rawAccounts || !cashPicks || !expenses || !supplierPayments || !adjustments;
 
-  if (isMainAccountLoading) {
-    return (
-      <div className="flex min-h-[45vh] flex-col items-center justify-center gap-4">
-        <div className="flex h-16 w-16 animate-spin-slow items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
-          <Landmark size={34} className="text-slate-300" />
-        </div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading main account...</p>
-      </div>
-    );
-  }
-
   const resetAdjustment = () => {
     setAdjustMode('IN');
     setAdjustAmount('');
@@ -364,58 +354,120 @@ export default function MainAccountTabDesktop() {
     setSearch('');
   };
 
+  const subnavConfig = useMemo(() => ({
+    search: {
+      value: search,
+      placeholder: 'Search logs by reason, source, user...',
+      onChange: setSearch,
+      onClear: () => setSearch(''),
+    },
+    filters: [
+      { id: 'TODAY', label: 'Today', active: dateRange === 'TODAY', onClick: () => setDateRange('TODAY') },
+      { id: 'WEEK', label: 'Week', active: dateRange === 'WEEK', onClick: () => setDateRange('WEEK') },
+      { id: 'MONTH', label: 'Month', active: dateRange === 'MONTH', onClick: () => setDateRange('MONTH') },
+      { id: 'CUSTOM', label: 'Custom', icon: Calendar, active: dateRange === 'CUSTOM', onClick: () => setDateRange('CUSTOM') },
+      { id: 'ALL', label: 'All', active: dateRange === 'ALL', onClick: () => setDateRange('ALL') },
+    ],
+    controls: dateRange === 'CUSTOM'
+      ? (
+          <>
+            <input
+              type="date"
+              value={startDate}
+              onChange={event => setStartDate(event.target.value)}
+              className="h-10 rounded-lg border-2 border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            />
+            <input
+              type="date"
+              value={endDate}
+              onChange={event => setEndDate(event.target.value)}
+              className="h-10 rounded-lg border-2 border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            />
+          </>
+        )
+      : null,
+    summary: [
+      { label: 'Balance', value: money(account?.balance) },
+      { label: 'Period', value: period.label },
+      { label: 'Logs', value: filteredLogs.length },
+    ],
+    actions: [
+      {
+        id: 'refresh',
+        label: 'Refresh',
+        icon: RefreshCw,
+        tone: 'neutral' as const,
+        disabled: !activeBusinessId || isEnsuring,
+        onClick: () => {
+          if (!activeBusinessId) return;
+          setIsEnsuring(true);
+          const ensureRequest = isAdminUser
+            ? MainAccountService.ensure({ businessId: activeBusinessId }).catch(() => null)
+            : Promise.resolve(null);
+          Promise.all([
+            ensureRequest,
+            db.financialAccounts.reload(),
+            db.financialAccountAdjustments.reload(),
+          ]).finally(() => setIsEnsuring(false));
+        },
+      },
+      {
+        id: 'reconcile',
+        label: 'Reconcile M-Pesa',
+        icon: RefreshCw,
+        tone: 'neutral' as const,
+        disabled: !isAdminUser || !activeBusinessId || isReconciling,
+        onClick: handleReconcileMpesa,
+      },
+      {
+        id: 'adjust',
+        label: 'Adjust money',
+        icon: SlidersHorizontal,
+        tone: 'primary' as const,
+        disabled: !isAdminUser,
+        onClick: () => setIsAdjustOpen(true),
+      },
+      ...(search || dateRange !== 'MONTH'
+        ? [{
+            id: 'clear',
+            label: 'Clear',
+            icon: X,
+            tone: 'neutral' as const,
+            onClick: clearFilters,
+          }]
+        : []),
+    ],
+  }), [
+    account?.balance,
+    activeBusinessId,
+    dateRange,
+    endDate,
+    filteredLogs.length,
+    isAdminUser,
+    isEnsuring,
+    isReconciling,
+    period.label,
+    search,
+    startDate,
+  ]);
+
+  useDesktopSubnav(subnavConfig);
+
+  if (isMainAccountLoading) {
+    return (
+      <div className="flex min-h-[45vh] flex-col items-center justify-center gap-4">
+        <div className="flex h-16 w-16 animate-spin-slow items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
+          <Landmark size={34} className="text-slate-300" />
+        </div>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading main account...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full animate-in fade-in space-y-5 pb-24">
       <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Finance</p>
-            <h2 className="mt-1 stable-title text-2xl font-black text-slate-950">{MAIN_ACCOUNT_NAME}</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-500">Money picked from tills and paid out from the business account.</p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              onClick={() => {
-                if (!activeBusinessId) return;
-                setIsEnsuring(true);
-                const ensureRequest = isAdminUser
-                  ? MainAccountService.ensure({ businessId: activeBusinessId }).catch(() => null)
-                  : Promise.resolve(null);
-                Promise.all([
-                  ensureRequest,
-                  db.financialAccounts.reload(),
-                  db.financialAccountAdjustments.reload(),
-                ]).finally(() => setIsEnsuring(false));
-              }}
-              disabled={!activeBusinessId || isEnsuring}
-              className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition-all hover:border-blue-300 hover:bg-blue-50 disabled:opacity-60"
-            >
-              <RefreshCw size={16} className={isEnsuring ? 'animate-spin' : ''} />
-              Refresh
-            </button>
-            <button
-              type="button"
-              onClick={handleReconcileMpesa}
-              disabled={!isAdminUser || !activeBusinessId || isReconciling}
-              className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-emerald-700 bg-white px-4 text-xs font-black text-emerald-700 transition-all hover:bg-emerald-50 disabled:border-slate-200 disabled:text-slate-300"
-            >
-              <RefreshCw size={16} className={isReconciling ? 'animate-spin' : ''} />
-              Reconcile M-Pesa
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsAdjustOpen(true)}
-              disabled={!isAdminUser}
-              className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-sm font-black text-white transition-all hover:bg-blue-800 disabled:border-slate-300 disabled:bg-slate-300"
-            >
-              <SlidersHorizontal size={17} />
-              Adjust money
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div className="rounded-lg border-2 border-slate-200 bg-white p-4">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Current balance</p>
             <p className="mt-2 text-3xl font-black tabular-nums text-slate-950">{money(account?.balance)}</p>
@@ -439,89 +491,12 @@ export default function MainAccountTabDesktop() {
         </div>
       </section>
 
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="relative min-w-0 flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input
-              type="text"
-              value={search}
-              onChange={event => setSearch(event.target.value)}
-              placeholder="Search logs by reason, source, user..."
-              className="h-12 w-full rounded-lg border-2 border-slate-200 bg-white pl-10 pr-9 text-sm font-bold outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          <div className="no-scrollbar flex max-w-full gap-1 overflow-x-auto rounded-lg border-2 border-slate-200 bg-white p-1">
-            {[
-              { id: 'TODAY', label: 'Today' },
-              { id: 'WEEK', label: 'Week' },
-              { id: 'MONTH', label: 'Month' },
-              { id: 'CUSTOM', label: 'Custom' },
-              { id: 'ALL', label: 'All' },
-            ].map(option => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => setDateRange(option.id as MainAccountDateRange)}
-                className={`h-9 flex-shrink-0 rounded-lg px-3 text-[11px] font-black transition-all ${
-                  dateRange === option.id ? 'bg-blue-700 text-white' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {dateRange === 'CUSTOM' && (
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:max-w-lg">
-            <label className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-              <input
-                type="date"
-                value={startDate}
-                onChange={event => setStartDate(event.target.value)}
-                className="h-11 w-full rounded-lg border-2 border-slate-200 bg-white pl-9 pr-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-              />
-            </label>
-            <label className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-              <input
-                type="date"
-                value={endDate}
-                onChange={event => setEndDate(event.target.value)}
-                className="h-11 w-full rounded-lg border-2 border-slate-200 bg-white pl-9 pr-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-              />
-            </label>
-          </div>
-        )}
-      </section>
-
       <section className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5">
           <div>
             <h3 className="text-base font-black text-slate-950">Account logs</h3>
             <p className="text-[11px] font-semibold text-slate-500">{period.label}</p>
           </div>
-          {(search || dateRange !== 'MONTH') && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="flex h-9 items-center gap-2 rounded-lg border-2 border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50"
-            >
-              <X size={13} />
-              Clear
-            </button>
-          )}
         </div>
 
         {filteredLogs.length > 0 ? (

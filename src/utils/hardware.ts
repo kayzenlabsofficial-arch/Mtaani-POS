@@ -64,8 +64,8 @@ export interface HardwareResult {
 
 type Cleanup = () => void | Promise<void>;
 
-const ASSIGNMENTS_KEY = 'mtaani_hardware_assignments_v1';
-const PROFILE_KEY = 'mtaani_hardware_profile_v1';
+const ASSIGNMENTS_KEY = 'smart_hardware_assignments_v1';
+const PROFILE_KEY = 'smart_hardware_profile_v1';
 const DEFAULT_BAUD_RATE = 9600;
 const RECEIPT_COLUMNS = 42;
 

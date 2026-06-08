@@ -38,6 +38,7 @@ import {
 } from '../../db';
 import { useStore } from '../../store';
 import { useToast } from '../../context/ToastContext';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 type StaffForm = {
   fullName: string;
@@ -400,10 +401,10 @@ export default function HRTabDesktop() {
     [activeBusinessId, activeShopId],
   );
 
-  const staffRows = queriedStaffRows || [];
-  const documentRows = queriedDocumentRows || [];
-  const attendanceRows = queriedAttendanceRows || [];
-  const payrollRows = queriedPayrollRows || [];
+  const staffRows = useMemo(() => queriedStaffRows || [], [queriedStaffRows]);
+  const documentRows = useMemo(() => queriedDocumentRows || [], [queriedDocumentRows]);
+  const attendanceRows = useMemo(() => queriedAttendanceRows || [], [queriedAttendanceRows]);
+  const payrollRows = useMemo(() => queriedPayrollRows || [], [queriedPayrollRows]);
 
   const filteredStaff = useMemo(() => {
     const query = staffSearch.trim().toLowerCase();
@@ -474,17 +475,6 @@ export default function HRTabDesktop() {
     [selectedStaff, selectedAttendance, selectedPayroll, payMonth],
   );
   const hrLoading = !queriedStaffRows || !queriedDocumentRows || !queriedAttendanceRows || !queriedPayrollRows;
-
-  if (hrLoading) {
-    return (
-      <div className="flex min-h-[45vh] flex-col items-center justify-center gap-4">
-        <div className="flex h-16 w-16 animate-spin-slow items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
-          <UserRound size={34} className="text-slate-300" />
-        </div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading staff records...</p>
-      </div>
-    );
-  }
 
   const staffDutyLabel = (staff: HRStaff) => {
     if (staff.status !== 'ACTIVE') return staffStatusOptions.find(option => option.value === staff.status)?.label || staff.status.replace('_', ' ');
@@ -825,11 +815,12 @@ export default function HRTabDesktop() {
     );
   }
 
-  const sections: Array<{ id: HRSection; label: string; icon: React.ElementType }> = [
+  const sections = useMemo<Array<{ id: HRSection; label: string; icon: React.ElementType }>>(() => [
     { id: 'PROFILE', label: 'Profile', icon: IdCard },
+    { id: 'DOCUMENTS', label: 'Documents', icon: FolderOpen },
     { id: 'ATTENDANCE', label: 'Attendance', icon: CalendarCheck },
     { id: 'PAY', label: 'Pay', icon: WalletCards },
-  ];
+  ], []);
 
   const renderStaffModal = () => isStaffModalOpen && (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/45 p-4">
@@ -995,76 +986,120 @@ export default function HRTabDesktop() {
     </div>
   );
 
+  const subnavConfig = useMemo(() => {
+    if (selectedStaff) {
+      return {
+        tabs: sections.map(section => ({
+          id: section.id,
+          label: section.label,
+          icon: section.icon,
+        })),
+        activeTab: activeSection,
+        onTabChange: (id: string) => setActiveSection(id as HRSection),
+        summary: [
+          { label: 'Employee', value: selectedStaff.fullName || 'Worker' },
+          { label: 'Status', value: selectedStaff.status.replace('_', ' ') },
+          { label: 'Salary', value: money(Number(selectedStaff.baseSalary || 0)) },
+        ],
+        actions: [
+          {
+            id: 'back',
+            label: 'Back',
+            icon: ArrowLeft,
+            tone: 'neutral' as const,
+            onClick: () => setSelectedStaffId(null),
+          },
+          {
+            id: 'edit',
+            label: 'Edit',
+            icon: Edit3,
+            tone: 'primary' as const,
+            onClick: () => openStaffModal(selectedStaff),
+          },
+          {
+            id: 'delete',
+            label: 'Delete',
+            icon: Trash2,
+            tone: 'danger' as const,
+            onClick: () => handleDeleteStaff(selectedStaff),
+          },
+        ],
+      };
+    }
+
+    return {
+      search: {
+        value: staffSearch,
+        placeholder: 'Search employees, payroll, roles...',
+        onChange: setStaffSearch,
+        onClear: () => setStaffSearch(''),
+      },
+      filters: [
+        { id: 'ALL', label: 'All', active: statusFilter === 'ALL', onClick: () => setStatusFilter('ALL') },
+        ...staffStatusOptions.map(option => ({
+          id: option.value,
+          label: option.label,
+          active: statusFilter === option.value,
+          onClick: () => setStatusFilter(option.value),
+        })),
+      ],
+      summary: [
+        { label: 'Employees', value: `${filteredStaff.length} / ${staffRows.length}` },
+        { label: 'Active today', value: todayAttendanceCount },
+        { label: 'Pending', value: pendingStaffCount },
+      ],
+      actions: [
+        {
+          id: 'deduction',
+          label: 'Add deduction',
+          icon: Banknote,
+          tone: 'neutral' as const,
+          disabled: staffRows.length === 0,
+          onClick: () => {
+            const firstStaff = activeStaff[0] || staffRows[0];
+            setQuickPayrollStaffId(firstStaff?.id || '');
+            setQuickPayrollForm({ ...emptyPayrollForm(), type: 'DEDUCTION' });
+            setIsPayrollModalOpen(true);
+          },
+        },
+        {
+          id: 'employee',
+          label: 'Add employee',
+          icon: Plus,
+          tone: 'primary' as const,
+          onClick: () => openStaffModal(),
+        },
+      ],
+    };
+  }, [
+    activeSection,
+    activeStaff,
+    filteredStaff.length,
+    pendingStaffCount,
+    sections,
+    selectedStaff,
+    staffRows,
+    staffSearch,
+    statusFilter,
+    todayAttendanceCount,
+  ]);
+
+  useDesktopSubnav(subnavConfig);
+
+  if (hrLoading) {
+    return (
+      <div className="flex min-h-[45vh] flex-col items-center justify-center gap-4">
+        <div className="flex h-16 w-16 animate-spin-slow items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-50">
+          <UserRound size={34} className="text-slate-300" />
+        </div>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading staff records...</p>
+      </div>
+    );
+  }
+
   if (selectedStaff) {
     return (
       <div className="w-full space-y-5 pb-24 animate-in fade-in">
-        <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <button
-              type="button"
-              onClick={() => setSelectedStaffId(null)}
-              className="mt-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border-2 border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700"
-              title="Back to workers"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-xl font-black text-slate-950 stable-title">{selectedStaff.fullName}</h2>
-                <span className={`rounded-lg border px-2 py-1 text-[9px] font-black uppercase tracking-widest ${statusBadgeClass(selectedStaff.status)}`}>
-                  {selectedStaff.status.replace('_', ' ')}
-                </span>
-              </div>
-              <p className="mt-1 text-sm font-bold text-slate-500">{selectedStaff.roleTitle} {selectedStaff.department ? `/ ${selectedStaff.department}` : ''}</p>
-              <div className="mt-3 flex flex-wrap gap-3 text-[11px] font-bold text-slate-500">
-                {selectedStaff.phone && <span className="inline-flex items-center gap-1"><Phone size={13} /> {selectedStaff.phone}</span>}
-                {selectedStaff.email && <span className="inline-flex items-center gap-1"><Mail size={13} /> {selectedStaff.email}</span>}
-                <span className="inline-flex items-center gap-1"><Banknote size={13} /> {money(Number(selectedStaff.baseSalary || 0))} / {selectedStaff.payCycle.toLowerCase()}</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => openStaffModal(selectedStaff)}
-              className="inline-flex items-center gap-2 rounded-lg border-2 border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition hover:border-blue-200 hover:text-blue-700"
-            >
-              <Edit3 size={15} />
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => handleDeleteStaff(selectedStaff)}
-              className="inline-flex items-center gap-2 rounded-lg border-2 border-rose-100 bg-rose-50 px-3 py-2 text-xs font-black text-rose-600 transition hover:bg-rose-600 hover:text-white"
-            >
-              <Trash2 size={15} />
-              Delete
-            </button>
-          </div>
-        </div>
-        </section>
-
-        <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {sections.map(section => {
-            const Icon = section.icon;
-            const isActive = activeSection === section.id;
-            return (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => setActiveSection(section.id)}
-                className={`flex items-center justify-center gap-2 rounded-lg border-2 px-3 py-2.5 text-xs font-black transition ${
-                  isActive ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200'
-                }`}
-              >
-                <Icon size={15} />
-                {section.label}
-              </button>
-            );
-          })}
-        </div>
-
         <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm">
           {activeSection === 'PROFILE' && (
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -1376,32 +1411,6 @@ export default function HRTabDesktop() {
 
   return (
     <div className="w-full space-y-4 pb-24 animate-in fade-in">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-950">HR Management</h2>
-          <p className="mt-1 text-sm text-slate-600">Oversee employee performance, payroll, and attendance.</p>
-        </div>
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            onClick={openQuickPayrollModal}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-black text-white transition hover:brightness-110 disabled:opacity-60"
-            disabled={staffRows.length === 0}
-          >
-            <Banknote size={18} />
-            Add Deduction/Penalty
-          </button>
-          <button
-            type="button"
-            onClick={() => openStaffModal()}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-5 py-3 text-sm font-black text-white transition hover:bg-emerald-800"
-          >
-            <Plus size={18} />
-            Add Employee
-          </button>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <MetricTile icon={UserRound} label="Total employees" value={String(staffRows.length)} tone="bg-blue-100 text-blue-800" />
         <MetricTile icon={CalendarCheck} label="Active today" value={String(todayAttendanceCount)} tone="bg-emerald-100 text-emerald-800" />
@@ -1410,31 +1419,10 @@ export default function HRTabDesktop() {
       </div>
 
       <section className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-slate-300 p-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="border-b border-slate-300 p-5">
           <div>
             <h3 className="text-xl font-semibold text-slate-950">Staff Directory</h3>
             <p className="mt-1 text-xs font-bold text-slate-500">Showing {filteredStaff.length} of {staffRows.length} employees</p>
-          </div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(18rem,1fr)_180px]">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-              <input
-                value={staffSearch}
-                onChange={event => setStaffSearch(event.target.value)}
-                placeholder="Search employees, payroll, or roles..."
-                className="w-full rounded-lg border-0 bg-slate-100 py-3 pl-10 pr-3 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-slate-900/10"
-              />
-            </div>
-            <select
-              value={statusFilter}
-              onChange={event => setStatusFilter(event.target.value as 'ALL' | HRStaffStatus)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-700 outline-none focus:border-slate-900"
-            >
-              <option value="ALL">All status</option>
-              {staffStatusOptions.map(option => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
           </div>
         </div>
 
@@ -1486,14 +1474,6 @@ export default function HRTabDesktop() {
           </table>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-slate-300 bg-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-slate-600">Showing {filteredStaff.length} of {staffRows.length} employees</p>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => setStatusFilter('ALL')} className={`rounded px-3 py-1.5 text-sm font-bold ${statusFilter === 'ALL' ? 'bg-slate-950 text-white' : 'border border-slate-300 bg-white text-slate-600'}`}>All</button>
-            <button type="button" onClick={() => setStatusFilter('ACTIVE')} className={`rounded px-3 py-1.5 text-sm font-bold ${statusFilter === 'ACTIVE' ? 'bg-slate-950 text-white' : 'border border-slate-300 bg-white text-slate-600'}`}>Active</button>
-            <button type="button" onClick={() => setStatusFilter('ON_LEAVE')} className={`rounded px-3 py-1.5 text-sm font-bold ${statusFilter === 'ON_LEAVE' ? 'bg-slate-950 text-white' : 'border border-slate-300 bg-white text-slate-600'}`}>On leave</button>
-          </div>
-        </div>
       </section>
 
       <details className="rounded-xl border border-slate-300 bg-white p-5 shadow-sm">

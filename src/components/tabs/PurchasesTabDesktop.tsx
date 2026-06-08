@@ -11,6 +11,7 @@ import { PurchaseService } from '../../services/purchases';
 import { productsForSupplier } from '../../utils/supplierProducts';
 import { reloadBestEffort } from '../../utils/reloads';
 import { dateInputToExpiryMs, expiryMsToDateInput } from '../../utils/expiry';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 const inventoryOrderPrice = (product?: Product | null) => {
   const costPrice = Number(product?.costPrice || 0);
@@ -18,10 +19,63 @@ const inventoryOrderPrice = (product?: Product | null) => {
   return costPrice > 0 ? costPrice : sellingPrice;
 };
 
+type PurchaseStatusFilter = 'ALL' | 'PENDING' | 'APPROVED' | 'RECEIVED';
+
+function PurchasesDesktopSubnav({
+  purchaseSearch,
+  setPurchaseSearch,
+  statusFilter,
+  setStatusFilter,
+  counts,
+  totalPurchases,
+  onNewLpo,
+}: {
+  purchaseSearch: string;
+  setPurchaseSearch: (value: string) => void;
+  statusFilter: PurchaseStatusFilter;
+  setStatusFilter: (value: PurchaseStatusFilter) => void;
+  counts: Record<PurchaseStatusFilter, number>;
+  totalPurchases: number;
+  onNewLpo: () => void;
+}) {
+  const subnavConfig = React.useMemo(() => ({
+    id: 'purchases',
+    label: 'Purchases',
+    tabs: [
+      { id: 'ALL', label: 'All', count: counts.ALL, active: statusFilter === 'ALL', onClick: () => setStatusFilter('ALL') },
+      { id: 'PENDING', label: 'Pending', count: counts.PENDING, active: statusFilter === 'PENDING', onClick: () => setStatusFilter('PENDING') },
+      { id: 'APPROVED', label: 'Approved', count: counts.APPROVED, active: statusFilter === 'APPROVED', onClick: () => setStatusFilter('APPROVED') },
+      { id: 'RECEIVED', label: 'Received', count: counts.RECEIVED, active: statusFilter === 'RECEIVED', onClick: () => setStatusFilter('RECEIVED') },
+    ],
+    search: {
+      value: purchaseSearch,
+      placeholder: 'Search supplier, order, or invoice',
+      onChange: setPurchaseSearch,
+      onClear: () => setPurchaseSearch(''),
+    },
+    summary: [
+      { label: 'Total value', value: `Ksh ${totalPurchases.toLocaleString()}` },
+    ],
+    actions: [
+      {
+        id: 'new-lpo',
+        label: 'New LPO',
+        icon: 'add',
+        tone: 'primary' as const,
+        onClick: onNewLpo,
+      },
+    ],
+  }), [counts, onNewLpo, purchaseSearch, setPurchaseSearch, setStatusFilter, statusFilter, totalPurchases]);
+
+  useDesktopSubnav(subnavConfig);
+  return null;
+}
+
 export default function PurchasesTabDesktop() {
   const { error, success } = useToast();
   const currentUser = useStore(state => state.currentUser);
   const [purchaseSearch, setPurchaseSearch] = useState("");
+  const [purchaseStatusFilter, setPurchaseStatusFilter] = useState<PurchaseStatusFilter>('ALL');
   const [isPOModalOpen, setIsPOModalOpen] = useState(false);
   const [isReceivePOModalOpen, setIsReceivePOModalOpen] = useState(false);
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
@@ -62,15 +116,28 @@ export default function PurchasesTabDesktop() {
     );
   }
   const supplierProducts = productsForSupplier(allProducts || [], allPurchaseOrders || [], poForm.supplierId);
-  const filteredPurchases = allPurchaseOrders.filter(po => 
+  const searchedPurchases = allPurchaseOrders.filter(po => 
       (po.invoiceNumber || '').toLowerCase().includes(purchaseSearch.toLowerCase()) || 
       (allSuppliers.find(s => s.id === po.supplierId)?.company || '').toLowerCase().includes(purchaseSearch.toLowerCase()) ||
       po.id.toLowerCase().includes(purchaseSearch.toLowerCase())
-  ).sort((a,b) => (b.orderDate || 0) - (a.orderDate || 0));
+  );
+  const filteredPurchases = searchedPurchases.filter(po => {
+    if (purchaseStatusFilter === 'ALL') return true;
+    if (purchaseStatusFilter === 'RECEIVED') return po.status === 'RECEIVED';
+    if (purchaseStatusFilter === 'APPROVED') return po.approvalStatus === 'APPROVED' && po.status !== 'RECEIVED';
+    return po.approvalStatus === 'PENDING';
+  }).sort((a,b) => (b.orderDate || 0) - (a.orderDate || 0));
 
   const pendingApproval = allPurchaseOrders.filter(po => po.approvalStatus === 'PENDING').length;
   const awaitingArrival = allPurchaseOrders.filter(po => po.approvalStatus === 'APPROVED' && po.status !== 'RECEIVED').length;
+  const receivedCount = allPurchaseOrders.filter(po => po.status === 'RECEIVED').length;
   const totalPurchases = allPurchaseOrders.reduce((sum, po) => sum + (po.totalAmount || 0), 0);
+  const openNewLpo = () => {
+    setSelectedPOToEdit(null);
+    setPoForm({ supplierId: '' });
+    setPoItems([]);
+    setIsPOModalOpen(true);
+  };
 
   const handleAddPoItem = () => {
      if (!poItemInput.productId || !poItemInput.qty || !poItemInput.cost) return;
@@ -226,58 +293,22 @@ export default function PurchasesTabDesktop() {
 
   return (
     <div className="w-full animate-in fade-in space-y-5 pb-24">
-      
-      {/* Header */}
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-          <div>
-            <h2 className="text-2xl font-black text-slate-950">Purchases</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-500">Supplier orders and stock arrivals.</p>
-          </div>
-        <button
-          data-testid="purchase-new-order"
-          onClick={() => { setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); setIsPOModalOpen(true); }}
-          className="flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-sm font-black text-white transition-all hover:bg-blue-800 active:scale-[0.98] md:w-auto"
-        >
-          <Plus size={18} /> New LPO
-        </button>
-        </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Pending approval</p>
-            <p className="mt-1 text-xl font-black tabular-nums text-amber-600">{pendingApproval}</p>
-          </div>
-          <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Awaiting arrival</p>
-            <p className="mt-1 text-xl font-black tabular-nums text-blue-700">{awaitingArrival}</p>
-          </div>
-          <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total value</p>
-            <p className="mt-1 text-xl font-black tabular-nums text-slate-950">Ksh {totalPurchases.toLocaleString()}</p>
-          </div>
-        </div>
-      </section>
+      <PurchasesDesktopSubnav
+        purchaseSearch={purchaseSearch}
+        setPurchaseSearch={setPurchaseSearch}
+        statusFilter={purchaseStatusFilter}
+        setStatusFilter={setPurchaseStatusFilter}
+        counts={{
+          ALL: allPurchaseOrders.length,
+          PENDING: pendingApproval,
+          APPROVED: awaitingArrival,
+          RECEIVED: receivedCount,
+        }}
+        totalPurchases={totalPurchases}
+        onNewLpo={openNewLpo}
+      />
 
-      {/* Search Bar */}
       <section className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-sm">
-      <div className="border-b-2 border-slate-100 p-4">
-        <div className="relative group">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-blue-700" size={16} />
-          <input
-            type="text"
-            placeholder="Search by supplier, order number, or invoice number..."
-            value={purchaseSearch}
-            onChange={(e) => setPurchaseSearch(e.target.value)}
-            className="h-12 w-full rounded-lg border-2 border-slate-200 bg-white pl-10 pr-9 text-sm font-bold outline-none transition-all focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
-          {purchaseSearch && (
-            <button onClick={() => setPurchaseSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X size={14} />
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* PO List */}
       <div>
          {filteredPurchases.length > 0 ? (
@@ -334,13 +365,6 @@ export default function PurchasesTabDesktop() {
              </div>
              <p className="text-slate-500 font-black text-base">No purchase orders found</p>
              <p className="text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest">Orders and stock arrivals will appear here</p>
-             <button
-               data-testid="purchase-empty-new-order"
-               onClick={() => { setSelectedPOToEdit(null); setPoForm({supplierId: ''}); setPoItems([]); setIsPOModalOpen(true); }}
-               className="mt-5 flex items-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-5 py-3 text-xs font-black uppercase tracking-widest text-white transition-all active:scale-[0.98] hover:bg-blue-800"
-             >
-               <Plus size={16} /> Create LPO
-             </button>
            </div>
          )}
       </div>

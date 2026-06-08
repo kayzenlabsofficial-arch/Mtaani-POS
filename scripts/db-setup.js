@@ -13,7 +13,6 @@
  *
  * Environment variables:
  *   - API_SECRET or SMART_API_SECRET: service API secret for authentication
- *     (legacy MTAANI_API_SECRET is still accepted)
  *   - API_BASE_URL: Base URL for API calls (defaults to http://localhost:8788)
  */
 
@@ -31,10 +30,10 @@ const apiUrlArg = args.find(arg => arg.startsWith('--api-url='))?.split('=')[1];
 
 // Determine API base URL
 const API_BASE_URL = apiUrlArg || (isLocal ? 'http://localhost:8788' : 
-    (isRemote ? 'https://your-app.pages.dev' : DEFAULT_API_BASE_URL));
+    (isRemote ? 'https://smartpos.pages.dev' : DEFAULT_API_BASE_URL));
 
 // Get API secret from environment or arguments. There is deliberately no default.
-const API_SECRET = apiSecretArg || process.env.API_SECRET || process.env.SMART_API_SECRET || process.env.MTAANI_API_SECRET || '';
+const API_SECRET = apiSecretArg || process.env.API_SECRET || process.env.SMART_API_SECRET || '';
 
 function requireApiSecret() {
   if (!API_SECRET) {

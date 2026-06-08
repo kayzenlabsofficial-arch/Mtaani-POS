@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
-const databaseName = 'mtaani_pos_db';
+const databaseName = 'smart_pos_db';
 const target = process.argv.includes('--local') ? '--local' : '--remote';
 const skipSchema = process.argv.includes('--skip-schema');
 const now = new Date('2026-05-24T14:00:00+03:00').getTime();
@@ -755,9 +755,9 @@ const deleteTables = [
 const seedSql = [
   '-- Wines and spirits demo seed for Smart POS.',
   'PRAGMA foreign_keys = OFF;',
-  ...deleteTables.map(table => `DELETE FROM ${table} WHERE businessId IN (SELECT id FROM businesses WHERE id = ${q(businessId)} OR code IN ('DEMO', 'SMART01', 'MTAANI01'));`),
-  "DELETE FROM loginAttempts WHERE id LIKE 'LOGIN:DEMO:%' OR id LIKE 'LOGIN:SMART01:%' OR id LIKE 'LOGIN:MTAANI01:%';",
-  `DELETE FROM businesses WHERE id = ${q(businessId)} OR code IN ('DEMO', 'SMART01', 'MTAANI01');`,
+  ...deleteTables.map(table => `DELETE FROM ${table} WHERE businessId IN (SELECT id FROM businesses WHERE id = ${q(businessId)} OR code IN ('DEMO', 'SMART01', 'SMART_LEGACY01'));`),
+  "DELETE FROM loginAttempts WHERE id LIKE 'LOGIN:DEMO:%' OR id LIKE 'LOGIN:SMART01:%' OR id LIKE 'LOGIN:SMART_LEGACY01:%';",
+  `DELETE FROM businesses WHERE id = ${q(businessId)} OR code IN ('DEMO', 'SMART01', 'SMART_LEGACY01');`,
   insert('businesses', ['id', 'name', 'code', 'isActive', 'updated_at'], business),
   insert('users', ['id', 'name', 'password', 'role', 'businessId', 'updated_at'], users),
   insert('settings', ['id', 'storeName', 'location', 'tillNumber', 'kraPin', 'receiptFooter', 'ownerModeEnabled', 'autoApproveOwnerActions', 'cashSweepEnabled', 'cashDrawerLimit', 'salesTills', 'defaultOpeningFloat', 'businessId', 'updated_at'], settings),

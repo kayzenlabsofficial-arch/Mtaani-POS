@@ -63,7 +63,7 @@ function manualChunks(id: string): string | undefined {
 }
 
 export default defineConfig(() => {
-  const isCapacitorBuild = process.env.MTAANI_CAPACITOR_BUILD === 'true';
+  const isCapacitorBuild = process.env.SMART_CAPACITOR_BUILD === 'true';
 
   return {
     plugins: [

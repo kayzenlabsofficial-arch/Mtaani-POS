@@ -27,6 +27,7 @@ import { SalesInvoiceService } from '../../services/salesInvoices';
 import { CustomerService } from '../../services/customers';
 import { ServiceItemService } from '../../services/catalog';
 import { getCurrentShiftId } from '../../utils/shiftSession';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 type DraftLine = SalesInvoiceItem & { id: string };
 type ViewMode = 'INVOICES' | 'SERVICES';
@@ -38,6 +39,78 @@ const plusDaysInput = (days: number) => {
   return d.toISOString().split('T')[0];
 };
 const money = (value: number) => `Ksh ${Math.round(Number(value) || 0).toLocaleString()}`;
+
+function SalesInvoicesDesktopSubnav({
+  mode,
+  setMode,
+  statusFilter,
+  setStatusFilter,
+  search,
+  setSearch,
+  invoicesCount,
+  unpaidTotal,
+  activeServicesCount,
+  onAddService,
+  onNewInvoice,
+}: {
+  mode: ViewMode;
+  setMode: (value: ViewMode) => void;
+  statusFilter: 'ALL' | SalesInvoice['status'];
+  setStatusFilter: (value: 'ALL' | SalesInvoice['status']) => void;
+  search: string;
+  setSearch: (value: string) => void;
+  invoicesCount: number;
+  unpaidTotal: number;
+  activeServicesCount: number;
+  onAddService: () => void;
+  onNewInvoice: () => void;
+}) {
+  const selectClassName = 'h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100';
+  const subnavConfig = React.useMemo(() => ({
+    id: 'invoices',
+    label: 'Invoices',
+    tabs: [
+      { id: 'INVOICES', label: 'Invoices', icon: FileText, count: invoicesCount, active: mode === 'INVOICES', onClick: () => setMode('INVOICES') },
+      { id: 'SERVICES', label: 'Services', icon: BriefcaseBusiness, count: activeServicesCount, active: mode === 'SERVICES', onClick: () => setMode('SERVICES') },
+    ],
+    search: {
+      value: search,
+      placeholder: mode === 'INVOICES' ? 'Search customer or invoice' : 'Search services',
+      onChange: setSearch,
+      onClear: () => setSearch(''),
+    },
+    controls: mode === 'INVOICES' ? (
+      <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as any)} className={selectClassName}>
+        <option value="ALL">All status</option>
+        <option value="SENT">Not cleared</option>
+        <option value="PARTIAL">Part cleared</option>
+        <option value="PAID">Cleared</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+    ) : undefined,
+    summary: [
+      { label: 'Not cleared', value: money(unpaidTotal) },
+    ],
+    actions: [
+      {
+        id: 'add-service',
+        label: 'Service',
+        icon: BriefcaseBusiness,
+        onClick: onAddService,
+      },
+      {
+        id: 'new-invoice',
+        label: 'Invoice',
+        icon: Plus,
+        tone: 'primary' as const,
+        onClick: onNewInvoice,
+      },
+    ],
+  }), [activeServicesCount, invoicesCount, mode, onAddService, onNewInvoice, search, setMode, setSearch, setStatusFilter, statusFilter, unpaidTotal]);
+
+  useDesktopSubnav(subnavConfig);
+  return null;
+}
 const toDayStart = (value: string) => {
   const d = new Date(value || todayInput());
   d.setHours(0, 0, 0, 0);
@@ -384,92 +457,19 @@ export default function SalesInvoicesTabDesktop() {
 
   return (
     <div className="w-full animate-in fade-in space-y-5 pb-28 md:pb-8">
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h2 className="text-2xl font-black text-slate-950">Invoices</h2>
-          <div className="mt-1 flex flex-wrap items-center gap-3 text-xs font-bold text-slate-500">
-            <span>{invoices.length} invoices</span>
-            <span className="text-slate-300">/</span>
-            <span className="text-rose-600">{money(unpaidTotal)} not cleared</span>
-            <span className="text-slate-300">/</span>
-            <span>{services.length} services</span>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:flex">
-          <button
-            type="button"
-            onClick={() => openServiceModal()}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-slate-200 bg-white px-4 text-xs font-black uppercase tracking-widest text-slate-700 hover:border-blue-300 hover:text-blue-700"
-          >
-            <BriefcaseBusiness size={16} /> Service
-          </button>
-          <button
-            type="button"
-            onClick={() => { resetInvoiceForm(); setIsInvoiceModalOpen(true); }}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-xs font-black uppercase tracking-widest text-white hover:bg-blue-800"
-          >
-            <Plus size={16} /> Invoice
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Not cleared</p>
-          <p className="mt-1 text-2xl font-black tabular-nums text-rose-600">{money(unpaidTotal)}</p>
-        </div>
-        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Cleared this month</p>
-          <p className="mt-1 text-2xl font-black tabular-nums text-slate-950">{money(paidThisMonth)}</p>
-        </div>
-        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Ready services</p>
-          <p className="mt-1 text-2xl font-black tabular-nums text-slate-950">{activeServices.length}</p>
-        </div>
-      </div>
-      </section>
-
-      <div className="flex flex-col gap-3 rounded-lg border-2 border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex rounded-lg border-2 border-slate-200 bg-slate-50 p-1">
-          {([
-            ['INVOICES', 'Invoices'],
-            ['SERVICES', 'Services'],
-          ] as const).map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => setMode(id)}
-              className={`h-10 rounded-md px-4 text-xs font-black uppercase tracking-widest ${mode === id ? 'bg-blue-700 text-white' : 'text-slate-600'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          {mode === 'INVOICES' && (
-            <select
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value as any)}
-              className="h-11 rounded-lg border-2 border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-widest text-slate-600 outline-none focus:border-blue-600"
-            >
-              <option value="ALL">All status</option>
-              <option value="SENT">Not cleared</option>
-              <option value="PARTIAL">Part cleared</option>
-              <option value="PAID">Cleared</option>
-              <option value="CANCELLED">Cancelled</option>
-            </select>
-          )}
-          <div className="relative min-w-0 sm:w-80">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder={mode === 'INVOICES' ? 'Search customer or invoice...' : 'Search services...'}
-              className="h-11 w-full rounded-lg border-2 border-slate-200 bg-white pl-10 pr-4 text-sm font-bold outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-            />
-          </div>
-        </div>
-      </div>
+      <SalesInvoicesDesktopSubnav
+        mode={mode}
+        setMode={setMode}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        search={search}
+        setSearch={setSearch}
+        invoicesCount={invoices.length}
+        unpaidTotal={unpaidTotal}
+        activeServicesCount={activeServices.length}
+        onAddService={() => openServiceModal()}
+        onNewInvoice={() => { resetInvoiceForm(); setIsInvoiceModalOpen(true); }}
+      />
 
       {mode === 'INVOICES' ? (
         <section className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-sm">

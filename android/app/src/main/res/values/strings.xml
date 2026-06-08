@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Mtaani POS</string>
-    <string name="title_activity_main">Mtaani POS</string>
-    <string name="package_name">com.mtaani.pos</string>
-    <string name="custom_url_scheme">com.mtaani.pos</string>
+    <string name="app_name">Smart POS</string>
+    <string name="title_activity_main">Smart POS</string>
+    <string name="package_name">com.smart.pos</string>
+    <string name="custom_url_scheme">com.smart.pos</string>
 </resources>

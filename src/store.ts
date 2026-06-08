@@ -210,7 +210,7 @@ export const useStore = create<POSState>()(
       resetSession: () => set({ ...initialState }),
     }),
     {
-      name: 'mtaani-pos-storage',
+      name: 'smart-pos-storage',
       version: 5,
       migrate: (persistedState) => {
         const state = persistedState && typeof persistedState === 'object' ? persistedState as Partial<POSState> : {};

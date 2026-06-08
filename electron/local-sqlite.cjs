@@ -74,8 +74,8 @@ function rowToSyncState(row) {
 }
 
 function createLocalSqliteStore(app) {
-  const configuredPath = process.env.MTAANI_POS_DB_PATH;
-  const dbPath = configuredPath || path.join(app.getPath('userData'), 'mtaani-pos-desktop.sqlite');
+  const configuredPath = process.env.SMART_POS_DB_PATH;
+  const dbPath = configuredPath || path.join(app.getPath('userData'), 'smart-pos-desktop.sqlite');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
   const database = new DatabaseSync(dbPath);

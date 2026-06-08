@@ -24,6 +24,7 @@ import { belongsToActiveShop } from '../../utils/shopScope';
 import { getCurrentShiftId, getCurrentShiftStart } from '../../utils/shiftSession';
 import { getTodayStartMs } from '../../utils/cashDrawer';
 import { MAIN_ACCOUNT_NAME } from '../../utils/financeAccount';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 type PaySource = 'TILL' | 'ACCOUNT';
 type InvoiceAllocation = { purchaseOrderId: string; amount: number };
@@ -41,6 +42,51 @@ const paymentMethodLabel = (method: string, source?: string) => {
   if (method === 'CASH') return 'Till cash';
   return method === 'MPESA' ? 'M-Pesa' : method || 'Payment';
 };
+
+function SupplierPaymentsDesktopSubnav({
+  paySearch,
+  setPaySearch,
+  activeHistoryTab,
+  setActiveHistoryTab,
+  totalDebt,
+  totalPendingCredit,
+  suppliersOwedCount,
+  paymentsCount,
+  creditsCount,
+}: {
+  paySearch: string;
+  setPaySearch: (value: string) => void;
+  activeHistoryTab: 'PAYMENTS' | 'CREDITS';
+  setActiveHistoryTab: (value: 'PAYMENTS' | 'CREDITS') => void;
+  totalDebt: number;
+  totalPendingCredit: number;
+  suppliersOwedCount: number;
+  paymentsCount: number;
+  creditsCount: number;
+}) {
+  const subnavConfig = React.useMemo(() => ({
+    id: 'supplier-payments',
+    label: 'Supplier payments',
+    tabs: [
+      { id: 'PAYMENTS', label: 'Payments', icon: Wallet, count: paymentsCount, active: activeHistoryTab === 'PAYMENTS', onClick: () => setActiveHistoryTab('PAYMENTS') },
+      { id: 'CREDITS', label: 'Credits', icon: ArrowUpRight, count: creditsCount, active: activeHistoryTab === 'CREDITS', onClick: () => setActiveHistoryTab('CREDITS') },
+    ],
+    search: {
+      value: paySearch,
+      placeholder: 'Search supplier',
+      onChange: setPaySearch,
+      onClear: () => setPaySearch(''),
+    },
+    summary: [
+      { label: 'To pay', value: money(totalDebt) },
+      { label: 'Credits', value: money(totalPendingCredit) },
+      { label: 'Suppliers', value: suppliersOwedCount.toLocaleString() },
+    ],
+  }), [activeHistoryTab, creditsCount, paySearch, paymentsCount, setActiveHistoryTab, setPaySearch, suppliersOwedCount, totalDebt, totalPendingCredit]);
+
+  useDesktopSubnav(subnavConfig);
+  return null;
+}
 
 export default function SupplierPaymentsTabDesktop({ financialAccounts }: { financialAccounts: any[] }) {
   const [paySearch, setPaySearch] = useState('');
@@ -479,46 +525,24 @@ export default function SupplierPaymentsTabDesktop({ financialAccounts }: { fina
 
   return (
     <div className="w-full animate-in fade-in pb-24">
-      <div className="mb-4 rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Money out</p>
-        <h2 className="mt-1 text-2xl font-black text-slate-950">Supplier payments</h2>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">To pay</p>
-            <p className="mt-1 text-lg font-black tabular-nums text-slate-950">{money(totalDebt)}</p>
-          </div>
-          <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Credits</p>
-            <p className="mt-1 text-lg font-black tabular-nums text-slate-950">{money(totalPendingCredit)}</p>
-          </div>
-          <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Suppliers</p>
-            <p className="mt-1 text-lg font-black tabular-nums text-slate-950">{suppliersOwed.length}</p>
-          </div>
-        </div>
-      </div>
+      <SupplierPaymentsDesktopSubnav
+        paySearch={paySearch}
+        setPaySearch={setPaySearch}
+        activeHistoryTab={activeHistoryTab}
+        setActiveHistoryTab={setActiveHistoryTab}
+        totalDebt={totalDebt}
+        totalPendingCredit={totalPendingCredit}
+        suppliersOwedCount={suppliersOwed.length}
+        paymentsCount={sortedPayments.length}
+        creditsCount={pendingCredits.length}
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <section className="rounded-lg border-2 border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div className="border-b border-slate-200 p-4 sm:p-5">
             <div>
               <h3 className="text-base font-black text-slate-950">Suppliers to pay</h3>
               <p className="text-[11px] font-semibold text-slate-500">Choose a supplier to start payment</p>
-            </div>
-            <div className="relative sm:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                placeholder="Search supplier..."
-                value={paySearch}
-                onChange={event => setPaySearch(event.target.value)}
-                className="h-11 w-full rounded-lg border-2 border-slate-300 bg-white pl-9 pr-9 text-sm font-bold text-slate-950 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-              />
-              {paySearch && (
-                <button type="button" onClick={() => setPaySearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
-                  <X size={14} />
-                </button>
-              )}
             </div>
           </div>
 
@@ -558,18 +582,6 @@ export default function SupplierPaymentsTabDesktop({ financialAccounts }: { fina
         </section>
 
         <section className="rounded-lg border-2 border-slate-200 bg-white shadow-sm">
-          <div className="flex border-b border-slate-200 bg-slate-50 p-1.5">
-            {(['PAYMENTS', 'CREDITS'] as const).map(tab => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveHistoryTab(tab)}
-                className={`h-10 flex-1 rounded-md text-xs font-black ${activeHistoryTab === tab ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}
-              >
-                {tab === 'PAYMENTS' ? 'Payments' : `Credits ${pendingCredits.length ? `(${pendingCredits.length})` : ''}`}
-              </button>
-            ))}
-          </div>
           <div className="max-h-[620px] space-y-2 overflow-y-auto p-3">
             {activeHistoryTab === 'PAYMENTS' ? sortedPayments.map(payment => {
               const supplier = allSuppliers.find(s => s.id === payment.supplierId);

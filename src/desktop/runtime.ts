@@ -2,7 +2,7 @@ import { getMobileApiBaseUrl, isNativeMobileRuntime } from '../mobile/runtime';
 
 export function getDesktopBridge() {
   if (typeof window === 'undefined') return undefined;
-  return window.mtaaniDesktop;
+  return window.smartDesktop;
 }
 
 export function isDesktopRuntime(): boolean {

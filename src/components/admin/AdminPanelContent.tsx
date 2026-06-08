@@ -20,6 +20,7 @@ import { useToast } from '../../context/ToastContext';
 import AdminApprovals from '../tabs/AdminApprovals';
 import AccessControlPanel from './AccessControlPanel';
 import { type BusinessAdminTab, useBusinessAdminData } from './useBusinessAdminData';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 type AdminPanelMode = 'desktop' | 'mobile';
 type StaffRole = 'CASHIER' | 'MANAGER' | 'ADMIN';
@@ -280,6 +281,12 @@ function StaffPanel({
   const [editingPassword, setEditingPassword] = React.useState('');
   const editingUser = staff.find(user => user.id === editingUserId);
 
+  React.useEffect(() => {
+    const openFromSubnav = () => setIsAdding(true);
+    window.addEventListener('mtaani-admin-add-staff', openFromSubnav);
+    return () => window.removeEventListener('mtaani-admin-add-staff', openFromSubnav);
+  }, []);
+
   const closeAdd = () => {
     setIsAdding(false);
     setNewUser({ name: '', password: '', role: 'CASHIER' });
@@ -336,24 +343,6 @@ function StaffPanel({
 
   return (
     <div className="space-y-5">
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Staff</p>
-            <h3 className="mt-1 text-lg font-black text-slate-950">Staff management</h3>
-            <p className="mt-1 text-sm font-semibold text-slate-500">Create accounts and reset access keys.</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsAdding(true)}
-            className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-blue-800"
-          >
-            <Plus size={16} />
-            Add staff
-          </button>
-        </div>
-      </section>
-
       <section className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
           <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Staff profile</p>
@@ -640,8 +629,8 @@ export default function AdminPanelContent({ mode }: { mode: AdminPanelMode }) {
   } = adminData;
   const [activeTab, setActiveTab] = React.useState<BusinessAdminTab>(() => {
     if (typeof sessionStorage === 'undefined') return 'OVERVIEW';
-    const requested = sessionStorage.getItem('mtaani_admin_tab');
-    sessionStorage.removeItem('mtaani_admin_tab');
+    const requested = sessionStorage.getItem('smart_admin_tab');
+    sessionStorage.removeItem('smart_admin_tab');
     return ['OVERVIEW', 'STAFF', 'ACCESS', 'APPROVALS', 'ACTIVITY'].includes(requested || '')
       ? requested as BusinessAdminTab
       : 'OVERVIEW';
@@ -655,56 +644,52 @@ export default function AdminPanelContent({ mode }: { mode: AdminPanelMode }) {
     return 0;
   };
 
+  const subnavConfig = React.useMemo(() => ({
+    id: 'admin',
+    label: 'Admin',
+    tabs: TABS.map(item => ({
+      id: item.id,
+      label: item.label,
+      icon: item.Icon,
+      count: tabCount(item.id) || undefined,
+      active: activeTab === item.id,
+      onClick: () => setActiveTab(item.id),
+    })),
+    summary: [
+      { label: 'Status', value: deviceSyncError ? 'Needs attention' : 'Healthy' },
+      { label: 'Terminals', value: deviceSyncRows.length.toLocaleString() },
+    ],
+    actions: [
+      {
+        id: 'review-approvals',
+        label: 'Review approvals',
+        icon: AlertCircle,
+        hidden: activeTab !== 'OVERVIEW',
+        onClick: () => setActiveTab('APPROVALS'),
+      },
+      {
+        id: 'add-staff',
+        label: 'Add staff',
+        icon: Plus,
+        tone: 'primary' as const,
+        hidden: activeTab !== 'STAFF',
+        onClick: () => window.dispatchEvent(new Event('mtaani-admin-add-staff')),
+      },
+      {
+        id: 'refresh-terminals',
+        label: 'Refresh terminals',
+        icon: RefreshCw,
+        busy: isDeviceSyncLoading,
+        hidden: activeTab !== 'ACTIVITY',
+        onClick: reloadDeviceSync,
+      },
+    ],
+  }), [activeTab, deviceSyncError, deviceSyncRows.length, isDeviceSyncLoading, recentActivity.length, reloadDeviceSync, staff.length, pendingCounts.total]);
+
+  useDesktopSubnav(isMobile ? null : subnavConfig);
+
   return (
-    <div className={`mx-auto w-full max-w-6xl space-y-5 pb-24 animate-in fade-in ${isMobile ? 'px-0' : ''}`}>
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Owner controls</p>
-            <h2 className="mt-1 text-xl font-black text-slate-950">Admin control center</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-500">Staff access, approvals, terminals, and activity in one place.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-700">
-              <CheckCircle2 size={14} className="text-emerald-600" />
-              {deviceSyncError ? 'Needs attention' : 'Healthy'}
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-700">
-              <MonitorSmartphone size={14} className="text-blue-700" />
-              {deviceSyncRows.length} terminal{deviceSyncRows.length === 1 ? '' : 's'}
-            </span>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-2 shadow-sm">
-        <div className="flex gap-2 overflow-x-auto no-scrollbar">
-          {TABS.map(item => {
-            const count = tabCount(item.id);
-            const active = activeTab === item.id;
-            const Icon = item.Icon;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setActiveTab(item.id)}
-                className={`flex min-w-max flex-1 items-center justify-center gap-2 rounded-lg border-2 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest transition ${
-                  active ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700'
-                }`}
-              >
-                <Icon size={16} />
-                {item.label}
-                {count > 0 && (
-                  <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-black ${active ? 'bg-white text-blue-700' : 'bg-blue-600 text-white'}`}>
-                    {count > 99 ? '99+' : count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
+    <div className={`mx-auto w-full max-w-[1600px] space-y-5 pb-24 animate-in fade-in ${isMobile ? 'px-0' : ''}`}>
       {activeTab === 'OVERVIEW' && <OverviewPanel {...adminData} onOpenTab={setActiveTab} />}
       {activeTab === 'STAFF' && <StaffPanel {...adminData} />}
       {activeTab === 'ACCESS' && <AccessControlPanel />}

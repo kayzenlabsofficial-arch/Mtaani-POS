@@ -17,7 +17,7 @@ describe('generic data API command-only tables', () => {
 
   it('rejects generic sales till writes', async () => {
     const response = await onRequest(contextFor(
-      new Request('https://smart-pos.test/api/data/salesTills', {
+      new Request('https://smartpos.test/api/data/salesTills', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -36,7 +36,7 @@ describe('generic data API command-only tables', () => {
 
   it('rejects generic sales till deletes', async () => {
     const response = await onRequest(contextFor(
-      new Request('https://smart-pos.test/api/data/salesTills', {
+      new Request('https://smartpos.test/api/data/salesTills', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',

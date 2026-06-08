@@ -22,10 +22,9 @@ const flushOfflineOutbox = async () => {
   return flushOutboxNow();
 };
 
-export function useMtaaniPOS() {
+export function useSmartPOS() {
   const [activeTab, setActiveTab] = useState<'REGISTER' | 'DASHBOARD' | 'TILLS' | 'INVENTORY' | 'CUSTOMERS' | 'SUPPLIERS' | 'EXPENSES' | 'REFUNDS' | 'PURCHASES' | 'INVOICES' | 'SUPPLIER_PAYMENTS' | 'DOCUMENTS' | 'HR' | 'REPORTS' | 'SETTINGS' | 'ADMIN_PANEL'>('DASHBOARD');
   const activeTabRef = useRef(activeTab);
-  const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isCartOpen, toggleCart] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
@@ -120,8 +119,8 @@ export function useMtaaniPOS() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const currentState = window.history.state || {};
-    if (!currentState.mtaaniTab) {
-      window.history.replaceState({ ...currentState, mtaaniTab: true, tab: activeTabRef.current }, '');
+    if (!currentState.smartTab) {
+      window.history.replaceState({ ...currentState, smartTab: true, tab: activeTabRef.current }, '');
     }
 
     const handlePopState = (event: PopStateEvent) => {
@@ -129,7 +128,6 @@ export function useMtaaniPOS() {
       if (!tab) return;
       setActiveTab(tab);
       activeTabRef.current = tab;
-      setSidebarOpen(false);
       setIsMoreMenuOpen(false);
     };
 
@@ -167,8 +165,8 @@ export function useMtaaniPOS() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(isDesktopRuntime() ? { 'X-Mtaani-Desktop': '1' } : {}),
-          ...(isNativeMobileRuntime() ? { 'X-Mtaani-Native': '1' } : {}),
+          ...(isDesktopRuntime() ? { 'X-Smart-Desktop': '1' } : {}),
+          ...(isNativeMobileRuntime() ? { 'X-Smart-Native': '1' } : {}),
         },
         credentials: 'same-origin',
         cache: 'no-store',
@@ -214,7 +212,7 @@ export function useMtaaniPOS() {
       activeTabRef.current = 'DASHBOARD';
       setActiveTab('DASHBOARD');
       if (typeof window !== 'undefined') {
-        window.history.replaceState({ ...(window.history.state || {}), mtaaniTab: true, tab: 'DASHBOARD' }, '');
+        window.history.replaceState({ ...(window.history.state || {}), smartTab: true, tab: 'DASHBOARD' }, '');
       }
       setPassword('');
       success(`Welcome back, ${authData.user?.name || 'there'}!`);
@@ -269,11 +267,10 @@ export function useMtaaniPOS() {
       return;
     }
     if (typeof window !== 'undefined' && changedTab) {
-      window.history.pushState({ ...(window.history.state || {}), mtaaniTab: true, tab: nextTab }, '');
+      window.history.pushState({ ...(window.history.state || {}), smartTab: true, tab: nextTab }, '');
     }
     activeTabRef.current = nextTab;
     setActiveTab(nextTab);
-    setSidebarOpen(false);
     setIsMoreMenuOpen(false);
     if (changedTab) refreshDataForNavigation();
     if (nextTab === 'ADMIN_PANEL' || nextTab === 'SETTINGS') scrollAdminPanelToTopOnDesktop();
@@ -283,7 +280,6 @@ export function useMtaaniPOS() {
     if (isOnline || activeTabRef.current === 'REGISTER') return;
     setActiveTab('REGISTER');
     activeTabRef.current = 'REGISTER';
-    setSidebarOpen(false);
     setIsMoreMenuOpen(false);
     error("Internet is off, so the app moved back to the register.");
   }, [isOnline, error]);
@@ -509,7 +505,6 @@ export function useMtaaniPOS() {
 
   return {
     activeTab, navigateToTab,
-    isSidebarOpen, setSidebarOpen,
     isMoreMenuOpen, setIsMoreMenuOpen,
     isCartOpen, toggleCart,
     isExpenseModalOpen, setIsExpenseModalOpen,

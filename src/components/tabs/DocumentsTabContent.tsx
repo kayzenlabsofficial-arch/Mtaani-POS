@@ -5,7 +5,6 @@ import { db, type Transaction } from '../../db';
 import DocumentDetailsModal from '../modals/DocumentPdfModalView';
 import AdminApprovals from './AdminApprovals';
 import { useStore } from '../../store';
-import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import { approveRefundTransaction, requestRefundApproval } from '../../utils/approvalWorkflows';
 import { shouldAutoApproveOwnerAction } from '../../utils/ownerMode';
 import { useToast } from '../../context/ToastContext';
@@ -13,6 +12,7 @@ import { getBusinessSettings } from '../../utils/settings';
 import { MpesaService, type MpesaLedgerRow } from '../../services/mpesa';
 import { canPerform } from '../../utils/accessControl';
 import { getCurrentShiftId } from '../../utils/shiftSession';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 const sentenceValue = (value: unknown, fallback = '') => {
   const text = String(value || fallback).replace(/_/g, ' ').toLowerCase();
@@ -32,6 +32,20 @@ const localDateInput = () => {
 };
 
 const searchValue = (value: unknown) => safeText(value).toLowerCase();
+
+const DOCUMENT_FILTER_TABS = [
+  { id: 'ALL', label: 'All documents' },
+  { id: 'APPROVALS', label: 'Pending approvals' },
+  { id: 'SALES', label: 'Sales receipts' },
+  { id: 'REFUNDS', label: 'Refunds' },
+  { id: 'MPESA', label: 'M-Pesa payments' },
+  { id: 'EXPENSES', label: 'Expenses' },
+  { id: 'SUPPLIER_PAYMENTS', label: 'Supplier payments' },
+  { id: 'CREDIT_NOTES', label: 'Credit notes' },
+  { id: 'INVOICES', label: 'Invoices & bills' },
+  { id: 'SHIFTS', label: 'Shift reports' },
+  { id: 'DAILY', label: 'Daily close reports' },
+] as const;
 
 const parseRecordList = (value: unknown): string[] => {
   if (Array.isArray(value)) return value.map(item => safeText(item)).filter(Boolean);
@@ -60,7 +74,6 @@ export default function DocumentsTabContent() {
   const [isMpesaLoading, setIsMpesaLoading] = useState(false);
   const [mpesaError, setMpesaError] = useState('');
   const pageSize = 50;
-  const scrollRef = useHorizontalScroll();
   const { success, error } = useToast();
 
   const activeShopId = useStore(state => state.activeShopId);
@@ -211,6 +224,93 @@ export default function DocumentsTabContent() {
       ? `${visibleMpesaRows.length.toLocaleString()} M-Pesa payments`
       : `${unifiedRecords.length.toLocaleString()} POS documents`;
 
+  const subnavConfig = React.useMemo(() => ({
+    tabs: DOCUMENT_FILTER_TABS.map(type => ({
+      id: type.id,
+      label: type.label,
+    })),
+    activeTab: filterType,
+    onTabChange: (id: string) => setFilterType(id as typeof filterType),
+    search: filterType !== 'APPROVALS' && !isLoadingRecords
+      ? {
+          value: docSearch,
+          placeholder: 'Search by ID, reference, amount...',
+          onChange: setDocSearch,
+          onClear: () => setDocSearch(''),
+        }
+      : undefined,
+    filters: filterType === 'APPROVALS' || isLoadingRecords
+      ? []
+      : [
+          {
+            id: 'ALL_DATES',
+            label: 'All dates',
+            active: dateMode === 'ALL',
+            onClick: () => setDateMode('ALL'),
+          },
+          {
+            id: 'CUSTOM_DATES',
+            label: 'Custom',
+            icon: CalendarDays,
+            active: dateMode === 'CUSTOM',
+            onClick: () => setDateMode('CUSTOM'),
+          },
+          ...(filterType === 'MPESA'
+            ? [
+                { id: 'MPESA_ALL', label: `Successful ${successfulMpesaRows.length}`, active: mpesaView === 'ALL', onClick: () => setMpesaView('ALL') },
+                { id: 'MPESA_UNUSED', label: `Paid not used ${paidNotUtilizedRows.length}`, active: mpesaView === 'UNUTILIZED', onClick: () => setMpesaView('UNUTILIZED') },
+                { id: 'MPESA_USED', label: `Used ${utilizedMpesaRows.length}`, active: mpesaView === 'UTILIZED', onClick: () => setMpesaView('UTILIZED') },
+              ]
+            : []),
+        ],
+    controls: dateMode === 'CUSTOM' && filterType !== 'APPROVALS' && !isLoadingRecords
+      ? (
+          <>
+            <input
+              type="date"
+              value={dateStart}
+              onChange={event => setDateStart(event.target.value)}
+              className="h-10 rounded-lg border-2 border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            />
+            <input
+              type="date"
+              value={dateEnd}
+              onChange={event => setDateEnd(event.target.value)}
+              className="h-10 rounded-lg border-2 border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            />
+          </>
+        )
+      : null,
+    summary: [
+      {
+        label: 'Showing',
+        value: isLoadingRecords
+          ? 'Loading'
+          : `${visibleCount === 0 ? 0 : ((visibleCurrentPage - 1) * pageSize) + 1}-${Math.min(visibleCurrentPage * pageSize, visibleCount)} of ${visibleCount}`,
+      },
+      {
+        label: filterType === 'MPESA' ? 'M-Pesa' : 'Documents',
+        value: headerCountLabel,
+      },
+    ],
+  }), [
+    dateEnd,
+    dateMode,
+    dateStart,
+    docSearch,
+    filterType,
+    headerCountLabel,
+    isLoadingRecords,
+    mpesaView,
+    paidNotUtilizedRows.length,
+    successfulMpesaRows.length,
+    utilizedMpesaRows.length,
+    visibleCount,
+    visibleCurrentPage,
+  ]);
+
+  useDesktopSubnav(subnavConfig);
+
   useEffect(() => {
     setPage(1);
   }, [docSearch, filterType, dateMode, dateStart, dateEnd, mpesaView]);
@@ -269,108 +369,6 @@ export default function DocumentsTabContent() {
 
   return (
     <div className="w-full space-y-5 pb-24 animate-in fade-in">
-      
-      {/* Header */}
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-black text-slate-900">Documents</h2>
-          <div className="flex items-center gap-3 mt-1">
-            <span className="text-[10px] font-bold text-slate-500">{headerCountLabel}</span>
-            {!isLoadingRecords && (
-              <>
-                <span className="text-[10px] font-bold text-emerald-600">Saved</span>
-                <span className="text-[10px] font-bold text-blue-700">Online backup</span>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-      </section>
-
-      {/* Filter Tabs */}
-      <section ref={scrollRef} className="overflow-x-auto rounded-lg border-2 border-slate-200 bg-white p-3 shadow-sm no-scrollbar">
-        <div className="flex gap-2 min-w-max">
-           {[
-             { id: 'ALL', label: 'All documents' },
-             { id: 'APPROVALS', label: 'Pending approvals' },
-             { id: 'SALES', label: 'Sales receipts' },
-             { id: 'REFUNDS', label: 'Refunds' },
-             { id: 'MPESA', label: 'M-Pesa payments' },
-             { id: 'EXPENSES', label: 'Expenses' },
-             { id: 'SUPPLIER_PAYMENTS', label: 'Supplier payments' },
-             { id: 'CREDIT_NOTES', label: 'Credit notes' },
-             { id: 'INVOICES', label: 'Invoices & bills' },
-             { id: 'SHIFTS', label: 'Shift reports' },
-             { id: 'DAILY', label: 'Daily close reports' }
-           ].map(type => (
-             <button 
-               key={type.id} 
-               onClick={() => setFilterType(type.id as any)}
-                className={`rounded-lg border-2 px-4 py-2 text-xs font-bold transition-all ${filterType === type.id ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-slate-50'}`}
-             >
-               {type.label}
-             </button>
-           ))}
-        </div>
-      </section>
-
-      {filterType !== 'APPROVALS' && !isLoadingRecords && (
-        <section className="space-y-3 rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm">
-          <div className="relative group">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-blue-700" size={16} />
-            <input
-              type="text"
-              placeholder="Search by ID, reference, or amount..."
-              value={docSearch}
-              onChange={(e) => setDocSearch(e.target.value)}
-              className="w-full rounded-lg border-2 border-slate-200 bg-white py-2.5 pl-10 pr-9 text-sm font-medium outline-none transition-all focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-            />
-            {docSearch && (
-              <button onClick={() => setDocSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setDateMode('ALL')}
-                className={`h-10 rounded-lg border-2 px-4 text-[10px] font-black uppercase tracking-widest ${dateMode === 'ALL' ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-600'}`}
-              >
-                All dates
-              </button>
-              <button
-                type="button"
-                onClick={() => setDateMode('CUSTOM')}
-                className={`flex h-10 items-center gap-2 rounded-lg border-2 px-4 text-[10px] font-black uppercase tracking-widest ${dateMode === 'CUSTOM' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600'}`}
-              >
-                <CalendarDays size={14} /> Custom
-              </button>
-              {dateMode === 'CUSTOM' && (
-                <>
-                  <input
-                    type="date"
-                    value={dateStart}
-                    onChange={event => setDateStart(event.target.value)}
-                    className="h-10 rounded-lg border-2 border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-                  />
-                  <input
-                    type="date"
-                    value={dateEnd}
-                    onChange={event => setDateEnd(event.target.value)}
-                    className="h-10 rounded-lg border-2 border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-                  />
-                </>
-              )}
-            </div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-              Showing {visibleCount === 0 ? 0 : ((visibleCurrentPage - 1) * pageSize) + 1}-{Math.min(visibleCurrentPage * pageSize, visibleCount)} of {visibleCount}
-            </p>
-          </div>
-        </section>
-      )}
 
       {isLoadingRecords ? (
         <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 rounded-lg border-2 border-slate-200 bg-white">
@@ -383,27 +381,6 @@ export default function DocumentsTabContent() {
          </div>
       ) : filterType === 'MPESA' ? (
         <div className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-sm">
-          <div className="px-4 sm:px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div className="grid grid-cols-3 gap-2 sm:flex">
-              {[
-                { id: 'ALL', label: 'Successful', count: successfulMpesaRows.length },
-                { id: 'UNUTILIZED', label: 'Paid not used', count: paidNotUtilizedRows.length },
-                { id: 'UTILIZED', label: 'Used', count: utilizedMpesaRows.length },
-              ].map(view => (
-                <button
-                  key={view.id}
-                  type="button"
-                  onClick={() => setMpesaView(view.id as typeof mpesaView)}
-                  className={`h-10 rounded-lg border-2 px-3 text-[10px] font-black uppercase tracking-widest transition-colors ${mpesaView === view.id ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200'}`}
-                >
-                  {view.label} <span className={mpesaView === view.id ? 'text-white/60' : 'text-slate-400'}>{view.count}</span>
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-700">
-              <ShieldCheck size={14} /> Paid callbacks only
-            </div>
-          </div>
           {isMpesaLoading && (
             <div className="px-5 py-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-blue-600 border-b border-slate-100">
               <Loader2 size={14} className="animate-spin" /> Loading M-Pesa transactions

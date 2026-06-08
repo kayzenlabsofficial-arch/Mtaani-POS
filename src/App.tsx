@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import MtaaniPOS from './MtaaniPOS';
+import SmartPOS from './SmartPOS';
 
 export default function App() {
-  return <MtaaniPOS />;
+  return <SmartPOS />;
 }

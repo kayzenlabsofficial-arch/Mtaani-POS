@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 
-const DEFAULT_API_BASE_URL = 'https://mtaanipos.pages.dev';
+const DEFAULT_API_BASE_URL = 'https://smartpos.pages.dev';
 
 export function isNativeMobileRuntime(): boolean {
   if (typeof window === 'undefined') return false;

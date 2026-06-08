@@ -140,7 +140,7 @@ export default function RegisterTab({
   const pushRegisterBackLayer = React.useCallback((layer: RegisterBackLayer) => {
     if (typeof window === 'undefined') return;
     if (window.history.state?.[REGISTER_BACK_LAYER] === layer) return;
-    window.history.pushState({ ...(window.history.state || {}), mtaaniTab: true, tab: 'REGISTER', [REGISTER_BACK_LAYER]: layer }, '');
+    window.history.pushState({ ...(window.history.state || {}), smartTab: true, tab: 'REGISTER', [REGISTER_BACK_LAYER]: layer }, '');
   }, []);
 
   const dismissRegisterBackLayer = React.useCallback((layer: RegisterBackLayer, close: () => void) => {

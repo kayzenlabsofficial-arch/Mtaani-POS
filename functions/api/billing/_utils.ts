@@ -264,7 +264,7 @@ export async function sendBillingStkPush(request: Request, env: BillingEnv, inpu
       PhoneNumber: phone,
       CallBackURL: callbackUrl,
       AccountReference: reference,
-      TransactionDesc: 'Mtaani POS subscription',
+      TransactionDesc: 'Smart POS subscription',
     }),
   });
 

@@ -1,14 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 function localDbInvoke(method, payload) {
-  return ipcRenderer.invoke('mtaani:local-db', method, payload || {});
+  return ipcRenderer.invoke('smart:local-db', method, payload || {});
 }
 
-contextBridge.exposeInMainWorld('mtaaniDesktop', {
+contextBridge.exposeInMainWorld('smartDesktop', {
   isDesktop: true,
   apiBaseUrl: '',
   platform: process.platform,
-  getInfo: () => ipcRenderer.invoke('mtaani:desktop-info'),
+  getInfo: () => ipcRenderer.invoke('smart:desktop-info'),
   localDb: {
     cacheTableRows: (args) => localDbInvoke('cacheTableRows', args),
     readCachedTableRows: (args) => localDbInvoke('readCachedTableRows', args),

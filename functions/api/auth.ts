@@ -9,7 +9,7 @@ interface Env {
 
 const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Mtaani-Desktop, X-Mtaani-Native',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Smart-Desktop, X-Smart-Native',
 };
 
 async function ensureAttemptTable(db: D1Database) {
@@ -90,8 +90,8 @@ async function handleAuthPost(request: Request, env: Env) {
   const username = String(body?.username || '').trim();
   const password = String(body?.password || '');
   const businessCode = String(body?.businessCode || '').trim().toUpperCase();
-  const includeTokenInBody = request.headers.get('X-Mtaani-Desktop') === '1'
-    || request.headers.get('X-Mtaani-Native') === '1';
+  const includeTokenInBody = request.headers.get('X-Smart-Desktop') === '1'
+    || request.headers.get('X-Smart-Native') === '1';
 
   if (!username || !password) return json({ error: 'Enter username and password.' }, 400, corsHeaders);
 

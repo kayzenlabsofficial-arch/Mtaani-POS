@@ -96,7 +96,7 @@ function browserOfflineDb(): Promise<OfflineDexieInstance> {
         syncState!: Table<SyncStateRow, string>;
 
         constructor() {
-          super('mtaani_pos_offline_v2');
+          super('smart_pos_offline_v2');
           this.version(1).stores({
             cachedRows: 'id, table, businessId, shopId, updatedAt',
             outbox: 'id, businessId, shopId, table, createdAt, ackedAt, idempotencyKey',
@@ -117,7 +117,7 @@ function nativeLocalDb() {
 
 export function getDeviceId(): string {
   if (typeof window === 'undefined') return 'server';
-  const key = 'mtaani:deviceId';
+  const key = 'smart:deviceId';
   let v = '';
   try {
     v = window.localStorage.getItem(key) || '';

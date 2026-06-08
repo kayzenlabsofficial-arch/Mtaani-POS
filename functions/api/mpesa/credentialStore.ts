@@ -103,7 +103,7 @@ function normalizeProduct(value: unknown) {
 }
 
 function secretAad(businessId: string, field: string) {
-  return `mtaani-pos:mpesa:enc:v2:${businessId}:${field}`;
+  return `smart-pos:mpesa:enc:v2:${businessId}:${field}`;
 }
 
 function maskNumber(value?: string | null) {

@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 
 const env = {
   ...process.env,
-  MTAANI_CAPACITOR_BUILD: 'true',
+  SMART_CAPACITOR_BUILD: 'true',
 };
 
 function run(command) {

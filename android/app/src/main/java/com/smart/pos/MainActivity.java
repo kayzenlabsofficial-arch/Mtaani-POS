@@ -1,4 +1,4 @@
-package com.mtaani.pos;
+package com.smart.pos;
 
 import com.getcapacitor.BridgeActivity;
 

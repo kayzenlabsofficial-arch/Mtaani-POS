@@ -11,6 +11,7 @@ import { CustomerService } from '../../services/customers';
 import { getCurrentShiftId } from '../../utils/shiftSession';
 import { customerStatementCreditAmount } from '../../utils/reportAnalytics';
 import { generateAndDownloadCustomerStatement } from '../../utils/shareUtils';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 type DebtSourceType = 'SALE' | 'INVOICE';
 type DebtAllocation = { sourceType: DebtSourceType; sourceId: string; amount: number };
@@ -63,6 +64,50 @@ function getPaymentAllocations(payment: CustomerPayment): DebtAllocation[] {
       amount: Number(row?.amount) || 0,
     }))
     .filter(row => (row.sourceType === 'SALE' || row.sourceType === 'INVOICE') && row.sourceId && row.amount > 0);
+}
+
+function CustomersDesktopSubnav({
+  customerSearch,
+  setCustomerSearch,
+  activeClients,
+  totalCredit,
+  highValueClients,
+  onAddCustomer,
+}: {
+  customerSearch: string;
+  setCustomerSearch: (value: string) => void;
+  activeClients: number;
+  totalCredit: number;
+  highValueClients: number;
+  onAddCustomer: () => void;
+}) {
+  const subnavConfig = React.useMemo(() => ({
+    id: 'customers',
+    label: 'Customers',
+    search: {
+      value: customerSearch,
+      placeholder: 'Search customer or phone',
+      onChange: setCustomerSearch,
+      onClear: () => setCustomerSearch(''),
+    },
+    summary: [
+      { label: 'Customers', value: activeClients.toLocaleString() },
+      { label: 'Debt', value: `Ksh ${totalCredit.toLocaleString()}` },
+      { label: 'High spenders', value: highValueClients.toLocaleString() },
+    ],
+    actions: [
+      {
+        id: 'add-customer',
+        label: 'Add customer',
+        icon: 'add',
+        tone: 'primary' as const,
+        onClick: onAddCustomer,
+      },
+    ],
+  }), [activeClients, customerSearch, highValueClients, onAddCustomer, setCustomerSearch, totalCredit]);
+
+  useDesktopSubnav(subnavConfig);
+  return null;
 }
 
 export default function CustomersTabDesktop() {
@@ -365,7 +410,7 @@ export default function CustomersTabDesktop() {
   }
 
   const openStatement = (customer: Customer) => {
-      window.history.pushState({ ...(window.history.state || {}), mtaaniTab: true, tab: 'CUSTOMERS', customerStatementId: customer.id }, '');
+      window.history.pushState({ ...(window.history.state || {}), smartTab: true, tab: 'CUSTOMERS', customerStatementId: customer.id }, '');
       setStatementCustomerId(customer.id);
       setStatementViewTab('STATEMENT');
       setStatementDateMode('ALL');
@@ -827,67 +872,15 @@ export default function CustomersTabDesktop() {
   return (
     <div className="w-full animate-in fade-in space-y-5 pb-24">
       
-      {/* Header */}
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div>
-          <h2 className="text-2xl font-black text-slate-950">Customers</h2>
-          <p className="mt-1 text-sm font-semibold text-slate-500">Simple customer balances and payment history.</p>
-          <div className="hidden">
-            <span className="text-[10px] font-bold text-slate-500">{activeClients} clients</span>
-            <span className="text-slate-300">·</span>
-            <span className={`text-[10px] font-bold ${totalCredit > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-              Ksh {totalCredit.toLocaleString()} debt
-            </span>
-            <span className="text-slate-300">·</span>
-            <span className="text-[10px] font-bold text-amber-600">
-              {highValueClients} High-Value
-            </span>
-          </div>
-        </div>
-        <button
-          onClick={openAddCustomer}
-          className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-sm font-black text-white hover:bg-blue-800"
-        >
-          <Plus size={18} /> Add customer
-        </button>
-      </div>
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Customers</p>
-          <p className="mt-1 text-xl font-black tabular-nums text-slate-950">{activeClients}</p>
-        </div>
-        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Outstanding debt</p>
-          <p className={`mt-1 text-xl font-black tabular-nums ${totalCredit > 0 ? 'text-rose-600' : 'text-slate-950'}`}>Ksh {totalCredit.toLocaleString()}</p>
-        </div>
-        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">High spenders</p>
-          <p className="mt-1 text-xl font-black tabular-nums text-slate-950">{highValueClients}</p>
-        </div>
-      </div>
-      </section>
-
-      {/* Search Bar */}
+      <CustomersDesktopSubnav
+        customerSearch={customerSearch}
+        setCustomerSearch={setCustomerSearch}
+        activeClients={activeClients}
+        totalCredit={totalCredit}
+        highValueClients={highValueClients}
+        onAddCustomer={openAddCustomer}
+      />
       <section className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-sm">
-      <div className="border-b-2 border-slate-100 p-4">
-        <div className="relative group">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={16} />
-          <input
-            type="text"
-            placeholder="Search by customer name or phone..."
-            value={customerSearch}
-            onChange={(e) => setCustomerSearch(e.target.value)}
-            className="h-12 w-full rounded-lg border-2 border-slate-200 bg-white pl-10 pr-9 text-sm font-bold outline-none transition-all focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
-          {customerSearch && (
-            <button onClick={() => setCustomerSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X size={14} />
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* Client List */}
       <div>
          {filteredCustomers.length > 0 ? (

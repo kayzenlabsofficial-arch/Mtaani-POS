@@ -646,7 +646,7 @@ export interface LoginAttempt {
   updated_at?: number;
 }
 
-class MtaaniCloudDB {
+class SmartCloudDB {
   private syncInFlight: Promise<void> | null = null;
 
   businesses          = new CloudTable<Business>('businesses');
@@ -827,7 +827,7 @@ class MtaaniCloudDB {
   syncAll = this.sync.bind(this);
 }
 
-export const db = new MtaaniCloudDB();
+export const db = new SmartCloudDB();
 
 // ── Background Sync Wire-up ────────────────────────────────────────────────
 if (typeof window !== 'undefined') {

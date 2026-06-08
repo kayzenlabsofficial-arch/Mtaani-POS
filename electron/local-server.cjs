@@ -35,14 +35,14 @@ function copyRequestHeaders(req) {
     if (lower === 'host' || lower === 'connection' || lower === 'content-length') continue;
     headers.set(key, Array.isArray(value) ? value.join(', ') : value);
   }
-  headers.set('X-Mtaani-Desktop', '1');
+  headers.set('X-Smart-Desktop', '1');
   return headers;
 }
 
 async function proxyApi(req, res, apiBaseUrl) {
   if (!apiBaseUrl) {
     sendJson(res, 503, {
-      error: 'Desktop API base URL is not configured. Set MTAANI_API_BASE_URL before starting the desktop app.',
+      error: 'Desktop API base URL is not configured. Set SMART_API_BASE_URL before starting the desktop app.',
     });
     return;
   }

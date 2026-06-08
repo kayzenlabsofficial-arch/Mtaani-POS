@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useLiveQuery } from './clouddb';
 import { db } from './db';
-import { useMtaaniPOS } from './hooks/useMtaaniPOS';
+import { useSmartPOS } from './hooks/useSmartPOS';
 import { usePhoneUi } from './hooks/usePhoneUi';
 import { useVisualViewport } from './hooks/useVisualViewport';
 import { useToast } from './context/ToastContext';
@@ -36,8 +36,8 @@ import TillsTab from './components/tabs/TillsTab';
 import SettingsTab from './components/tabs/SettingsTab';
 
 // Layout & Shell
-import Sidebar from './components/shared/Sidebar';
 import { MobileNav, MobileRegisterFab, MoreOptionsMenu, TopHeaderDesktop, TopHeaderMobile } from './components/layout/Shell';
+import { DesktopSubnavHost, DesktopSubnavProvider } from './components/navigation/DesktopSubnav';
 import { LoginScreen } from './components/auth/LoginScreen';
 import AccountSetupScreen from './components/auth/AccountSetupScreen';
 import SystemManagerDashboard from './components/admin/SystemManager';
@@ -49,7 +49,7 @@ import ExpenseModal from './components/modals/ExpenseModal';
 
 const SINGLE_SHOP_ID = 'single-shop';
 
-export default function MtaaniPOS() {
+export default function SmartPOS() {
   const isPhoneUi = usePhoneUi();
   const visualViewport = useVisualViewport();
   const {
@@ -69,7 +69,7 @@ export default function MtaaniPOS() {
     activeBusinessId, activeShopId, setActiveShopId,
     handleCheckout,
     updateServiceWorker, needRefresh
-  } = useMtaaniPOS();
+  } = useSmartPOS();
   const { success, error } = useToast();
 
   const activeBusiness = useLiveQuery(() => activeBusinessId ? db.businesses.get(activeBusinessId) : Promise.resolve(undefined), [activeBusinessId]);
@@ -368,20 +368,8 @@ export default function MtaaniPOS() {
   }
 
   return (
+    <DesktopSubnavProvider activeKey={activeTab}>
     <div className={`flex h-[100dvh] overflow-hidden font-hanken ${isPhoneUi ? 'bg-slate-100' : 'bg-slate-50'}`}>
-      {!isPhoneUi && (
-        <Sidebar
-          activeTab={activeTab}
-          onTabChange={openAllowedTab}
-          onLogout={handleLogout}
-          onSync={handleSync}
-          isSyncing={isSyncing}
-          currentUser={currentUser}
-          businessSettings={businessSettings}
-          onOpenProfile={() => setIsProfileModalOpen(true)}
-        />
-      )}
-      
       <div className="flex-1 flex flex-col min-w-0 relative h-full">
         {isPhoneUi ? (
           <TopHeaderMobile
@@ -397,13 +385,19 @@ export default function MtaaniPOS() {
           <TopHeaderDesktop
             activeBusiness={activeBusiness}
             activeShop={activeShop}
+            activeTab={activeTab}
+            onTabChange={openAllowedTab}
+            onLogout={handleLogout}
             isSyncing={isSyncing}
             onSync={handleSync}
             isOnline={isOnline}
             onOpenProfile={() => setIsProfileModalOpen(true)}
             currentUser={currentUser}
+            businessSettings={businessSettings}
           />
         )}
+
+        {!isPhoneUi && <DesktopSubnavHost activeTab={activeTab} />}
 
         {showBillingBanner && billingInfo && (
           <BillingBanner
@@ -413,8 +407,8 @@ export default function MtaaniPOS() {
           />
         )}
 
-        <main className={`flex-1 main-scroll app-safe-scroll relative ${isPhoneUi ? 'bg-slate-100' : 'bg-transparent'} ${isRegisterTab ? 'overflow-y-auto p-0' : isPhoneUi ? 'overflow-y-auto p-3 pb-28 sm:p-4 sm:pb-28' : 'overflow-y-auto p-8 pb-6'}`}>
-          <div className={isRegisterTab ? 'h-full min-h-0' : 'max-w-[1440px] mx-auto min-h-full'}>
+        <main className={`flex-1 main-scroll app-safe-scroll relative ${isPhoneUi ? 'bg-slate-100' : 'bg-transparent'} ${isRegisterTab ? 'overflow-y-auto p-0' : isPhoneUi ? 'overflow-y-auto p-3 pb-28 sm:p-4 sm:pb-28' : 'overflow-y-auto px-4 py-5 pb-20 lg:px-6'}`}>
+          <div className={isRegisterTab ? 'h-full min-h-0' : 'max-w-[1600px] mx-auto min-h-full'}>
             {activeTabLocked ? (
               <div className="flex min-h-[60vh] items-center justify-center p-4 text-center">
                 <div className="max-w-sm rounded-lg border-2 border-slate-200 bg-white p-6 shadow-sm">
@@ -487,5 +481,6 @@ export default function MtaaniPOS() {
         financialAccounts={financialAccounts || []} 
       />
     </div>
+    </DesktopSubnavProvider>
   );
 }

@@ -36,12 +36,146 @@ import {
   type ReportProductPerformanceRow as ProductPerformanceRow,
 } from '../../utils/reportAnalytics';
 import LoadingState from '../shared/LoadingState';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 const DAY_MS = 24 * 60 * 60 * 1000;
 type ReportDateRange = 'TODAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'MONTHLY' | 'CUSTOM' | 'ALL';
 type ReportView = 'OVERVIEW' | 'PROFIT_EXPENSES' | 'SALES_TRENDS' | 'PRODUCTS' | 'CASHIERS';
 type ProfitLossExportMode = 'INDIVIDUAL' | 'COMPARISON';
+
+function ReportsDesktopSubnav({
+  activeReportView,
+  setActiveReportView,
+  dateRange,
+  setDateRange,
+  customStart,
+  setCustomStart,
+  customEnd,
+  setCustomEnd,
+  productDateRange,
+  setProductDateRange,
+  productCustomStart,
+  setProductCustomStart,
+  productCustomEnd,
+  setProductCustomEnd,
+  salesDocumentCount,
+  netProfit,
+  onExportProfitLoss,
+  isSharing,
+  onExportProducts,
+  isExportingProducts,
+  canExportProducts,
+}: {
+  activeReportView: ReportView;
+  setActiveReportView: (value: ReportView) => void;
+  dateRange: ReportDateRange;
+  setDateRange: (value: ReportDateRange) => void;
+  customStart: string;
+  setCustomStart: (value: string) => void;
+  customEnd: string;
+  setCustomEnd: (value: string) => void;
+  productDateRange: ReportDateRange;
+  setProductDateRange: (value: ReportDateRange) => void;
+  productCustomStart: string;
+  setProductCustomStart: (value: string) => void;
+  productCustomEnd: string;
+  setProductCustomEnd: (value: string) => void;
+  salesDocumentCount: number;
+  netProfit: number;
+  onExportProfitLoss: () => void;
+  isSharing: boolean;
+  onExportProducts: () => void;
+  isExportingProducts: boolean;
+  canExportProducts: boolean;
+}) {
+  const activeRange = activeReportView === 'PRODUCTS' ? productDateRange : dateRange;
+  const setActiveRange = activeReportView === 'PRODUCTS' ? setProductDateRange : setDateRange;
+  const isProductRange = activeReportView === 'PRODUCTS';
+  const selectClassName = 'h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100';
+  const subnavConfig = React.useMemo(() => ({
+    id: 'reports',
+    label: 'Reports',
+    tabs: [
+      { id: 'OVERVIEW', label: 'Overview', icon: FileText, active: activeReportView === 'OVERVIEW', onClick: () => setActiveReportView('OVERVIEW') },
+      { id: 'PROFIT_EXPENSES', label: 'Profit & Expenses', icon: Scale, active: activeReportView === 'PROFIT_EXPENSES', onClick: () => setActiveReportView('PROFIT_EXPENSES') },
+      { id: 'SALES_TRENDS', label: 'Sales Trends', icon: BarChart3, active: activeReportView === 'SALES_TRENDS', onClick: () => setActiveReportView('SALES_TRENDS') },
+      { id: 'PRODUCTS', label: 'Products', icon: Package, active: activeReportView === 'PRODUCTS', onClick: () => setActiveReportView('PRODUCTS') },
+      { id: 'CASHIERS', label: 'Cashiers', icon: Users, active: activeReportView === 'CASHIERS', onClick: () => setActiveReportView('CASHIERS') },
+    ],
+    filters: [
+      { id: 'TODAY', label: 'Today', active: activeRange === 'TODAY', onClick: () => setActiveRange('TODAY') },
+      { id: 'WEEK', label: 'Week', active: activeRange === 'WEEK', onClick: () => setActiveRange('WEEK') },
+      { id: 'MONTH', label: 'Month', active: activeRange === 'MONTH', onClick: () => setActiveRange('MONTH') },
+      { id: 'QUARTER', label: 'Quarter', active: activeRange === 'QUARTER', onClick: () => setActiveRange('QUARTER') },
+      { id: 'CUSTOM', label: 'Custom', active: activeRange === 'CUSTOM', onClick: () => setActiveRange('CUSTOM') },
+      { id: 'ALL', label: 'All', active: activeRange === 'ALL', onClick: () => setActiveRange('ALL') },
+    ],
+    controls: activeRange === 'CUSTOM' ? (
+      <>
+        <input
+          type="date"
+          value={isProductRange ? productCustomStart : customStart}
+          onChange={event => (isProductRange ? setProductCustomStart : setCustomStart)(event.target.value)}
+          className={selectClassName}
+        />
+        <input
+          type="date"
+          value={isProductRange ? productCustomEnd : customEnd}
+          onChange={event => (isProductRange ? setProductCustomEnd : setCustomEnd)(event.target.value)}
+          className={selectClassName}
+        />
+      </>
+    ) : undefined,
+    summary: [
+      { label: 'Sales docs', value: salesDocumentCount.toLocaleString() },
+      { label: 'Net', value: `Ksh ${netProfit.toLocaleString()}` },
+    ],
+    actions: [
+      {
+        id: 'export-profit-loss',
+        label: 'Export P&L',
+        icon: Download,
+        busy: isSharing,
+        hidden: activeReportView !== 'PROFIT_EXPENSES',
+        onClick: onExportProfitLoss,
+      },
+      {
+        id: 'export-products',
+        label: 'Export PDF',
+        icon: Download,
+        busy: isExportingProducts,
+        disabled: !canExportProducts,
+        hidden: activeReportView !== 'PRODUCTS',
+        onClick: onExportProducts,
+      },
+    ],
+  }), [
+    activeRange,
+    activeReportView,
+    canExportProducts,
+    customEnd,
+    customStart,
+    isExportingProducts,
+    isProductRange,
+    isSharing,
+    netProfit,
+    onExportProducts,
+    onExportProfitLoss,
+    productCustomEnd,
+    productCustomStart,
+    salesDocumentCount,
+    setActiveRange,
+    setActiveReportView,
+    setCustomEnd,
+    setCustomStart,
+    setProductCustomEnd,
+    setProductCustomStart,
+  ]);
+
+  useDesktopSubnav(subnavConfig);
+  return null;
+}
 
 type PeriodBounds = {
   start: number;
@@ -637,45 +771,29 @@ export default function ReportsTabContent() {
 
   return (
     <div className="w-full max-w-full space-y-5 overflow-x-hidden pb-24 animate-in fade-in">
-      
-      {/* Header */}
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h2 className="text-xl font-black text-slate-900">Financial reports</h2>
-          <div className="mt-1 flex max-w-full flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="text-[10px] font-bold text-slate-500">{salesDocumentCount} sales documents</span>
-            <span className={`text-[10px] font-bold ${netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>Net: Ksh {netProfit.toLocaleString()}</span>
-          </div>
-        </div>
-      </div>
-      </section>
-
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-2 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="no-scrollbar flex gap-2 overflow-x-auto">
-              {reportViews.map(view => (
-                <button
-                  key={view.id}
-                  type="button"
-                  onClick={() => setActiveReportView(view.id)}
-                  className={`flex min-w-max items-center gap-2 rounded-lg border-2 px-3 py-2 text-sm font-black transition-all ${
-                    activeReportView === view.id
-                      ? 'border-blue-700 bg-blue-700 text-white'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50'
-                  }`}
-                >
-                  {view.icon}
-                  <span>{view.label}</span>
-                </button>
-              ))}
-            </div>
-            <p className="mt-2 px-1 text-xs font-semibold text-slate-500">{activeReportViewConfig.detail}</p>
-          </div>
-          {activeReportView === 'PRODUCTS' ? renderProductDateControls() : renderMainDateControls()}
-        </div>
-      </section>
+      <ReportsDesktopSubnav
+        activeReportView={activeReportView}
+        setActiveReportView={setActiveReportView}
+        dateRange={dateRange}
+        setDateRange={setDateRange}
+        customStart={customStart}
+        setCustomStart={setCustomStart}
+        customEnd={customEnd}
+        setCustomEnd={setCustomEnd}
+        productDateRange={productDateRange}
+        setProductDateRange={setProductDateRange}
+        productCustomStart={productCustomStart}
+        setProductCustomStart={setProductCustomStart}
+        productCustomEnd={productCustomEnd}
+        setProductCustomEnd={setProductCustomEnd}
+        salesDocumentCount={salesDocumentCount}
+        netProfit={netProfit}
+        onExportProfitLoss={handleExportProfitLoss}
+        isSharing={isSharing}
+        onExportProducts={handleExportProductPerformance}
+        isExportingProducts={isExportingProducts}
+        canExportProducts={visibleProductRows.length > 0}
+      />
 
       <div id="report-content" className="space-y-5">
         <div className={activeReportView === 'OVERVIEW' ? 'space-y-5' : 'hidden'}>
@@ -696,7 +814,7 @@ export default function ReportsTabContent() {
               <h3 className="text-lg font-black text-slate-900">Profit & Expenses</h3>
               <p className="mt-1 text-xs font-semibold text-slate-500">Control VAT treatment and export the selected P&L period.</p>
             </div>
-            <div className="grid w-full grid-cols-2 gap-2 sm:w-auto">
+            <div className="grid w-full grid-cols-1 gap-2 sm:w-auto">
               <button
                 type="button"
                 onClick={() => setDeductTaxInPL(v => !v)}
@@ -710,10 +828,6 @@ export default function ReportsTabContent() {
               >
                 <Scale size={15} />
                 VAT {deductTaxInPL ? 'On' : 'Off'}
-              </button>
-              <button onClick={handleExportProfitLoss} disabled={isSharing} aria-busy={isSharing} data-busy={isSharing ? 'true' : undefined} className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 active:scale-[0.98] disabled:opacity-50 md:px-4">
-                {isSharing ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                <span>{isSharing ? 'Exporting...' : 'Export P&L'}</span>
               </button>
             </div>
           </div>
@@ -933,19 +1047,6 @@ export default function ReportsTabContent() {
                 </h3>
               </div>
 
-              <div className="flex w-full xl:w-auto">
-                <button
-                  type="button"
-                  onClick={handleExportProductPerformance}
-                  disabled={isExportingProducts || visibleProductRows.length === 0}
-                  aria-busy={isExportingProducts}
-                  data-busy={isExportingProducts ? 'true' : undefined}
-                  className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-[11px] font-black uppercase tracking-widest text-white transition-all hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 xl:w-auto"
-                >
-                  {isExportingProducts ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-                  Export PDF
-                </button>
-              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_0.85fr]">

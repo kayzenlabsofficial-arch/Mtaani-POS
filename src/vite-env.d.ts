@@ -4,7 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string;
 }
 
-interface MtaaniDesktopLocalDb {
+interface SmartDesktopLocalDb {
   cacheTableRows(args: { table: string; businessId: string; shopId?: string; rows: any[]; updatedAt?: number }): Promise<void>;
   readCachedTableRows(args: { table: string; businessId: string; shopId?: string }): Promise<any[]>;
   enqueueOutbox(args: any): Promise<string>;
@@ -19,16 +19,16 @@ interface MtaaniDesktopLocalDb {
   getStatus(): Promise<{ path: string; pending: number; failed: number }>;
 }
 
-interface MtaaniDesktopBridge {
+interface SmartDesktopBridge {
   isDesktop: true;
   apiBaseUrl: string;
   platform: string;
   getInfo(): Promise<{ apiBaseUrl: string; sqlitePath: string; platform: string }>;
-  localDb: MtaaniDesktopLocalDb;
+  localDb: SmartDesktopLocalDb;
 }
 
 interface Window {
-  mtaaniDesktop?: MtaaniDesktopBridge;
+  smartDesktop?: SmartDesktopBridge;
 }
 
 declare module 'virtual:pwa-register/react' {

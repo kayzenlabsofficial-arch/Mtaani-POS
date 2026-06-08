@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ElementType } from 'react';
+import { useEffect, useMemo, useRef, useState, type ElementType } from 'react';
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   Banknote,
@@ -18,6 +18,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { DashboardMetric, DashboardModel, DashboardMoneyBreakdown, DashboardQuickAction } from './types';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 export const money = (value: unknown) => `Ksh ${(Number(value) || 0).toLocaleString()}`;
 
@@ -81,18 +82,27 @@ function HeaderActions({ actions }: { actions: DashboardQuickAction[] }) {
 export function DashboardHeader({ model, compact = false }: { model: DashboardModel; compact?: boolean }) {
   const name = model.currentUser?.name?.split(' ')[0] || 'there';
   const shopName = String(model.activeShop?.name || 'Main shop');
-  return (
-    <div className="flex flex-col gap-4 border-b border-slate-200 bg-white px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:rounded-lg lg:border-2 lg:px-5">
-      <div className="min-w-0">
-        <p className="text-[11px] font-black uppercase tracking-widest text-slate-500">{shopName}</p>
-        <h2 className={`${compact ? 'text-xl' : 'text-2xl'} mt-1 font-black text-slate-950`}>Dashboard</h2>
-        <p className="mt-1 text-sm font-medium text-slate-600">
-          {name} / {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-        </p>
-      </div>
-      <HeaderActions actions={model.quickActions} />
-    </div>
-  );
+  const today = useMemo(() => new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }), []);
+  const subnavConfig = useMemo(() => ({
+    id: 'dashboard',
+    label: 'Dashboard',
+    summary: [
+      { label: 'Shop', value: shopName },
+      { label: 'User', value: name },
+      { label: 'Date', value: today },
+    ],
+    actions: model.quickActions.map(action => ({
+      id: action.label.toLowerCase().replace(/\s+/g, '-'),
+      label: action.label,
+      icon: action.icon,
+      busy: action.busy,
+      onClick: action.onClick,
+    })),
+  }), [model.quickActions, name, shopName, today]);
+
+  useDesktopSubnav(subnavConfig);
+
+  return null;
 }
 
 export function OwnerConsole({ model }: { model: DashboardModel }) {

@@ -3,7 +3,6 @@ import { Activity, ArrowDown, ArrowUp, Banknote, Ban, CalendarClock, ChevronsUpD
 import { useLiveQuery } from '../../clouddb';
 import { db, type Product } from '../../db';
 import { useStore } from '../../store';
-import { useHorizontalScroll } from '../../hooks/useHorizontalScroll';
 import { useToast } from '../../context/ToastContext';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { SearchableSelect } from '../shared/SearchableSelectDesktop';
@@ -18,6 +17,7 @@ import { normaliseSupplierIds } from '../../utils/supplierProducts';
 import { lineNetAmount, netItemQuantity } from '../../utils/posMoney';
 import { isLowStockProduct, stockMovementTotals } from '../../utils/inventoryIntegrity';
 import LoadingState from '../shared/LoadingState';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 const MaterialIcon = ({ name, className = "", style = {} }: { name: string, className?: string, style?: React.CSSProperties }) => (
   (() => {
@@ -47,6 +47,91 @@ const MaterialIcon = ({ name, className = "", style = {} }: { name: string, clas
 
 type SortColumn = 'name' | 'stock' | 'price' | 'expiry';
 type StockStatusFilter = 'ALL' | 'EXPIRY_RISK' | 'OUT_OF_STOCK' | 'ALMOST_OUT';
+
+function InventoryDesktopSubnav({
+  search,
+  setSearch,
+  categories,
+  selectedCategory,
+  setSelectedCategory,
+  stockFilters,
+  stockStatusFilter,
+  setStockStatusFilter,
+  onManageCategories,
+  onAddProduct,
+}: {
+  search: string;
+  setSearch: (value: string) => void;
+  categories: any[];
+  selectedCategory: string | null;
+  setSelectedCategory: (value: string | null) => void;
+  stockFilters: { id: StockStatusFilter; label: string; count: number }[];
+  stockStatusFilter: StockStatusFilter;
+  setStockStatusFilter: (value: StockStatusFilter) => void;
+  onManageCategories: () => void;
+  onAddProduct: () => void;
+}) {
+  const subnavConfig = React.useMemo(() => ({
+    id: 'inventory',
+    label: 'Inventory',
+    tabs: [
+      {
+        id: 'all',
+        label: 'All',
+        active: !selectedCategory,
+        onClick: () => setSelectedCategory(null),
+      },
+      ...categories.map(category => ({
+        id: category.id || category.name,
+        label: category.name,
+        active: selectedCategory === category.name,
+        onClick: () => setSelectedCategory(category.name),
+      })),
+    ],
+    filters: stockFilters.map(filter => ({
+      id: filter.id,
+      label: filter.label,
+      count: filter.count,
+      active: stockStatusFilter === filter.id,
+      onClick: () => setStockStatusFilter(filter.id),
+    })),
+    search: {
+      value: search,
+      placeholder: 'Search products or barcode',
+      onChange: setSearch,
+      onClear: () => setSearch(''),
+    },
+    actions: [
+      {
+        id: 'categories',
+        label: 'Categories',
+        icon: 'categories',
+        onClick: onManageCategories,
+      },
+      {
+        id: 'add-product',
+        label: 'Add product',
+        icon: 'add',
+        tone: 'primary' as const,
+        onClick: onAddProduct,
+      },
+    ],
+  }), [
+    categories,
+    onAddProduct,
+    onManageCategories,
+    search,
+    selectedCategory,
+    setSearch,
+    setSelectedCategory,
+    setStockStatusFilter,
+    stockFilters,
+    stockStatusFilter,
+  ]);
+
+  useDesktopSubnav(subnavConfig);
+  return null;
+}
 
 export default function InventoryTabDesktop() {
   const [search, setSearch] = useState('');
@@ -81,7 +166,6 @@ export default function InventoryTabDesktop() {
     supplierIds: [] as string[],
   });
   const [ingredientRows, setIngredientRows] = useState<{ ingredientProductId: string; quantity: string }[]>([]);
-  const scrollRef = useHorizontalScroll();
   const activeBusinessId = useStore(s => s.activeBusinessId);
   const activeShopId = useStore(s => s.activeShopId);
   const { success, error } = useToast();
@@ -406,28 +490,18 @@ export default function InventoryTabDesktop() {
 
   return (
     <div className="flex h-full flex-col gap-5 pb-24 animate-in fade-in">
-
-      {/* Page heading */}
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div>
-          <h2 className="text-2xl font-black text-slate-950">Inventory</h2>
-          <p className="mt-1 text-sm font-semibold text-slate-500">
-            {products?.length || 0} products across {categories?.length || 0} categories
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <button onClick={() => setIsCategoryModalOpen(true)} className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-slate-200 bg-white px-4 text-sm font-black text-slate-700 hover:border-blue-200 hover:text-blue-700">
-            <Package size={18} />
-            Categories
-          </button>
-          <button onClick={() => openProductModal()} className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-sm font-black text-white hover:bg-blue-800">
-            <MaterialIcon name="add" style={{ fontSize: '20px' }} />
-            Add product
-          </button>
-        </div>
-      </div>
-      </section>
+      <InventoryDesktopSubnav
+        search={search}
+        setSearch={setSearch}
+        categories={categories || []}
+        selectedCategory={selectedCategory}
+        setSelectedCategory={setSelectedCategory}
+        stockFilters={stockFilters}
+        stockStatusFilter={stockStatusFilter}
+        setStockStatusFilter={setStockStatusFilter}
+        onManageCategories={() => setIsCategoryModalOpen(true)}
+        onAddProduct={() => openProductModal()}
+      />
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
@@ -450,69 +524,7 @@ export default function InventoryTabDesktop() {
         ))}
       </div>
 
-      {/* Toolbar: Search + Filters */}
-      <div className="flex flex-col gap-3 rounded-lg border-2 border-slate-200 bg-white p-3 shadow-sm md:flex-row">
-        <div className="relative group flex-1">
-          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-blue-700">
-            <MaterialIcon name="search" style={{ fontSize: '18px' }} />
-          </div>
-          <input
-            className="h-11 w-full rounded-lg border-2 border-slate-200 bg-white pl-10 pr-4 text-sm font-bold outline-none transition-all focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-            placeholder="Search by name or barcode..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          {search && (
-            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
-              <MaterialIcon name="close" style={{ fontSize: '16px' }} />
-            </button>
-          )}
-        </div>
-
-        <div ref={scrollRef} className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-          <button
-            onClick={() => setSelectedCategory(null)}
-            className={`flex-shrink-0 whitespace-nowrap rounded-lg border-2 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all ${
-              !selectedCategory ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300'
-            }`}
-          >
-            All
-          </button>
-          {categories?.map((cat, i) => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.name)}
-              className={`flex-shrink-0 whitespace-nowrap rounded-lg border-2 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all ${
-                selectedCategory === cat.name ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300'
-              }`}
-            >
-              {cat.name}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <CategoryManagementModal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} />
-
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-        {stockFilters.map(filter => (
-          <button
-            key={filter.id}
-            type="button"
-            onClick={() => setStockStatusFilter(filter.id)}
-            className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border flex-shrink-0 flex items-center gap-2 ${
-              stockStatusFilter === filter.id ? 'border-blue-700 bg-blue-700 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300'
-            }`}
-          >
-            <span>{filter.label}</span>
-            <span className={`min-w-5 h-5 px-1.5 rounded-lg flex items-center justify-center text-[9px] ${
-              stockStatusFilter === filter.id ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'
-            }`}>
-              {filter.count}
-            </span>
-          </button>
-        ))}
-      </div>
 
       {/* Table */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border-2 border-slate-200 bg-white">
@@ -654,11 +666,6 @@ export default function InventoryTabDesktop() {
           </div>
         )}
       </div>
-
-      {/* FAB */}
-      <button onClick={() => openProductModal()} className="fixed bottom-24 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-lg border-2 border-blue-700 bg-blue-700 text-white shadow-xl transition-all hover:bg-blue-800 active:scale-95 md:bottom-8 md:right-8">
-        <MaterialIcon name="add" style={{ fontSize: '28px' }} />
-      </button>
 
       {/* Product detail slide-over */}
       {selectedProduct && (

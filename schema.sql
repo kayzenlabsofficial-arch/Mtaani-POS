@@ -1,6 +1,6 @@
 -- ============================================================
 -- SMART POS - DEFINITIVE D1 SCHEMA (matches Dexie exactly)
--- Run with: npx wrangler d1 execute mtaani_pos_db --remote --file=schema.sql
+-- Run with: npx wrangler d1 execute smart_pos_db --remote --file=schema.sql
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS businesses (

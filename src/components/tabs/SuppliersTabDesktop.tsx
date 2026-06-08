@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Plus, Truck, User, ChevronRight, X, Briefcase, Trash2, MapPin } from 'lucide-react';
+import { Truck, User, ChevronRight, Briefcase, Trash2, MapPin } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db, type Supplier } from '../../db';
 import { useStore } from '../../store';
@@ -8,7 +8,56 @@ import SupplierLedgerModal from '../modals/SupplierLedgerModalDesktop';
 import { belongsToActiveShop } from '../../utils/shopScope';
 import { SupplierService } from '../../services/suppliers';
 import { getCurrentShiftId } from '../../utils/shiftSession';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
+function SuppliersDesktopSubnav({
+  supplierSearch,
+  setSupplierSearch,
+  supplierCount,
+  totalPayables,
+  onAddSupplier,
+  onRecordPayment,
+}: {
+  supplierSearch: string;
+  setSupplierSearch: (value: string) => void;
+  supplierCount: number;
+  totalPayables: number;
+  onAddSupplier: () => void;
+  onRecordPayment: () => void;
+}) {
+  const subnavConfig = React.useMemo(() => ({
+    id: 'suppliers',
+    label: 'Suppliers',
+    search: {
+      value: supplierSearch,
+      placeholder: 'Search supplier or contact',
+      onChange: setSupplierSearch,
+      onClear: () => setSupplierSearch(''),
+    },
+    summary: [
+      { label: 'Suppliers', value: supplierCount.toLocaleString() },
+      { label: 'Amount to pay', value: `Ksh ${totalPayables.toLocaleString()}` },
+    ],
+    actions: [
+      {
+        id: 'add-supplier',
+        label: 'Add supplier',
+        icon: 'add',
+        tone: 'primary' as const,
+        onClick: onAddSupplier,
+      },
+      {
+        id: 'record-payment',
+        label: 'Record payment',
+        icon: 'payments',
+        onClick: onRecordPayment,
+      },
+    ],
+  }), [onAddSupplier, onRecordPayment, setSupplierSearch, supplierCount, supplierSearch, totalPayables]);
+
+  useDesktopSubnav(subnavConfig);
+  return null;
+}
 
 export default function SuppliersTabDesktop({ setActiveTab }: { setActiveTab?: (tab: string) => void }) {
   const [supplierSearch, setSupplierSearch] = useState("");
@@ -117,53 +166,16 @@ export default function SuppliersTabDesktop({ setActiveTab }: { setActiveTab?: (
 
   return (
     <div className="w-full animate-in fade-in space-y-5 pb-24">
-      
-      {/* Header */}
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div>
-          <h2 className="text-2xl font-black text-slate-950">Suppliers</h2>
-          <p className="mt-1 text-sm font-semibold text-slate-500">Supplier balances, payments, and credit notes.</p>
-        </div>
-        <button
-          onClick={openAddSupplier}
-          className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-sm font-black text-white hover:bg-blue-800"
-        >
-          <Plus size={18} /> Add supplier
-        </button>
-      </div>
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Suppliers</p>
-          <p className="mt-1 text-xl font-black tabular-nums text-slate-950">{supplierCount}</p>
-        </div>
-        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Amount to pay</p>
-          <p className={`mt-1 text-xl font-black tabular-nums ${totalPayables > 0 ? 'text-rose-600' : 'text-slate-950'}`}>Ksh {totalPayables.toLocaleString()}</p>
-        </div>
-      </div>
-      </section>
+      <SuppliersDesktopSubnav
+        supplierSearch={supplierSearch}
+        setSupplierSearch={setSupplierSearch}
+        supplierCount={supplierCount}
+        totalPayables={totalPayables}
+        onAddSupplier={openAddSupplier}
+        onRecordPayment={() => setActiveTab?.('SUPPLIER_PAYMENTS')}
+      />
 
-      {/* Search Bar */}
       <section className="overflow-hidden rounded-lg border-2 border-slate-200 bg-white shadow-sm">
-      <div className="border-b-2 border-slate-100 p-4">
-        <div className="relative group">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-700 transition-colors" size={16} />
-          <input
-            type="text"
-            placeholder="Search by company or contact name..."
-            value={supplierSearch}
-            onChange={(e) => setSupplierSearch(e.target.value)}
-            className="h-12 w-full rounded-lg border-2 border-slate-200 bg-white pl-10 pr-9 text-sm font-bold outline-none transition-all focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
-          {supplierSearch && (
-            <button onClick={() => setSupplierSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X size={14} />
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* Supplier List */}
       <div>
          {filteredSuppliers.length > 0 ? (

@@ -1,5 +1,5 @@
 ﻿import React, { useState } from 'react';
-import { Search, Plus, FileMinus, Trash2, Calendar, User, X, SlidersHorizontal, PackageMinus } from 'lucide-react';
+import { Plus, FileMinus, Trash2, Calendar, User, X, PackageMinus } from 'lucide-react';
 import { useLiveQuery } from '../../clouddb';
 import { db } from '../../db';
 import { useStore } from '../../store';
@@ -23,11 +23,158 @@ import {
   normalizeExpenseStatus,
   shopExpenseProductEligibility,
 } from '../../utils/expenseIntegrity';
+import { useDesktopSubnav } from '../navigation/DesktopSubnav';
 
 type ExpenseDateRange = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL';
 type ExpenseSourceFilter = 'ALL' | 'TILL' | 'ACCOUNT' | 'SHOP';
 type ExpenseStatusFilter = 'ALL' | 'APPROVED' | 'PENDING' | 'REJECTED';
 type ExpenseViewTab = 'RECORDS' | 'SHOP';
+
+function ExpensesDesktopSubnav({
+  activeExpenseTab,
+  setActiveExpenseTab,
+  expenseSearch,
+  setExpenseSearch,
+  expenseDateRange,
+  setExpenseDateRange,
+  expenseStartDate,
+  setExpenseStartDate,
+  expenseEndDate,
+  setExpenseEndDate,
+  expenseSourceFilter,
+  setExpenseSourceFilter,
+  expenseStatusFilter,
+  setExpenseStatusFilter,
+  expenseCategoryFilter,
+  setExpenseCategoryFilter,
+  expenseCategories,
+  filteredExpenseTotal,
+  filteredExpensesCount,
+  canCreateExpense,
+  onLogExpense,
+  hasExpenseFilters,
+  onClearFilters,
+}: {
+  activeExpenseTab: ExpenseViewTab;
+  setActiveExpenseTab: (value: ExpenseViewTab) => void;
+  expenseSearch: string;
+  setExpenseSearch: (value: string) => void;
+  expenseDateRange: ExpenseDateRange;
+  setExpenseDateRange: (value: ExpenseDateRange) => void;
+  expenseStartDate: string;
+  setExpenseStartDate: (value: string) => void;
+  expenseEndDate: string;
+  setExpenseEndDate: (value: string) => void;
+  expenseSourceFilter: ExpenseSourceFilter;
+  setExpenseSourceFilter: (value: ExpenseSourceFilter) => void;
+  expenseStatusFilter: ExpenseStatusFilter;
+  setExpenseStatusFilter: (value: ExpenseStatusFilter) => void;
+  expenseCategoryFilter: string;
+  setExpenseCategoryFilter: (value: string) => void;
+  expenseCategories: string[];
+  filteredExpenseTotal: number;
+  filteredExpensesCount: number;
+  canCreateExpense: boolean;
+  onLogExpense: () => void;
+  hasExpenseFilters: boolean;
+  onClearFilters: () => void;
+}) {
+  const selectClassName = 'h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100';
+  const subnavConfig = React.useMemo(() => ({
+    id: 'expenses',
+    label: 'Expenses',
+    tabs: [
+      { id: 'RECORDS', label: 'Expense records', icon: FileMinus, active: activeExpenseTab === 'RECORDS', onClick: () => setActiveExpenseTab('RECORDS') },
+      { id: 'SHOP', label: 'Shop product', icon: PackageMinus, active: activeExpenseTab === 'SHOP', onClick: () => setActiveExpenseTab('SHOP') },
+    ],
+    filters: activeExpenseTab === 'RECORDS' ? ([
+      { id: 'TODAY', label: 'Today', active: expenseDateRange === 'TODAY', onClick: () => setExpenseDateRange('TODAY') },
+      { id: 'WEEK', label: 'Week', active: expenseDateRange === 'WEEK', onClick: () => setExpenseDateRange('WEEK') },
+      { id: 'MONTH', label: 'Month', active: expenseDateRange === 'MONTH', onClick: () => setExpenseDateRange('MONTH') },
+      { id: 'CUSTOM', label: 'Custom', active: expenseDateRange === 'CUSTOM', onClick: () => setExpenseDateRange('CUSTOM') },
+      { id: 'ALL', label: 'All', active: expenseDateRange === 'ALL', onClick: () => setExpenseDateRange('ALL') },
+    ]) : [],
+    search: activeExpenseTab === 'RECORDS' ? {
+      value: expenseSearch,
+      placeholder: 'Search expenses',
+      onChange: setExpenseSearch,
+      onClear: () => setExpenseSearch(''),
+    } : undefined,
+    controls: activeExpenseTab === 'RECORDS' ? (
+      <>
+        {expenseDateRange === 'CUSTOM' && (
+          <>
+            <input type="date" value={expenseStartDate} onChange={event => setExpenseStartDate(event.target.value)} className={selectClassName} />
+            <input type="date" value={expenseEndDate} onChange={event => setExpenseEndDate(event.target.value)} className={selectClassName} />
+          </>
+        )}
+        <select value={expenseSourceFilter} onChange={event => setExpenseSourceFilter(event.target.value as ExpenseSourceFilter)} className={selectClassName}>
+          <option value="ALL">All sources</option>
+          <option value="TILL">Till</option>
+          <option value="ACCOUNT">Main account</option>
+          <option value="SHOP">Shop stock</option>
+        </select>
+        <select value={expenseStatusFilter} onChange={event => setExpenseStatusFilter(event.target.value as ExpenseStatusFilter)} className={selectClassName}>
+          <option value="ALL">All statuses</option>
+          <option value="APPROVED">Approved</option>
+          <option value="PENDING">Pending</option>
+          <option value="REJECTED">Rejected</option>
+        </select>
+        <select value={expenseCategoryFilter} onChange={event => setExpenseCategoryFilter(event.target.value)} className={selectClassName}>
+          <option value="ALL">All categories</option>
+          {expenseCategories.map(category => <option key={category} value={category}>{category}</option>)}
+        </select>
+      </>
+    ) : undefined,
+    summary: activeExpenseTab === 'RECORDS' ? [
+      { label: 'Approved', value: `Ksh ${filteredExpenseTotal.toLocaleString()}` },
+      { label: 'Records', value: filteredExpensesCount.toLocaleString() },
+    ] : [],
+    actions: [
+      ...(hasExpenseFilters && activeExpenseTab === 'RECORDS' ? [{
+        id: 'clear-filters',
+        label: 'Clear filters',
+        icon: X,
+        onClick: onClearFilters,
+      }] : []),
+      ...(canCreateExpense ? [{
+        id: 'log-expense',
+        label: activeExpenseTab === 'SHOP' ? 'Save from form' : 'Log expense',
+        icon: activeExpenseTab === 'SHOP' ? PackageMinus : Plus,
+        tone: 'primary' as const,
+        onClick: onLogExpense,
+        hidden: activeExpenseTab === 'SHOP',
+      }] : []),
+    ],
+  }), [
+    activeExpenseTab,
+    canCreateExpense,
+    expenseCategories,
+    expenseCategoryFilter,
+    expenseDateRange,
+    expenseEndDate,
+    expenseSearch,
+    expenseSourceFilter,
+    expenseStartDate,
+    expenseStatusFilter,
+    filteredExpenseTotal,
+    filteredExpensesCount,
+    hasExpenseFilters,
+    onClearFilters,
+    onLogExpense,
+    setActiveExpenseTab,
+    setExpenseCategoryFilter,
+    setExpenseDateRange,
+    setExpenseEndDate,
+    setExpenseSearch,
+    setExpenseSourceFilter,
+    setExpenseStartDate,
+    setExpenseStatusFilter,
+  ]);
+
+  useDesktopSubnav(subnavConfig);
+  return null;
+}
 
 function toDateInputValue(date: Date) {
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
@@ -357,192 +504,31 @@ export default function ExpensesTabDesktop() {
 
   return (
     <div className="w-full animate-in fade-in space-y-5 pb-24">
-      
-      {/* Header */}
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-          <div>
-            <h2 className="text-2xl font-black text-slate-950">Expenses</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-500">Track till, Main account, and shop stock expenses.</p>
-          </div>
-          {canCreateExpense && (
-            <button
-              onClick={() => setIsExpenseModalOpen(true)}
-              data-testid="expenses-log-expense"
-              className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-blue-700 bg-blue-700 px-4 text-sm font-black text-white transition-all hover:bg-blue-800 active:scale-[0.98]"
-            >
-              <Plus size={18} /> Log expense
-            </button>
-          )}
-        </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
-          <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Till approved</p>
-            <p className="mt-1 text-xl font-black tabular-nums text-slate-950">Ksh {todayTillExpenses.toLocaleString()}</p>
-          </div>
-          <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Main approved</p>
-            <p className="mt-1 text-xl font-black tabular-nums text-slate-950">Ksh {todayAccountExpenses.toLocaleString()}</p>
-          </div>
-          <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Cash drawer</p>
-            <p className="mt-1 text-xl font-black tabular-nums text-blue-700">Ksh {actualCashDrawer.toLocaleString()}</p>
-          </div>
-          <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Shop approved</p>
-            <p className="mt-1 text-xl font-black tabular-nums text-slate-950">Ksh {todayShopExpenses.toLocaleString()}</p>
-          </div>
-        </div>
-        {todayPendingExpenses > 0 && (
-          <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-amber-600">
-            Pending requests today: Ksh {todayPendingExpenses.toLocaleString()}
-          </p>
-        )}
-      </section>
-
-      <section className="rounded-lg border-2 border-slate-200 bg-white p-2 shadow-sm">
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { id: 'RECORDS', label: 'Expense records', Icon: FileMinus },
-            { id: 'SHOP', label: 'Shop product', Icon: PackageMinus },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveExpenseTab(tab.id as ExpenseViewTab)}
-              className={`flex h-11 items-center justify-center gap-2 rounded-lg border-2 px-3 text-[11px] font-black uppercase tracking-widest transition-all ${
-                activeExpenseTab === tab.id
-                  ? 'border-blue-700 bg-blue-700 text-white'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700'
-              }`}
-            >
-              <tab.Icon size={16} />
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* Search and filters */}
-      {activeExpenseTab === 'RECORDS' && <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm">
-      <div className="space-y-3">
-        <div className="relative group">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-blue-700" size={16} />
-          <input
-            type="text"
-            placeholder="Search by category, description, user, or source..."
-            value={expenseSearch}
-            onChange={(e) => setExpenseSearch(e.target.value)}
-            className="h-12 w-full rounded-lg border-2 border-slate-200 bg-white pl-10 pr-9 text-sm font-bold outline-none transition-all focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
-          {expenseSearch && (
-            <button onClick={() => setExpenseSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X size={14} />
-            </button>
-          )}
-        </div>
-
-        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-slate-200 bg-white text-blue-700">
-                <SlidersHorizontal size={16} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Filters</p>
-                <p className="truncate text-sm font-black text-slate-900">
-                  Approved Ksh {filteredExpenseTotal.toLocaleString()} across {filteredExpenses.length} record{filteredExpenses.length === 1 ? '' : 's'}
-                </p>
-                {filteredExpenseTotals.pendingCount > 0 && (
-                  <p className="mt-0.5 text-[10px] font-black uppercase tracking-widest text-amber-600">
-                    Pending Ksh {filteredExpenseTotals.pendingTotal.toLocaleString()}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="no-scrollbar flex max-w-full gap-1 overflow-x-auto rounded-lg border-2 border-slate-200 bg-white p-1">
-              {[
-                { id: 'TODAY', label: 'Today' },
-                { id: 'WEEK', label: 'Week' },
-                { id: 'MONTH', label: 'Month' },
-                { id: 'CUSTOM', label: 'Custom' },
-                { id: 'ALL', label: 'All' },
-              ].map(option => (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => setExpenseDateRange(option.id as ExpenseDateRange)}
-                  className={`h-9 flex-shrink-0 rounded-lg px-3 text-[11px] font-black transition-all ${
-                    expenseDateRange === option.id ? 'bg-blue-700 text-white' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {expenseDateRange === 'CUSTOM' && (
-              <>
-                <input
-                  type="date"
-                  value={expenseStartDate}
-                  onChange={event => setExpenseStartDate(event.target.value)}
-                  className="h-11 rounded-lg border-2 border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-                />
-                <input
-                  type="date"
-                  value={expenseEndDate}
-                  onChange={event => setExpenseEndDate(event.target.value)}
-                  className="h-11 rounded-lg border-2 border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-                />
-              </>
-            )}
-            <select
-              value={expenseSourceFilter}
-              onChange={event => setExpenseSourceFilter(event.target.value as ExpenseSourceFilter)}
-              className="h-11 rounded-lg border-2 border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-            >
-              <option value="ALL">All sources</option>
-              <option value="TILL">Till</option>
-              <option value="ACCOUNT">Main account</option>
-              <option value="SHOP">Shop stock</option>
-            </select>
-            <select
-              value={expenseStatusFilter}
-              onChange={event => setExpenseStatusFilter(event.target.value as ExpenseStatusFilter)}
-              className="h-11 rounded-lg border-2 border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-            >
-              <option value="ALL">All statuses</option>
-              <option value="APPROVED">Approved</option>
-              <option value="PENDING">Pending</option>
-              <option value="REJECTED">Rejected</option>
-            </select>
-            <select
-              value={expenseCategoryFilter}
-              onChange={event => setExpenseCategoryFilter(event.target.value)}
-              className="h-11 rounded-lg border-2 border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-            >
-              <option value="ALL">All categories</option>
-              {expenseCategories.map(category => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
-            {hasExpenseFilters && (
-              <button
-                type="button"
-                onClick={clearExpenseFilters}
-                className="flex h-11 items-center justify-center gap-2 rounded-lg border-2 border-slate-200 bg-white px-3 text-[11px] font-black uppercase tracking-widest text-slate-600 transition-all hover:bg-slate-100"
-              >
-                <X size={14} />
-                Clear filters
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-      </section>}
+      <ExpensesDesktopSubnav
+        activeExpenseTab={activeExpenseTab}
+        setActiveExpenseTab={setActiveExpenseTab}
+        expenseSearch={expenseSearch}
+        setExpenseSearch={setExpenseSearch}
+        expenseDateRange={expenseDateRange}
+        setExpenseDateRange={setExpenseDateRange}
+        expenseStartDate={expenseStartDate}
+        setExpenseStartDate={setExpenseStartDate}
+        expenseEndDate={expenseEndDate}
+        setExpenseEndDate={setExpenseEndDate}
+        expenseSourceFilter={expenseSourceFilter}
+        setExpenseSourceFilter={setExpenseSourceFilter}
+        expenseStatusFilter={expenseStatusFilter}
+        setExpenseStatusFilter={setExpenseStatusFilter}
+        expenseCategoryFilter={expenseCategoryFilter}
+        setExpenseCategoryFilter={setExpenseCategoryFilter}
+        expenseCategories={expenseCategories}
+        filteredExpenseTotal={filteredExpenseTotal}
+        filteredExpensesCount={filteredExpenses.length}
+        canCreateExpense={canCreateExpense}
+        onLogExpense={() => setIsExpenseModalOpen(true)}
+        hasExpenseFilters={hasExpenseFilters}
+        onClearFilters={clearExpenseFilters}
+      />
 
       {activeExpenseTab === 'SHOP' && (
         <section className="rounded-lg border-2 border-slate-200 bg-white p-4 shadow-sm sm:p-5">
